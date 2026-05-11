@@ -1,0 +1,34 @@
+# CODEOWNERS — auto-assigns PR reviewers based on which paths a change
+# touches. Last matching pattern wins.
+#
+# Docs: https://docs.github.com/en/repositories/managing-your-repositories-settings-and-customization/customizing-your-repository/about-code-owners
+#
+# Today (sprint 0):
+#   - @outsidehiredev  : Ryan (CEO, owns frontend + product)
+#   - @clydeoutsidehire: lead .NET dev (owns backend)
+# Revisit as the team grows.
+
+# ---- Default ---------------------------------------------------------------
+# Ryan owns anything unmatched so nothing escapes review.
+*                                       @outsidehiredev
+
+# ---- Frontend --------------------------------------------------------------
+/apps/app/                              @outsidehiredev
+
+# ---- Backend (.NET) --------------------------------------------------------
+/apps/api/                              @clydeoutsidehire
+
+# ---- API contract (shared) -------------------------------------------------
+# The OpenAPI spec is the contract between both sides — both leads must
+# approve any change.
+/packages/contracts/                    @outsidehiredev @clydeoutsidehire
+
+# ---- Build / infra ---------------------------------------------------------
+/.github/                               @outsidehiredev
+/tools/                                 @outsidehiredev
+/package.json                           @outsidehiredev
+/pnpm-workspace.yaml                    @outsidehiredev
+/pnpm-lock.yaml                         @outsidehiredev
+
+# Local dev stack — both leads own this since both have to run it.
+/docker-compose.yml                     @outsidehiredev @clydeoutsidehire
