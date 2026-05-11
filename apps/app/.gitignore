@@ -1,0 +1,34 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# PWA generated files
+dev-dist/
+
+# Generated API client (regenerated from packages/contracts/openapi.yaml)
+src/api/generated/
+
+# Local env
+.env
+.env.*
+!.env.example

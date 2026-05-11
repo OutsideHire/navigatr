@@ -1,0 +1,28 @@
+openapi: 3.1.0
+info:
+  title: navigatr API
+  version: 0.0.0
+  description: |
+    Source-of-truth OpenAPI spec for the navigatr API.
+    Owned by the backend team. Frontend regenerates types/axios client from this
+    file via NSwag (see apps/app/nswag.json) into apps/app/src/api/generated/.
+
+    This is a placeholder. Real paths and schemas land in Session 4 (NSwag pipeline)
+    after the contract-first working session with the backend team.
+servers:
+  - url: http://localhost:5000
+    description: Local dev (apps/api)
+  - url: https://api.staging.navigatr.app
+    description: Staging
+  - url: https://api.navigatr.app
+    description: Production
+paths: {}
+components:
+  schemas: {}
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  - bearerAuth: []

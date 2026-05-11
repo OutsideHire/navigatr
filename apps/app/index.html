@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no"
+    />
+
+    <title>navigatr</title>
+    <meta name="description" content="The mobile-first sales platform for field reps." />
+
+    <!-- Theme color — drives the address bar on Chrome/Android and the
+         status-bar tint when installed as a standalone PWA. Matches the
+         manifest's theme_color and the brand-primary swatch in tokens.ts. -->
+    <meta name="theme-color" content="#5856EB" />
+
+    <!-- iOS / iPadOS installation behavior. `apple-mobile-web-app-capable`
+         enables full-bleed standalone mode; the status-bar style is set to
+         `default` so it auto-adapts to light/dark mode like a native app
+         (use `black-translucent` later if we want edge-to-edge layouts that
+         draw under the status bar). -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="navigatr" />
+    <meta name="format-detection" content="telephone=no" />
+
+    <!-- Icons. The webmanifest is injected by vite-plugin-pwa at build time
+         and consumes the icons in /icons/. Browsers fall back to favicon.svg
+         on tabs (sharp scaling) and favicon.ico for older clients. iOS uses
+         apple-touch-icon directly when added to the home screen. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+    <!-- <link rel="manifest"> is injected by vite-plugin-pwa at build time. -->
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

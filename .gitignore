@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+.turbo/
+.vercel/
+
+# Generated API client (regenerated from packages/contracts/openapi.yaml)
+apps/app/src/api/generated/
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# .NET
+apps/api/**/bin/
+apps/api/**/obj/
+
+# Local secrets / Figma tokens
+.figma-token
+
+# Working reference docs (kickoff brief, PRD, design system, etc. — not part of the codebase yet)
+docs/
+
+# Legacy artifacts that live in the repo root for now but aren't part of the
+# navigatr codebase. Move into the repo proper if/when they belong here.
+navigatr design v1./
+navigatr design v1..zip
+prompt files/
+figma-probe.sh
+figma-whoami.sh

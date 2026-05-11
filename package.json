@@ -1,0 +1,29 @@
+{
+  "name": "navigatr",
+  "version": "0.0.0",
+  "private": true,
+  "description": "navigatr — mobile-first sales platform monorepo",
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "dev:app": "pnpm --filter app dev",
+    "dev:api": "cd apps/api && dotnet run --project src/Navigatr.Api",
+    "build": "pnpm --filter \"./apps/*\" build",
+    "test": "pnpm --filter \"./apps/*\" test",
+    "lint": "pnpm --filter \"./apps/*\" lint",
+    "typecheck": "pnpm --filter \"./apps/*\" typecheck",
+    "generate-api": "pnpm --filter app generate-api",
+    "tokens:normalize": "tsx tools/normalize-figma-export.ts",
+    "icons:generate": "tsx tools/generate-pwa-icons.ts",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down"
+  },
+  "devDependencies": {
+    "sharp": "^0.33.5",
+    "tsx": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.12.2"
+}

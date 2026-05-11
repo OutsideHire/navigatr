@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# v1 navigatr is a closed-beta product. We don't want search engines indexing
+# customer-facing surfaces until launch — tighten this before production.
