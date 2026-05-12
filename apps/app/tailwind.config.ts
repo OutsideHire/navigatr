@@ -89,9 +89,11 @@ export default {
         // Figma's `space0..space16` → Tailwind spacing scale. These mirror
         // Tailwind's defaults (1=4px, 2=8px, …) so existing utilities like
         // `p-4` (=16px) keep working; this just makes the mapping explicit.
+        // `2.5: 10px` is a drift entry — see tokens.ts spacing comment.
         "0": spacing[0],
         "1": spacing[1],
         "2": spacing[2],
+        "2.5": spacing["2.5"],
         "3": spacing[3],
         "4": spacing[4],
         "5": spacing[5],

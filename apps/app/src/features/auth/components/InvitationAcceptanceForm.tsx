@@ -5,7 +5,7 @@ import { z } from "zod";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Eye, EyeOff } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/navigatr";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/stores/auth";
@@ -114,7 +114,7 @@ export function InvitationAcceptanceForm() {
         )}
       </div>
 
-      <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>
+      <Button type="submit" size="lg" fullWidth loading={isSubmitting}>
         {isSubmitting ? "Accepting…" : "Accept invitation"}
       </Button>
     </form>

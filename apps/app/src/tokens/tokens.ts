@@ -102,10 +102,22 @@ export type ColorScale = typeof colors.light;
 
 const fs = figmaExport.spacing.mode1;
 
+/**
+ * Spacing scale.
+ *
+ * `2.5: 10px` is a **drift entry** — the Figma Button component (node
+ * 19:300, Size=lg) uses 10px for its icon gap, but the Spacing variable
+ * collection in Figma only has 8 and 12 as adjacent named tokens (no 10).
+ * Until Figma adds a named token here, we carry 10px as `2.5` to match
+ * Tailwind's default scale and let the Button's lg gap utility resolve
+ * cleanly. Once Figma adds `space2.5` (or whatever name), bind this entry
+ * to that variable.
+ */
 export const spacing = {
   0: `${fs.space0}px`,
   1: `${fs.space1}px`, // 4
   2: `${fs.space2}px`, // 8
+  "2.5": "10px", // drift — see comment above
   3: `${fs.space3}px`, // 12
   4: `${fs.space4}px`, // 16
   5: `${fs.space5}px`, // 20

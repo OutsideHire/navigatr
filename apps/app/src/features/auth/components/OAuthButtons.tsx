@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
 import { toast } from "sonner";
 
@@ -63,25 +63,11 @@ export function OAuthButtons({ disabled }: { disabled?: boolean }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <Button
-        type="button"
-        variant="secondary"
-        size="lg"
-        onClick={onGoogle}
-        disabled={disabled}
-        className="w-full"
-      >
+      <Button type="button" variant="secondary" size="lg" fullWidth onClick={onGoogle} disabled={disabled}>
         <GoogleIcon />
         Continue with Google
       </Button>
-      <Button
-        type="button"
-        variant="secondary"
-        size="lg"
-        onClick={onMicrosoft}
-        disabled={disabled}
-        className="w-full"
-      >
+      <Button type="button" variant="secondary" size="lg" fullWidth onClick={onMicrosoft} disabled={disabled}>
         <MicrosoftIcon />
         Continue with Microsoft
       </Button>

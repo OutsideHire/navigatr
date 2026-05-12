@@ -1,6 +1,6 @@
 import { Compass, LogOut, Sun, Moon, Monitor } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/navigatr";
 import { useAuth, getProfession } from "@/stores/auth";
 import { useTheme, type Theme } from "@/stores/theme";
 
@@ -52,17 +52,19 @@ export function DashboardPage() {
           <span className="text-heading-sm tracking-tight text-text-default">navigatr</span>
         </div>
         <div className="flex items-center gap-2">
+          {/* Theme toggle: tertiary variant overridden to text-default since
+              this isn't a primary action. When the canonical TopBar component
+              lands in Session 11 the placeholder goes away. */}
           <Button
-            type="button"
-            variant="ghost"
+            variant="tertiary"
             size="sm"
+            leadingIcon={ThemeIcon}
             onClick={() => setTheme(NEXT_THEME[theme])}
+            className="text-text-muted hover:text-text-default"
           >
-            <ThemeIcon className="h-4 w-4" />
             {THEME_LABEL[theme]}
           </Button>
-          <Button type="button" variant="secondary" size="sm" onClick={onSignOut}>
-            <LogOut className="h-4 w-4" />
+          <Button variant="secondary" size="sm" leadingIcon={LogOut} onClick={onSignOut}>
             Sign out
           </Button>
         </div>

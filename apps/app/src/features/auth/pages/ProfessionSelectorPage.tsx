@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { CalendarClock, CreditCard, Landmark, Compass, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/navigatr";
 import { useAuth, type Profession } from "@/stores/auth";
 
 interface Option {
@@ -130,7 +130,8 @@ export function ProfessionSelectorPage() {
           <Button
             size="lg"
             onClick={onContinue}
-            disabled={!selected || saving}
+            disabled={!selected}
+            loading={saving}
             className="sm:min-w-[180px]"
           >
             {saving ? "Saving…" : "Continue to dashboard"}

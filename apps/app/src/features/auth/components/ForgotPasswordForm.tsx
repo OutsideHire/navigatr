@@ -5,7 +5,7 @@ import { z } from "zod";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/navigatr";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/stores/auth";
@@ -79,7 +79,7 @@ export function ForgotPasswordForm() {
         {errors.email && <p className="text-caption text-status-danger">{errors.email.message}</p>}
       </div>
 
-      <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>
+      <Button type="submit" size="lg" fullWidth loading={isSubmitting}>
         {isSubmitting ? "Sending…" : "Send reset link"}
       </Button>
 

@@ -17,6 +17,7 @@ import { ResetPasswordPage } from "@/features/auth/pages/ResetPasswordPage";
 import { InvitationAcceptancePage } from "@/features/auth/pages/InvitationAcceptancePage";
 import { ProfessionSelectorPage } from "@/features/auth/pages/ProfessionSelectorPage";
 import { DashboardPage } from "@/features/dashboard/pages/DashboardPage";
+import { ButtonStories } from "@/components/navigatr/Button.stories";
 
 /**
  * Wires the axios client's 401 handler to React Router's navigate so we
@@ -72,6 +73,10 @@ export function App() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/accept-invitation" element={<InvitationAcceptancePage />} />
+
+        {/* Visual catalog for design-system components — always routed so
+            prod previews work too. ButtonStories is small enough to ship. */}
+        <Route path="/component-preview/button" element={<ButtonStories />} />
 
         {/* Authenticated, but profession not yet set */}
         <Route path="/select-profession" element={<ProfessionSelectorPage />} />
