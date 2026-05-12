@@ -1,14 +1,37 @@
-openapi: 3.1.0
+openapi: 3.0.3
+
+# -----------------------------------------------------------------------------
+# Sprint 1 — PLACEHOLDER contract.
+#
+# This is NOT the canonical navigatr API spec. It's a scaffold authored on the
+# frontend side so the NSwag pipeline has something real to generate against
+# while the backend team and the lead engineer iterate the actual spec in the
+# contract-first session (see docs/contract-first-session-agenda.md).
+#
+# Real contract will land in a follow-up PR owned by the backend team. When
+# it does, this file is wholesale replaced and the frontend regenerates with
+# `pnpm generate-api` — no other changes needed on the frontend side beyond
+# fixing whatever TypeScript surfaces.
+#
+# Scope: sprint 1 vertical slice from docs/navigatr-engineering-kickoff-brief.md
+#   - GET  /api/me                          : current user + tenant context
+#   - CRUD /api/deals                       : pipeline core
+#   - PATCH /api/deals/{id}/stage           : stage transitions
+#   - POST /api/activities                  : log an activity (drives smart
+#                                             follow-up scheduling)
+#   - GET  /api/activities                  : feed
+#   - GET  /api/activities/today            : today's tasks
+# -----------------------------------------------------------------------------
+
 info:
   title: navigatr API
-  version: 0.0.0
+  version: 0.0.0-sprint1-placeholder
   description: |
-    Source-of-truth OpenAPI spec for the navigatr API.
-    Owned by the backend team. Frontend regenerates types/axios client from this
-    file via NSwag (see apps/app/nswag.json) into apps/app/src/api/generated/.
+    Sprint 1 placeholder contract. See file-level comment.
+  contact:
+    name: navigatr engineering
+    email: eng@navigatr.app
 
-    This is a placeholder. Real paths and schemas land in Session 4 (NSwag pipeline)
-    after the contract-first working session with the backend team.
 servers:
   - url: http://localhost:5000
     description: Local dev (apps/api)
@@ -16,13 +39,500 @@ servers:
     description: Staging
   - url: https://api.navigatr.app
     description: Production
-paths: {}
+
+tags:
+  - name: Me
+    description: Current user + tenant context
+  - name: Deals
+    description: Pipeline — create, read, update, stage transitions
+  - name: Activities
+    description: Activity log + today's tasks + smart follow-ups
+
+# -----------------------------------------------------------------------------
+# Paths
+# -----------------------------------------------------------------------------
+paths:
+  /api/me:
+    get:
+      tags: [Me]
+      operationId: getMe
+      summary: Current user + tenant context
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "5XX": { $ref: "#/components/responses/ServerError" }
+
+  /api/deals:
+    get:
+      tags: [Deals]
+      operationId: listDeals
+      summary: List deals for the current tenant
+      parameters:
+        - name: ownerId
+          in: query
+          required: false
+          schema: { type: string, format: uuid, nullable: true }
+        - name: stage
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/DealStage"
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque pagination cursor returned by the previous page.
+          schema: { type: string, nullable: true }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DealList"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "5XX": { $ref: "#/components/responses/ServerError" }
+
+    post:
+      tags: [Deals]
+      operationId: createDeal
+      summary: Create a deal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDealRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deal"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "5XX": { $ref: "#/components/responses/ServerError" }
+
+  /api/deals/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+
+    get:
+      tags: [Deals]
+      operationId: getDeal
+      summary: Get a single deal
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deal"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "5XX": { $ref: "#/components/responses/ServerError" }
+
+    put:
+      tags: [Deals]
+      operationId: updateDeal
+      summary: Update a deal (full replacement of mutable fields)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDealRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deal"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "5XX": { $ref: "#/components/responses/ServerError" }
+
+  /api/deals/{id}/stage:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Deals]
+      operationId: setDealStage
+      summary: Transition a deal to a new stage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetDealStageRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deal"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "5XX": { $ref: "#/components/responses/ServerError" }
+
+  /api/activities:
+    get:
+      tags: [Activities]
+      operationId: listActivities
+      summary: List activities for the current user
+      parameters:
+        - name: dealId
+          in: query
+          required: false
+          schema: { type: string, format: uuid, nullable: true }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, nullable: true }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivityList"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "5XX": { $ref: "#/components/responses/ServerError" }
+
+    post:
+      tags: [Activities]
+      operationId: logActivity
+      summary: Log an activity (triggers disposition-driven follow-up scheduling)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogActivityRequest"
+      responses:
+        "201":
+          description: Created — `followUpScheduledFor` reflects the smart follow-up date.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Activity"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "5XX": { $ref: "#/components/responses/ServerError" }
+
+  /api/activities/today:
+    get:
+      tags: [Activities]
+      operationId: getTodaysTasks
+      summary: Today's tasks — scheduled follow-ups due today for the current user
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TodaysTasksResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "5XX": { $ref: "#/components/responses/ServerError" }
+
+# -----------------------------------------------------------------------------
+# Components
+# -----------------------------------------------------------------------------
 components:
-  schemas: {}
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
+  responses:
+    BadRequest:
+      description: Invalid request — see `details` for field-level errors.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
+    Unauthorized:
+      description: Missing or invalid auth token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
+    Forbidden:
+      description: Authenticated but not permitted for this resource.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
+    NotFound:
+      description: Resource not found (or not visible to this tenant).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
+    ServerError:
+      description: Unexpected server error — `traceId` correlates to backend logs.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
+
+  schemas:
+    # ---- Errors --------------------------------------------------------------
+    ApiError:
+      type: object
+      required: [errorCode, message]
+      properties:
+        errorCode:
+          type: string
+          description: Stable machine-readable code (e.g. `deal.not_found`, `validation.failed`).
+        message:
+          type: string
+          description: Human-readable summary, safe to surface to the user.
+        details:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Field-level errors keyed by JSON pointer (e.g. `/value_cents`).
+        traceId:
+          type: string
+          nullable: true
+          description: Correlates to backend logs in Application Insights.
+
+    # ---- Enums --------------------------------------------------------------
+    DealStage:
+      type: string
+      enum: [new, contacted, qualified, proposal, won, lost]
+
+    ActivityType:
+      type: string
+      enum: [email, call, drop_in, appointment, partner_touch]
+
+    Disposition:
+      type: string
+      description: |
+        Set when logging a Call/Drop-in activity. Drives smart follow-up
+        scheduling per docs/navigatr-engineering-kickoff-brief.md §4.
+      enum:
+        - statement_secured
+        - positive_engagement
+        - connected_with_dm
+        - dm_unavailable
+        - followup_requested
+        - future_potential
+        - low_probability
+        - not_interested
+        - wrong_number
+        - closed_lost
+
+    UserRole:
+      type: string
+      enum: [admin, cso, svp, vp, director, territory_manager, sales_professional]
+
+    Profession:
+      type: string
+      enum: [payroll, merchant_services, treasury_management]
+
+    # ---- Identity -----------------------------------------------------------
+    Tenant:
+      type: object
+      required: [id, name, slug, profession]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        profession: { $ref: "#/components/schemas/Profession" }
+        brandLogoUrl: { type: string, nullable: true }
+        brandPrimaryColor: { type: string }
+
+    User:
+      type: object
+      required: [id, tenantId, email, fullName, role, status]
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        email: { type: string, format: email }
+        fullName: { type: string }
+        title: { type: string, nullable: true }
+        role: { $ref: "#/components/schemas/UserRole" }
+        status:
+          type: string
+          enum: [active, inactive, invited, pending]
+        avatarUrl: { type: string, nullable: true }
+
+    MeResponse:
+      type: object
+      required: [user, tenant]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        tenant: { $ref: "#/components/schemas/Tenant" }
+
+    # ---- Deals --------------------------------------------------------------
+    Deal:
+      type: object
+      required:
+        - id
+        - tenantId
+        - ownerId
+        - companyName
+        - contactName
+        - valueCents
+        - probabilityPct
+        - stage
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        ownerId: { type: string, format: uuid }
+        companyName: { type: string }
+        contactName: { type: string }
+        contactTitle: { type: string, nullable: true }
+        contactEmail: { type: string, format: email, nullable: true }
+        contactPhone: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        industry: { type: string, nullable: true }
+        valueCents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Value in the tenant's billing currency, in cents.
+        probabilityPct:
+          type: integer
+          minimum: 0
+          maximum: 100
+        stage: { $ref: "#/components/schemas/DealStage" }
+        expectedCloseDate: { type: string, format: date, nullable: true }
+        leadSource: { type: string, nullable: true }
+        notes: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        wonAt: { type: string, format: date-time, nullable: true }
+        lostAt: { type: string, format: date-time, nullable: true }
+
+    CreateDealRequest:
+      type: object
+      required: [companyName, contactName, valueCents, probabilityPct]
+      properties:
+        companyName: { type: string, minLength: 1 }
+        contactName: { type: string, minLength: 1 }
+        contactTitle: { type: string, nullable: true }
+        contactEmail: { type: string, format: email, nullable: true }
+        contactPhone: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        industry: { type: string, nullable: true }
+        valueCents: { type: integer, format: int64, minimum: 0 }
+        probabilityPct: { type: integer, minimum: 0, maximum: 100 }
+        expectedCloseDate: { type: string, format: date, nullable: true }
+        leadSource: { type: string, nullable: true }
+        notes: { type: string, nullable: true }
+
+    UpdateDealRequest:
+      allOf:
+        - $ref: "#/components/schemas/CreateDealRequest"
+
+    SetDealStageRequest:
+      type: object
+      required: [stage]
+      properties:
+        stage: { $ref: "#/components/schemas/DealStage" }
+        note: { type: string, nullable: true }
+
+    DealList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Deal" }
+        nextCursor: { type: string, nullable: true }
+
+    # ---- Activities ---------------------------------------------------------
+    Activity:
+      type: object
+      required: [id, tenantId, ownerId, type, title, completedAt, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        tenantId: { type: string, format: uuid }
+        ownerId: { type: string, format: uuid }
+        dealId: { type: string, format: uuid, nullable: true }
+        type: { $ref: "#/components/schemas/ActivityType" }
+        title: { type: string }
+        subject: { type: string, nullable: true }
+        body: { type: string, nullable: true }
+        durationMinutes: { type: integer, nullable: true }
+        disposition:
+          allOf:
+            - $ref: "#/components/schemas/Disposition"
+          nullable: true
+        outcomeNotes: { type: string, nullable: true }
+        followUpScheduledFor:
+          type: string
+          format: date
+          nullable: true
+          description: Smart follow-up date computed from disposition.
+        scheduledAt: { type: string, format: date-time, nullable: true }
+        completedAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+
+    LogActivityRequest:
+      type: object
+      required: [type, title, completedAt]
+      properties:
+        type: { $ref: "#/components/schemas/ActivityType" }
+        dealId: { type: string, format: uuid, nullable: true }
+        title: { type: string }
+        subject: { type: string, nullable: true }
+        body: { type: string, nullable: true }
+        durationMinutes: { type: integer, nullable: true }
+        disposition:
+          allOf:
+            - $ref: "#/components/schemas/Disposition"
+          nullable: true
+        outcomeNotes: { type: string, nullable: true }
+        followUpDate:
+          type: string
+          format: date
+          nullable: true
+          description: |
+            Optional. Used only when disposition is `followup_requested`.
+            Otherwise the backend computes follow-up from disposition rules.
+        completedAt: { type: string, format: date-time }
+
+    ActivityList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Activity" }
+        nextCursor: { type: string, nullable: true }
+
+    TodaysTasksResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Activity" }
+
 security:
   - bearerAuth: []

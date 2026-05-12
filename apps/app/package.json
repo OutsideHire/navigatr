@@ -10,9 +10,11 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc -b --noEmit",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,md}\"",
-    "generate-api": "nswag run nswag.json /runtime:Net90"
+    "generate-api": "openapi-ts",
+    "postinstall": "node -e \"try { require('child_process').execSync('pnpm generate-api', { stdio: 'inherit' }); } catch (e) { console.warn('[postinstall] generate-api failed; run pnpm generate-api manually'); }\""
   },
   "dependencies": {
+    "@hey-api/client-axios": "^0.9.1",
     "@hookform/resolvers": "^3.9.1",
     "@tanstack/react-query": "^5.62.7",
     "axios": "^1.7.9",
@@ -30,6 +32,7 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@hey-api/openapi-ts": "^0.97.1",
     "@tanstack/react-query-devtools": "^5.62.7",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.17",
