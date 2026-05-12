@@ -22,7 +22,7 @@
  */
 
 import * as React from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   ChevronDown,
@@ -62,6 +62,7 @@ import {
   type DealStage,
 } from "../mockData";
 import { DealCardSkeleton } from "../components/DealCardSkeleton";
+import { AddDealSheet } from "../components/AddDealSheet";
 
 // ───────────────────────────────────────────────────────────────────────
 // Filter / search state
@@ -312,6 +313,19 @@ export function PipelinePage() {
   const [stageFilter, setStageFilter] = React.useState<StageFilter>("all");
   const [searchInput, setSearchInput] = React.useState("");
   const debouncedSearch = useDebounced(searchInput, 300);
+  const [sheetOpen, setSheetOpen] = React.useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Deep-link: /pipeline?action=add auto-opens the Add Deal sheet. We
+  // strip the param after opening so a back-nav doesn't re-fire it.
+  React.useEffect(() => {
+    if (searchParams.get("action") === "add") {
+      setSheetOpen(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete("action");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   // TODO Sprint 2: swap fetchDealsMock for the generated SDK
   // (Deals.listDeals) and pass stage + q as server-side params.
@@ -320,7 +334,7 @@ export function PipelinePage() {
     queryFn: fetchDealsMock,
   });
 
-  const onAddDeal = () => toast("Add deal sheet lands in Session 14");
+  const onAddDeal = () => setSheetOpen(true);
 
   const filtered = React.useMemo(() => {
     if (!deals) return [];
@@ -358,6 +372,8 @@ export function PipelinePage() {
           </div>
         )}
       </div>
+
+      <AddDealSheet open={sheetOpen} onOpenChange={setSheetOpen} />
     </div>
   );
 }
