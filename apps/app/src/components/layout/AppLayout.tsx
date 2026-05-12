@@ -13,17 +13,21 @@
  *   └─────────────────────────┘
  *
  * Desktop (md+):
- *   ┌──────┬──────────────────┐
- *   │      │   TopBar (sticky)│
- *   │ Side ├──────────────────┤
- *   │  Nav │                  │
- *   │ 240  │   <main>         │
- *   │ /64  │                  │
- *   │      │                  │
- *   └──────┴──────────────────┘
+ *   ┌──────────────────────────┐
+ *   │   TopBar (full-width)    │   sticky top-0, h-16
+ *   ├──────┬───────────────────┤
+ *   │      │                   │
+ *   │ Side │   <main>          │
+ *   │ Nav  │                   │   sidebar sticky below TopBar
+ *   │ 240  │                   │
+ *   │ /64  │                   │
+ *   └──────┴───────────────────┘
  *
- * SidebarNav lives next to the content column inside a flex parent.
- * Its `width` transitions smoothly between 240 and 64 px when collapsed.
+ * TopBar spans the full viewport width and sits ABOVE the sidebar — the
+ * logo sits at the true top-left of the page (x=0), matching every
+ * modern SaaS app layout and Figma 148:464 where the desktop TopBar is
+ * authored as a 1280-wide element. SidebarNav becomes a row below the
+ * TopBar, sticky just under it.
  *
  * Collapsed state is persisted to localStorage (`navigatr-sidebar-collapsed`)
  * so navigating between routes doesn't reset the user's preference.
@@ -81,31 +85,34 @@ export function AppLayout({
   const effectiveToggle = onCollapseToggleOverride ?? toggle;
 
   return (
-    <div className="flex min-h-dvh bg-surface-canvas text-text-default">
-      {/* Sidebar — desktop only, hidden at <md via SidebarNav's own md:flex */}
-      <SidebarNav collapsed={effectiveCollapsed} onCollapseToggle={effectiveToggle} />
+    <div className="flex min-h-dvh flex-col bg-surface-canvas text-text-default">
+      {/* TopBar — full viewport width, sticky top. The logo lives here at
+          the true top-left (x=0) of the page on every breakpoint. */}
+      <TopBar
+        user={user}
+        tenantLogo={tenantLogo}
+        tenantAppName={tenantAppName}
+        showSearch={showSearch}
+      />
 
-      {/* Right column — TopBar + main + (mobile) BottomNav */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar
-          user={user}
-          tenantLogo={tenantLogo}
-          tenantAppName={tenantAppName}
-          showSearch={showSearch}
-        />
+      {/* Body row — sidebar (desktop only) + main content side-by-side */}
+      <div className="flex min-h-0 flex-1">
+        {/* Sidebar — desktop only via SidebarNav's own md:flex. Stays sticky
+            just under the TopBar at top-16 = 64 px (TopBar height). */}
+        <SidebarNav collapsed={effectiveCollapsed} onCollapseToggle={effectiveToggle} />
 
         <main
           // pb-20 on mobile clears the fixed BottomNav (h-16 + safe-area).
           // overflow-x-hidden prevents wide content from spilling out of the
           // narrow column when sidebar is expanded on small desktops.
-          className="flex-1 overflow-x-hidden pb-20 md:pb-0"
+          className="min-w-0 flex-1 overflow-x-hidden pb-20 md:pb-0"
         >
           {children}
         </main>
-
-        {/* Bottom nav — mobile only, fixed bottom */}
-        <BottomNav />
       </div>
+
+      {/* Bottom nav — mobile only, fixed bottom */}
+      <BottomNav />
     </div>
   );
 }

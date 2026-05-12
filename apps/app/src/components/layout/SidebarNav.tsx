@@ -87,15 +87,15 @@ export function SidebarNav({ collapsed = false, onCollapseToggle, className }: S
     <aside
       aria-label="Primary"
       className={cn(
-        "sticky top-0 hidden h-dvh shrink-0 flex-col border-r border-border-subtle bg-surface-elevated md:flex",
+        // Sticky top-16 = 64 px = TopBar height, so the sidebar sits flush
+        // below the TopBar and stays anchored on scroll. Height calc keeps
+        // it from spilling below the viewport edge.
+        "sticky top-16 hidden h-[calc(100dvh-4rem)] shrink-0 flex-col border-r border-border-subtle bg-surface-elevated md:flex",
         "transition-[width] duration-200",
         collapsed ? "w-16" : "w-60",
         className,
       )}
     >
-      {/* Top spacer aligns first nav-item with the TopBar baseline (TopBar = 64 px). */}
-      <div className="h-16 border-b border-border-subtle" />
-
       {/* Main destinations */}
       <nav className="flex flex-1 flex-col gap-1 p-3">
         {MAIN_TABS.map((tab) => (
