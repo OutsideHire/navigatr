@@ -73,17 +73,18 @@ export const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(function Badg
   { kind, size = "md", leadingIcon: LeadingIcon, removable = false, onRemove, className, children, ...rest },
   ref,
 ) {
-  // Heights bumped 2 px from Figma 24:26 (22 → 24, 18 → 20). Figma's
-  // values left the `p`/`q`/`g`/`y` descenders kissing the pill's bottom
-  // edge once rendered in the browser — visually cramped even though
-  // the math is per-spec. `leading-none` on md collapses the line-height
-  // to glyph height so the extra 2 px is visible breathing, not slack.
+  // Figma 24:26 exact: md 22 px, sm 18 px. Earlier session bumped these to
+  // 24 / 20 as a band-aid for what looked like cramped vertical breathing —
+  // but the actual bug was tailwind-merge stripping `text-caption`, making
+  // the text render at 16 px (default body) inside a 22 px pill. Once
+  // text-caption applies correctly (12 / 16), Figma's 22 px is back to
+  // looking right.
   //
-  // Reverse-import flag: Figma 24:26 should bump the variant height to
-  // 24 px on md and 20 px on sm so this stays Figma-fidelity.
+  // `leading-none` collapses the line-height so descenders don't push
+  // against the pill's bottom edge — still useful even with correct font-size.
   const sizeCls = size === "sm"
-    ? "h-5 gap-1 px-1.5 text-[10px] leading-none"
-    : "h-6 gap-1 px-2 text-caption leading-none";
+    ? "h-[18px] gap-1 px-1.5 text-[10px] leading-none"
+    : "h-[22px] gap-1 px-2 text-caption leading-none";
 
   const iconCls = size === "sm" ? "h-2.5 w-2.5" : "h-3 w-3";
 
