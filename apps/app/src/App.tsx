@@ -18,6 +18,7 @@ import { InvitationAcceptancePage } from "@/features/auth/pages/InvitationAccept
 import { ProfessionSelectorPage } from "@/features/auth/pages/ProfessionSelectorPage";
 import { DashboardPage } from "@/features/dashboard/pages/DashboardPage";
 import { ButtonStories } from "@/components/navigatr/Button.stories";
+import { FormFieldStories } from "@/components/navigatr/FormField.stories";
 
 /**
  * Wires the axios client's 401 handler to React Router's navigate so we
@@ -77,6 +78,7 @@ export function App() {
         {/* Visual catalog for design-system components — always routed so
             prod previews work too. ButtonStories is small enough to ship. */}
         <Route path="/component-preview/button" element={<ButtonStories />} />
+        <Route path="/component-preview/form-fields" element={<FormFieldStories />} />
 
         {/* Authenticated, but profession not yet set */}
         <Route path="/select-profession" element={<ProfessionSelectorPage />} />

@@ -103,6 +103,11 @@ export default {
         "12": spacing[12],
         "16": spacing[16],
       },
+      borderWidth: {
+        // Figma uses 1.5px stroke on the focused state of Input + Select.
+        // Tailwind ships 1 and 2 by default; add 1.5 so we can bind directly.
+        "1.5": "1.5px",
+      },
       borderRadius: {
         // Token-name utilities (explicit per playbook): rounded-radius-md, etc.
         "radius-sm": radius.sm,

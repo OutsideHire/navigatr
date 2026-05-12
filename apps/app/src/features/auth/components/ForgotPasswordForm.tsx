@@ -5,9 +5,7 @@ import { z } from "zod";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
-import { Button } from "@/components/navigatr";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button, FormField, Input } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
 
 const schema = z.object({
@@ -65,19 +63,15 @@ export function ForgotPasswordForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="forgot-email">Work email</Label>
+      <FormField label="Work email" htmlFor="forgot-email" error={errors.email?.message}>
         <Input
-          id="forgot-email"
           type="email"
           autoComplete="email"
           autoFocus
-          aria-invalid={!!errors.email}
-          {...register("email")}
           placeholder="you@company.com"
+          {...register("email")}
         />
-        {errors.email && <p className="text-caption text-status-danger">{errors.email.message}</p>}
-      </div>
+      </FormField>
 
       <Button type="submit" size="lg" fullWidth loading={isSubmitting}>
         {isSubmitting ? "Sending…" : "Send reset link"}

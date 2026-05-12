@@ -1,13 +1,9 @@
-import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Eye, EyeOff } from "lucide-react";
-import { Button } from "@/components/navigatr";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button, FormField, Input } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
 import { OAuthButtons, OrDivider } from "./OAuthButtons";
 
@@ -22,7 +18,6 @@ type Values = z.infer<typeof schema>;
 export function SignUpForm() {
   const signUp = useAuth((s) => s.signUp);
   const navigate = useNavigate();
-  const [showPassword, setShowPassword] = useState(false);
 
   const {
     register,
@@ -36,8 +31,6 @@ export function SignUpForm() {
   const onSubmit = async (values: Values) => {
     try {
       await signUp(values.email, values.password, values.fullName);
-      // With email confirmation disabled in Supabase settings, the SDK
-      // returns a session immediately and onAuthStateChange fires.
       navigate("/select-profession");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Sign up failed");
@@ -49,61 +42,32 @@ export function SignUpForm() {
       <OAuthButtons disabled={isSubmitting} />
       <OrDivider />
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="signup-name">Full name</Label>
-        <Input
-          id="signup-name"
-          autoComplete="name"
-          autoFocus
-          aria-invalid={!!errors.fullName}
-          {...register("fullName")}
-          placeholder="Jamie Rivera"
-        />
-        {errors.fullName && (
-          <p className="text-caption text-status-danger">{errors.fullName.message}</p>
-        )}
-      </div>
+      <FormField label="Full name" htmlFor="signup-name" error={errors.fullName?.message}>
+        <Input autoComplete="name" autoFocus placeholder="Jamie Rivera" {...register("fullName")} />
+      </FormField>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="signup-email">Work email</Label>
+      <FormField label="Work email" htmlFor="signup-email" error={errors.email?.message}>
         <Input
-          id="signup-email"
           type="email"
           autoComplete="email"
-          aria-invalid={!!errors.email}
-          {...register("email")}
           placeholder="you@company.com"
+          {...register("email")}
         />
-        {errors.email && <p className="text-caption text-status-danger">{errors.email.message}</p>}
-      </div>
+      </FormField>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="signup-password">Password</Label>
-        <div className="relative">
-          <Input
-            id="signup-password"
-            type={showPassword ? "text" : "password"}
-            autoComplete="new-password"
-            aria-invalid={!!errors.password}
-            {...register("password")}
-            placeholder="At least 8 characters"
-            className="pr-10"
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword((v) => !v)}
-            className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-text-subtle hover:text-text-default"
-            aria-label={showPassword ? "Hide password" : "Show password"}
-          >
-            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
-        </div>
-        {errors.password ? (
-          <p className="text-caption text-status-danger">{errors.password.message}</p>
-        ) : (
-          <p className="text-caption text-text-subtle">At least 8 characters.</p>
-        )}
-      </div>
+      <FormField
+        label="Password"
+        htmlFor="signup-password"
+        helper="At least 8 characters."
+        error={errors.password?.message}
+      >
+        <Input
+          type="password"
+          autoComplete="new-password"
+          placeholder="At least 8 characters"
+          {...register("password")}
+        />
+      </FormField>
 
       <Button type="submit" size="lg" fullWidth loading={isSubmitting}>
         {isSubmitting ? "Creating account…" : "Create account"}
