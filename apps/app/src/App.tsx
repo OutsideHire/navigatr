@@ -21,6 +21,8 @@ import { ProfessionSelectorPage } from "@/features/auth/pages/ProfessionSelector
 // Protected screens (each wrapped in AppLayout by ProtectedRoute)
 import { DashboardPage } from "@/features/dashboard/pages/DashboardPage";
 import { PipelinePage } from "@/features/pipeline/pages/PipelinePage";
+import { PlaceholderPage } from "@/features/_placeholder/PlaceholderPage";
+import { TrendingUp } from "lucide-react";
 import { ActivitiesPage } from "@/features/activities/pages/ActivitiesPage";
 import { PartnersPage } from "@/features/partners/pages/PartnersPage";
 import { PathPage } from "@/features/path/pages/PathPage";
@@ -114,6 +116,20 @@ export function App() {
           element={
             <ProtectedRoute>
               <PipelinePage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Deal detail — real screen ships in Session 15. */}
+        <Route
+          path="/pipeline/:dealId"
+          element={
+            <ProtectedRoute>
+              <PlaceholderPage
+                title="Deal detail"
+                comingInSession={15}
+                Icon={TrendingUp}
+                description="Full deal detail with activity timeline, notes, partner attribution, and stage transitions."
+              />
             </ProtectedRoute>
           }
         />
