@@ -94,8 +94,20 @@ import { cn } from "@/lib/utils";
 
 const button = cva(
   // BASE — applied to every variant. Layout-only; no color decisions here.
+  //
+  // Font weight is deliberately `font-medium` (500), NOT inherited from
+  // text-body-md (Inter Regular 400) which is what Figma 19:300 specifies
+  // via its `body/md` text style. The Regular weight reads as visually
+  // thin on saturated button surfaces in real browsers (less so in
+  // Figma's render engine), creating a "label-floats-in-empty-button"
+  // feel that's actually a weight contrast problem masquerading as a
+  // padding problem.
+  //
+  // Reverse-import action: Figma should grow a `button/md` and
+  // `button/lg` text style (Inter Medium 14/20 and Inter Medium 16/24)
+  // and the Button component should bind to those instead of `body/*`.
   [
-    "inline-flex items-center justify-center whitespace-nowrap",
+    "inline-flex items-center justify-center whitespace-nowrap font-medium",
     "transition-colors transition-opacity",
     "select-none",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas",
@@ -135,8 +147,14 @@ const button = cva(
         ],
       },
       size: {
+        // Icon-to-label gap drifts from Figma's `gap-2` (8 px) to `gap-2.5`
+        // (10 px) on md and lg. Figma's 8 px feels too tight in browser
+        // render — paired with Medium-weight labels, 10 px reads as
+        // intentional breathing room rather than a measurement error.
+        // sm stays at 8 px because it's used in dense surfaces (tables,
+        // toolbars) where the 16 px icon already dominates.
         sm: ["h-8 px-3 gap-2 rounded-radius-sm text-body-md"],
-        md: ["h-10 px-4 gap-2 rounded-radius-md text-body-md"],
+        md: ["h-10 px-4 gap-2.5 rounded-radius-md text-body-md"],
         lg: ["h-12 px-5 gap-2.5 rounded-radius-md text-body-lg"],
       },
       iconOnly: {
