@@ -22,7 +22,7 @@
  */
 
 import * as React from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import * as Tabs from "@radix-ui/react-tabs";
 import {
   ArrowLeft,
@@ -68,6 +68,7 @@ import { LogActivitySheet } from "@/features/activities/components/LogActivitySh
 // ───────────────────────────────────────────────────────────────────────
 
 function NotFound() {
+  const navigate = useNavigate();
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center gap-4 px-4 py-12 text-center">
       <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-surface-sunken text-text-muted">
@@ -79,8 +80,13 @@ function NotFound() {
           This deal may have been deleted or is on a different rep&apos;s pipeline.
         </p>
       </div>
-      <Button variant="primary" size="md" leadingIcon={ArrowLeft} asChild>
-        <Link to="/pipeline">Back to pipeline</Link>
+      {/* IMPORTANT: do NOT combine `asChild` with `leadingIcon` on Button —
+          Radix Slot requires exactly one child, but `leadingIcon` adds a
+          second element (icon + children) and throws at runtime, which
+          crashes the whole page tree (see qa report 2026-05-12). Use plain
+          onClick navigation instead. */}
+      <Button variant="primary" size="md" leadingIcon={ArrowLeft} onClick={() => navigate("/pipeline")}>
+        Back to pipeline
       </Button>
     </div>
   );
