@@ -37,3 +37,26 @@ export type { KpiCardProps, KpiAccent, KpiSize, KpiTrend } from "./KpiCard";
 
 export { ListRow } from "./ListRow";
 export type { ListRowProps } from "./ListRow";
+
+// Session 9 — atoms
+export { Badge } from "./Badge";
+export type { BadgeProps, BadgeKind } from "./Badge";
+
+export { Avatar } from "./Avatar";
+export type { AvatarProps, AvatarSize, AvatarShape, AvatarStatus } from "./Avatar";
+
+export { Chip } from "./Chip";
+export type { ChipProps } from "./Chip";
+
+export { PhoneWithClickToCall } from "./PhoneWithClickToCall";
+export type {
+  PhoneWithClickToCallProps,
+  PhoneSize,
+  AlternateNumber,
+} from "./PhoneWithClickToCall";
+
+export { NotesFieldWithMic } from "./NotesFieldWithMic";
+export type { NotesFieldWithMicProps, MicState } from "./NotesFieldWithMic";
+
+export { DispositionTile } from "./DispositionTile";
+export type { DispositionTileProps, DispositionTier } from "./DispositionTile";

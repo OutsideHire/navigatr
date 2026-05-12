@@ -3,7 +3,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Button, FormField, Input } from "@/components/navigatr";
+import { Badge, Button, FormField, Input } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
 
 const schema = z.object({
@@ -54,9 +54,7 @@ export function InvitationAcceptanceForm() {
         <p className="text-caption text-text-subtle">Invited as</p>
         <p className="mt-1 text-body-strong text-text-default">{email}</p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <span className="rounded-radius-sm bg-accent-violet-20 px-2 py-0.5 text-caption font-medium text-accent-violet">
-            {role.replace(/_/g, " ")}
-          </span>
+          <Badge kind="stage-proposal">{role.replace(/_/g, " ")}</Badge>
           <span className="text-caption text-text-muted">at {tenantName}</span>
         </div>
       </div>

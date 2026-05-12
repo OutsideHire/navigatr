@@ -20,6 +20,7 @@ import { DashboardPage } from "@/features/dashboard/pages/DashboardPage";
 import { ButtonStories } from "@/components/navigatr/Button.stories";
 import { FormFieldStories } from "@/components/navigatr/FormField.stories";
 import { CardStories } from "@/components/navigatr/Card.stories";
+import { AtomsStories } from "@/components/navigatr/Atoms.stories";
 
 /**
  * Wires the axios client's 401 handler to React Router's navigate so we
@@ -81,6 +82,7 @@ export function App() {
         <Route path="/component-preview/button" element={<ButtonStories />} />
         <Route path="/component-preview/form-fields" element={<FormFieldStories />} />
         <Route path="/component-preview/cards" element={<CardStories />} />
+        <Route path="/component-preview/atoms" element={<AtomsStories />} />
 
         {/* Authenticated, but profession not yet set */}
         <Route path="/select-profession" element={<ProfessionSelectorPage />} />
