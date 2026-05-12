@@ -19,20 +19,29 @@ import axios, {
 } from "axios";
 import { client as generatedClient } from "@/api/generated/client.gen";
 import type { ApiError } from "@/api/generated/types.gen";
+import { supabase } from "@/lib/supabase";
 
 // ---------------------------------------------------------------------------
 // Auth token plumbing
+//
+// Session 5 swap: the synchronous stub from Session 4 was placeholder. The
+// real token-getter is async (Supabase's getSession is async), so the
+// request interceptor below awaits it inline. Most calls hit the SDK's
+// internal cache and return synchronously.
+//
+// `setAuthTokenGetter` is kept for tests + edge cases that want to inject
+// a different token source — point it at any sync or async function.
 // ---------------------------------------------------------------------------
 
-/**
- * Stub for the auth-token getter. Session 5 wires this to the real Supabase
- * auth store; today it always returns null so requests go out unauthenticated
- * (which is fine for the local dev API stub).
- */
-let authTokenGetter: () => string | null = () => null;
+type TokenGetter = () => string | null | Promise<string | null>;
 
-/** Called by the auth store once it's mounted (Session 5). */
-export function setAuthTokenGetter(fn: () => string | null): void {
+let authTokenGetter: TokenGetter = async () => {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+};
+
+/** Override the token source. Useful for tests or service-account flows. */
+export function setAuthTokenGetter(fn: TokenGetter): void {
   authTokenGetter = fn;
 }
 
@@ -41,8 +50,13 @@ export function setAuthTokenGetter(fn: () => string | null): void {
 // ---------------------------------------------------------------------------
 
 let onUnauthorized: () => void = () => {
-  // Default: hard redirect to /login. Session 5 replaces this with a soft
-  // navigation via React Router that preserves the current location.
+  // Default: clear the Supabase session and hard-redirect to /login.
+  // A React-Router-aware soft-navigation handler is installed by the
+  // root App component via setUnauthorizedHandler() — that runs after
+  // mount, so this default is the boot-time fallback.
+  void supabase.auth.signOut().catch(() => {
+    /* best-effort */
+  });
   if (typeof window !== "undefined" && window.location.pathname !== "/login") {
     window.location.assign("/login");
   }
@@ -62,9 +76,11 @@ export const apiClient: AxiosInstance = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-// Request: attach JWT if available.
-apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = authTokenGetter();
+// Request: attach JWT if available. Await the getter so async sources
+// (Supabase) work — the SDK's internal cache makes this essentially free
+// after the first call.
+apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+  const token = await authTokenGetter();
   if (token) {
     config.headers.set("Authorization", `Bearer ${token}`);
   }

@@ -17,6 +17,7 @@ apps/app/src/api/generated/
 .env
 .env.*
 !.env.example
+!.env.local.example
 
 # Logs
 *.log
