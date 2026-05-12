@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc -b --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,md}\"",
     "generate-api": "openapi-ts",
     "postinstall": "node -e \"try { require('child_process').execSync('pnpm generate-api', { stdio: 'inherit' }); } catch (e) { console.warn('[postinstall] generate-api failed; run pnpm generate-api manually'); }\""
@@ -45,17 +47,22 @@
   "devDependencies": {
     "@hey-api/openapi-ts": "^0.97.1",
     "@tanstack/react-query-devtools": "^5.62.7",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
     "@typescript-eslint/eslint-plugin": "^8.18.1",
     "@typescript-eslint/parser": "^8.18.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/ui": "^4.1.6",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.17.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.16",
+    "jsdom": "^29.1.1",
     "postcss": "^8.4.49",
     "prettier": "^3.4.2",
     "prettier-plugin-tailwindcss": "^0.6.9",
@@ -63,6 +70,7 @@
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
     "vite-plugin-pwa": "^0.21.1",
+    "vitest": "^4.1.6",
     "workbox-window": "^7.3.0"
   }
 }

@@ -41,3 +41,23 @@ These keep coming back in fresh code if not actively guarded against:
 - Hardcoded Y positions on master frames drifting when other frames grow
 
 The fix patterns for each are in DESIGN.md. The audit catches the symptoms.
+
+## Testing
+
+Frontend tests run via vitest from `apps/app/`. See `TESTING.md` for the full guide.
+
+```bash
+pnpm --filter app test          # one-shot
+pnpm --filter app test:watch    # watch mode
+```
+
+Tests live next to source (`foo.ts` → `foo.test.ts`). Goals:
+
+- 100% coverage is the goal. Tests make vibe coding safe.
+- Write a test for every new function.
+- Fix a bug → write a regression test that fails before the fix and passes after.
+- Add a conditional → test both branches.
+- Add error handling → test the error path.
+- Never commit code that breaks existing tests.
+
+CI: `.github/workflows/test.yml` runs typecheck + tests on every push to main and every PR.
