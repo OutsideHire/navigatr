@@ -38,6 +38,7 @@ import {
   Filter as FilterIcon,
   Handshake,
   MapPin,
+  TrendingDown,
   TrendingUp,
   Users,
   Zap,
@@ -154,20 +155,65 @@ function PageHeading({ firstName: _firstName }: { firstName: string }) {
   );
 }
 
-// Section 3: Activities-to-Win hero KPI — the ONE gradient surface
+// Section 3: Activities-to-Win hero KPI — the ONE gradient surface.
+//
+// Bespoke layout (not KpiCard) because the hero stretches full-width on
+// desktop and a single-column flex left the right half of the gradient
+// visually empty. Two-column on md+: content left, oversized ghost-Zap
+// glyph right to anchor the gradient. Mobile keeps a single column with
+// a smaller corner glyph so the value stays the focal point.
 function ActivitiesToWinHero() {
   const k = MOCK.activitiesToWin;
+  const TrendIcon = k.trend.direction === "down" ? TrendingDown : TrendingUp;
   return (
     <div className="flex flex-col gap-2">
-      <KpiCard
-        eyebrow="ACTIVITIES TO WIN"
-        value={k.value}
-        subtitle={k.subtitle}
-        trend={k.trend}
-        icon={Zap}
-        size="hero"
-        gradient
-      />
+      <div
+        className={cn(
+          "relative overflow-hidden rounded-radius-md p-6 sm:p-8",
+          "bg-gradient-to-br from-brand-gradient-from via-brand-gradient-via to-brand-gradient-to",
+          "text-text-inverse",
+        )}
+      >
+        {/* Decorative ghost-glyph anchoring the right side of the gradient.
+            Positioned to bleed into the bottom-right corner. aria-hidden;
+            pure decoration. */}
+        <Zap
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute text-text-inverse/10",
+            // Mobile: smaller, top-right corner. Desktop: huge, centered-right.
+            "right-[-24px] top-[-16px] h-40 w-40 rotate-12",
+            "sm:right-[-32px] sm:top-1/2 sm:h-64 sm:w-64 sm:-translate-y-1/2 sm:rotate-0",
+            "lg:right-[-24px] lg:h-72 lg:w-72",
+          )}
+          strokeWidth={1.25}
+        />
+
+        <div className="relative flex flex-col gap-3 sm:max-w-[60%]">
+          {/* Eyebrow row */}
+          <div className="flex items-center gap-2">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-radius-full bg-text-inverse/15">
+              <Zap className="h-5 w-5" aria-hidden />
+            </span>
+            <span className="text-eyebrow text-text-inverse/80">ACTIVITIES TO WIN</span>
+          </div>
+
+          {/* Value */}
+          <p className="text-kpi-lg tabular-nums leading-none text-text-inverse">
+            {k.value}
+          </p>
+
+          {/* Subtitle + trend */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-1">
+            <span className="text-caption text-text-inverse/80">{k.subtitle}</span>
+            <span className="inline-flex items-center gap-1 rounded-radius-full bg-text-inverse/15 px-2 py-0.5 text-caption font-medium tabular-nums text-text-inverse">
+              <TrendIcon className="h-3 w-3" aria-hidden />
+              {k.trend.label}
+            </span>
+          </div>
+        </div>
+      </div>
+
       <div className="flex justify-end">
         <Button
           variant="tertiary"
