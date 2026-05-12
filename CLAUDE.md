@@ -6,6 +6,12 @@
 
 The active Figma file is **navigatr v1** (`fileKey: ti9rBqqWjTro9jIwLaCmVN`). Use the Figma Remote MCP namespace (`mcp__c564a1a7-db32-496f-ba98-4f0c23a1678f__use_figma`), not local Dev Mode.
 
+## Figma MCP — how to get data back from `use_figma`
+
+The `use_figma` tool's plugin runtime discards `return` and `console.log`. To surface data, end the JS payload with `throw new Error("OUT::" + JSON.stringify(result))` and parse the rejected error message: take everything after `OUT::` up to the first `\n    at ` (Figma's stack-trace prefix), then `JSON.parse`. If the message has no `OUT::` marker it's a real error — surface it.
+
+**Single source of truth: `tools/figma-mcp-helper.ts`.** Read it before any Figma-fidelity session. It carries the canonical marker, the wrap template, and a parser. Don't reinvent the pattern inline; if `use_figma` ever starts surfacing return values, retire the helper in one place.
+
 ## Mandatory: post-build audit before declaring Figma work done
 
 **Before reporting any Figma build pass as complete**, run the canonical post-build audit from DESIGN.md (the runnable JS block under "Canonical post-build audit"). It checks six bug classes file-wide:
