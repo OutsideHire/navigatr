@@ -32,6 +32,7 @@ import { FormFieldStories } from "@/components/navigatr/FormField.stories";
 import { CardStories } from "@/components/navigatr/Card.stories";
 import { AtomsStories } from "@/components/navigatr/Atoms.stories";
 import { LayoutStories } from "@/components/navigatr/Layout.stories";
+import { DashboardEmptyStories } from "@/features/dashboard/pages/DashboardEmptyStories";
 
 /**
  * Wires the axios client's 401 handler to React Router's navigate so we
@@ -97,6 +98,7 @@ export function App() {
         <Route path="/component-preview/cards" element={<CardStories />} />
         <Route path="/component-preview/atoms" element={<AtomsStories />} />
         <Route path="/component-preview/layout" element={<LayoutStories />} />
+        <Route path="/component-preview/dashboard-empty" element={<DashboardEmptyStories />} />
 
         {/* ===== Protected screens (each wrapped in AppLayout) ===== */}
         <Route

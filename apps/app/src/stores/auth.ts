@@ -32,6 +32,7 @@ interface AuthState {
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
   setProfession: (profession: Profession) => Promise<void>;
+  dismissOnboarding: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -143,6 +144,20 @@ export const useAuth = create<AuthState>((set) => ({
     }
   },
 
+  dismissOnboarding: async () => {
+    set({ error: null });
+    const { data, error } = await supabase.auth.updateUser({
+      data: { onboarding_dismissed_at: new Date().toISOString() },
+    });
+    if (error) {
+      set({ error: error.message });
+      throw error;
+    }
+    if (data.user) {
+      set((s) => ({ user: data.user, session: s.session }));
+    }
+  },
+
   clearError: () => set({ error: null }),
 }));
 
@@ -199,6 +214,62 @@ export function getProfession(user: User | null): Profession | null {
     return raw;
   }
   return null;
+}
+
+/** Read the user's display name — falls back to email when fullName is missing. */
+export function getFullName(user: User | null): string {
+  const meta = user?.user_metadata as { full_name?: string } | undefined;
+  return meta?.full_name?.trim() || user?.email || "there";
+}
+
+/** Read the user's first name (best-effort). Used in welcome copy. */
+export function getFirstName(user: User | null): string {
+  const full = getFullName(user);
+  // Split on whitespace; first token. If the user only has an email, this
+  // returns the local part of "name@example.com" — close enough.
+  if (full.includes("@")) return full.split("@")[0] ?? full;
+  return full.split(/\s+/)[0] ?? full;
+}
+
+/**
+ * Role union for the kickoff brief's RBAC scaffold. Not yet populated on
+ * signup — defaults to undefined. Once role is wired (Session 4+ when
+ * backend ships /api/me) the `getRole` helper returns the real value.
+ */
+export type Role =
+  | "admin"
+  | "cso"
+  | "svp"
+  | "vp"
+  | "director"
+  | "territory_manager"
+  | "sales_professional";
+
+const ROLE_VALUES: ReadonlyArray<Role> = [
+  "admin", "cso", "svp", "vp", "director", "territory_manager", "sales_professional",
+];
+
+export function getRole(user: User | null): Role | null {
+  const raw = user?.user_metadata?.role;
+  if (typeof raw === "string" && (ROLE_VALUES as ReadonlyArray<string>).includes(raw)) {
+    return raw as Role;
+  }
+  return null;
+}
+
+/** True when the user has a role above sales_professional (i.e. can invite). */
+export function canInviteTeam(user: User | null): boolean {
+  const role = getRole(user);
+  // No role set yet = self-signup user = owner of their tenant = admin.
+  // Once role is wired server-side this default goes away.
+  if (role === null) return true;
+  return role !== "sales_professional";
+}
+
+/** True once the user has dismissed the empty-state onboarding. */
+export function hasDismissedOnboarding(user: User | null): boolean {
+  const raw = user?.user_metadata?.onboarding_dismissed_at;
+  return typeof raw === "string" && raw.length > 0;
 }
 
 /** Get the current access token (for ad-hoc API calls). */
