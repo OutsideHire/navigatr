@@ -1,39 +1,58 @@
 /**
- * Dashboard — first-time-user empty state.
+ * Dashboard — Rep View (populated state) + first-time-user empty state.
  *
- * Source: Figma `06a · First dashboard (mobile)` 148:358 and
- * `06b · First dashboard (desktop)` 148:464 (the playbook's quoted ID
- * 234:600 was just a "View all →" text snippet — these are the real
- * artboards).
+ * Source for populated state:
+ *   - Figma `mobile · Merchant Services`  234:525 (360 × 3164)
+ *   - Figma `desktop · Merchant Services` 238:4   (1280 × 1910)
  *
- * Specs (mobile):
- *   - Content: 360 × 660 · VERTICAL · gap 24 · padding 16/16/16/16
- *   - Heading: heading/lg "Welcome, {firstName}" + body/md text/muted
- *              "Let's get you set up. Four steps to get the most out of navigatr."
- *   - Cards: 4 cards, VERTICAL stack, gap 12.
- *     Each: 328 × 92 · HORIZONTAL · gap 16 · padding 16 · surface/default
- *     fill · radius 10 · icon container 48 × 48 radius/md with
- *     accent/{teal,violet,orange,blue}-20 fill · ChevronRight trailing.
+ * Source for empty state (Session 11):
+ *   - Figma `06a · First dashboard (mobile)` 148:358
+ *   - Figma `06b · First dashboard (desktop)` 148:464
  *
- * Specs (desktop):
- *   - Same content, 2 × 2 card grid (gap 16) inside a max-width container.
+ * Branching:
+ *   - Sprint 1: hardcoded to render the populated state from mockData.ts
+ *     UNLESS the user has explicitly tapped "Skip the setup" yet has no
+ *     real data (no API yet). The empty state from Session 11 is rendered
+ *     when `hasDismissedOnboarding(user) === false`, matching the
+ *     first-time-user flow.
+ *   - Sprint 2 TODO: wire TanStack Query hooks that count deals /
+ *     partners / activities; render empty when all === 0 AND not
+ *     dismissed; populated otherwise.
  *
- * Data strategy: Option B from the playbook. Always render the empty state
- * for now. When the backend ships (Session 12+), check `/api/me` +
- * `/api/deals?limit=0` + `/api/activities?limit=0` + `/api/partners?limit=0`
- * — if any count > 0 or `hasDismissedOnboarding(user) === true`, render the
- * real Rep Dashboard instead.
- *
- * Role gating: "Invite your team" only appears for admin/cso/svp/vp/director/
- * territory_manager. Sales Professional doesn't see it. Self-signup users
- * with no role set default to admin (they own their tenant).
+ * Gradient discipline (DESIGN.md):
+ *   The Activities-to-Win hero KpiCard is the ONLY gradient surface in
+ *   the entire app. Every other KpiCard on this page uses
+ *   accent-colored icon containers, no gradient.
  */
 
-import { ChevronRight, Compass, CheckCircle2, Handshake, Users } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowRight,
+  Briefcase,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  Clock4,
+  Compass,
+  DollarSign,
+  Filter as FilterIcon,
+  Handshake,
+  MapPin,
+  TrendingUp,
+  Users,
+  Zap,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Button, Card } from "@/components/navigatr";
+import {
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  KpiCard,
+  ListRow,
+} from "@/components/navigatr";
 import {
   canInviteTeam,
   getFirstName,
@@ -41,200 +60,487 @@ import {
   useAuth,
 } from "@/stores/auth";
 import { cn } from "@/lib/utils";
+import { MOCK, formatMoney } from "../mockData";
+
+// ───────────────────────────────────────────────────────────────────────
+// Empty state — copied from Session 11. Lives here so the page picks
+// either populated or empty in one component.
+// ───────────────────────────────────────────────────────────────────────
 
 interface SetupCard {
   key: string;
   title: string;
   description: string;
   icon: LucideIcon;
-  /** Tailwind classes for the icon container (alpha-baked accent bg + fg). */
   accent: { bg: string; fg: string };
-  /** Route to navigate on click. */
   to: string;
-  /** Only render for users with `canInviteTeam(user) === true`. */
   requiresInvitePermission?: boolean;
 }
 
 const SETUP_CARDS: SetupCard[] = [
-  {
-    key: "partner",
-    title: "Add your first partner",
-    description: "A CPA, banker, or referral source you trust.",
-    icon: Handshake,
-    accent: { bg: "bg-accent-teal-20", fg: "text-accent-teal" },
-    to: "/partners?action=add",
-  },
-  {
-    key: "path",
-    title: "Run your first Path",
-    description: "Discover prospects in your area.",
-    icon: Compass,
-    accent: { bg: "bg-accent-violet-20", fg: "text-accent-violet" },
-    to: "/path",
-  },
-  {
-    key: "activity",
-    title: "Log your first activity",
-    description: "Email, call, drop-in, or appointment.",
-    icon: CheckCircle2,
-    accent: { bg: "bg-accent-orange-20", fg: "text-accent-orange" },
-    to: "/activities?action=log",
-  },
-  {
-    key: "team",
-    title: "Invite your team",
-    description: "Bring your reps and managers on board.",
-    icon: Users,
-    accent: { bg: "bg-accent-blue-20", fg: "text-accent-blue" },
-    to: "/settings/users",
-    requiresInvitePermission: true,
-  },
+  { key: "partner",  title: "Add your first partner",   description: "A CPA, banker, or referral source you trust.",     icon: Handshake,     accent: { bg: "bg-accent-teal-20",   fg: "text-accent-teal"   }, to: "/partners?action=add" },
+  { key: "path",     title: "Run your first Path",      description: "Discover prospects in your area.",                  icon: Compass,       accent: { bg: "bg-accent-violet-20", fg: "text-accent-violet" }, to: "/path" },
+  { key: "activity", title: "Log your first activity",  description: "Email, call, drop-in, or appointment.",             icon: CheckCircle2,  accent: { bg: "bg-accent-orange-20", fg: "text-accent-orange" }, to: "/activities?action=log" },
+  { key: "team",     title: "Invite your team",         description: "Bring your reps and managers on board.",            icon: Users,         accent: { bg: "bg-accent-blue-20",   fg: "text-accent-blue"   }, to: "/settings/users", requiresInvitePermission: true },
 ];
 
-export function DashboardPage() {
+function EmptyDashboard({ firstName, onSkip }: { firstName: string; onSkip: () => void }) {
   const user = useAuth((s) => s.user);
-  const dismissOnboarding = useAuth((s) => s.dismissOnboarding);
-  const navigate = useNavigate();
-
-  const firstName = getFirstName(user);
   const showInvite = canInviteTeam(user);
   const cards = SETUP_CARDS.filter((c) => !c.requiresInvitePermission || showInvite);
-
-  // ──────────────────────────────────────────────────────────────────────
-  // Real Rep Dashboard lands in Session 12. Once the API endpoints exist,
-  // this page should branch: if the user has data OR has dismissed the
-  // onboarding, render the data-rich dashboard. For now, ALWAYS show
-  // the empty state — except we still respect the dismiss flag so once a
-  // user dismisses, they don't see this screen again (instead they see a
-  // small placeholder until Session 12).
-  // ──────────────────────────────────────────────────────────────────────
-
-  if (hasDismissedOnboarding(user)) {
-    return <DismissedPlaceholder firstName={firstName} />;
-  }
-
-  const handleSkip = async () => {
-    try {
-      await dismissOnboarding();
-      toast.success("Setup skipped. You can run these steps later from Settings.");
-      // Same route — the dismissed-state placeholder will render instead.
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't save preference");
-    }
-  };
-
+  const navigate = useNavigate();
   return (
-    // Outer container — Figma mobile uses 16 px page padding, desktop is wider.
-    // We use the standard content-area pattern: max-width container + responsive
-    // padding. AppLayout's main already handles the chrome.
     <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-      {/* Heading */}
       <header className="flex flex-col gap-2">
-        <h1 className="text-heading-lg text-text-default">
-          Welcome, {firstName}
-        </h1>
+        <h1 className="text-heading-lg text-text-default">Welcome, {firstName}</h1>
         <p className="text-body-md text-text-muted">
-          Let&apos;s get you set up. {cards.length} {cards.length === 1 ? "step" : "steps"} to get
-          the most out of navigatr.
+          Let&apos;s get you set up. {cards.length} {cards.length === 1 ? "step" : "steps"} to get the
+          most out of navigatr.
         </p>
       </header>
-
-      {/* Cards — VERTICAL on mobile, 2-col grid on md+ */}
-      <div
-        className={cn(
-          "mt-6 grid gap-3",
-          "grid-cols-1",
-          // 2 cols at md+ when we have at least 2 cards
-          cards.length >= 2 && "md:grid-cols-2 md:gap-4",
-        )}
-      >
+      <div className={cn("mt-6 grid gap-3 grid-cols-1", cards.length >= 2 && "md:grid-cols-2 md:gap-4")}>
         {cards.map((card) => (
-          <SetupCardItem key={card.key} card={card} onNavigate={(to) => navigate(to)} />
+          <Card key={card.key} padding="md" shadow="sm" onClick={() => navigate(card.to)}>
+            <div className="flex items-center gap-4">
+              <span className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-radius-md", card.accent.bg, card.accent.fg)} aria-hidden>
+                <card.icon className="h-6 w-6" />
+              </span>
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="text-body-strong text-text-default">{card.title}</span>
+                <span className="text-caption text-text-muted">{card.description}</span>
+              </div>
+              <ChevronRight className="h-5 w-5 shrink-0 text-text-subtle" aria-hidden />
+            </div>
+          </Card>
         ))}
       </div>
-
-      {/* Skip secondary action */}
       <div className="mt-6 flex justify-center">
+        <Button variant="tertiary" size="md" onClick={onSkip}>Skip the setup and explore</Button>
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Populated dashboard sections
+// ───────────────────────────────────────────────────────────────────────
+
+function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
+  return (
+    <div className="mb-4 flex items-center justify-between gap-3">
+      <h2 className="text-heading-sm text-text-default">{title}</h2>
+      {action}
+    </div>
+  );
+}
+
+// Section 2: Page heading
+function PageHeading({ firstName }: { firstName: string }) {
+  return (
+    <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-1">
+        <p className="text-eyebrow text-text-subtle">Dashboard · welcome, {firstName}</p>
+        <h1 className="text-heading-lg text-text-default">Dashboard</h1>
+        <p className="text-body-md text-text-muted">
+          Card processing pipeline · {MOCK.date.display}
+        </p>
+      </div>
+      <div className="hidden gap-2 sm:flex">
+        <Button variant="tertiary" size="sm" leadingIcon={Clock4}>Last 30 days</Button>
+        <Button variant="tertiary" size="sm" leadingIcon={FilterIcon}>Filter</Button>
+      </div>
+    </header>
+  );
+}
+
+// Section 3: Activities-to-Win hero KPI — the ONE gradient surface
+function ActivitiesToWinHero() {
+  const k = MOCK.activitiesToWin;
+  return (
+    <div className="flex flex-col gap-2">
+      <KpiCard
+        eyebrow="ACTIVITIES TO WIN"
+        value={k.value}
+        subtitle={k.subtitle}
+        trend={k.trend}
+        icon={Zap}
+        size="hero"
+        gradient
+      />
+      <div className="flex justify-end">
         <Button
           variant="tertiary"
-          size="md"
-          onClick={handleSkip}
+          size="sm"
+          trailingIcon={ArrowRight}
+          onClick={() => toast("Persistence index lands in a later session")}
         >
-          Skip the setup and explore
+          View persistence index
         </Button>
       </div>
     </div>
   );
 }
 
-// ─── Single setup card ──────────────────────────────────────────────────
+// Section 4: Secondary KPI row (4 cards)
+const KPI_ICONS: Record<string, LucideIcon> = {
+  leads: Users,
+  pipeline: DollarSign,
+  win: TrendingUp,
+  close: Clock,
+};
 
-function SetupCardItem({
-  card,
-  onNavigate,
-}: {
-  card: SetupCard;
-  onNavigate: (to: string) => void;
-}) {
-  const Icon = card.icon;
+function SecondaryKpiRow() {
   return (
-    <Card
-      // padding=none because the card is composed in-flow (HORIZONTAL layout
-      // with internal padding via flex container below) — matches Figma's
-      // 92 × 328 dim with 16 px internal padding.
-      padding="md"
-      shadow="sm"
-      onClick={() => onNavigate(card.to)}
-      // Keep the focus ring + interactive cursor from Card's `interactive`
-      // variant — onClick triggers it automatically.
+    <div
+      // Mobile: horizontal scroll with snap. Desktop: 4-col grid.
+      className={cn(
+        "flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory",
+        "md:grid md:grid-cols-4 md:gap-4 md:overflow-x-visible md:snap-none md:pb-0",
+        "[&::-webkit-scrollbar]:hidden",
+        "[-ms-overflow-style:none] [scrollbar-width:none]",
+      )}
     >
-      <div className="flex items-center gap-4">
-        <span
-          className={cn(
-            "flex h-12 w-12 shrink-0 items-center justify-center rounded-radius-md",
-            card.accent.bg,
-            card.accent.fg,
-          )}
-          aria-hidden
-        >
-          <Icon className="h-6 w-6" />
-        </span>
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-body-strong text-text-default">{card.title}</span>
-          <span className="text-caption text-text-muted">{card.description}</span>
+      {MOCK.kpis.map((kpi) => (
+        <div key={kpi.key} className="min-w-[220px] shrink-0 snap-start md:min-w-0">
+          <KpiCard
+            eyebrow={kpi.eyebrow}
+            value={kpi.value}
+            subtitle={kpi.subtitle}
+            trend={kpi.trend}
+            icon={KPI_ICONS[kpi.key] ?? Briefcase}
+            accent={kpi.accent}
+            size="standard"
+          />
         </div>
-        <ChevronRight className="h-5 w-5 shrink-0 text-text-subtle" aria-hidden />
+      ))}
+    </div>
+  );
+}
+
+// Section 5: Pipeline by Stage
+function PipelineByStage() {
+  return (
+    <Card padding="lg" shadow="sm">
+      <SectionHeader
+        title="Pipeline by stage"
+        action={
+          <Button variant="tertiary" size="sm" trailingIcon={ArrowRight} onClick={() => toast("Pipeline lands in Session 13")}>
+            View all
+          </Button>
+        }
+      />
+      <div className="flex flex-col gap-3">
+        {MOCK.pipelineByStage.map((stage) => (
+          <div key={stage.label} className="flex items-center gap-3">
+            <Badge kind={stage.stage} className="min-w-[80px] justify-center">{stage.label}</Badge>
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-caption text-text-muted">
+                  {stage.count} {stage.count === 1 ? "deal" : "deals"} · <span className="tabular-nums text-text-default">{formatMoney(stage.valueCents)}</span>
+                </span>
+                <span className="text-caption tabular-nums text-text-subtle">{stage.percentOfPipeline}%</span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-radius-full bg-surface-sunken">
+                <div
+                  className="h-full rounded-radius-full bg-brand-primary"
+                  style={{ width: `${stage.percentOfPipeline}%` }}
+                  aria-hidden
+                />
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </Card>
   );
 }
 
-// ─── Post-dismiss placeholder ───────────────────────────────────────────
-
-function DismissedPlaceholder({ firstName }: { firstName: string }) {
+// Section 6: Today's Snapshot
+const SNAPSHOT_ICONS = {
+  alert: AlertCircle,
+  map: MapPin,
+  clock: Clock,
+};
+const SNAPSHOT_ACCENTS: Record<string, { bg: string; fg: string }> = {
+  warning: { bg: "bg-status-warning-bg", fg: "text-status-warning" },
+  violet:  { bg: "bg-accent-violet-20",  fg: "text-accent-violet"  },
+  danger:  { bg: "bg-status-danger-bg",  fg: "text-status-danger"  },
+};
+function TodaysSnapshot() {
+  const navigate = useNavigate();
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-      <header className="flex flex-col gap-2">
-        <p className="text-eyebrow text-text-subtle">Dashboard</p>
-        <h1 className="text-heading-lg text-text-default">
-          Welcome back, {firstName}
-        </h1>
-        <p className="text-body-md text-text-muted">
-          The Rep / Manager / Executive dashboards land in Session 12. Today's Tasks, KPI row,
-          recent activity, and alerts will all render here.
-        </p>
-      </header>
+    <Card padding="none" shadow="sm">
+      <div className="px-6 pt-5">
+        <h2 className="text-heading-sm text-text-default">Today&apos;s snapshot</h2>
+      </div>
+      <div className="mt-2 flex flex-col">
+        {MOCK.todaysSnapshot.map((row, i) => {
+          const Icon = SNAPSHOT_ICONS[row.iconKind];
+          const accent = SNAPSHOT_ACCENTS[row.iconAccent]!;
+          return (
+            <ListRow
+              key={row.key}
+              divider={i < MOCK.todaysSnapshot.length - 1}
+              onClick={() => navigate(row.to)}
+              leading={
+                <span className={cn("flex h-9 w-9 items-center justify-center rounded-radius-md", accent.bg, accent.fg)}>
+                  <Icon className="h-4 w-4" />
+                </span>
+              }
+              title={row.title}
+              subtitle={row.subtitle}
+              trailing={<ChevronRight className="h-5 w-5 text-text-subtle" />}
+            />
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
 
-      <Card padding="xl" shadow="sm" className="mt-6">
-        <p className="text-eyebrow text-text-subtle">Coming in Session 12</p>
-        <h2 className="mt-1 text-heading-md text-text-default">Rep Dashboard.</h2>
-        <p className="mt-3 max-w-2xl text-body-md text-text-muted">
-          Activities-to-Win marquee, pipeline + win rate + weighted forecast KPIs, Today&apos;s
-          Tasks, recent activity, and partner-sourced alerts.
-        </p>
-      </Card>
+// Section 7: Monthly Performance — simple bar chart in pure CSS
+function MonthlyPerformance() {
+  const maxValue = Math.max(...MOCK.monthlyPerformance.map((m) => m.valueCents));
+  return (
+    <Card padding="lg" shadow="sm">
+      <SectionHeader
+        title="Monthly performance"
+        action={
+          <Button variant="tertiary" size="sm" leadingIcon={Clock4}>Last 4 months</Button>
+        }
+      />
+      <div className="flex h-40 items-end gap-4">
+        {MOCK.monthlyPerformance.map((m) => {
+          const heightPct = (m.valueCents / maxValue) * 100;
+          return (
+            <div key={m.month} className="flex flex-1 flex-col items-center gap-2">
+              <div className="flex h-full w-full items-end">
+                <div
+                  className="w-full rounded-radius-sm bg-brand-primary transition-all"
+                  style={{ height: `${heightPct}%` }}
+                  aria-label={`${m.month}: ${m.deals} deals · ${formatMoney(m.valueCents)}`}
+                />
+              </div>
+              <div className="flex flex-col items-center">
+                <span className="text-caption text-text-muted">{m.month}</span>
+                <span className="text-caption font-medium tabular-nums text-text-default">
+                  {m.deals} {m.deals === 1 ? "deal" : "deals"}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+// Section 8: Persistence index (3 mini-stats)
+function PersistenceIndex() {
+  return (
+    <Card padding="lg" shadow="sm">
+      <SectionHeader title="Persistence index" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {MOCK.persistenceIndex.map((stat) => (
+          <div key={stat.eyebrow} className="flex flex-col gap-1 rounded-radius-md bg-surface-sunken p-4">
+            <span className="text-eyebrow text-text-subtle">{stat.eyebrow}</span>
+            <span className="text-kpi-md tabular-nums text-text-default">{stat.value}</span>
+            <span className="text-caption text-text-muted">{stat.caption}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+// Section 9: Top Partners leaderboard
+function TopPartners() {
+  return (
+    <Card padding="none" shadow="sm">
+      <div className="flex items-center justify-between gap-3 px-6 pt-5">
+        <h2 className="text-heading-sm text-text-default">Top partners this quarter</h2>
+        <Button variant="tertiary" size="sm" trailingIcon={ArrowRight} onClick={() => toast("Partners lands in Session 14")}>
+          View all
+        </Button>
+      </div>
+      <div className="mt-2 flex flex-col">
+        {MOCK.topPartners.map((p, i) => (
+          <ListRow
+            key={p.name}
+            divider={i < MOCK.topPartners.length - 1}
+            leading={
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-radius-full bg-surface-sunken text-caption font-semibold text-text-default">
+                  {p.rank}
+                </span>
+                <Avatar alt={p.name} size="sm" />
+              </div>
+            }
+            title={p.name}
+            subtitle={`${p.referrals} referrals · ${formatMoney(p.revenueCents)}`}
+            trailing={
+              <span className="text-body-strong tabular-nums text-text-default">
+                {formatMoney(p.revenueCents)}
+              </span>
+            }
+          />
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+// Section 10: Lead Sources (single horizontal stacked bar + legend)
+function LeadSources() {
+  const segmentColors: Record<string, string> = {
+    teal:   "bg-accent-teal",
+    violet: "bg-accent-violet",
+    blue:   "bg-accent-blue",
+    orange: "bg-accent-orange",
+  };
+  const dotColors: Record<string, string> = {
+    teal:   "bg-accent-teal",
+    violet: "bg-accent-violet",
+    blue:   "bg-accent-blue",
+    orange: "bg-accent-orange",
+  };
+  return (
+    <Card padding="lg" shadow="sm">
+      <SectionHeader title="Lead sources this quarter" />
+      {/* Stacked bar */}
+      <div className="flex h-3 w-full overflow-hidden rounded-radius-full bg-surface-sunken">
+        {MOCK.leadSources.map((seg) => (
+          <div
+            key={seg.label}
+            className={cn("h-full", segmentColors[seg.accent])}
+            style={{ width: `${seg.percent}%` }}
+            aria-label={`${seg.label}: ${seg.percent}%`}
+          />
+        ))}
+      </div>
+      {/* Legend */}
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        {MOCK.leadSources.map((seg) => (
+          <div key={seg.label} className="flex items-center gap-2">
+            <span className={cn("h-2.5 w-2.5 shrink-0 rounded-radius-full", dotColors[seg.accent])} aria-hidden />
+            <span className="text-body-sm text-text-default">{seg.label}</span>
+            <span className="ml-auto text-body-sm tabular-nums text-text-muted">{seg.percent}%</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+// Section 11: Conversion Funnel
+function ConversionFunnel() {
+  return (
+    <Card padding="lg" shadow="sm">
+      <SectionHeader title="Conversion funnel" />
+      <div className="flex flex-col gap-4">
+        {MOCK.conversionFunnel.map((step) => (
+          <div key={`${step.from}-${step.to}`} className="flex flex-col gap-1.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-body-md text-text-default">
+                {step.from} <ArrowRight className="inline h-3 w-3 text-text-subtle" aria-hidden /> {step.to}
+              </span>
+              <span className="text-body-strong tabular-nums text-text-default">
+                {step.rate}%
+                <span className="ml-2 text-caption font-normal text-text-muted">
+                  ({step.fromCount} → {step.toCount})
+                </span>
+              </span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-radius-full bg-surface-sunken">
+              <div
+                className={cn(
+                  "h-full rounded-radius-full",
+                  step.rate >= 70 ? "bg-status-success" : step.rate >= 50 ? "bg-accent-teal" : "bg-status-warning",
+                )}
+                style={{ width: `${step.rate}%` }}
+                aria-hidden
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Populated Dashboard composer
+// ───────────────────────────────────────────────────────────────────────
+
+function PopulatedDashboard({ firstName: _firstName }: { firstName: string }) {
+  return (
+    // Mobile: vertical stack, gap 12 (matches Figma 234:541 gap 16 ≈ space-3/4).
+    // Desktop: heading + hero + KPI row are full-width, sections 5-11 fall
+    // into a 2-column grid with the Conversion Funnel spanning both cols.
+    <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+      <PageHeading firstName={_firstName} />
+
+      <div className="mt-6 flex flex-col gap-4 lg:gap-6">
+        {/* Hero */}
+        <ActivitiesToWinHero />
+
+        {/* Secondary KPI row */}
+        <SecondaryKpiRow />
+
+        {/* 2-col grid for sections 5-11 */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
+          <PipelineByStage />
+          <TodaysSnapshot />
+          <MonthlyPerformance />
+          <PersistenceIndex />
+          <TopPartners />
+          <LeadSources />
+          {/* Conversion funnel spans both columns on desktop */}
+          <div className="lg:col-span-2">
+            <ConversionFunnel />
+          </div>
+        </div>
+      </div>
     </div>
   );
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Top-level page — picks empty vs populated
+// ───────────────────────────────────────────────────────────────────────
+
+export function DashboardPage() {
+  const user = useAuth((s) => s.user);
+  const dismissOnboarding = useAuth((s) => s.dismissOnboarding);
+  const firstName = getFirstName(user);
+
+  // Branching:
+  //   - Empty state: render Session-11 setup-cards screen until user
+  //     dismisses onboarding.
+  //   - Populated state: this page from mockData.ts.
+  //
+  // Sprint 2 TODO: replace `hasDismissedOnboarding` gate with a real
+  // count check via TanStack Query — if user has 0 deals + 0 partners +
+  // 0 activities AND not dismissed → empty, else populated.
+  const dismissed = hasDismissedOnboarding(user);
+
+  if (!dismissed) {
+    return (
+      <EmptyDashboard
+        firstName={firstName}
+        onSkip={async () => {
+          try {
+            await dismissOnboarding();
+            toast.success("Welcome to the dashboard.");
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Couldn't save preference");
+          }
+        }}
+      />
+    );
+  }
+
+  return <PopulatedDashboard firstName={firstName} />;
 }
 
 export default DashboardPage;
