@@ -10,17 +10,28 @@ import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { setUnauthorizedHandler } from "@/api";
 import { useAuth, getProfession } from "@/stores/auth";
 
+// Auth screens (no AppLayout)
 import { LoginPage } from "@/features/auth/pages/LoginPage";
 import { SignUpPage } from "@/features/auth/pages/SignUpPage";
 import { ForgotPasswordPage } from "@/features/auth/pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/features/auth/pages/ResetPasswordPage";
 import { InvitationAcceptancePage } from "@/features/auth/pages/InvitationAcceptancePage";
 import { ProfessionSelectorPage } from "@/features/auth/pages/ProfessionSelectorPage";
+
+// Protected screens (each wrapped in AppLayout by ProtectedRoute)
 import { DashboardPage } from "@/features/dashboard/pages/DashboardPage";
+import { PipelinePage } from "@/features/pipeline/pages/PipelinePage";
+import { ActivitiesPage } from "@/features/activities/pages/ActivitiesPage";
+import { PartnersPage } from "@/features/partners/pages/PartnersPage";
+import { PathPage } from "@/features/path/pages/PathPage";
+import { SettingsPage } from "@/features/settings/pages/SettingsPage";
+
+// Component preview catalogs (dev / design review)
 import { ButtonStories } from "@/components/navigatr/Button.stories";
 import { FormFieldStories } from "@/components/navigatr/FormField.stories";
 import { CardStories } from "@/components/navigatr/Card.stories";
 import { AtomsStories } from "@/components/navigatr/Atoms.stories";
+import { LayoutStories } from "@/components/navigatr/Layout.stories";
 
 /**
  * Wires the axios client's 401 handler to React Router's navigate so we
@@ -56,7 +67,7 @@ export function App() {
     <BrowserRouter>
       <AuthRouterBridge />
       <Routes>
-        {/* Public — sign in / sign up / recover */}
+        {/* ===== Public — sign in / sign up / recover ===== */}
         <Route
           path="/login"
           element={
@@ -77,22 +88,62 @@ export function App() {
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/accept-invitation" element={<InvitationAcceptancePage />} />
 
-        {/* Visual catalog for design-system components — always routed so
-            prod previews work too. ButtonStories is small enough to ship. */}
+        {/* ===== Authenticated but profession not yet set ===== */}
+        <Route path="/select-profession" element={<ProfessionSelectorPage />} />
+
+        {/* ===== Component preview (dev) — no auth, no AppLayout ===== */}
         <Route path="/component-preview/button" element={<ButtonStories />} />
         <Route path="/component-preview/form-fields" element={<FormFieldStories />} />
         <Route path="/component-preview/cards" element={<CardStories />} />
         <Route path="/component-preview/atoms" element={<AtomsStories />} />
+        <Route path="/component-preview/layout" element={<LayoutStories />} />
 
-        {/* Authenticated, but profession not yet set */}
-        <Route path="/select-profession" element={<ProfessionSelectorPage />} />
-
-        {/* Protected */}
+        {/* ===== Protected screens (each wrapped in AppLayout) ===== */}
         <Route
           path="/dashboard"
           element={
             <ProtectedRoute>
               <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/pipeline"
+          element={
+            <ProtectedRoute>
+              <PipelinePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/activities"
+          element={
+            <ProtectedRoute>
+              <ActivitiesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/partners"
+          element={
+            <ProtectedRoute>
+              <PartnersPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/path"
+          element={
+            <ProtectedRoute>
+              <PathPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <SettingsPage />
             </ProtectedRoute>
           }
         />
