@@ -134,12 +134,13 @@ function SectionHeader({ title, action }: { title: string; action?: React.ReactN
   );
 }
 
-// Section 2: Page heading
-function PageHeading({ firstName }: { firstName: string }) {
+// Section 2: Page heading — matches Figma 234:541 / 238:23: heading-lg
+// "Dashboard" + body-md "Card processing pipeline · Wed Apr 30" + (desktop)
+// Last-30-days / Filter tertiary buttons right-aligned.
+function PageHeading({ firstName: _firstName }: { firstName: string }) {
   return (
     <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div className="flex flex-col gap-1">
-        <p className="text-eyebrow text-text-subtle">Dashboard · welcome, {firstName}</p>
         <h1 className="text-heading-lg text-text-default">Dashboard</h1>
         <p className="text-body-md text-text-muted">
           Card processing pipeline · {MOCK.date.display}
@@ -309,14 +310,20 @@ function MonthlyPerformance() {
           <Button variant="tertiary" size="sm" leadingIcon={Clock4}>Last 4 months</Button>
         }
       />
-      <div className="flex h-40 items-end gap-4">
+      {/* Bar chart: outer is a flex row of 4 columns. Each column is its own
+          flex-col stretched to full height — `items-stretch` on the outer
+          (default) lets each column own its height. The bar div takes a
+          percentage of its parent's height; without this stretch the
+          percentages resolved to 0 and bars went invisible. */}
+      <div className="flex h-44 items-stretch gap-4">
         {MOCK.monthlyPerformance.map((m) => {
           const heightPct = (m.valueCents / maxValue) * 100;
           return (
             <div key={m.month} className="flex flex-1 flex-col items-center gap-2">
-              <div className="flex h-full w-full items-end">
+              {/* Bar wrapper — fills column height; bar grows from the bottom. */}
+              <div className="relative w-full flex-1">
                 <div
-                  className="w-full rounded-radius-sm bg-brand-primary transition-all"
+                  className="absolute inset-x-0 bottom-0 rounded-t-radius-sm bg-brand-primary transition-all"
                   style={{ height: `${heightPct}%` }}
                   aria-label={`${m.month}: ${m.deals} deals · ${formatMoney(m.valueCents)}`}
                 />

@@ -222,12 +222,23 @@ export function getFullName(user: User | null): string {
   return meta?.full_name?.trim() || user?.email || "there";
 }
 
-/** Read the user's first name (best-effort). Used in welcome copy. */
+/** Read the user's first name (best-effort). Used in welcome copy.
+ *
+ *   Jane Doe              → "Jane"
+ *   jane@navigatr.app     → "Jane"      (capitalize the local part)
+ *   jane+work@gmail.com   → "Jane"      (strip + subaddressing tag)
+ *   test+1778591756@…     → "Test"      (strip + tag; ignore numeric tail)
+ *   (no name, no email)   → "there"     (from getFullName fallback)
+ */
 export function getFirstName(user: User | null): string {
   const full = getFullName(user);
-  // Split on whitespace; first token. If the user only has an email, this
-  // returns the local part of "name@example.com" — close enough.
-  if (full.includes("@")) return full.split("@")[0] ?? full;
+  if (full.includes("@")) {
+    // Email fallback: take local part, strip subaddressing tag, capitalize.
+    const local = full.split("@")[0] ?? full;
+    const cleaned = local.split("+")[0] ?? local;
+    if (!cleaned) return full;
+    return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  }
   return full.split(/\s+/)[0] ?? full;
 }
 
