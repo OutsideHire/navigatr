@@ -108,6 +108,13 @@ export default {
         // Tailwind ships 1 and 2 by default; add 1.5 so we can bind directly.
         "1.5": "1.5px",
       },
+      boxShadow: {
+        // Figma Card (49:11) shadow specs — slightly softer/larger than
+        // Tailwind's shadow-sm / shadow-md defaults. Named so Card and
+        // anything else that needs the same elevation can `shadow-card`.
+        card: "0 1px 2px 0 rgba(15, 18, 23, 0.06)",
+        "card-hover": "0 4px 12px 0 rgba(15, 18, 23, 0.08)",
+      },
       borderRadius: {
         // Token-name utilities (explicit per playbook): rounded-radius-md, etc.
         "radius-sm": radius.sm,
