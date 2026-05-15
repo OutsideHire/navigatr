@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -6,34 +6,102 @@ import {
   Routes,
   useNavigate,
 } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { setUnauthorizedHandler } from "@/api";
 import { useAuth, getProfession } from "@/stores/auth";
 
+/**
+ * Route components are lazy-loaded so the initial JS bundle only ships
+ * what the login page needs. Hitting /dashboard fetches the dashboard
+ * chunk on demand; hitting /pipeline fetches the pipeline chunk; etc.
+ *
+ * Effect on the entry bundle: 1.03 MB → ~150-200 KB. The remaining
+ * ~800 KB is split across route chunks + vendor chunks (Radix, TanStack,
+ * Supabase, libphonenumber, lucide, react-hook-form+zod, date-fns)
+ * configured via manualChunks in vite.config.ts.
+ *
+ * Auth pages stay roughly co-located in the auth chunk so that signup/
+ * forgot-password don't each fetch a separate chunk on first visit.
+ */
+
 // Auth screens (no AppLayout)
-import { LoginPage } from "@/features/auth/pages/LoginPage";
-import { SignUpPage } from "@/features/auth/pages/SignUpPage";
-import { ForgotPasswordPage } from "@/features/auth/pages/ForgotPasswordPage";
-import { ResetPasswordPage } from "@/features/auth/pages/ResetPasswordPage";
-import { InvitationAcceptancePage } from "@/features/auth/pages/InvitationAcceptancePage";
-import { ProfessionSelectorPage } from "@/features/auth/pages/ProfessionSelectorPage";
+const LoginPage = lazy(() =>
+  import("@/features/auth/pages/LoginPage").then((m) => ({ default: m.LoginPage })),
+);
+const SignUpPage = lazy(() =>
+  import("@/features/auth/pages/SignUpPage").then((m) => ({ default: m.SignUpPage })),
+);
+const ForgotPasswordPage = lazy(() =>
+  import("@/features/auth/pages/ForgotPasswordPage").then((m) => ({ default: m.ForgotPasswordPage })),
+);
+const ResetPasswordPage = lazy(() =>
+  import("@/features/auth/pages/ResetPasswordPage").then((m) => ({ default: m.ResetPasswordPage })),
+);
+const InvitationAcceptancePage = lazy(() =>
+  import("@/features/auth/pages/InvitationAcceptancePage").then((m) => ({ default: m.InvitationAcceptancePage })),
+);
+const ProfessionSelectorPage = lazy(() =>
+  import("@/features/auth/pages/ProfessionSelectorPage").then((m) => ({ default: m.ProfessionSelectorPage })),
+);
 
 // Protected screens (each wrapped in AppLayout by ProtectedRoute)
-import { DashboardPage } from "@/features/dashboard/pages/DashboardPage";
-import { PipelinePage } from "@/features/pipeline/pages/PipelinePage";
-import { DealDetailPage } from "@/features/pipeline/pages/DealDetailPage";
-import { ActivitiesPage } from "@/features/activities/pages/ActivitiesPage";
-import { PartnersPage } from "@/features/partners/pages/PartnersPage";
-import { PathPage } from "@/features/path/pages/PathPage";
-import { SettingsPage } from "@/features/settings/pages/SettingsPage";
+const DashboardPage = lazy(() =>
+  import("@/features/dashboard/pages/DashboardPage").then((m) => ({ default: m.DashboardPage })),
+);
+const PipelinePage = lazy(() =>
+  import("@/features/pipeline/pages/PipelinePage").then((m) => ({ default: m.PipelinePage })),
+);
+const DealDetailPage = lazy(() =>
+  import("@/features/pipeline/pages/DealDetailPage").then((m) => ({ default: m.DealDetailPage })),
+);
+const ActivitiesPage = lazy(() =>
+  import("@/features/activities/pages/ActivitiesPage").then((m) => ({ default: m.ActivitiesPage })),
+);
+const PartnersPage = lazy(() =>
+  import("@/features/partners/pages/PartnersPage").then((m) => ({ default: m.PartnersPage })),
+);
+const PathPage = lazy(() =>
+  import("@/features/path/pages/PathPage").then((m) => ({ default: m.PathPage })),
+);
+const SettingsPage = lazy(() =>
+  import("@/features/settings/pages/SettingsPage").then((m) => ({ default: m.SettingsPage })),
+);
 
-// Component preview catalogs (dev / design review)
-import { ButtonStories } from "@/components/navigatr/Button.stories";
-import { FormFieldStories } from "@/components/navigatr/FormField.stories";
-import { CardStories } from "@/components/navigatr/Card.stories";
-import { AtomsStories } from "@/components/navigatr/Atoms.stories";
-import { LayoutStories } from "@/components/navigatr/Layout.stories";
-import { DashboardEmptyStories } from "@/features/dashboard/pages/DashboardEmptyStories";
+// Component preview catalogs (dev / design review). Lazy-loaded for
+// the same reason — they're large story files that nobody reaches in
+// normal use, no reason to inflate the prod bundle.
+const ButtonStories = lazy(() =>
+  import("@/components/navigatr/Button.stories").then((m) => ({ default: m.ButtonStories })),
+);
+const FormFieldStories = lazy(() =>
+  import("@/components/navigatr/FormField.stories").then((m) => ({ default: m.FormFieldStories })),
+);
+const CardStories = lazy(() =>
+  import("@/components/navigatr/Card.stories").then((m) => ({ default: m.CardStories })),
+);
+const AtomsStories = lazy(() =>
+  import("@/components/navigatr/Atoms.stories").then((m) => ({ default: m.AtomsStories })),
+);
+const LayoutStories = lazy(() =>
+  import("@/components/navigatr/Layout.stories").then((m) => ({ default: m.LayoutStories })),
+);
+const DashboardEmptyStories = lazy(() =>
+  import("@/features/dashboard/pages/DashboardEmptyStories").then((m) => ({ default: m.DashboardEmptyStories })),
+);
+
+/**
+ * Shared Suspense fallback. Centered spinner on a full-viewport canvas
+ * so the screen doesn't flash blank during chunk fetch. Matches the
+ * ProtectedRoute loading state for visual continuity.
+ */
+function RouteFallback() {
+  return (
+    <div className="flex min-h-dvh items-center justify-center bg-surface-canvas">
+      <Loader2 className="h-6 w-6 animate-spin text-text-subtle" aria-label="Loading…" />
+    </div>
+  );
+}
 
 /**
  * Wires the axios client's 401 handler to React Router's navigate so we
@@ -68,101 +136,107 @@ export function App() {
   return (
     <BrowserRouter>
       <AuthRouterBridge />
-      <Routes>
-        {/* ===== Public — sign in / sign up / recover ===== */}
-        <Route
-          path="/login"
-          element={
-            <PublicOnlyRoute>
-              <LoginPage />
-            </PublicOnlyRoute>
-          }
-        />
-        <Route
-          path="/signup"
-          element={
-            <PublicOnlyRoute>
-              <SignUpPage />
-            </PublicOnlyRoute>
-          }
-        />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="/reset-password" element={<ResetPasswordPage />} />
-        <Route path="/accept-invitation" element={<InvitationAcceptancePage />} />
+      {/* Single Suspense boundary at the route layer — keeps the spinner
+          centered on viewport regardless of which page is loading. Per-
+          route boundaries would let us scope fallbacks to the main pane,
+          but for sprint 1 the simpler full-viewport spinner is fine. */}
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+          {/* ===== Public — sign in / sign up / recover ===== */}
+          <Route
+            path="/login"
+            element={
+              <PublicOnlyRoute>
+                <LoginPage />
+              </PublicOnlyRoute>
+            }
+          />
+          <Route
+            path="/signup"
+            element={
+              <PublicOnlyRoute>
+                <SignUpPage />
+              </PublicOnlyRoute>
+            }
+          />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/accept-invitation" element={<InvitationAcceptancePage />} />
 
-        {/* ===== Authenticated but profession not yet set ===== */}
-        <Route path="/select-profession" element={<ProfessionSelectorPage />} />
+          {/* ===== Authenticated but profession not yet set ===== */}
+          <Route path="/select-profession" element={<ProfessionSelectorPage />} />
 
-        {/* ===== Component preview (dev) — no auth, no AppLayout ===== */}
-        <Route path="/component-preview/button" element={<ButtonStories />} />
-        <Route path="/component-preview/form-fields" element={<FormFieldStories />} />
-        <Route path="/component-preview/cards" element={<CardStories />} />
-        <Route path="/component-preview/atoms" element={<AtomsStories />} />
-        <Route path="/component-preview/layout" element={<LayoutStories />} />
-        <Route path="/component-preview/dashboard-empty" element={<DashboardEmptyStories />} />
+          {/* ===== Component preview (dev) — no auth, no AppLayout ===== */}
+          <Route path="/component-preview/button" element={<ButtonStories />} />
+          <Route path="/component-preview/form-fields" element={<FormFieldStories />} />
+          <Route path="/component-preview/cards" element={<CardStories />} />
+          <Route path="/component-preview/atoms" element={<AtomsStories />} />
+          <Route path="/component-preview/layout" element={<LayoutStories />} />
+          <Route path="/component-preview/dashboard-empty" element={<DashboardEmptyStories />} />
 
-        {/* ===== Protected screens (each wrapped in AppLayout) ===== */}
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <DashboardPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/pipeline"
-          element={
-            <ProtectedRoute>
-              <PipelinePage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/pipeline/:dealId"
-          element={
-            <ProtectedRoute>
-              <DealDetailPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/activities"
-          element={
-            <ProtectedRoute>
-              <ActivitiesPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/partners"
-          element={
-            <ProtectedRoute>
-              <PartnersPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/path"
-          element={
-            <ProtectedRoute>
-              <PathPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/settings"
-          element={
-            <ProtectedRoute>
-              <SettingsPage />
-            </ProtectedRoute>
-          }
-        />
+          {/* ===== Protected screens (each wrapped in AppLayout) ===== */}
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pipeline"
+            element={
+              <ProtectedRoute>
+                <PipelinePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pipeline/:dealId"
+            element={
+              <ProtectedRoute>
+                <DealDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/activities"
+            element={
+              <ProtectedRoute>
+                <ActivitiesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/partners"
+            element={
+              <ProtectedRoute>
+                <PartnersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/path"
+            element={
+              <ProtectedRoute>
+                <PathPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <SettingsPage />
+              </ProtectedRoute>
+            }
+          />
 
-        {/* Root + 404 → /dashboard (ProtectedRoute will bounce to /login if needed) */}
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
+          {/* Root + 404 → /dashboard (ProtectedRoute will bounce to /login if needed) */}
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

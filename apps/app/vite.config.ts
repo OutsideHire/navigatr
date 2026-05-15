@@ -105,6 +105,52 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    // Bundle splitting — each large vendor goes into its own chunk so it
+    // caches independently across deploys (changing app code doesn't bust
+    // the Radix chunk, etc.) and the initial parse cost is spread across
+    // parallel network requests instead of one big blocking bundle.
+    //
+    // Strategy:
+    //   - react-core: react + react-dom + router (loaded on every page)
+    //   - radix:       all @radix-ui packages (Dialog, Select, Tabs, etc.)
+    //   - tanstack:    react-query + devtools
+    //   - supabase:    @supabase/supabase-js (only used by auth code)
+    //   - libphone:    libphonenumber-js — ships country metadata, ~150KB
+    //                  gzipped. Splitting it lets the rest of the app
+    //                  hydrate before this lands.
+    //   - icons:       lucide-react — tree-shaken in theory but the import
+    //                  graph is wide; isolating helps caching
+    //   - form:        react-hook-form + @hookform/resolvers + zod
+    //   - date:        date-fns
+    //
+    // Anything not matched falls into the main chunk (app code + small
+    // utility deps like clsx, tailwind-merge, cva, sonner, zustand).
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("react-router") || id.includes("/react-dom/") || /\/node_modules\/react\//.test(id)) {
+            return "react-core";
+          }
+          if (id.includes("@radix-ui")) return "radix";
+          if (id.includes("@tanstack")) return "tanstack";
+          if (id.includes("@supabase")) return "supabase";
+          if (id.includes("libphonenumber-js")) return "libphone";
+          if (id.includes("lucide-react")) return "icons";
+          if (id.includes("react-hook-form") || id.includes("@hookform") || id.includes("/zod/")) {
+            return "form";
+          }
+          if (id.includes("date-fns")) return "date";
+          return undefined; // everything else in main
+        },
+      },
+    },
+    // Bump the warning threshold since with route lazy-loading + vendor
+    // splits we expect every chunk under 500KB. Anything above that is
+    // a real signal worth investigating.
+    chunkSizeWarningLimit: 500,
+  },
   server: {
     // Bind both IPv4 and IPv6 (and the LAN IP, for PWA testing on a real
     // phone over Wi-Fi). Without this Vite binds IPv6-only on Node 17+
