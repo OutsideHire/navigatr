@@ -1,18 +1,20 @@
 /**
- * navigatr LogoMark — the compass-needle glyph.
+ * navigatr LogoMark — the open-needle waypoint compass.
  *
- * Source: Figma `navigatr v1` (logo-mark inside Top bar mobile 114:2,
- * Top bar desktop 114:7, Logo 123:93). Same primitive at three sizes.
+ * Source: navigatr brand pack v2 (variant C, "Open-needle Waypoint").
+ * Outlined ring + outlined needles, lighter optical weight than the
+ * original filled-needle mark.
  *
- * Anatomy:
- *   - ring    : outer circle, stroke = text/default 1.5 px (scales)
- *   - upper   : top half-needle, fill = brand/primary
- *   - lower   : bottom half-needle, fill = text/default
- *   - center  : small ring at center, stroke = text/default 1 px
+ * Anatomy (40×40 viewBox to match the brand-pack SVG source):
+ *   - ring     : outer circle, stroke = currentColor (1.6 at 40-unit scale)
+ *   - upper    : north needle, stroke = signal blue #2F5BFF (1.8)
+ *   - lower    : south needle, stroke = currentColor (1.8)
+ *   - center   : small filled dot, fill = currentColor
  *
- * All "text/default" parts use `currentColor` so the mark adopts the
- * surrounding text color automatically (light/dark mode just works).
- * The upper needle uses `fill-brand-primary` so it pops regardless.
+ * Ink (`currentColor`) parts adapt to dark mode automatically because the
+ * SVG inherits from `text-text-default` on the wrapper. The north needle
+ * stays signal blue regardless — that's the brand accent and it pops on
+ * both backgrounds.
  */
 
 import * as React from "react";
@@ -30,42 +32,40 @@ export const LogoMark = React.forwardRef<SVGSVGElement, LogoMarkProps>(function 
   return (
     <svg
       ref={ref}
-      viewBox="0 0 32 32"
+      viewBox="0 0 40 40"
       width={size}
       height={size}
       role="img"
       aria-label="navigatr"
+      fill="none"
       className={cn("text-text-default shrink-0", className)}
       {...rest}
     >
-      {/* outer ring — currentColor (text/default) */}
+      {/* outer ring — ink (currentColor) */}
       <circle
-        cx="16"
-        cy="16"
-        r="14.85"
-        fill="none"
+        cx="20"
+        cy="20"
+        r="15.5"
         stroke="currentColor"
-        strokeWidth="1.7"
+        strokeWidth="1.6"
       />
-      {/* upper needle — brand primary */}
+      {/* upper needle — signal blue (brand accent, hardcoded so it pops
+          regardless of light/dark or hover-state recoloring) */}
       <path
-        d="M16 4.5 L18.6 16 L13.4 16 Z"
-        className="fill-brand-primary"
+        d="M 20 7 L 24 20 L 20 17 L 16 20 Z"
+        stroke="#2F5BFF"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
       />
-      {/* lower needle — text/default */}
+      {/* lower needle — ink (currentColor) */}
       <path
-        d="M16 27.5 L13.4 16 L18.6 16 Z"
-        fill="currentColor"
-      />
-      {/* center dot — small ring, text/default */}
-      <circle
-        cx="16"
-        cy="16"
-        r="2"
-        fill="none"
+        d="M 20 33 L 16 20 L 20 23 L 24 20 Z"
         stroke="currentColor"
-        strokeWidth="1"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
       />
+      {/* center dot — small filled disc, ink (currentColor) */}
+      <circle cx="20" cy="20" r="1.2" fill="currentColor" />
     </svg>
   );
 });

@@ -31,7 +31,7 @@ export const updateSW = registerSW({
     // TODO Session 4+: replace with toast UI ("Refresh to update").
     console.info(
       "%c[pwa]%c new content available — call updateSW(true) to apply",
-      "color:#5856EB;font-weight:600",
+      "color:#2F5BFF;font-weight:600",
       "color:inherit",
     );
   },
@@ -45,7 +45,7 @@ export const updateSW = registerSW({
   onRegisteredSW(swUrl) {
     console.info(
       "%c[pwa]%c service worker registered",
-      "color:#5856EB;font-weight:600",
+      "color:#2F5BFF;font-weight:600",
       "color:inherit",
       swUrl,
     );
