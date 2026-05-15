@@ -33,7 +33,28 @@ import { useForm, Controller, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
-import { parsePhoneNumberFromString } from "libphonenumber-js";
+import { AsYouType } from "libphonenumber-js";
+
+/** Strip everything but digits. Used for phone validation + value extraction. */
+function digitsOnly(s: string): string {
+  return s.replace(/\D/g, "");
+}
+
+/** Format a phone string the way the user expects to see it as they type:
+ *  "5555555555" → "(555) 555-5555". Trailing digits/groups grow naturally. */
+function formatUSPhone(input: string): string {
+  const d = digitsOnly(input);
+  if (d.length === 0) return "";
+  // AsYouType handles partials nicely (e.g. "555" → "555", "5555" → "(555) 5",
+  // "555555" → "(555) 555-5", "5555555555" → "(555) 555-5555"). 11-digit
+  // strings starting with 1 get the "+1 …" treatment which is also fine.
+  return new AsYouType("US").input(d.slice(0, d.startsWith("1") ? 11 : 10));
+}
+
+/** Empty-string → undefined preprocessor for numeric Zod fields. Lets us
+ *  default numeric inputs to "" so the placeholder shows. */
+const emptyToUndefined = (v: unknown) =>
+  v === "" || v === null || v === undefined ? undefined : v;
 import { X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -148,18 +169,25 @@ const baseShape = {
   contactName: z.string().min(1, "Contact name is required"),
   contactTitle: z.string().optional(),
   contactEmail: z.string().email("Enter a valid email"),
+  // Permissive on purpose: 10 digits (US). libphonenumber's strict "valid"
+  // check rejects 555-555-5555 (reserved area code), which is the most-typed
+  // test number on Earth. Sprint 2 can tighten if we route real calls.
   contactPhone: z
     .string()
     .min(1, "Phone is required")
-    .refine(
-      (v) => parsePhoneNumberFromString(v, "US")?.isValid() ?? false,
-      "Enter a valid phone number",
-    ),
+    .refine((v) => digitsOnly(v).length === 10, "Enter a 10-digit US phone"),
 
-  // Deal
-  dealValue: z.coerce.number().int().positive("Enter a deal value"),
+  // Deal — preprocess empty strings to undefined so the default value "" lets
+  // the placeholder show instead of forcing the user to delete a literal "0".
+  dealValue: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().positive("Enter a deal value"),
+  ),
   stage: z.enum(["new", "contacted", "qualified", "proposal", "won"]),
-  probability: z.coerce.number().int().min(0).max(100),
+  probability: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().min(0).max(100),
+  ),
   expectedClose: z.string().optional(),
   leadSource: z.string().optional(),
 
@@ -471,9 +499,11 @@ export function AddDealSheet({ open, onOpenChange }: AddDealSheetProps) {
       contactTitle: "",
       contactEmail: "",
       contactPhone: "",
-      dealValue: 0,
+      // Empty-string defaults so the placeholder shows. Schema preprocess
+      // turns "" into undefined → triggers the "required" error on submit.
+      dealValue: "" as unknown as number,
       stage: "new" as DealStage,
-      probability: 20,
+      probability: "" as unknown as number,
       expectedClose: "",
       leadSource: undefined,
       notes: "",
@@ -642,9 +672,24 @@ export function AddDealSheet({ open, onOpenChange }: AddDealSheetProps) {
                 <FormField htmlFor="contactEmail" label="Email" required error={errors.contactEmail?.message}>
                   <Input id="contactEmail" type="email" placeholder="contact@company.com" {...register("contactEmail")} />
                 </FormField>
-                <FormField htmlFor="contactPhone" label="Phone" required error={errors.contactPhone?.message}>
-                  <Input id="contactPhone" type="tel" placeholder="(555) 123-4567" {...register("contactPhone")} />
-                </FormField>
+                <Controller
+                  control={control}
+                  name="contactPhone"
+                  render={({ field }) => (
+                    <FormField htmlFor="contactPhone" label="Phone" required error={errors.contactPhone?.message}>
+                      <Input
+                        id="contactPhone"
+                        type="tel"
+                        inputMode="tel"
+                        autoComplete="tel"
+                        placeholder="(555) 123-4567"
+                        value={field.value ?? ""}
+                        onChange={(e) => field.onChange(formatUSPhone(e.target.value))}
+                        onBlur={field.onBlur}
+                      />
+                    </FormField>
+                  )}
+                />
               </section>
 
               <Divider />

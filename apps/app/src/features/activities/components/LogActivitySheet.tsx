@@ -131,8 +131,14 @@ const ALL_DISPOSITIONS: Disposition[] = [
   "closed_lost",
 ];
 
+const emptyToUndefined = (v: unknown) =>
+  v === "" || v === null || v === undefined ? undefined : v;
+
 const callSchema = z.object({
-  durationMinutes: z.coerce.number().int().positive("Enter call duration"),
+  durationMinutes: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().positive("Enter call duration"),
+  ),
   disposition: z.enum([
     "statement_secured",
     "positive_engagement",
@@ -224,7 +230,13 @@ function CallForm({
     formState: { errors, isSubmitting },
   } = useForm<CallFormValues>({
     resolver: zodResolver(callSchema),
-    defaultValues: { durationMinutes: 0, disposition: undefined, outcomeNotes: "" },
+    defaultValues: {
+      // Empty-string default so the "0" placeholder shows; the schema's
+      // preprocess turns "" into undefined → "Enter call duration" on submit.
+      durationMinutes: "" as unknown as number,
+      disposition: undefined,
+      outcomeNotes: "",
+    },
     mode: "onBlur",
   });
 
