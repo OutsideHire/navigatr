@@ -9,9 +9,9 @@
  * Empty state shows when filters/search produce no matches.
  */
 
-import { ChevronRight, MapPin } from "lucide-react";
+import { ChevronRight, MapPin, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Card, ListRow } from "@/components/navigatr";
+import { Button, Card, ListRow } from "@/components/navigatr";
 import {
   CATEGORY_LABEL,
   STATUS_LABEL,
@@ -30,6 +30,9 @@ export interface MerchantListProps {
   /** Highlights the selected row visually so it pairs with the map's focused pin. */
   selectedId?: string | null;
   onSelect?: (m: Merchant) => void;
+  /** When provided, the empty state surfaces a "Reset filters" CTA. The page
+   *  passes this in when a stage filter is active so reps aren't stranded. */
+  onResetFilters?: () => void;
 }
 
 function StatusPill({ status }: { status: Merchant["status"] }) {
@@ -56,15 +59,22 @@ function relativeLastActivity(iso: string | null): string {
   return "Over a year";
 }
 
-export function MerchantList({ merchants, selectedId, onSelect }: MerchantListProps) {
+export function MerchantList({ merchants, selectedId, onSelect, onResetFilters }: MerchantListProps) {
   if (merchants.length === 0) {
     return (
-      <Card padding="lg" className="flex flex-col items-center gap-2 text-center">
+      <Card padding="lg" className="flex flex-col items-center gap-3 text-center">
         <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-surface-sunken text-text-muted">
           <MapPin className="h-6 w-6" aria-hidden />
         </span>
-        <p className="text-body-strong text-text-default">No merchants in this filter</p>
-        <p className="text-caption text-text-muted">Loosen the filter or expand the radius.</p>
+        <div className="flex flex-col gap-1">
+          <p className="text-body-strong text-text-default">No merchants in this filter</p>
+          <p className="text-caption text-text-muted">Loosen the filter or expand the radius.</p>
+        </div>
+        {onResetFilters && (
+          <Button variant="secondary" size="sm" leadingIcon={RotateCcw} onClick={onResetFilters}>
+            Reset filters
+          </Button>
+        )}
       </Card>
     );
   }

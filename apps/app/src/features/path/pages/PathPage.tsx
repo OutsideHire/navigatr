@@ -237,7 +237,15 @@ export function PathPage() {
         </div>
         {/* List */}
         <div className={cn("min-h-0 overflow-y-auto", view === "map" && "hidden md:block")}>
-          <MerchantList merchants={filtered} selectedId={selectedId} onSelect={handleSelect} />
+          <MerchantList
+            merchants={filtered}
+            selectedId={selectedId}
+            onSelect={handleSelect}
+            // Only show the empty-state CTA when a status filter is active —
+            // otherwise the empty state means "no data at all", not "your
+            // filter is too tight" and the reset CTA would be misleading.
+            onResetFilters={statusFilter !== "all" ? () => setStatusFilter("all") : undefined}
+          />
         </div>
       </div>
 
