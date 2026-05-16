@@ -44,14 +44,18 @@ export function MerchantDetailSheet({
   const addToQueue = usePathQueue((s) => s.add);
   const removeFromQueue = usePathQueue((s) => s.remove);
 
-  if (!merchant) return null;
-
-  const lastActivityLabel = merchant.lastActivity
+  const lastActivityLabel = merchant?.lastActivity
     ? new Date(merchant.lastActivity).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     : "Never contacted";
 
+  // IMPORTANT: render <Dialog.Root> unconditionally so Radix controls its
+  // own portal + overlay lifecycle. If we returned null when merchant is
+  // missing, the overlay would orphan in the DOM during a mid-transition
+  // unmount (e.g. user changes the filter while the sheet is closing).
+  // The content inside Portal is the only thing gated on `merchant`.
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open && merchant !== null} onOpenChange={onOpenChange}>
+      {merchant && (
       <Dialog.Portal>
         <Dialog.Overlay
           className={cn(
@@ -156,6 +160,7 @@ export function MerchantDetailSheet({
           </div>
         </Dialog.Content>
       </Dialog.Portal>
+      )}
     </Dialog.Root>
   );
 }
