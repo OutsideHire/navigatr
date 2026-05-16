@@ -17,7 +17,7 @@
 
 import * as React from "react";
 import "leaflet/dist/leaflet.css";
-import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, CircleMarker, Polyline, Tooltip, useMap } from "react-leaflet";
 import type { LatLngExpression } from "leaflet";
 
 import { cn } from "@/lib/utils";
@@ -32,6 +32,9 @@ export interface MerchantMapProps {
   focusedMerchantId?: string | null;
   /** Fired when a merchant pin is clicked. */
   onMerchantClick?: (m: Merchant) => void;
+  /** Optional route line — draws a dashed polyline through these points
+   *  in order. Used to visualize the queued drop-in path on the map. */
+  routePath?: Array<{ lat: number; lng: number }>;
   className?: string;
 }
 
@@ -55,6 +58,7 @@ export function MerchantMap({
   merchants,
   focusedMerchantId,
   onMerchantClick,
+  routePath,
   className,
 }: MerchantMapProps) {
   const center: LatLngExpression = [position.lat, position.lng];
@@ -113,6 +117,20 @@ export function MerchantMap({
             </CircleMarker>
           );
         })}
+
+        {/* Route polyline — visualizes the queued drop-in path. Dashed
+            so it reads as "planned" rather than a real road route. */}
+        {routePath && routePath.length >= 2 && (
+          <Polyline
+            positions={routePath.map((p) => [p.lat, p.lng])}
+            pathOptions={{
+              color: "#2F5BFF",
+              weight: 3,
+              opacity: 0.7,
+              dashArray: "8 6",
+            }}
+          />
+        )}
 
         <FlyToFocused merchants={merchants} focusedMerchantId={focusedMerchantId} />
       </MapContainer>

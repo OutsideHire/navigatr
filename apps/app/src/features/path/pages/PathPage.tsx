@@ -27,7 +27,7 @@
  */
 
 import * as React from "react";
-import { List, Loader2, LocateFixed, Map as MapIcon } from "lucide-react";
+import { List, Loader2, LocateFixed, Map as MapIcon, Route as RouteIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button, Chip } from "@/components/navigatr";
@@ -39,10 +39,12 @@ import {
   type MerchantStatus,
 } from "../mockData";
 import { useGeolocation } from "../hooks/useGeolocation";
-import { haversineMeters } from "@/lib/distance";
+import { haversineMeters, nearestNeighborOrder } from "@/lib/distance";
 import { MerchantMap } from "../components/MerchantMap";
 import { MerchantList, type MerchantWithDistance } from "../components/MerchantList";
 import { MerchantDetailSheet } from "../components/MerchantDetailSheet";
+import { PathPlanSheet } from "../components/PathPlanSheet";
+import { usePathQueue } from "../hooks/usePathQueue";
 
 type StatusFilter = "all" | MerchantStatus;
 const STATUS_FILTERS: StatusFilter[] = ["all", "untouched", "prospect", "active", "won", "cooled"];
@@ -59,6 +61,12 @@ export function PathPage() {
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [view, setView] = React.useState<ViewMode>("map"); // mobile toggle
+  const [planOpen, setPlanOpen] = React.useState(false);
+
+  // Path queue selectors. queueStops is the persisted list of stops;
+  // we resolve those IDs to Merchant records below and compute the
+  // visit order via nearestNeighborOrder against the rep's position.
+  const queueStops = usePathQueue((s) => s.stops);
 
   // Compute distances + sort by proximity once per geo change.
   const merchantsWithDistance: MerchantWithDistance[] = React.useMemo(() => {
@@ -103,6 +111,36 @@ export function PathPage() {
     setSheetOpen(true);
   };
 
+  // Resolve the queued IDs to full Merchant records, then run
+  // nearest-neighbor against the rep's position to get the optimal
+  // visit order. This is the same order that drives the map polyline
+  // and PathPlanSheet's stop list — they stay in sync via this single
+  // computation.
+  const queuedMerchants: Merchant[] = React.useMemo(() => {
+    const byId = new Map(MOCK_MERCHANTS.map((m) => [m.id, m]));
+    return queueStops
+      .map((s) => byId.get(s.merchantId))
+      .filter((m): m is Merchant => Boolean(m));
+  }, [queueStops]);
+
+  const orderedQueue: Merchant[] = React.useMemo(() => {
+    if (queuedMerchants.length === 0) return [];
+    const idxOrder = nearestNeighborOrder(
+      { lat: geo.lat, lng: geo.lng },
+      queuedMerchants.map((m) => ({ lat: m.lat, lng: m.lng })),
+    );
+    return idxOrder.map((i) => queuedMerchants[i]!);
+  }, [queuedMerchants, geo.lat, geo.lng]);
+
+  // Route path = origin → each stop in order. Used by the map polyline.
+  const routePath = React.useMemo(() => {
+    if (orderedQueue.length === 0) return undefined;
+    return [
+      { lat: geo.lat, lng: geo.lng },
+      ...orderedQueue.map((m) => ({ lat: m.lat, lng: m.lng })),
+    ];
+  }, [orderedQueue, geo.lat, geo.lng]);
+
   return (
     <div className="mx-auto flex h-[calc(100dvh-4rem)] w-full max-w-7xl flex-col px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
       {/* Header */}
@@ -123,6 +161,22 @@ export function PathPage() {
             loading={geo.loading}
           >
             {geo.source === "gps" ? "Re-center" : "Use my location"}
+          </Button>
+          {/* Path queue CTA — always visible. Shows count badge when
+              there are queued stops. Empty state opens the sheet too
+              so the user can see the "no stops yet" explanation. */}
+          <Button
+            variant={queueStops.length > 0 ? "primary" : "tertiary"}
+            size="sm"
+            leadingIcon={RouteIcon}
+            onClick={() => setPlanOpen(true)}
+          >
+            Today&apos;s path
+            {queueStops.length > 0 && (
+              <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-radius-full bg-text-inverse/20 px-1.5 text-caption font-semibold tabular-nums">
+                {queueStops.length}
+              </span>
+            )}
           </Button>
         </div>
       </header>
@@ -178,6 +232,7 @@ export function PathPage() {
             merchants={filtered}
             focusedMerchantId={selectedId}
             onMerchantClick={handleSelect}
+            routePath={routePath}
           />
         </div>
         {/* List */}
@@ -191,6 +246,14 @@ export function PathPage() {
         distanceMeters={selectedDistance}
         open={sheetOpen}
         onOpenChange={setSheetOpen}
+      />
+
+      <PathPlanSheet
+        open={planOpen}
+        onOpenChange={setPlanOpen}
+        origin={{ lat: geo.lat, lng: geo.lng }}
+        allMerchants={MOCK_MERCHANTS}
+        orderedStops={orderedQueue}
       />
     </div>
   );

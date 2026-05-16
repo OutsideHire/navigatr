@@ -12,7 +12,7 @@
 
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Calendar, Mail, MapPin, PhoneIcon, Plus, X } from "lucide-react";
+import { Calendar, Check, Mail, MapPin, PhoneIcon, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
@@ -24,6 +24,7 @@ import {
   type Merchant,
 } from "../mockData";
 import { formatDistance } from "@/lib/distance";
+import { usePathQueue } from "../hooks/usePathQueue";
 
 export interface MerchantDetailSheetProps {
   merchant: Merchant | null;
@@ -38,6 +39,11 @@ export function MerchantDetailSheet({
   open,
   onOpenChange,
 }: MerchantDetailSheetProps) {
+  // Hooks must come before any early return.
+  const inQueue = usePathQueue((s) => (merchant ? s.has(merchant.id) : false));
+  const addToQueue = usePathQueue((s) => s.add);
+  const removeFromQueue = usePathQueue((s) => s.remove);
+
   if (!merchant) return null;
 
   const lastActivityLabel = merchant.lastActivity
@@ -122,14 +128,31 @@ export function MerchantDetailSheet({
             >
               Log drop-in
             </Button>
-            <Button
-              variant="primary"
-              size="md"
-              leadingIcon={Plus}
-              onClick={() => toast("Path planning lands in Session 17")}
-            >
-              Add to today's path
-            </Button>
+            {inQueue ? (
+              <Button
+                variant="secondary"
+                size="md"
+                leadingIcon={Check}
+                onClick={() => {
+                  removeFromQueue(merchant.id);
+                  toast(`Removed ${merchant.name} from path`);
+                }}
+              >
+                Added to path
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                size="md"
+                leadingIcon={Plus}
+                onClick={() => {
+                  addToQueue(merchant.id);
+                  toast.success(`Added ${merchant.name} to today's path`);
+                }}
+              >
+                Add to today's path
+              </Button>
+            )}
           </div>
         </Dialog.Content>
       </Dialog.Portal>
