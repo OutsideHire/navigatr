@@ -22,6 +22,16 @@
  * (getDerivedStateFromError / componentDidCatch). Hooks can't catch
  * render errors. So this stays a class even though everything else in
  * the app is functional. No external dep needed.
+ *
+ * IMPORTANT — what this boundary does NOT catch:
+ *   - Errors in event handlers (use try/catch directly)
+ *   - Errors in setTimeout / setInterval / async callbacks
+ *   - Errors in Promise rejections (use .catch or window.onunhandledrejection)
+ *   - Errors thrown during SSR (we don't have SSR; n/a)
+ *   - Errors inside the boundary itself
+ *
+ * If you need to surface async errors, throw them back into a render
+ * scope via a state setter so the boundary sees them.
  */
 
 import * as React from "react";
@@ -51,9 +61,11 @@ function ErrorFallback({ error, onReset }: FallbackProps) {
 
         <div className="flex flex-col gap-1">
           <h1 className="text-heading-sm text-text-default">Something went wrong</h1>
+          {/* IMPORTANT: this copy does NOT promise observability. Until Sentry
+              is wired (Sprint 2 TODO in componentDidCatch), only console.error
+              receives the stack. Saying "we've logged it" would be a lie. */}
           <p className="text-body-md text-text-muted">
-            This page hit a snag. We&apos;ve logged the error and are looking into it.
-            You can try again, or head back to the dashboard.
+            This page hit a snag. Try again, or head back to the dashboard.
           </p>
         </div>
 

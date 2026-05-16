@@ -53,6 +53,27 @@ function FlyToFocused({
   return null;
 }
 
+/** Internal — pans the map when the rep's position changes (geolocation
+ *  retry, etc.). MapContainer's `center` prop is init-only in react-leaflet
+ *  v4, so without this the viewport stays at the initial center even
+ *  after "Use my location" returns a real GPS fix. */
+function FollowPosition({ position }: { position: { lat: number; lng: number } }) {
+  const map = useMap();
+  const lastRef = React.useRef<{ lat: number; lng: number } | null>(null);
+  React.useEffect(() => {
+    const last = lastRef.current;
+    // Skip the first render — MapContainer already centered there.
+    if (!last) { lastRef.current = position; return; }
+    // Only pan when the position actually changed (avoid pan loops if a
+    // parent re-renders with a new object literal but same values).
+    if (last.lat !== position.lat || last.lng !== position.lng) {
+      map.flyTo([position.lat, position.lng], map.getZoom(), { duration: 0.5 });
+      lastRef.current = position;
+    }
+  }, [position, map]);
+  return null;
+}
+
 export function MerchantMap({
   position,
   merchants,
@@ -132,6 +153,7 @@ export function MerchantMap({
           />
         )}
 
+        <FollowPosition position={position} />
         <FlyToFocused merchants={merchants} focusedMerchantId={focusedMerchantId} />
       </MapContainer>
     </div>
