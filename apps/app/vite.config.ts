@@ -137,6 +137,9 @@ export default defineConfig({
           if (id.includes("@tanstack")) return "tanstack";
           if (id.includes("@supabase")) return "supabase";
           if (id.includes("libphonenumber-js")) return "libphone";
+          if (id.includes("/leaflet/") || id.includes("react-leaflet") || id.includes("@react-leaflet")) {
+            return "leaflet";
+          }
           if (id.includes("lucide-react")) return "icons";
           if (id.includes("react-hook-form") || id.includes("@hookform") || id.includes("/zod/")) {
             return "form";
