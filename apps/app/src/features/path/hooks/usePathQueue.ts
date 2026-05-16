@@ -97,6 +97,30 @@ export const usePathQueue = create<PathQueueState>()(
       name: STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
       version: 1,
+      // No-op for v1 (no prior version exists), but registering the function
+      // now means future bumps (v2+) can write a real upgrader without
+      // touching this file's structure. If we returned undefined / threw,
+      // Zustand would discard state silently — bad UX.
+      migrate: (state, _fromVersion) => {
+        return (state as PathQueueState) ?? { stops: [] };
+      },
+      // If localStorage JSON is corrupted (quota eviction, browser bug,
+      // dev-tools tampering), JSON.parse throws inside Zustand. Without
+      // this hook the exception can bubble to the render tree and trip
+      // RouteErrorBoundary — the rep loses their path AND sees a generic
+      // error screen. Catch it here, reset to an empty queue, and let
+      // them keep working.
+      onRehydrateStorage: () => (_state, error) => {
+        if (error) {
+          // eslint-disable-next-line no-console
+          console.warn("[usePathQueue] rehydrate failed, resetting:", error);
+          try {
+            localStorage.removeItem(STORAGE_KEY);
+          } catch {
+            /* ignore — quota errors, private mode, etc. */
+          }
+        }
+      },
     },
   ),
 );
