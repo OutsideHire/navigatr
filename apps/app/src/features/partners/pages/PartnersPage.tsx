@@ -19,7 +19,6 @@ import {
   ArrowRight,
   ChevronDown,
   ChevronRight,
-  Mail,
   MapPin,
   Plus,
   Search,
@@ -66,18 +65,30 @@ function useDebounced<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
-/** Resolve attributed deals for a partner and tally the revenue. */
-function dealsForPartner(p: Partner) {
-  const byId = new Map(MOCK_DEALS.map((d) => [d.id, d]));
-  return p.attributedDealIds.map((id) => byId.get(id)).filter(Boolean) as typeof MOCK_DEALS;
-}
-function revenueOf(p: Partner): number {
-  return dealsForPartner(p).reduce((sum, d) => sum + d.valueCents, 0);
+/** Pre-computed revenue-by-partner lookup keyed by refreshKey. Built once
+ *  per refresh, not per card render. Replaces the prior pattern that
+ *  built a new Map(MOCK_DEALS.map(...)) of 35 entries on EVERY call —
+ *  which was ~70 calls per render once you counted sort comparisons +
+ *  per-card lookups + the page total. Real cost at scale. */
+function useRevenueByPartner(refreshKey: number): Map<string, number> {
+  return React.useMemo(() => {
+    const dealById = new Map(MOCK_DEALS.map((d) => [d.id, d]));
+    const revenueById = new Map<string, number>();
+    for (const p of MOCK_PARTNERS) {
+      let sum = 0;
+      for (const id of p.attributedDealIds) {
+        const d = dealById.get(id);
+        if (d) sum += d.valueCents;
+      }
+      revenueById.set(p.id, sum);
+    }
+    return revenueById;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 }
 
-function PartnerCard({ partner }: { partner: Partner }) {
+function PartnerCard({ partner, revenue }: { partner: Partner; revenue: number }) {
   const navigate = useNavigate();
-  const revenue = revenueOf(partner);
   const referrals = partner.attributedDealIds.length;
 
   return (
@@ -146,6 +157,14 @@ export function PartnersPage() {
 
   const [searchParams, setSearchParams] = useSearchParams();
 
+  // Single shared lookup map — every "what's their revenue" question
+  // resolves with one O(1) lookup instead of rebuilding a 35-entry map.
+  const revenueByPartner = useRevenueByPartner(refreshKey);
+  const getRevenue = React.useCallback(
+    (p: Partner) => revenueByPartner.get(p.id) ?? 0,
+    [revenueByPartner],
+  );
+
   // Deep link: /partners?action=add auto-opens the sheet (called from
   // the empty Dashboard's "Add your first partner" setup card).
   React.useEffect(() => {
@@ -167,7 +186,7 @@ export function PartnersPage() {
     const sorted = [...base];
     if (sortMode === "revenue") {
       sorted.sort((a, b) => {
-        const diff = revenueOf(b) - revenueOf(a);
+        const diff = getRevenue(b) - getRevenue(a);
         return diff !== 0 ? diff : a.name.localeCompare(b.name);
       });
     } else if (sortMode === "name") {
@@ -182,7 +201,7 @@ export function PartnersPage() {
     }
     return sorted;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, debouncedSearch, sortMode, refreshKey]);
+  }, [statusFilter, debouncedSearch, sortMode, refreshKey, getRevenue]);
 
   const counts = React.useMemo(() => {
     const c: Record<StatusFilter, number> = {
@@ -197,9 +216,10 @@ export function PartnersPage() {
   }, [refreshKey]);
 
   const totalAttributed = React.useMemo(() => {
-    return MOCK_PARTNERS.reduce((sum, p) => sum + revenueOf(p), 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+    let sum = 0;
+    for (const v of revenueByPartner.values()) sum += v;
+    return sum;
+  }, [revenueByPartner]);
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
@@ -334,7 +354,7 @@ export function PartnersPage() {
         ) : (
           <div className="flex flex-col gap-3">
             {filtered.map((p) => (
-              <PartnerCard key={p.id} partner={p} />
+              <PartnerCard key={p.id} partner={p} revenue={getRevenue(p)} />
             ))}
           </div>
         )}
@@ -345,11 +365,6 @@ export function PartnersPage() {
         onOpenChange={setSheetOpen}
         onAdded={() => setRefreshKey((n) => n + 1)}
       />
-
-      {/* Decorative — keep Mail in the import graph for the icon chunk. */}
-      <span hidden aria-hidden>
-        <Mail />
-      </span>
     </div>
   );
 }
