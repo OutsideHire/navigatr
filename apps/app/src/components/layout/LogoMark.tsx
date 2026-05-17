@@ -1,29 +1,23 @@
 /**
- * navigatr LogoMark — the "Roberts" filled-compass + diamond mark.
+ * navigatr LogoMark — pixel-perfect match to the Roberts brand pack.
  *
- * Source: navigatr brand pack v3 (Roberts variant). Filled north/south
- * needles, blue accent, diamond "rose" at center, outlined ring.
+ * Source files (truth):
+ *   /Downloads/Navigatr Roberts Logo/navigatr-icon-light.svg
+ *   /Downloads/Navigatr Roberts Logo/navigatr-icon-dark.svg
  *
- * Anatomy (500×500 viewBox to match the brand-pack SVG source — preserves
- * proportions exactly so we can drop in the source SVG verbatim for
- * favicon/manifest icons and have parity):
- *   - ring     : outer circle r=200, stroke = currentColor (ink), 28px
- *   - upper    : north triangle, fill = signal blue #2456E6
- *   - lower    : south triangle, fill = currentColor (ink)
- *   - diamond  : center compass-rose diamond, fill = surface-default
- *                (var so it auto-flips in dark mode), 6px blue outline
- *   - dot      : small center disc r=18, fill = currentColor (ink)
+ * Strategy: embed BOTH source SVGs inline verbatim and toggle via Tailwind's
+ * `dark:` variant. Earlier attempts used `currentColor` + CSS variables to
+ * adapt a single SVG to either theme — clever, but it didn't render
+ * pixel-identical to the source files because the diamond's "negative space"
+ * effect requires a specific fill that disagrees with currentColor logic.
  *
- * Color adaptation strategy:
- *   - Ink parts use `currentColor` so the wrapper's `text-text-default`
- *     class drives them. Light mode → near-black. Dark mode → near-white.
- *   - The blue (#2456E6) is hardcoded — it's the brand accent and must
- *     read the same regardless of theme or hover state.
- *   - The diamond's fill uses `var(--color-surface-default)` so it
- *     "cuts out" of the mark visually — appears white on white surface,
- *     dark navy on dark surface. CSS vars work in SVG fill attributes.
+ * The source SVGs include a full-bleed `<rect>` background fill. We strip
+ * that for the in-app component — the mark needs to integrate into the
+ * surrounding TopBar / nav surface, not sit as a contrasting badge. The
+ * background rect IS preserved in the favicon.svg / PWA icon files where
+ * a contrasting tile is appropriate.
  *
- * Brand colors (from /Downloads/Navigatr Roberts Logo/*.svg):
+ * Brand colors (from the source SVGs, used as literal hex):
  *   Ink     #0A1733
  *   Signal  #2456E6
  *   Paper   #FFFFFF
@@ -41,37 +35,50 @@ export const LogoMark = React.forwardRef<SVGSVGElement, LogoMarkProps>(function 
   { size = 28, className, ...rest },
   ref,
 ) {
+  const shared = {
+    viewBox: "0 0 500 500",
+    width: size,
+    height: size,
+    role: "img" as const,
+    "aria-label": "navigatr",
+    ref,
+    ...rest,
+  };
+
   return (
-    <svg
-      ref={ref}
-      viewBox="0 0 500 500"
-      width={size}
-      height={size}
-      role="img"
-      aria-label="navigatr"
-      className={cn("text-text-default shrink-0", className)}
-      {...rest}
-    >
-      <g transform="translate(250, 250)">
-        {/* outer ring — ink (currentColor) */}
-        <circle cx="0" cy="0" r="200" fill="none" stroke="currentColor" strokeWidth="28" />
-        {/* upper triangle — signal blue brand accent (hardcoded) */}
-        <polygon points="0,-160 -55,30 55,30" fill="#2456E6" />
-        {/* lower triangle — ink (currentColor) */}
-        <polygon points="0,160 -55,-30 55,-30" fill="currentColor" />
-        {/* center diamond — fills with surface color so the diamond "cuts
-            out" against whatever surface the mark sits on. Blue 6px outline
-            preserved from the source pack for legibility at small sizes. */}
-        <polygon
-          points="0,-60 65,0 0,60 -65,0"
-          fill="var(--color-surface-default)"
-          stroke="#2456E6"
-          strokeWidth="6"
-        />
-        {/* center dot — ink (currentColor), r=18 in the 500-unit space */}
-        <circle cx="0" cy="0" r="18" fill="currentColor" />
-      </g>
-    </svg>
+    <>
+      {/* Light variant — visible on light surfaces (default theme). */}
+      <svg {...shared} className={cn("shrink-0 dark:hidden", className)}>
+        <g transform="translate(250, 250)">
+          <circle cx="0" cy="0" r="200" fill="none" stroke="#0A1733" strokeWidth="28" />
+          <polygon points="0,-160 -55,30 55,30" fill="#2456E6" />
+          <polygon points="0,160 -55,-30 55,-30" fill="#0A1733" />
+          <polygon
+            points="0,-60 65,0 0,60 -65,0"
+            fill="#FFFFFF"
+            stroke="#2456E6"
+            strokeWidth="6"
+          />
+          <circle cx="0" cy="0" r="18" fill="#0A1733" />
+        </g>
+      </svg>
+
+      {/* Dark variant — visible on dark surfaces (.dark class on <html>). */}
+      <svg {...shared} className={cn("hidden shrink-0 dark:block", className)}>
+        <g transform="translate(250, 250)">
+          <circle cx="0" cy="0" r="200" fill="none" stroke="#FFFFFF" strokeWidth="28" />
+          <polygon points="0,-160 -55,30 55,30" fill="#2456E6" />
+          <polygon points="0,160 -55,-30 55,-30" fill="#FFFFFF" />
+          <polygon
+            points="0,-60 65,0 0,60 -65,0"
+            fill="#0A1733"
+            stroke="#2456E6"
+            strokeWidth="6"
+          />
+          <circle cx="0" cy="0" r="18" fill="#FFFFFF" />
+        </g>
+      </svg>
+    </>
   );
 });
 LogoMark.displayName = "LogoMark";

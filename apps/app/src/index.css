@@ -8,6 +8,10 @@
  * ------------------------------------------------------------------------- */
 @import url("https://fonts.bunny.net/css?family=inter:400,500,600,700&display=swap");
 @import url("https://fonts.bunny.net/css?family=jetbrains-mono:500&display=swap");
+/* Space Grotesk — wordmark only, per brand pack lockup spec
+ * (600 weight, -3.5% letter-spacing). Not used as body or heading
+ * font; the app stays on Inter for everything else. */
+@import url("https://fonts.bunny.net/css?family=space-grotesk:500,600,700&display=swap");
 
 @tailwind base;
 @tailwind components;
