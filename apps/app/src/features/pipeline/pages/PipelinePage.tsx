@@ -24,6 +24,7 @@
 import * as React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   ChevronDown,
   Mail,
@@ -246,10 +247,20 @@ function PageHeader({
             />
           </FormField>
         </div>
-        <Button variant="secondary" size="md" leadingIcon={SlidersHorizontal}>
+        <Button
+          variant="secondary"
+          size="md"
+          leadingIcon={SlidersHorizontal}
+          onClick={() => toast("Advanced filters land in Sprint 2")}
+        >
           Filter
         </Button>
-        <Button variant="tertiary" size="md" trailingIcon={ChevronDown}>
+        <Button
+          variant="tertiary"
+          size="md"
+          trailingIcon={ChevronDown}
+          onClick={() => toast("Sort options land in Sprint 2")}
+        >
           {/* TODO Sprint 2: real sort dropdown. */}
           Sort: Last activity
         </Button>

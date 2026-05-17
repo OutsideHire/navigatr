@@ -15,6 +15,7 @@
 
 import * as React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
 import {
   ArrowRight,
   ChevronDown,
@@ -265,10 +266,20 @@ export function PartnersPage() {
                 />
               </FormField>
             </div>
-            <Button variant="secondary" size="md" leadingIcon={SlidersHorizontal}>
+            <Button
+              variant="secondary"
+              size="md"
+              leadingIcon={SlidersHorizontal}
+              onClick={() => toast("Advanced filters land in Sprint 2")}
+            >
               Filter
             </Button>
-            <Button variant="tertiary" size="md" trailingIcon={ChevronDown}>
+            <Button
+              variant="tertiary"
+              size="md"
+              trailingIcon={ChevronDown}
+              onClick={() => toast("Sort options land in Sprint 2")}
+            >
               {sortMode === "revenue"
                 ? "Sort: Revenue"
                 : sortMode === "name"

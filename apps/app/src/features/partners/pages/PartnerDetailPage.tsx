@@ -16,6 +16,7 @@
 
 import * as React from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   ArrowRight,
@@ -117,10 +118,20 @@ function HeroCard({ partner, dealCount, totalRevenue }: { partner: Partner; deal
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button variant="primary" size="md" leadingIcon={Plus}>
+        <Button
+          variant="primary"
+          size="md"
+          leadingIcon={Plus}
+          onClick={() => toast("Partner activity logging lands in Sprint 2")}
+        >
           Log touch
         </Button>
-        <Button variant="secondary" size="md" leadingIcon={Pencil}>
+        <Button
+          variant="secondary"
+          size="md"
+          leadingIcon={Pencil}
+          onClick={() => toast("Partner editing lands in Sprint 2")}
+        >
           Edit
         </Button>
       </div>

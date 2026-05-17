@@ -148,8 +148,22 @@ function PageHeading({ firstName: _firstName }: { firstName: string }) {
         </p>
       </div>
       <div className="hidden gap-2 sm:flex">
-        <Button variant="tertiary" size="sm" leadingIcon={Clock4}>Last 30 days</Button>
-        <Button variant="tertiary" size="sm" leadingIcon={FilterIcon}>Filter</Button>
+        <Button
+          variant="tertiary"
+          size="sm"
+          leadingIcon={Clock4}
+          onClick={() => toast("Custom date ranges land in Sprint 2")}
+        >
+          Last 30 days
+        </Button>
+        <Button
+          variant="tertiary"
+          size="sm"
+          leadingIcon={FilterIcon}
+          onClick={() => toast("Dashboard filters land in Sprint 2")}
+        >
+          Filter
+        </Button>
       </div>
     </header>
   );

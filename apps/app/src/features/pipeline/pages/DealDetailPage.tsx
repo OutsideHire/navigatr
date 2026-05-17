@@ -23,6 +23,7 @@
 
 import * as React from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
 import * as Tabs from "@radix-ui/react-tabs";
 import {
   ArrowLeft,
@@ -126,7 +127,12 @@ function HeroCard({ deal, onLogActivity }: { deal: Deal; onLogActivity: () => vo
             <Button variant="primary" size="md" leadingIcon={Plus} onClick={onLogActivity}>
               Log activity
             </Button>
-            <Button variant="secondary" size="md" leadingIcon={Pencil}>
+            <Button
+              variant="secondary"
+              size="md"
+              leadingIcon={Pencil}
+              onClick={() => toast("Deal editing lands in Sprint 2")}
+            >
               Edit
             </Button>
           </div>
