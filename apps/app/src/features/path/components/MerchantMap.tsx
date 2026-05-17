@@ -85,7 +85,12 @@ export function MerchantMap({
   const center: LatLngExpression = [position.lat, position.lng];
 
   return (
-    <div className={cn("relative h-full w-full overflow-hidden rounded-radius-md", className)}>
+    // `isolation: isolate` contains Leaflet's internal z-indexes (panes are
+    // 200-700, controls are 1000) inside this stacking context. Without it,
+    // those z-indexes leak to the root and a Dialog at z-40/z-50 renders
+    // BEHIND the map tiles. Reported by user 2026-05-17 — modal opened but
+    // map covered its body.
+    <div className={cn("relative h-full w-full overflow-hidden rounded-radius-md [isolation:isolate]", className)}>
       <MapContainer
         center={center}
         zoom={13}
