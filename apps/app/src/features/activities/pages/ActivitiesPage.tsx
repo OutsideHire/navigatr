@@ -84,11 +84,17 @@ function dayHeading(iso: string, now: Date): string {
   const d = daysBetween(now, new Date(iso));
   if (d === 0) return "Today";
   if (d === 1) return "Tomorrow";
-  // Otherwise "Mon, May 18"
+  // Otherwise "Mon, May 18". timeZone: 'UTC' so the rendered date stays
+  // consistent with the UTC-based grouping key elsewhere in this file
+  // (everything uses UTC: startOfDay() sets UTC hours, dueAt.slice(0,10)
+  // is a UTC date prefix). Without this, a PST user could see a "May 16"
+  // label under a UTC-2026-05-17 group key — same task surfaces under the
+  // wrong day heading.
   return new Date(iso).toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
+    timeZone: "UTC",
   });
 }
 
