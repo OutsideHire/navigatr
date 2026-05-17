@@ -61,6 +61,9 @@ const ActivitiesPage = lazy(() =>
 const PartnersPage = lazy(() =>
   import("@/features/partners/pages/PartnersPage").then((m) => ({ default: m.PartnersPage })),
 );
+const PartnerDetailPage = lazy(() =>
+  import("@/features/partners/pages/PartnerDetailPage").then((m) => ({ default: m.PartnerDetailPage })),
+);
 const PathPage = lazy(() =>
   import("@/features/path/pages/PathPage").then((m) => ({ default: m.PathPage })),
 );
@@ -212,6 +215,14 @@ export function App() {
             element={
               <ProtectedRoute>
                 <PartnersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/partners/:partnerId"
+            element={
+              <ProtectedRoute>
+                <PartnerDetailPage />
               </ProtectedRoute>
             }
           />
