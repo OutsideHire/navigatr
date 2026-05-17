@@ -1,11 +1,15 @@
 /**
  * navigatr Logo — LogoMark + wordmark composite.
  *
- * Source: Figma `navigatr v1` Logo COMPONENT 104:73 (LogoMark + wordmark
- * text in a horizontal frame, gap 12). Wordmark text style per surface:
- *   Top bar mobile   → heading/sm (Inter Semi Bold 16/24)
- *   Top bar desktop  → heading/md (Inter Semi Bold 20/28)
- *   Auth hero / Logo → heading/lg or larger
+ * LogoMark renders the user-supplied brand SVGs verbatim (light/dark
+ * variants toggled via Tailwind dark: modifier — see LogoMark.tsx).
+ *
+ * Wordmark typography matches the brand pack lockup spec:
+ *   font-family: Space Grotesk, 600 weight
+ *   letter-spacing: -0.035em (-3.5% per brand-pack README)
+ * (The lockup SVG itself uses -10 letter-spacing at 260px font-size,
+ * which is -0.038em — we round to -0.035em as a nice round value
+ * matching the brand-pack README's stated spec.)
  *
  * White-label: callers can pass a tenant brand name via `wordmark` and a
  * custom URL via `logoSrc` (renders as <img> in place of LogoMark).
@@ -61,7 +65,18 @@ export const Logo = React.forwardRef<HTMLSpanElement, LogoProps>(function Logo(
         <LogoMark size={markSize[size]} />
       )}
       {!iconOnly && (
-        <span className={cn(wordmarkClass[size], "tracking-tight text-text-default")}>
+        <span
+          className={cn(wordmarkClass[size], "text-text-default")}
+          // Space Grotesk per brand-pack lockup spec. Inline style so we
+          // don't have to register a tailwind font-family utility for a
+          // single use site. Letter-spacing -3.5% per brand-pack README.
+          style={{
+            fontFamily:
+              "'Space Grotesk', 'Inter', 'Helvetica Neue', Arial, sans-serif",
+            fontWeight: 600,
+            letterSpacing: "-0.035em",
+          }}
+        >
           {wordmark}
         </span>
       )}

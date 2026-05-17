@@ -1,9 +1,13 @@
 import type { ReactNode } from "react";
-import { Compass } from "lucide-react";
+import { Logo } from "@/components/layout/Logo";
 
 /**
  * Single-column shell — centered card on the surface-canvas background.
  * Used by SignUp, ForgotPassword, ResetPassword.
+ *
+ * The brand lockup uses the unified Logo component, which composes
+ * LogoMark (renders the user-supplied SVG verbatim, light/dark toggle
+ * via Tailwind) + a Space Grotesk wordmark.
  */
 export function AuthShell({
   title,
@@ -16,11 +20,8 @@ export function AuthShell({
 }) {
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center bg-surface-canvas px-4 py-10">
-      <div className="mb-6 flex items-center gap-2">
-        <span className="flex h-9 w-9 items-center justify-center rounded-radius-md bg-brand-primary text-brand-primary-foreground">
-          <Compass className="h-5 w-5" />
-        </span>
-        <span className="text-heading-md tracking-tight text-text-default">navigatr</span>
+      <div className="mb-6">
+        <Logo size="md" />
       </div>
       <div className="w-full max-w-md rounded-radius-lg border border-border-subtle bg-surface-elevated p-6 shadow-sm sm:p-8">
         <div className="mb-6 flex flex-col gap-1.5">
@@ -57,11 +58,8 @@ export function AuthSplitShell({
       {/* Left: form column */}
       <section className="flex flex-col items-center justify-center px-4 py-10 sm:px-8">
         <div className="w-full max-w-md">
-          <div className="mb-8 flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-radius-md bg-brand-primary text-brand-primary-foreground">
-              <Compass className="h-5 w-5" />
-            </span>
-            <span className="text-heading-md tracking-tight text-text-default">navigatr</span>
+          <div className="mb-8">
+            <Logo size="md" />
           </div>
           <div className="mb-6 flex flex-col gap-1.5">
             <h1 className="text-heading-lg text-text-default">{title}</h1>

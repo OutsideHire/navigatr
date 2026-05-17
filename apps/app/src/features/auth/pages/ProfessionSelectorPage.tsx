@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { CalendarClock, CreditCard, Landmark, Compass, Check } from "lucide-react";
+import { CalendarClock, CreditCard, Landmark, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/navigatr";
+import { Logo } from "@/components/layout/Logo";
 import { useAuth, type Profession } from "@/stores/auth";
 
 interface Option {
@@ -63,12 +64,10 @@ export function ProfessionSelectorPage() {
   return (
     <main className="flex min-h-dvh flex-col bg-surface-canvas px-4 py-10">
       <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col">
-        {/* Brand mark */}
-        <div className="mb-10 flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-radius-md bg-brand-primary text-brand-primary-foreground">
-            <Compass className="h-5 w-5" />
-          </span>
-          <span className="text-heading-md tracking-tight text-text-default">navigatr</span>
+        {/* Brand mark — unified Logo component (user-supplied SVG + Space
+            Grotesk wordmark) instead of the early placeholder. */}
+        <div className="mb-10">
+          <Logo size="md" />
         </div>
 
         {/* Heading */}
