@@ -104,9 +104,12 @@ interface DerivedTask {
   dueAt: string; // ISO
 }
 
-function useDerivedTasks(): DerivedTask[] {
-  // No `now` dep — bucketing happens at the caller; we just resolve
-  // and sort the raw set. Sprint 2 will swap this for a real query.
+function useDerivedTasks(refreshKey: number): DerivedTask[] {
+  // refreshKey lets callers bust the memo after MOCK_ACTIVITIES.unshift
+  // mutates the source array — without it, the memo returns the snapshot
+  // captured at mount and newly-logged activities don't appear in the
+  // derived tasks. Sprint 2 swaps this for a query; the refreshKey
+  // pattern goes away.
   return React.useMemo(() => {
     const dealById = new Map(MOCK_DEALS.map((d) => [d.id, d]));
     const tasks: DerivedTask[] = [];
@@ -117,7 +120,8 @@ function useDerivedTasks(): DerivedTask[] {
       tasks.push({ fromActivity: a, deal, dueAt: a.followUpDate });
     }
     return tasks.sort((a, b) => a.dueAt.localeCompare(b.dueAt));
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 }
 
 // ── Row components ────────────────────────────────────────────────────
@@ -308,11 +312,16 @@ export function ActivitiesPage() {
   const [typeFilter, setTypeFilter] = React.useState<"all" | ActivityType>("all");
   const [logSheetDealId, setLogSheetDealId] = React.useState<string | null>(null);
   const [logSheetOpen, setLogSheetOpen] = React.useState(false);
+  // Bumps when a new activity is logged so all memoized views recompute
+  // against the freshly-mutated MOCK_ACTIVITIES array.
+  const [refreshKey, setRefreshKey] = React.useState(0);
 
   // Pin "now" once per mount so the bucketing doesn't drift mid-session.
+  // TODO Sprint 2: re-pin on tab visibility change so a rep who leaves
+  // the app open overnight gets a fresh "today" on next focus.
   const now = React.useMemo(() => new Date(), []);
 
-  const tasks = useDerivedTasks();
+  const tasks = useDerivedTasks(refreshKey);
 
   const { overdue, today, upcoming } = React.useMemo(() => {
     const groups = { overdue: [] as DerivedTask[], today: [] as DerivedTask[], upcoming: [] as DerivedTask[] };
@@ -338,13 +347,28 @@ export function ActivitiesPage() {
     return Array.from(map.entries()); // [[yyyy-mm-dd, tasks], ...] already sorted by tasks[].dueAt
   }, [upcoming]);
 
-  // History — most recent first, filtered by type.
+  // History — most recent first, filtered by type. refreshKey in deps so
+  // newly-logged activities surface immediately after the log sheet
+  // closes (otherwise the memo holds the pre-log snapshot).
   const history = React.useMemo(() => {
     const filtered = typeFilter === "all"
       ? MOCK_ACTIVITIES
       : MOCK_ACTIVITIES.filter((a) => a.type === typeFilter);
     return [...filtered].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
-  }, [typeFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeFilter, refreshKey]);
+
+  // Per-type counts memoized once per refreshKey, not recomputed per chip
+  // per render. Saves 4 unnecessary array.filter walks on every render.
+  const typeCounts = React.useMemo(() => {
+    const counts: Record<"all" | ActivityType, number> = {
+      all: MOCK_ACTIVITIES.length,
+      call: 0, email: 0, drop_in: 0, appointment: 0,
+    };
+    for (const a of MOCK_ACTIVITIES) counts[a.type]++;
+    return counts;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   const openLogSheet = (dealId: string) => {
     setLogSheetDealId(dealId);
@@ -471,7 +495,7 @@ export function ActivitiesPage() {
                   <Chip
                     key={f}
                     active={typeFilter === f}
-                    count={f === "all" ? MOCK_ACTIVITIES.length : MOCK_ACTIVITIES.filter((a) => a.type === f).length}
+                    count={typeCounts[f]}
                     onClick={() => setTypeFilter(f)}
                   >
                     {typeFilterLabel(f)}
@@ -505,8 +529,11 @@ export function ActivitiesPage() {
           dealId={logSheetDealId}
           onLogged={() => {
             toast.success("Activity logged");
-            // Force re-render by bouncing `now` via setTab to current tab.
-            setTab((t) => t);
+            // Bump refreshKey so every memo (tasks, history, counts)
+            // recomputes against the freshly-mutated MOCK_ACTIVITIES.
+            // The previous setTab((t)=>t) was a no-op because React 18
+            // bails on Object.is-equal state updates.
+            setRefreshKey((n) => n + 1);
           }}
         />
       )}
