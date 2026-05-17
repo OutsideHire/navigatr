@@ -1,20 +1,32 @@
 /**
- * navigatr LogoMark — the open-needle waypoint compass.
+ * navigatr LogoMark — the "Roberts" filled-compass + diamond mark.
  *
- * Source: navigatr brand pack v2 (variant C, "Open-needle Waypoint").
- * Outlined ring + outlined needles, lighter optical weight than the
- * original filled-needle mark.
+ * Source: navigatr brand pack v3 (Roberts variant). Filled north/south
+ * needles, blue accent, diamond "rose" at center, outlined ring.
  *
- * Anatomy (40×40 viewBox to match the brand-pack SVG source):
- *   - ring     : outer circle, stroke = currentColor (1.6 at 40-unit scale)
- *   - upper    : north needle, stroke = signal blue #2F5BFF (1.8)
- *   - lower    : south needle, stroke = currentColor (1.8)
- *   - center   : small filled dot, fill = currentColor
+ * Anatomy (500×500 viewBox to match the brand-pack SVG source — preserves
+ * proportions exactly so we can drop in the source SVG verbatim for
+ * favicon/manifest icons and have parity):
+ *   - ring     : outer circle r=200, stroke = currentColor (ink), 28px
+ *   - upper    : north triangle, fill = signal blue #2456E6
+ *   - lower    : south triangle, fill = currentColor (ink)
+ *   - diamond  : center compass-rose diamond, fill = surface-default
+ *                (var so it auto-flips in dark mode), 6px blue outline
+ *   - dot      : small center disc r=18, fill = currentColor (ink)
  *
- * Ink (`currentColor`) parts adapt to dark mode automatically because the
- * SVG inherits from `text-text-default` on the wrapper. The north needle
- * stays signal blue regardless — that's the brand accent and it pops on
- * both backgrounds.
+ * Color adaptation strategy:
+ *   - Ink parts use `currentColor` so the wrapper's `text-text-default`
+ *     class drives them. Light mode → near-black. Dark mode → near-white.
+ *   - The blue (#2456E6) is hardcoded — it's the brand accent and must
+ *     read the same regardless of theme or hover state.
+ *   - The diamond's fill uses `var(--color-surface-default)` so it
+ *     "cuts out" of the mark visually — appears white on white surface,
+ *     dark navy on dark surface. CSS vars work in SVG fill attributes.
+ *
+ * Brand colors (from /Downloads/Navigatr Roberts Logo/*.svg):
+ *   Ink     #0A1733
+ *   Signal  #2456E6
+ *   Paper   #FFFFFF
  */
 
 import * as React from "react";
@@ -32,40 +44,33 @@ export const LogoMark = React.forwardRef<SVGSVGElement, LogoMarkProps>(function 
   return (
     <svg
       ref={ref}
-      viewBox="0 0 40 40"
+      viewBox="0 0 500 500"
       width={size}
       height={size}
       role="img"
       aria-label="navigatr"
-      fill="none"
       className={cn("text-text-default shrink-0", className)}
       {...rest}
     >
-      {/* outer ring — ink (currentColor) */}
-      <circle
-        cx="20"
-        cy="20"
-        r="15.5"
-        stroke="currentColor"
-        strokeWidth="1.6"
-      />
-      {/* upper needle — signal blue (brand accent, hardcoded so it pops
-          regardless of light/dark or hover-state recoloring) */}
-      <path
-        d="M 20 7 L 24 20 L 20 17 L 16 20 Z"
-        stroke="#2F5BFF"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
-      {/* lower needle — ink (currentColor) */}
-      <path
-        d="M 20 33 L 16 20 L 20 23 L 24 20 Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
-      {/* center dot — small filled disc, ink (currentColor) */}
-      <circle cx="20" cy="20" r="1.2" fill="currentColor" />
+      <g transform="translate(250, 250)">
+        {/* outer ring — ink (currentColor) */}
+        <circle cx="0" cy="0" r="200" fill="none" stroke="currentColor" strokeWidth="28" />
+        {/* upper triangle — signal blue brand accent (hardcoded) */}
+        <polygon points="0,-160 -55,30 55,30" fill="#2456E6" />
+        {/* lower triangle — ink (currentColor) */}
+        <polygon points="0,160 -55,-30 55,-30" fill="currentColor" />
+        {/* center diamond — fills with surface color so the diamond "cuts
+            out" against whatever surface the mark sits on. Blue 6px outline
+            preserved from the source pack for legibility at small sizes. */}
+        <polygon
+          points="0,-60 65,0 0,60 -65,0"
+          fill="var(--color-surface-default)"
+          stroke="#2456E6"
+          strokeWidth="6"
+        />
+        {/* center dot — ink (currentColor), r=18 in the 500-unit space */}
+        <circle cx="0" cy="0" r="18" fill="currentColor" />
+      </g>
     </svg>
   );
 });

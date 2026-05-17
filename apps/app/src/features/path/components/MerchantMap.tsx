@@ -106,8 +106,8 @@ export function MerchantMap({
           center={[position.lat, position.lng]}
           radius={8}
           pathOptions={{
-            color: "#2F5BFF",     // signal blue ring
-            fillColor: "#2F5BFF",
+            color: "#2456E6",     // signal blue ring
+            fillColor: "#2456E6",
             fillOpacity: 0.9,
             weight: 3,
           }}
@@ -145,7 +145,7 @@ export function MerchantMap({
           <Polyline
             positions={routePath.map((p) => [p.lat, p.lng])}
             pathOptions={{
-              color: "#2F5BFF",
+              color: "#2456E6",
               weight: 3,
               opacity: 0.7,
               dashArray: "8 6",

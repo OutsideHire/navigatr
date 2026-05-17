@@ -78,7 +78,7 @@ export default defineConfig({
         name: "navigatr",
         short_name: "navigatr",
         description: "The mobile-first sales platform for field reps",
-        theme_color: "#2F5BFF",
+        theme_color: "#2456E6",
         background_color: "#F7F8FB",
         display: "standalone",
         orientation: "portrait",

@@ -122,7 +122,7 @@ export const STATUS_PILL_CLASS: Record<MerchantStatus, string> = {
  *  they need a string color value. Stay in sync with STATUS_PILL_CLASS. */
 export const STATUS_MAP_COLOR: Record<MerchantStatus, string> = {
   untouched: "#8C94A6", // text-muted-ish
-  prospect:  "#2F5BFF", // signal blue (brand accent)
+  prospect:  "#2456E6", // signal blue (brand accent)
   active:    "#8B5CF6", // accent-violet
   won:       "#16A34A", // status-success
   cooled:    "#F59E0B", // status-warning
