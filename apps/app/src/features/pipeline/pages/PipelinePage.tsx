@@ -23,21 +23,21 @@
 
 import * as React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  ArrowRight,
   ChevronDown,
-  Mail,
+  Columns,
+  List,
   PackageOpen,
+  Phone,
   Plus,
   Search,
   SlidersHorizontal,
-  Users,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import {
-  Badge,
   Button,
   Card,
   CardWithStatusBand,
@@ -45,17 +45,16 @@ import {
   FormField,
   Input,
   KpiCard,
-  PhoneWithClickToCall,
 } from "@/components/navigatr";
 
+import { useDeals } from "../hooks/useDeals";
 import {
-  fetchDealsMock,
   formatMoney,
   formatRelative,
   formatShortDate,
   HEADER_SUBHEAD,
-  STAGE_BADGE_KIND,
   STAGE_BAND_COLOR,
+  STAGE_NEXT_VERB,
   STAGE_CHIP_COUNTS,
   STAGE_LABEL,
   type Deal,
@@ -63,6 +62,7 @@ import {
 } from "../mockData";
 import { DealCardSkeleton } from "../components/DealCardSkeleton";
 import { AddDealSheet } from "../components/AddDealSheet";
+import { KanbanBoard } from "../components/KanbanBoard";
 
 // ───────────────────────────────────────────────────────────────────────
 // Filter / search state
@@ -70,6 +70,29 @@ import { AddDealSheet } from "../components/AddDealSheet";
 
 type StageFilter = "all" | DealStage;
 const STAGE_FILTERS: StageFilter[] = ["all", "new", "contacted", "qualified", "proposal", "won"];
+
+type ViewMode = "kanban" | "list";
+const VIEW_MODE_KEY = "navigatr:pipeline:viewMode";
+
+/** Persisted view-mode preference. Kanban is the desktop default; list is
+ *  the only sensible mobile layout, so the parent gates kanban behind lg. */
+function usePersistedViewMode(): [ViewMode, (m: ViewMode) => void] {
+  const [mode, setMode] = React.useState<ViewMode>(() => {
+    if (typeof window === "undefined") return "kanban";
+    const stored = window.localStorage.getItem(VIEW_MODE_KEY);
+    return stored === "list" ? "list" : "kanban";
+  });
+  const update = React.useCallback((next: ViewMode) => {
+    setMode(next);
+    try {
+      window.localStorage.setItem(VIEW_MODE_KEY, next);
+    } catch {
+      // localStorage can throw in private-mode Safari. UI keeps working
+      // with in-memory state; the preference just doesn't persist.
+    }
+  }, []);
+  return [mode, update];
+}
 
 function chipLabel(f: StageFilter): string {
   return f === "all" ? "All" : STAGE_LABEL[f];
@@ -89,79 +112,106 @@ function useDebounced<T>(value: T, delayMs: number): T {
 // Deal card
 // ───────────────────────────────────────────────────────────────────────
 
+/** Probability rendered as 5 dots filled left-to-right (20% per dot).
+ *  Replaces the prior 1px progress bar — that read as an empty input. */
+function ProbabilityDots({ value }: { value: number }) {
+  const filled = Math.max(0, Math.min(5, Math.round(value / 20)));
+  return (
+    <span className="inline-flex items-center gap-1" aria-hidden>
+      {Array.from({ length: 5 }, (_, i) => (
+        <span
+          key={i}
+          className={cn(
+            "h-1.5 w-1.5 rounded-radius-full",
+            i < filled ? "bg-brand-primary" : "bg-surface-sunken",
+          )}
+        />
+      ))}
+    </span>
+  );
+}
+
+/** Format E.164 → "(202) 555-0199". Tolerates already-formatted strings
+ *  and short / non-US numbers by falling back to the raw value. */
+function formatPhoneForDisplay(e164: string): string {
+  const digits = e164.replace(/\D/g, "");
+  // Strip leading "1" country code if present.
+  const ten = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  if (ten.length !== 10) return e164;
+  return `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}`;
+}
+
 function DealCard({ deal }: { deal: Deal }) {
   const navigate = useNavigate();
+  const nextVerb = STAGE_NEXT_VERB[deal.stage];
+
   return (
     <CardWithStatusBand
       bandColor={STAGE_BAND_COLOR[deal.stage]}
       onClick={() => navigate(`/pipeline/${deal.id}`)}
       contentPadding="md"
+      aria-label={`${deal.companyName}, ${formatMoney(deal.valueCents)}, next: ${nextVerb}`}
     >
       <div className="flex flex-col gap-3">
-        {/* Top row: company/contact ↔ value/badge */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-body-strong text-text-default">{deal.companyName}</p>
-            <p className="truncate text-caption text-text-muted">{deal.contactName}</p>
-          </div>
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            <span className="text-heading-sm tabular-nums text-text-default">
-              {formatMoney(deal.valueCents)}
-            </span>
-            <Badge kind={STAGE_BADGE_KIND[deal.stage]}>
-              {STAGE_LABEL[deal.stage]}
-            </Badge>
-          </div>
-        </div>
-
-        {/* Middle row: phone + email + headcount. flex-wrap so it stacks
-            naturally on narrow widths. onClick on parent navigates; we
-            stop propagation on the phone button so tel: still fires. */}
-        <div
-          className="flex flex-wrap items-center gap-x-4 gap-y-2"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <PhoneWithClickToCall phoneNumber={deal.phone} size="sm" />
-          <span className="inline-flex min-w-0 items-center gap-1.5 text-body-sm text-text-muted">
-            <Mail className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            <span className="truncate">{deal.email}</span>
-          </span>
-          <span className="inline-flex items-center gap-1.5 text-body-sm text-text-muted">
-            <Users className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            {deal.employeeCountRange}
+        {/* Row 1: company ↔ value. Stage band on the left already encodes
+            the stage — no badge needed, freeing the right column for the
+            scan-critical $value. */}
+        <div className="flex items-baseline justify-between gap-3">
+          <p className="min-w-0 truncate text-body-strong text-text-default">
+            {deal.companyName}
+          </p>
+          <span className="shrink-0 text-heading-sm tabular-nums text-text-default">
+            {formatMoney(deal.valueCents)}
           </span>
         </div>
 
-        {/* Probability label + bar */}
-        <div className="flex flex-col gap-1">
-          <div className="flex items-baseline justify-between">
-            <span className="text-caption text-text-muted">Probability</span>
-            <span className="text-caption tabular-nums text-text-default">
-              {deal.probability}%
-            </span>
-          </div>
-          <div
-            className="h-px w-full overflow-hidden rounded-radius-full bg-surface-sunken"
-            // h-px in Tailwind = 1px tall, per spec.
+        {/* Row 2: tappable contact-and-phone pill (the primary action
+            anywhere in the card except "drill in") ↔ probability dots+%. */}
+        <div className="flex items-center justify-between gap-3">
+          <a
+            href={`tel:${deal.phone}`}
+            onClick={(e) => e.stopPropagation()}
+            className={cn(
+              "inline-flex min-w-0 items-center gap-2 rounded-radius-sm px-2 py-1 -mx-2",
+              "text-body-sm text-text-default",
+              "transition-colors hover:bg-surface-sunken",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary",
+            )}
+            aria-label={`Call ${deal.contactName} at ${formatPhoneForDisplay(deal.phone)}`}
           >
-            <div
-              className="h-full rounded-radius-full bg-brand-primary"
-              style={{ width: `${deal.probability}%` }}
+            <Phone
+              className="h-3.5 w-3.5 shrink-0 text-text-muted"
               aria-hidden
             />
-          </div>
+            <span className="truncate font-medium">{deal.contactName}</span>
+            <span className="text-text-subtle">·</span>
+            <span className="truncate tabular-nums text-text-muted">
+              {formatPhoneForDisplay(deal.phone)}
+            </span>
+          </a>
+          <span className="inline-flex shrink-0 items-center gap-2 text-caption text-text-muted">
+            <ProbabilityDots value={deal.probability} />
+            <span className="tabular-nums text-text-default">{deal.probability}%</span>
+          </span>
         </div>
 
-        {/* Bottom row: last activity ↔ next follow-up */}
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-caption text-text-muted">
-            Last activity: <span className="tabular-nums">{formatRelative(deal.lastActivity)}</span>
+        {/* Action zone — hairline-separated. Promotes the next action
+            from "data" (a date) to "instruction" (verb + date). The
+            arrow + verb is the single most important thing on this
+            card; "last touched" demotes to grey-on-grey. */}
+        <div className="flex items-center justify-between gap-2 border-t border-border-subtle pt-3">
+          <span className="inline-flex min-w-0 items-center gap-1.5 text-body-sm text-text-default">
+            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-text-muted" aria-hidden />
+            <span className="truncate font-medium">{nextVerb}</span>
+            {deal.nextFollowup && (
+              <span className="truncate text-text-muted">
+                · <span className="tabular-nums">{formatShortDate(deal.nextFollowup)}</span>
+              </span>
+            )}
           </span>
-          {deal.nextFollowup && (
-            <span className="text-caption text-text-default">
-              Next: <span className="tabular-nums">{formatShortDate(deal.nextFollowup)}</span>
-            </span>
-          )}
+          <span className="shrink-0 text-caption text-text-subtle">
+            Last touched <span className="tabular-nums">{formatRelative(deal.lastActivity)}</span>
+          </span>
         </div>
       </div>
     </CardWithStatusBand>
@@ -209,10 +259,14 @@ function PageHeader({
   search,
   onSearchChange,
   onAddDeal,
+  viewMode,
+  onViewModeChange,
 }: {
   search: string;
   onSearchChange: (s: string) => void;
   onAddDeal: () => void;
+  viewMode: ViewMode;
+  onViewModeChange: (m: ViewMode) => void;
 }) {
   return (
     <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -247,6 +301,13 @@ function PageHeader({
             />
           </FormField>
         </div>
+        {/* Kanban/List toggle — gated to lg because kanban needs the
+            5-column horizontal width. Below lg the action row collapses
+            its action items but the toggle hides; users on tablet-width
+            see the list view (which is also the mobile pattern). */}
+        <div className="hidden lg:block">
+          <ViewToggle mode={viewMode} onChange={onViewModeChange} />
+        </div>
         <Button
           variant="secondary"
           size="md"
@@ -279,6 +340,48 @@ function KpiStrip() {
       <KpiCard eyebrow="WEIGHTED"        value="$98K"  subtitle="probability·value" accent="violet" size="standard" />
       <KpiCard eyebrow="ACTIVE DEALS"    value="47"    subtitle="across stages" accent="blue"   size="standard" />
       <KpiCard eyebrow="WON THIS MONTH"  value="$10K"  subtitle="3 deals"       accent="orange" size="standard" />
+    </div>
+  );
+}
+
+function ViewToggle({
+  mode,
+  onChange,
+}: {
+  mode: ViewMode;
+  onChange: (next: ViewMode) => void;
+}) {
+  // Segmented control — desktop only. Reuses the existing border/surface
+  // tokens; no new design primitives. Tabbed roles for screen readers.
+  return (
+    <div
+      role="tablist"
+      aria-label="Pipeline view mode"
+      className="inline-flex h-10 items-center gap-1 rounded-radius-md border border-border-subtle bg-surface-sunken p-1"
+    >
+      {(["kanban", "list"] as const).map((m) => {
+        const Icon = m === "kanban" ? Columns : List;
+        const isActive = mode === m;
+        return (
+          <button
+            key={m}
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            onClick={() => onChange(m)}
+            className={cn(
+              "inline-flex h-8 items-center gap-1.5 rounded-radius-sm px-3 text-body-sm",
+              "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary",
+              isActive
+                ? "bg-surface-default text-text-default shadow-card-default"
+                : "text-text-muted hover:text-text-default",
+            )}
+          >
+            <Icon className="h-4 w-4" aria-hidden />
+            {m === "kanban" ? "Kanban" : "List"}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -325,6 +428,7 @@ export function PipelinePage() {
   const debouncedSearch = useDebounced(searchInput, 300);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [viewMode, setViewMode] = usePersistedViewMode();
 
   // Deep-link: /pipeline?action=add auto-opens the Add Deal sheet. We
   // strip the param after opening so a back-nav doesn't re-fire it.
@@ -337,12 +441,10 @@ export function PipelinePage() {
     }
   }, [searchParams, setSearchParams]);
 
-  // TODO Sprint 2: swap fetchDealsMock for the generated SDK
-  // (Deals.listDeals) and pass stage + q as server-side params.
-  const { data: deals, isLoading } = useQuery({
-    queryKey: ["deals", "mock"],
-    queryFn: fetchDealsMock,
-  });
+  // Reads from Supabase via RLS — server scopes to the user's org_id.
+  // Stage/search filters still applied in-memory below; dataset is small
+  // enough that round-tripping per chip click would be wasteful.
+  const { data: deals, isLoading } = useDeals();
 
   const onAddDeal = () => setSheetOpen(true);
 
@@ -363,17 +465,38 @@ export function PipelinePage() {
           search={searchInput}
           onSearchChange={setSearchInput}
           onAddDeal={onAddDeal}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
         />
 
         <KpiStrip />
 
-        <StageChips active={stageFilter} onChange={setStageFilter} />
+        {/* Stage chips: when kanban is the active view AND we're at lg+,
+            the columns ARE the stages, so the chip filter is redundant.
+            Hide it then. Below lg we always render list view, so chips
+            stay. */}
+        <div className={cn(viewMode === "kanban" && "lg:hidden")}>
+          <StageChips active={stageFilter} onChange={setStageFilter} />
+        </div>
 
-        {/* Deal list */}
         {isLoading ? (
           <LoadingList />
         ) : filtered.length === 0 ? (
           <EmptyState onAddDeal={onAddDeal} />
+        ) : viewMode === "kanban" ? (
+          <>
+            {/* Kanban only renders at lg+. Below that we fall back to
+                the list view of the same filtered set so mobile + tablet
+                users always see SOMETHING after toggling. */}
+            <div className="hidden lg:block">
+              <KanbanBoard deals={filtered} />
+            </div>
+            <div className="flex flex-col gap-3 lg:hidden">
+              {filtered.map((deal) => (
+                <DealCard key={deal.id} deal={deal} />
+              ))}
+            </div>
+          </>
         ) : (
           <div className="flex flex-col gap-3">
             {filtered.map((deal) => (
