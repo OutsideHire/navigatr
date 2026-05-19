@@ -1,50 +1,35 @@
 /**
- * useDeal(dealId) — Sprint 1 client-side lookup.
+ * useDeal(dealId) — single-deal lookup, subscribed to the deals list query.
  *
- * Reads from the cached ['deals','mock'] TanStack Query data populated by
- * PipelinePage (Session 13). If the cache hasn't been hydrated yet (e.g.
- * user deep-linked to /pipeline/:dealId without visiting /pipeline first),
- * falls back to MOCK_DEALS directly so the page still renders.
+ * Composes useDeals() so the deal detail page sees the same source of
+ * truth as the pipeline list. React Query dedupes the underlying fetch
+ * by query key — no duplicate network request fires when both /pipeline
+ * and /pipeline/:dealId are mounted in the same session.
  *
- * Sprint 2: replace with `Deals.getDeal(dealId)` from the generated SDK.
+ * Earlier versions read from queryClient.getQueryData inside a useMemo.
+ * That snapshots the cache once and never re-runs, so a fresh navigation
+ * where the cache was cold would render NotFound even after the list
+ * query resolved. Subscribing via useDeals fixes that — when data arrives,
+ * the component re-renders and the find() picks the right deal up.
  */
 
 import * as React from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { type Deal } from "../mockData";
-import { activitiesForDeal, type Activity } from "@/features/activities/mockData";
-import { useAuth } from "@/stores/auth";
-import { DEALS_QUERY_KEY } from "./useDeals";
+import { useDeals } from "./useDeals";
 
 export interface UseDealResult {
   deal: Deal | undefined;
-  activities: Activity[];
-  /** Bumps after a successful activity log so consumers re-read. */
-  activitiesVersion: number;
-  refreshActivities: () => void;
+  isLoading: boolean;
+  isError: boolean;
 }
 
 export function useDeal(dealId: string | undefined): UseDealResult {
-  const queryClient = useQueryClient();
-  const userId = useAuth((s) => s.user?.id);
-  const [activitiesVersion, setActivitiesVersion] = React.useState(0);
+  const { data: deals, isLoading, isError } = useDeals();
 
   const deal = React.useMemo<Deal | undefined>(() => {
-    if (!dealId) return undefined;
-    const cached = queryClient.getQueryData<Deal[]>(DEALS_QUERY_KEY(userId));
-    return cached?.find((d) => d.id === dealId);
-  }, [dealId, queryClient, userId, activitiesVersion]);
+    if (!dealId || !deals) return undefined;
+    return deals.find((d) => d.id === dealId);
+  }, [dealId, deals]);
 
-  const activities = React.useMemo<Activity[]>(() => {
-    if (!dealId) return [];
-    return activitiesForDeal(dealId);
-    // `activitiesVersion` invalidates the memo without changing the underlying call.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dealId, activitiesVersion]);
-
-  const refreshActivities = React.useCallback(() => {
-    setActivitiesVersion((v) => v + 1);
-  }, []);
-
-  return { deal, activities, activitiesVersion, refreshActivities };
+  return { deal, isLoading, isError };
 }
