@@ -61,7 +61,8 @@ describe("useLogActivity", () => {
     });
 
     expect(insertMock).toHaveBeenCalledTimes(1);
-    const payload = insertMock.mock.calls[0][0];
+    const calls = insertMock.mock.calls as unknown as Array<[Record<string, unknown>]>;
+    const payload = calls[0]?.[0];
     expect(payload).toMatchObject({
       org_id: "org-1",
       deal_id: "deal-1",
@@ -89,8 +90,9 @@ describe("useLogActivity", () => {
       disposition: "not_interested",
       followUpDate: null,
     });
-    const payload = insertMock.mock.calls[0][0];
-    expect(payload.follow_up_date).toBeNull();
+    const calls = insertMock.mock.calls as unknown as Array<[Record<string, unknown>]>;
+    const payload = calls[0]?.[0];
+    expect(payload?.follow_up_date).toBeNull();
   });
 
   it("invalidates all three caches on success: per-deal activities, org-wide activities, deals list", async () => {

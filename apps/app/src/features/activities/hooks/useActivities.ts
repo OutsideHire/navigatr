@@ -62,7 +62,7 @@ export function useActivities(dealId: string | undefined) {
         .eq("deal_id", dealId!)
         .order("occurred_at", { ascending: false });
       if (error) throw error;
-      return (data ?? []).map((r) => toActivity(r as ActivityRow));
+      return (data ?? []).map((r) => toActivity(r as unknown as ActivityRow));
     },
     staleTime: 30_000,
   });
@@ -88,7 +88,7 @@ export function useActivitiesForOrg() {
         )
         .order("occurred_at", { ascending: false });
       if (error) throw error;
-      return (data ?? []).map((r) => toActivity(r as ActivityRow));
+      return (data ?? []).map((r) => toActivity(r as unknown as ActivityRow));
     },
     staleTime: 30_000,
   });

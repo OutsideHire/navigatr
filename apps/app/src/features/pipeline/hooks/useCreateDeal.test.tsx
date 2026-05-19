@@ -60,7 +60,8 @@ describe("useCreateDeal", () => {
     });
 
     expect(insertMock).toHaveBeenCalledTimes(1);
-    const payload = insertMock.mock.calls[0][0];
+    const calls = insertMock.mock.calls as unknown as Array<[Record<string, unknown>]>;
+    const payload = calls[0]?.[0];
     expect(payload).toMatchObject({
       org_id: "org-1",
       owner_id: "user-1",
@@ -102,8 +103,9 @@ describe("useCreateDeal", () => {
         acceptanceMethods: ["card_present", "ecommerce"],
       },
     });
-    const payload = insertMock.mock.calls[0][0];
-    expect(payload.profession_data).toEqual({
+    const calls = insertMock.mock.calls as unknown as Array<[Record<string, unknown>]>;
+    const payload = calls[0]?.[0];
+    expect(payload?.profession_data).toEqual({
       profession: "merchant_services",
       annualVolume: 1_000_000,
       acceptanceMethods: ["card_present", "ecommerce"],

@@ -79,7 +79,7 @@ export function useDeals() {
         )
         .order("updated_at", { ascending: false });
       if (error) throw error;
-      return (data ?? []).map((row) => toDeal(row as DealRow));
+      return (data ?? []).map((row) => toDeal(row as unknown as DealRow));
     },
     staleTime: 30_000,
   });

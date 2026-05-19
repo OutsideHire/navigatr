@@ -16,7 +16,6 @@
  */
 
 import { useNavigate } from "react-router-dom";
-import { Badge } from "@/components/navigatr";
 import { cn } from "@/lib/utils";
 import {
   formatMoney,
@@ -94,7 +93,12 @@ function Column({ stage, deals }: { stage: DealStage; deals: Deal[] }) {
           <span className="text-body-strong text-text-default">
             {STAGE_LABEL[stage]}
           </span>
-          <Badge kind="neutral">{deals.length}</Badge>
+          <span
+            className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-radius-full bg-surface-default px-1.5 text-[11px] font-medium tabular-nums text-text-muted"
+            aria-label={`${deals.length} deals`}
+          >
+            {deals.length}
+          </span>
         </span>
         <span className="text-caption tabular-nums text-text-muted">
           {formatMoney(totalCents)}
