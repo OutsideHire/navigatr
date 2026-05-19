@@ -25,9 +25,9 @@ interface AuthState {
   error: string | null;
 
   signInWithEmail: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
-  signInWithMicrosoft: () => Promise<void>;
-  signUp: (email: string, password: string, fullName: string) => Promise<void>;
+  signInWithGoogle: (inviteCode?: string) => Promise<void>;
+  signInWithMicrosoft: (inviteCode?: string) => Promise<void>;
+  signUp: (email: string, password: string, fullName: string, inviteCode: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
@@ -58,11 +58,18 @@ export const useAuth = create<AuthState>((set) => ({
     }
   },
 
-  signInWithGoogle: async () => {
+  signInWithGoogle: async (inviteCode) => {
     set({ error: null });
+    // Primary carrier: URL. Fallback: sessionStorage (refresh-recovery).
+    // See design doc § "Signup & Org Assignment" — sessionStorage alone
+    // breaks in new tabs and Safari ITP. The URL is the source of truth.
+    if (inviteCode) sessionStorage.setItem("pending_invite", inviteCode);
+    const callback = `${window.location.origin}/auth/callback${
+      inviteCode ? `?invite=${encodeURIComponent(inviteCode)}` : ""
+    }`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/dashboard` },
+      options: { redirectTo: callback },
     });
     if (error) {
       set({ error: error.message });
@@ -70,12 +77,16 @@ export const useAuth = create<AuthState>((set) => ({
     }
   },
 
-  signInWithMicrosoft: async () => {
+  signInWithMicrosoft: async (inviteCode) => {
     set({ error: null });
+    if (inviteCode) sessionStorage.setItem("pending_invite", inviteCode);
+    const callback = `${window.location.origin}/auth/callback${
+      inviteCode ? `?invite=${encodeURIComponent(inviteCode)}` : ""
+    }`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "azure",
       options: {
-        redirectTo: `${window.location.origin}/dashboard`,
+        redirectTo: callback,
         scopes: "email openid profile",
       },
     });
@@ -85,14 +96,17 @@ export const useAuth = create<AuthState>((set) => ({
     }
   },
 
-  signUp: async (email, password, fullName) => {
+  signUp: async (email, password, fullName, inviteCode) => {
     set({ error: null });
+    // Email/password path: invite_code travels in user_metadata. The
+    // handle_new_user_signup trigger reads it server-side and creates the
+    // profiles row (or raises, rolling back the auth.users insert).
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { full_name: fullName },
-        emailRedirectTo: `${window.location.origin}/select-profession`,
+        data: { full_name: fullName, invite_code: inviteCode },
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });
     if (error) {

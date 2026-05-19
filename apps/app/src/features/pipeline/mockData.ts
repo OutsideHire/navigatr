@@ -154,10 +154,16 @@ export function formatMoney(cents: number): string {
   return `$${Math.round(dollars).toLocaleString()}`;
 }
 
-/** "3d ago" / "today" / "yesterday". Relative to TODAY (the mock anchor). */
-export function formatRelative(iso: string): string {
+/**
+ * "3d ago" / "today" / "yesterday". Defaults `now` to the current wall
+ * clock — was previously hardcoded to TODAY (the mock anchor 2026-04-30),
+ * which made every REAL deal created after the anchor render as a future
+ * event ("in 19d") instead of a past one. Mock callers can still pass
+ * TODAY explicitly to keep the curated story aligned.
+ */
+export function formatRelative(iso: string, now: Date = new Date()): string {
   const then = new Date(iso);
-  const diffMs = TODAY.getTime() - then.getTime();
+  const diffMs = now.getTime() - then.getTime();
   const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
   if (diffDays === 0) return "today";
   if (diffDays === 1) return "yesterday";
@@ -197,6 +203,22 @@ export const STAGE_LABEL: Record<DealStage, string> = {
   qualified: "Qualified",
   proposal: "Proposal",
   won: "Won",
+};
+
+/**
+ * Default next-step verb for each stage. Powers the DealCard's
+ * action-zone line ("→ Call back · Jun 3"). Turns a date (data) into
+ * an instruction (job-to-be-done).
+ *
+ * When a deal has a rep-authored next-step note (Sprint 2), prefer that
+ * over the default verb. Generic verb is the fallback.
+ */
+export const STAGE_NEXT_VERB: Record<DealStage, string> = {
+  new: "Reach out",
+  contacted: "Call back",
+  qualified: "Send proposal",
+  proposal: "Follow up",
+  won: "Onboard",
 };
 
 // Chip counts authored to match the dashboard story (47 total active across

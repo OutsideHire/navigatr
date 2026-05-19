@@ -26,6 +26,10 @@ export function InvitationAcceptanceForm() {
   const email = params.get("email") ?? "you@company.com";
   const role = params.get("role") ?? "sales_professional";
   const tenantName = params.get("tenant") ?? "your team";
+  // Legacy /accept-invitation flow predates org-scoped invite codes. The
+  // real backend now requires an invite_code; we forward it if the link
+  // carries one, otherwise signup will fail server-side with a clear error.
+  const inviteCode = params.get("code") ?? "";
 
   const signUp = useAuth((s) => s.signUp);
   const navigate = useNavigate();
@@ -41,7 +45,7 @@ export function InvitationAcceptanceForm() {
 
   const onSubmit = async (values: Values) => {
     try {
-      await signUp(email, values.password, values.fullName);
+      await signUp(email, values.password, values.fullName, inviteCode);
       navigate("/dashboard");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't accept invitation");

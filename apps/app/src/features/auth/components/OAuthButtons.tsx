@@ -41,13 +41,24 @@ function MicrosoftIcon() {
  * Both SSO buttons in a vertical stack. Identical across Login, Sign Up, and
  * Invitation pages so we keep them in one place.
  */
-export function OAuthButtons({ disabled }: { disabled?: boolean }) {
+export function OAuthButtons({
+  disabled,
+  inviteCode,
+}: {
+  disabled?: boolean;
+  /**
+   * Optional invite code passed into the OAuth redirectTo URL. Required for
+   * first-time signups on /signup; omitted for /login where the user already
+   * has a profile. The /auth/callback page reads it and calls claim_invite_code.
+   */
+  inviteCode?: string;
+}) {
   const signInWithGoogle = useAuth((s) => s.signInWithGoogle);
   const signInWithMicrosoft = useAuth((s) => s.signInWithMicrosoft);
 
   const onGoogle = async () => {
     try {
-      await signInWithGoogle();
+      await signInWithGoogle(inviteCode || undefined);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Google sign-in failed");
     }
@@ -55,7 +66,7 @@ export function OAuthButtons({ disabled }: { disabled?: boolean }) {
 
   const onMicrosoft = async () => {
     try {
-      await signInWithMicrosoft();
+      await signInWithMicrosoft(inviteCode || undefined);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Microsoft sign-in failed");
     }

@@ -31,6 +31,7 @@ import {
   Building2,
   Calendar,
   Check,
+  Loader2,
   Mail,
   MapPin,
   Pencil,
@@ -60,6 +61,7 @@ import {
   type DealStage,
 } from "../mockData";
 import { useDeal } from "../hooks/useDeal";
+import { useActivities } from "@/features/activities/hooks/useActivities";
 import type { Activity } from "@/features/activities/mockData";
 import { DISPOSITIONS } from "@/lib/followUpScheduling";
 import { LogActivitySheet } from "@/features/activities/components/LogActivitySheet";
@@ -433,9 +435,21 @@ function QualificationTab({ deal }: { deal: Deal }) {
 export function DealDetailPage() {
   const { dealId } = useParams<{ dealId: string }>();
   const navigate = useNavigate();
-  const { deal, activities, refreshActivities } = useDeal(dealId);
+  // useDeal subscribes to useDeals internally — same cache, single fetch.
+  // The isLoading flag holds the spinner on a cold-cache deep-link until
+  // the list arrives, so we don't flash NotFound for a real deal.
+  const { deal, isLoading } = useDeal(dealId);
+  const { data: activities = [] } = useActivities(dealId);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [tab, setTab] = React.useState<TabKey>("overview");
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-text-subtle" aria-hidden />
+      </div>
+    );
+  }
 
   if (!deal) return <NotFound />;
 
@@ -489,7 +503,8 @@ export function DealDetailPage() {
         onOpenChange={setSheetOpen}
         dealId={deal.id}
         onLogged={() => {
-          refreshActivities();
+          // useLogActivity invalidates the cache; the timeline below
+          // refetches automatically. Just flip to the Activity tab.
           setTab("activity");
         }}
       />

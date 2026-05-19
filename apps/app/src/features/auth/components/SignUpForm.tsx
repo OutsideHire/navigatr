@@ -1,7 +1,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button, FormField, Input } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
@@ -11,6 +11,7 @@ const schema = z.object({
   fullName: z.string().trim().min(2, "Please enter your full name"),
   email: z.string().email("Enter a valid email address"),
   password: z.string().min(8, "At least 8 characters"),
+  inviteCode: z.string().trim().min(1, "Enter the invite code your account owner sent you"),
 });
 
 type Values = z.infer<typeof schema>;
@@ -18,20 +19,29 @@ type Values = z.infer<typeof schema>;
 export function SignUpForm() {
   const signUp = useAuth((s) => s.signUp);
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const codeFromUrl = params.get("code") ?? "";
 
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { fullName: "", email: "", password: "" },
+    defaultValues: { fullName: "", email: "", password: "", inviteCode: codeFromUrl },
   });
+
+  const inviteCode = watch("inviteCode");
 
   const onSubmit = async (values: Values) => {
     try {
-      await signUp(values.email, values.password, values.fullName);
-      navigate("/select-profession");
+      await signUp(values.email, values.password, values.fullName, values.inviteCode.trim());
+      // Email/password: confirmation email lands the user on /auth/callback;
+      // if the project has email confirm disabled, the SDK signs them in
+      // immediately and the auth state change will route them through
+      // RequireProfile → /auth/callback → /dashboard.
+      navigate("/auth/callback");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Sign up failed");
     }
@@ -39,7 +49,7 @@ export function SignUpForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
-      <OAuthButtons disabled={isSubmitting} />
+      <OAuthButtons disabled={isSubmitting} inviteCode={inviteCode?.trim() ?? ""} />
       <OrDivider />
 
       <FormField label="Full name" htmlFor="signup-name" error={errors.fullName?.message}>
@@ -66,6 +76,19 @@ export function SignUpForm() {
           autoComplete="new-password"
           placeholder="At least 8 characters"
           {...register("password")}
+        />
+      </FormField>
+
+      <FormField
+        label="Invite code"
+        htmlFor="signup-invite"
+        helper="From your account owner. Pre-filled if you opened the invite link."
+        error={errors.inviteCode?.message}
+      >
+        <Input
+          autoComplete="off"
+          placeholder="navigatr-acme-7k2p"
+          {...register("inviteCode")}
         />
       </FormField>
 

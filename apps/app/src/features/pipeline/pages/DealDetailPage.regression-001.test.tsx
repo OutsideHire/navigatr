@@ -17,9 +17,16 @@ import { describe, it, expect } from "vitest";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DealDetailPage } from "./DealDetailPage";
+import { MOCK_DEALS } from "../mockData";
+import { DEALS_QUERY_KEY } from "../hooks/useDeals";
 
-function renderWithRouter(path: string) {
+function renderWithRouter(path: string, opts?: { seedDeals?: boolean }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  if (opts?.seedDeals) {
+    // useDeal reads from this cache key. With no auth, userId is undefined
+    // and the key tail is "anon" — matches the test's anonymous render.
+    client.setQueryData(DEALS_QUERY_KEY(undefined), MOCK_DEALS);
+  }
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
@@ -42,7 +49,7 @@ describe("DealDetailPage / NotFound", () => {
   });
 
   it("renders the hero for a valid mock dealId", () => {
-    renderWithRouter("/pipeline/d-001"); // Acme Hardware (seeded in MOCK_DEALS)
+    renderWithRouter("/pipeline/d-001", { seedDeals: true }); // Acme Hardware
     expect(screen.getByText(/Acme Hardware/i)).toBeInTheDocument();
   });
 });

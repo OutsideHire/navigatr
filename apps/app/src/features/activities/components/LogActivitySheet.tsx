@@ -43,10 +43,8 @@ import {
   formatFollowUpDate,
   type Disposition,
 } from "@/lib/followUpScheduling";
-import {
-  appendActivity,
-  type ActivityType,
-} from "../mockData";
+import { type ActivityType } from "../mockData";
+import { useLogActivity } from "../hooks/useLogActivity";
 
 // ───────────────────────────────────────────────────────────────────────
 // Type picker
@@ -222,6 +220,7 @@ function CallForm({
   onClose: () => void;
 }) {
   const [showAll, setShowAll] = React.useState(false);
+  const logActivity = useLogActivity();
 
   const {
     register,
@@ -241,28 +240,29 @@ function CallForm({
   });
 
   const onSubmit: SubmitHandler<CallFormValues> = async (values) => {
-    // TODO Sprint 2: replace with generated SDK call
-    //   await ActivitiesService.createActivity({ requestBody: ... })
     const followUpIso = calculateFollowUpDate(values.disposition);
-    appendActivity({
-      id: `a-local-${Date.now()}`,
-      dealId,
-      type: "call",
-      durationMinutes: values.durationMinutes,
-      disposition: values.disposition,
-      outcomeNotes: values.outcomeNotes ?? "",
-      occurredAt: new Date().toISOString(),
-      followUpDate: followUpIso,
-    });
-    // eslint-disable-next-line no-console
-    console.log("[mock submit] activity logged:", { dealId, ...values, followUpIso });
-    if (followUpIso) {
-      toast.success(`Activity logged. Follow-up: ${formatFollowUpDate(followUpIso)}`);
-    } else {
-      toast.success("Activity logged. No follow-up scheduled.");
+    try {
+      await logActivity.mutateAsync({
+        dealId,
+        type: "call",
+        disposition: values.disposition,
+        durationMinutes: values.durationMinutes,
+        outcomeNotes: values.outcomeNotes ?? "",
+        occurredAt: new Date().toISOString(),
+        followUpDate: followUpIso,
+      });
+      if (followUpIso) {
+        toast.success(`Activity logged. Follow-up: ${formatFollowUpDate(followUpIso)}`);
+      } else {
+        toast.success("Activity logged. No follow-up scheduled.");
+      }
+      onLogged();
+      onClose();
+    } catch (err) {
+      // RLS denial / network failure / org mismatch — surface raw message.
+      // We do NOT close the sheet so the rep can retry without re-entering.
+      toast.error(err instanceof Error ? err.message : "Could not log activity");
     }
-    onLogged();
-    onClose();
   };
 
   return (
