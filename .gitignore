@@ -56,3 +56,4 @@ figma-probe.sh
 figma-whoami.sh
 .gstack/
 .claude/worktrees/
+.playwright-mcp/

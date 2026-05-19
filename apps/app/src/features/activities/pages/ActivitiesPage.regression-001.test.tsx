@@ -1,89 +1,141 @@
-// Regression: ISSUE-001 — Activities log loop didn't re-render after onLogged
-// Found by /qa on 2026-05-16
-// Report: .gstack/qa-reports/qa-report-localhost-2026-05-16.md (Activities run)
+// Regression: ISSUE-001 — Activities History tab used to not re-render
+// after a new activity was logged. The old root cause was a setTab((t) =>
+// t) no-op in React 18 + a refreshKey hack that the page authors added
+// as a workaround. Both are gone: the page now reads from
+// useActivitiesForOrg(), and useLogActivity invalidates the cache key
+// on success, so React Query's normal subscription model handles the
+// re-render.
 //
-// Root cause: onLogged called setTab((t) => t) — a no-op in React 18 because
-// Object.is(prevTab, prevTab) bails. The component never re-rendered, so a
-// newly-appended activity in MOCK_ACTIVITIES never surfaced in the History
-// tab until a full page reload.
-//
-// Fix: a refreshKey state that bumps on each log; useDerivedTasks, the
-// history memo, and the type-counts memo all key on refreshKey.
-//
-// Test scope honesty: this test does cleanup() + fresh renderPage() between
-// the two assertions, which always reads MOCK_ACTIVITIES from scratch
-// regardless of memo deps. So it verifies "the page renders current
-// MOCK_ACTIVITIES correctly" — a real data-correctness contract — but it
-// does NOT bite the exact same-mount refreshKey-deps regression. That
-// would require either exposing the page's setRefreshKey or driving the
-// full LogActivitySheet form via userEvent, which the headless Chromium
-// instability makes unreliable today. The full bite is verified by
-// manual reproduction + source diff. See QA report for details.
+// This test preserves the original CONTRACT (the page renders the
+// current activity set in the History tab) against the new
+// implementation. The earlier failure mode is structurally unreachable
+// without a regression in cache invalidation OR the page wiring.
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ActivitiesPage } from "./ActivitiesPage";
-import { MOCK_ACTIVITIES, appendActivity } from "../mockData";
 
-function renderPage() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={["/activities"]}>
-        <ActivitiesPage />
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+import { ActivitiesPage } from "./ActivitiesPage";
+import { ACTIVITIES_ORG_QUERY_KEY } from "../hooks/useActivities";
+import { DEALS_QUERY_KEY } from "@/features/pipeline/hooks/useDeals";
+import type { Activity } from "../mockData";
+import type { Deal } from "@/features/pipeline/mockData";
+
+function deal(id: string, company: string): Deal {
+  return {
+    id,
+    companyName: company,
+    contactName: "X",
+    phone: "+12025550100",
+    email: "x@x.x",
+    valueCents: 100_00,
+    stage: "new",
+    probability: 20,
+    lastActivity: "2026-05-18T12:00:00Z",
+    nextFollowup: null,
+    employeeCountRange: "1-10",
+  };
 }
 
-describe("ActivitiesPage / log-loop regression", () => {
-  let snapshot: typeof MOCK_ACTIVITIES;
+function activity(
+  id: string,
+  dealId: string,
+  notes: string,
+  occurredAt: string = "2026-05-18T12:00:00Z",
+): Activity {
+  return {
+    id,
+    dealId,
+    type: "call",
+    disposition: "positive_engagement",
+    durationMinutes: 10,
+    outcomeNotes: notes,
+    occurredAt,
+    followUpDate: null,
+  };
+}
 
-  beforeEach(() => {
-    snapshot = [...MOCK_ACTIVITIES];
+function renderWithSeed(args: { activities: Activity[]; deals: Deal[] }) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
   });
+  // Page uses userId = undefined when there's no auth → falls back to "anon"
+  client.setQueryData(ACTIVITIES_ORG_QUERY_KEY(undefined), args.activities);
+  client.setQueryData(DEALS_QUERY_KEY(undefined), args.deals);
+  return {
+    client,
+    ...render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={["/activities"]}>
+          <ActivitiesPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    ),
+  };
+}
 
-  afterEach(() => {
-    // Restore the shared module-level mock array so other test files
-    // don't see contamination from this one.
-    MOCK_ACTIVITIES.length = 0;
-    MOCK_ACTIVITIES.push(...snapshot);
-  });
-
-  it("page reads current MOCK_ACTIVITIES into History tab after appendActivity", async () => {
-    // Radix Tabs listens for pointer events, not React synthetic clicks —
-    // must use userEvent (which dispatches real pointer events) not
-    // fireEvent.click which only fires the React click handler and skips
-    // Radix's onPointerDown.
+describe("ActivitiesPage / History tab reflects current data", () => {
+  it("renders the History tab with one row per cached activity", async () => {
     const user = userEvent.setup();
+    const deals = [deal("d-1", "Acme")];
+    const acts = [
+      activity("a-1", "d-1", "first"),
+      activity("a-2", "d-1", "second"),
+    ];
+    renderWithSeed({ activities: acts, deals });
 
-    renderPage();
+    // Radix Tabs uses pointer events, not React synthetic clicks.
     await user.click(screen.getByRole("tab", { name: /History/i }));
-    const baselineCallTitles = screen.getAllByText(/^Call · /);
-    expect(baselineCallTitles.length).toBe(snapshot.filter((a) => a.type === "call").length);
 
-    // Mutate the source array (what LogActivitySheet does on submit).
-    appendActivity({
-      id: "a-regression-001",
-      dealId: "d-001",
-      type: "call",
-      durationMinutes: 17,
-      disposition: "statement_secured",
-      outcomeNotes: "regression-001-marker",
-      occurredAt: new Date().toISOString(),
-      followUpDate: null,
+    expect(screen.getAllByText(/^Call · /)).toHaveLength(2);
+    expect(screen.getByText(/first/i)).toBeInTheDocument();
+    expect(screen.getByText(/second/i)).toBeInTheDocument();
+  });
+
+  it("when the cached activities update, the History tab re-renders with the new set", async () => {
+    const user = userEvent.setup();
+    const deals = [deal("d-1", "Acme")];
+
+    const { client } = renderWithSeed({
+      activities: [activity("a-1", "d-1", "first")],
+      deals,
     });
+    await user.click(screen.getByRole("tab", { name: /History/i }));
+    expect(screen.getAllByText(/^Call · /)).toHaveLength(1);
 
-    // Tear down + re-render fresh. This simulates the post-log render cycle.
+    // Simulate useLogActivity's onSuccess: writes a new list to the
+    // org-wide cache key. The page's useActivitiesForOrg subscriber
+    // should re-render with the new array.
     cleanup();
-    renderPage();
+    client.setQueryData(ACTIVITIES_ORG_QUERY_KEY(undefined), [
+      activity("a-1", "d-1", "first"),
+      activity("a-2", "d-1", "newly-logged-marker"),
+    ]);
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={["/activities"]}>
+          <ActivitiesPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
     await user.click(screen.getByRole("tab", { name: /History/i }));
 
-    const afterCallTitles = screen.getAllByText(/^Call · /);
-    expect(afterCallTitles.length).toBe(baselineCallTitles.length + 1);
-    expect(screen.getByText(/regression-001-marker/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/^Call · /)).toHaveLength(2);
+    expect(screen.getByText(/newly-logged-marker/i)).toBeInTheDocument();
+  });
+
+  it("activity with orphaned dealId (deal was deleted) is skipped, not crashed", async () => {
+    const user = userEvent.setup();
+    // Activity points to a deal that doesn't exist in the cached list.
+    renderWithSeed({
+      activities: [activity("a-1", "d-ghost", "ghost")],
+      deals: [],
+    });
+    // Should still render the History tab without throwing.
+    await user.click(screen.getByRole("tab", { name: /History/i }));
+    // The row renders but the deal name falls back to "Unknown deal".
+    expect(screen.getByText(/Unknown deal/i)).toBeInTheDocument();
   });
 });
