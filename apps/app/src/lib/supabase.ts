@@ -25,7 +25,15 @@ if (!url || !anonKey) {
   );
 }
 
-export const supabase = createClient(url ?? "", anonKey ?? "", {
+// Placeholder URL keeps createClient happy when env vars are absent
+// (e.g. CI running unit tests that mock @/lib/supabase or seed the
+// React Query cache directly — neither hits the network). In dev and
+// prod the real values from .env.local / Vercel env override.
+// supabase-js v2.105+ throws "supabaseUrl is required." if we pass "".
+const SAFE_URL = url || "http://localhost:54321";
+const SAFE_KEY = anonKey || "test-anon-key-placeholder";
+
+export const supabase = createClient(SAFE_URL, SAFE_KEY, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
