@@ -9,7 +9,7 @@ import {
 import { Loader2 } from "lucide-react";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { setUnauthorizedHandler } from "@/api";
-import { useAuth, getProfession } from "@/stores/auth";
+import { useAuth } from "@/stores/auth";
 
 /**
  * Route components are lazy-loaded so the initial JS bundle only ships
@@ -43,6 +43,9 @@ const InvitationAcceptancePage = lazy(() =>
 );
 const ProfessionSelectorPage = lazy(() =>
   import("@/features/auth/pages/ProfessionSelectorPage").then((m) => ({ default: m.ProfessionSelectorPage })),
+);
+const AuthCallbackPage = lazy(() =>
+  import("@/features/auth/pages/AuthCallbackPage").then((m) => ({ default: m.AuthCallbackPage })),
 );
 
 // Protected screens (each wrapped in AppLayout by ProtectedRoute)
@@ -121,15 +124,16 @@ function AuthRouterBridge() {
 }
 
 /**
- * Guards the public auth routes — if the user is already signed in *and* has
- * picked a profession, bounce them to /dashboard so /login isn't a dead end
- * for authed users.
+ * Guards the public auth routes — if the user is already signed in, bounce
+ * them to /dashboard so /login isn't a dead end for authed users. The
+ * ProtectedRoute on /dashboard then handles the no-profile-yet case by
+ * routing through /auth/callback (idempotent claim).
  */
 function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
   const user = useAuth((s) => s.user);
   const loading = useAuth((s) => s.loading);
   if (loading) return null;
-  if (user && getProfession(user)) {
+  if (user) {
     return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;
@@ -166,7 +170,16 @@ export function App() {
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/accept-invitation" element={<InvitationAcceptancePage />} />
 
+          {/* ===== OAuth + email-confirm landing ===== */}
+          {/* Owns the post-signup claim_invite_code flow. Never gated by
+              PublicOnlyRoute — the user IS authed here, and the page itself
+              decides where to send them next. */}
+          <Route path="/auth/callback" element={<AuthCallbackPage />} />
+
           {/* ===== Authenticated but profession not yet set ===== */}
+          {/* Kept reachable (deep links from old emails) but no longer
+              part of the signup flow. ProtectedRoute now gates on profile,
+              not profession. */}
           <Route path="/select-profession" element={<ProfessionSelectorPage />} />
 
           {/* ===== Component preview (dev) — no auth, no AppLayout ===== */}
