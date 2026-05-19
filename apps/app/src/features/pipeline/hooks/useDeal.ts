@@ -11,8 +11,10 @@
 
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { MOCK_DEALS, type Deal } from "../mockData";
+import { type Deal } from "../mockData";
 import { activitiesForDeal, type Activity } from "@/features/activities/mockData";
+import { useAuth } from "@/stores/auth";
+import { DEALS_QUERY_KEY } from "./useDeals";
 
 export interface UseDealResult {
   deal: Deal | undefined;
@@ -24,14 +26,14 @@ export interface UseDealResult {
 
 export function useDeal(dealId: string | undefined): UseDealResult {
   const queryClient = useQueryClient();
+  const userId = useAuth((s) => s.user?.id);
   const [activitiesVersion, setActivitiesVersion] = React.useState(0);
 
   const deal = React.useMemo<Deal | undefined>(() => {
     if (!dealId) return undefined;
-    const cached = queryClient.getQueryData<Deal[]>(["deals", "mock"]);
-    const list = cached ?? MOCK_DEALS;
-    return list.find((d) => d.id === dealId);
-  }, [dealId, queryClient, activitiesVersion]);
+    const cached = queryClient.getQueryData<Deal[]>(DEALS_QUERY_KEY(userId));
+    return cached?.find((d) => d.id === dealId);
+  }, [dealId, queryClient, userId, activitiesVersion]);
 
   const activities = React.useMemo<Activity[]>(() => {
     if (!dealId) return [];

@@ -32,8 +32,8 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useForm, Controller, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useQueryClient } from "@tanstack/react-query";
 import { AsYouType } from "libphonenumber-js";
+import { useCreateDeal } from "../hooks/useCreateDeal";
 
 /** Strip everything but digits. Used for phone validation + value extraction. */
 function digitsOnly(s: string): string {
@@ -69,7 +69,7 @@ import {
   Select,
   type SelectOption,
 } from "@/components/navigatr";
-import { type Deal, type DealStage } from "../mockData";
+import { type DealStage } from "../mockData";
 
 // ───────────────────────────────────────────────────────────────────────
 // Zod schema — base + profession-conditional refinement via discriminated
@@ -246,30 +246,6 @@ const STAGE_DEFAULT_PROBABILITY: Record<DealStage, number> = {
   proposal: 75,
   won: 100,
 };
-
-// ───────────────────────────────────────────────────────────────────────
-// Mock submit — replace in Sprint 2 with the generated SDK
-// (Deals.createDeal). Mutates the TanStack Query cache so the new deal
-// appears in the Pipeline list immediately.
-// ───────────────────────────────────────────────────────────────────────
-
-function buildDealFromForm(values: DealFormValues): Deal {
-  return {
-    id: `d-local-${Date.now()}`,
-    companyName: values.companyName,
-    contactName: values.contactName,
-    phone: values.contactPhone,
-    email: values.contactEmail,
-    valueCents: Math.round(values.dealValue * 100),
-    stage: values.stage,
-    probability: values.probability,
-    lastActivity: new Date().toISOString(),
-    nextFollowup: values.expectedClose
-      ? new Date(values.expectedClose).toISOString()
-      : null,
-    employeeCountRange: values.employeeCountRange || "—",
-  };
-}
 
 // ───────────────────────────────────────────────────────────────────────
 // Section header — small re-usable so we don't repeat the styling.
@@ -483,7 +459,7 @@ export interface AddDealSheetProps {
 export function AddDealSheet({ open, onOpenChange }: AddDealSheetProps) {
   const user = useAuth((s) => s.user);
   const profession: Profession = getProfession(user) ?? "merchant_services";
-  const queryClient = useQueryClient();
+  const createDeal = useCreateDeal();
 
   // Tracks whether the user has manually edited probability. Once they
   // type into the field, stage changes no longer overwrite it.
@@ -547,19 +523,51 @@ export function AddDealSheet({ open, onOpenChange }: AddDealSheetProps) {
   }, [watchedStage, setValue]);
 
   const onSubmit: SubmitHandler<DealFormValues> = async (values) => {
-    // TODO Sprint 2: replace with generated SDK call
-    //   await DealsService.createDeal({ requestBody: ... })
-    // and remove the optimistic queryClient.setQueryData below.
-    const newDeal = buildDealFromForm(values);
-    queryClient.setQueryData<Deal[] | undefined>(["deals", "mock"], (prev) =>
-      prev ? [newDeal, ...prev] : [newDeal],
-    );
-    // eslint-disable-next-line no-console
-    console.log("[mock submit] deal created:", values);
-    toast.success("Deal added");
-    reset(defaultValues);
-    probabilityTouched.current = false;
-    onOpenChange(false);
+    // Split the form into typed columns + profession-specific bucket.
+    // Base fields map 1:1 onto the deals table columns; the rest of the
+    // discriminated-union variant goes into profession_data JSONB so we
+    // can keep the merchant/payroll/treasury form variants without
+    // sprouting 20 nullable columns per profession.
+    const {
+      companyName, address, industry, employeeCountRange,
+      contactName, contactTitle, contactEmail, contactPhone,
+      dealValue, stage, probability, expectedClose, leadSource, notes,
+      profession: _profession,
+      ...professionFields
+    } = values;
+
+    try {
+      await createDeal.mutateAsync({
+        companyName,
+        address,
+        industry,
+        employeeCountRange,
+        contactName,
+        contactTitle,
+        contactEmail,
+        // Normalize to E.164 ("+1XXXXXXXXXX"). The form validator already
+        // guarantees 10 digits; PhoneWithClickToCall on the deal card
+        // requires E.164 to render without an "Invalid number" error.
+        contactPhone: "+1" + digitsOnly(contactPhone),
+        valueCents: Math.round(dealValue * 100),
+        stage,
+        probability,
+        expectedClose: expectedClose || null,
+        leadSource,
+        notes,
+        nextFollowupAt: expectedClose ? new Date(expectedClose).toISOString() : null,
+        professionData: { profession: _profession, ...professionFields },
+      });
+      toast.success("Deal added");
+      reset(defaultValues);
+      probabilityTouched.current = false;
+      onOpenChange(false);
+    } catch (err) {
+      // RLS denial, network failure, validation server-side — surface raw
+      // message. We do NOT close the sheet so the user can retry without
+      // re-entering the whole form.
+      toast.error(err instanceof Error ? err.message : "Could not create deal");
+    }
   };
 
   return (
