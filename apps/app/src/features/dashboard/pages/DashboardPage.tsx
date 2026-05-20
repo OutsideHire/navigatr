@@ -62,6 +62,8 @@ import {
 } from "@/stores/auth";
 import { cn } from "@/lib/utils";
 import { MOCK, formatMoney } from "../mockData";
+import { useDashboardData, type DashboardData } from "../hooks/useDashboardData";
+import { STAGE_BADGE_KIND } from "@/features/pipeline/mockData";
 
 // ───────────────────────────────────────────────────────────────────────
 // Empty state — copied from Session 11. Lives here so the page picks
@@ -250,7 +252,42 @@ const KPI_ICONS: Record<string, LucideIcon> = {
   close: Clock,
 };
 
-function SecondaryKpiRow() {
+function SecondaryKpiRow({ kpis }: { kpis: DashboardData["kpis"] }) {
+  // 4 KPI cards derived from live deals data. Order matches the canonical
+  // Figma reading order: active count → open pipeline → won this period
+  // → win rate. We dropped "avg close time" from the mock because we
+  // don't yet expose created_at on the Deal type — when we do, a 5th
+  // KPI slot can come back.
+  const cards = [
+    {
+      key: "leads",
+      eyebrow: "ACTIVE LEADS",
+      value: String(kpis.activeDealsCount),
+      subtitle: kpis.activeDealsCount === 1 ? "active deal" : "active deals",
+      accent: "blue" as const,
+    },
+    {
+      key: "pipeline",
+      eyebrow: "PIPELINE VALUE",
+      value: formatMoney(kpis.pipelineValueCents),
+      subtitle: `weighted: ${formatMoney(kpis.weightedPipelineCents)}`,
+      accent: "teal" as const,
+    },
+    {
+      key: "won",
+      eyebrow: "WON",
+      value: formatMoney(kpis.wonRevenueCents),
+      subtitle: `${kpis.wonDealsCount} ${kpis.wonDealsCount === 1 ? "deal" : "deals"} closed`,
+      accent: "violet" as const,
+    },
+    {
+      key: "win",
+      eyebrow: "WIN RATE",
+      value: `${Math.round(kpis.winRate * 100)}%`,
+      subtitle: "of all deals",
+      accent: "orange" as const,
+    },
+  ];
   return (
     <div
       // Mobile: horizontal scroll with snap. Desktop: 4-col grid.
@@ -261,13 +298,12 @@ function SecondaryKpiRow() {
         "[-ms-overflow-style:none] [scrollbar-width:none]",
       )}
     >
-      {MOCK.kpis.map((kpi) => (
+      {cards.map((kpi) => (
         <div key={kpi.key} className="min-w-[220px] shrink-0 snap-start md:min-w-0">
           <KpiCard
             eyebrow={kpi.eyebrow}
             value={kpi.value}
             subtitle={kpi.subtitle}
-            trend={kpi.trend}
             icon={KPI_ICONS[kpi.key] ?? Briefcase}
             accent={kpi.accent}
             size="standard"
@@ -278,22 +314,23 @@ function SecondaryKpiRow() {
   );
 }
 
-// Section 5: Pipeline by Stage
-function PipelineByStage() {
+// Section 5: Pipeline by Stage — live data from useDashboardData.
+function PipelineByStage({ byStage }: { byStage: DashboardData["byStage"] }) {
+  const navigate = useNavigate();
   return (
     <Card padding="lg" shadow="sm">
       <SectionHeader
         title="Pipeline by stage"
         action={
-          <Button variant="tertiary" size="sm" trailingIcon={ArrowRight} onClick={() => toast("Pipeline lands in Session 13")}>
+          <Button variant="tertiary" size="sm" trailingIcon={ArrowRight} onClick={() => navigate("/pipeline")}>
             View all
           </Button>
         }
       />
       <div className="flex flex-col gap-3">
-        {MOCK.pipelineByStage.map((stage) => (
-          <div key={stage.label} className="flex items-center gap-3">
-            <Badge kind={stage.stage} className="min-w-[80px] justify-center">{stage.label}</Badge>
+        {byStage.map((stage) => (
+          <div key={stage.stage} className="flex items-center gap-3">
+            <Badge kind={STAGE_BADGE_KIND[stage.stage]} className="min-w-[80px] justify-center">{stage.label}</Badge>
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-caption text-text-muted">
@@ -327,21 +364,58 @@ const SNAPSHOT_ACCENTS: Record<string, { bg: string; fg: string }> = {
   violet:  { bg: "bg-accent-violet-20",  fg: "text-accent-violet"  },
   danger:  { bg: "bg-status-danger-bg",  fg: "text-status-danger"  },
 };
-function TodaysSnapshot() {
+function TodaysSnapshot({ snapshot }: { snapshot: DashboardData["todaysSnapshot"] }) {
   const navigate = useNavigate();
+  // Build rows from live data. Order matches the original Figma reading
+  // order (tasks first, partners-overdue next). The "next stop on Path"
+  // row is dropped until the Path page has real geocoded data — it
+  // would currently always render "no data" which is worse than absent.
+  const rows: Array<{
+    key: string;
+    iconKind: keyof typeof SNAPSHOT_ICONS;
+    iconAccent: keyof typeof SNAPSHOT_ACCENTS;
+    title: string;
+    subtitle: string;
+    to: string;
+  }> = [
+    {
+      key: "tasks",
+      iconKind: "alert",
+      iconAccent: snapshot.tasksDueToday > 0 ? "warning" : "violet",
+      title: snapshot.tasksDueToday === 0
+        ? "No tasks due today"
+        : `${snapshot.tasksDueToday} ${snapshot.tasksDueToday === 1 ? "task" : "tasks"} due today`,
+      subtitle: snapshot.tasksDueToday === 0
+        ? "You're caught up — go find new prospects"
+        : "Go log activities to clear the queue",
+      to: "/activities",
+    },
+    {
+      key: "overdue",
+      iconKind: "clock",
+      iconAccent: snapshot.partnersOverdue > 0 ? "danger" : "violet",
+      title: snapshot.partnersOverdue === 0
+        ? "No overdue partners"
+        : `${snapshot.partnersOverdue} ${snapshot.partnersOverdue === 1 ? "partner" : "partners"} overdue`,
+      subtitle: snapshot.partnersOverdue === 0
+        ? "Your partner touches are on schedule"
+        : "Reach out before the relationship cools",
+      to: "/partners",
+    },
+  ];
   return (
     <Card padding="none" shadow="sm">
       <div className="px-6 pt-5">
         <h2 className="text-heading-sm text-text-default">Today&apos;s snapshot</h2>
       </div>
       <div className="mt-2 flex flex-col">
-        {MOCK.todaysSnapshot.map((row, i) => {
+        {rows.map((row, i) => {
           const Icon = SNAPSHOT_ICONS[row.iconKind];
           const accent = SNAPSHOT_ACCENTS[row.iconAccent]!;
           return (
             <ListRow
               key={row.key}
-              divider={i < MOCK.todaysSnapshot.length - 1}
+              divider={i < rows.length - 1}
               onClick={() => navigate(row.to)}
               leading={
                 <span className={cn("flex h-9 w-9 items-center justify-center rounded-radius-md", accent.bg, accent.fg)}>
@@ -420,34 +494,51 @@ function PersistenceIndex() {
   );
 }
 
-// Section 9: Top Partners leaderboard
-function TopPartners() {
+// Section 9: Top Partners leaderboard — live data.
+function TopPartners({ topPartners }: { topPartners: DashboardData["topPartners"] }) {
+  const navigate = useNavigate();
+  if (topPartners.length === 0) {
+    return (
+      <Card padding="lg" shadow="sm">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-heading-sm text-text-default">Top partners</h2>
+          <Button variant="tertiary" size="sm" trailingIcon={ArrowRight} onClick={() => navigate("/partners")}>
+            View all
+          </Button>
+        </div>
+        <p className="mt-3 text-body-sm text-text-muted">
+          No partner-attributed deals yet. Add partners + link them to deals to see the leaderboard.
+        </p>
+      </Card>
+    );
+  }
   return (
     <Card padding="none" shadow="sm">
       <div className="flex items-center justify-between gap-3 px-6 pt-5">
-        <h2 className="text-heading-sm text-text-default">Top partners this quarter</h2>
-        <Button variant="tertiary" size="sm" trailingIcon={ArrowRight} onClick={() => toast("Partners lands in Session 14")}>
+        <h2 className="text-heading-sm text-text-default">Top partners</h2>
+        <Button variant="tertiary" size="sm" trailingIcon={ArrowRight} onClick={() => navigate("/partners")}>
           View all
         </Button>
       </div>
       <div className="mt-2 flex flex-col">
-        {MOCK.topPartners.map((p, i) => (
+        {topPartners.map((row, i) => (
           <ListRow
-            key={p.name}
-            divider={i < MOCK.topPartners.length - 1}
+            key={row.partner.id}
+            divider={i < topPartners.length - 1}
+            onClick={() => navigate(`/partners/${row.partner.id}`)}
             leading={
               <div className="flex items-center gap-2">
                 <span className="flex h-6 w-6 items-center justify-center rounded-radius-full bg-surface-sunken text-caption font-semibold text-text-default">
-                  {p.rank}
+                  {row.rank}
                 </span>
-                <Avatar alt={p.name} size="sm" />
+                <Avatar alt={row.partner.name} size="sm" />
               </div>
             }
-            title={p.name}
-            subtitle={`${p.referrals} referrals · ${formatMoney(p.revenueCents)}`}
+            title={row.partner.name}
+            subtitle={`${row.referrals} ${row.referrals === 1 ? "referral" : "referrals"} · ${formatMoney(row.revenueCents)}`}
             trailing={
               <span className="text-body-strong tabular-nums text-text-default">
-                {formatMoney(p.revenueCents)}
+                {formatMoney(row.revenueCents)}
               </span>
             }
           />
@@ -540,6 +631,12 @@ function ConversionFunnel() {
 // ───────────────────────────────────────────────────────────────────────
 
 function PopulatedDashboard({ firstName: _firstName }: { firstName: string }) {
+  // Single hook subscription — passed down to the sections that have
+  // been wired to live data. Sections still on MOCK are clearly noted
+  // below; they'll move over as the underlying data layer grows
+  // (stage transition history, monthly bucketing, etc.).
+  const data = useDashboardData();
+
   return (
     // Mobile: vertical stack, gap 12 (matches Figma 234:541 gap 16 ≈ space-3/4).
     // Desktop: heading + hero + KPI row are full-width, sections 5-11 fall
@@ -548,21 +645,34 @@ function PopulatedDashboard({ firstName: _firstName }: { firstName: string }) {
       <PageHeading firstName={_firstName} />
 
       <div className="mt-6 flex flex-col gap-4 lg:gap-6">
-        {/* Hero */}
+        {/* Hero — MOCK: the "activities-to-win" ratio needs a real
+            close-rate history we don't yet track. Returning to this
+            when we add deal_stage_history. */}
         <ActivitiesToWinHero />
 
-        {/* Secondary KPI row */}
-        <SecondaryKpiRow />
+        {/* LIVE — secondary KPI row from useDashboardData */}
+        <SecondaryKpiRow kpis={data.kpis} />
 
         {/* 2-col grid for sections 5-11 */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
-          <PipelineByStage />
-          <TodaysSnapshot />
+          {/* LIVE */}
+          <PipelineByStage byStage={data.byStage} />
+          {/* LIVE */}
+          <TodaysSnapshot snapshot={data.todaysSnapshot} />
+          {/* MOCK — needs monthly bucketing of won deals over the last
+              4 months. Doable next pass; deferred so this PR stays
+              focused on top-of-fold wins. */}
           <MonthlyPerformance />
+          {/* MOCK — touches-before-win + follow-up-rate need activity
+              counts joined with win events we don't yet store. */}
           <PersistenceIndex />
-          <TopPartners />
+          {/* LIVE */}
+          <TopPartners topPartners={data.topPartners} />
+          {/* MOCK — deals.lead_source exists server-side but not yet
+              surfaced on the Deal frontend type. Trivial follow-up. */}
           <LeadSources />
-          {/* Conversion funnel spans both columns on desktop */}
+          {/* MOCK — funnel needs deal_stage_history (which deal went
+              New → Contacted, etc.). Real backend piece. */}
           <div className="lg:col-span-2">
             <ConversionFunnel />
           </div>
