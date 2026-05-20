@@ -225,6 +225,37 @@ describe("useDashboardData / lead sources", () => {
   });
 });
 
+describe("useDashboardData / activities to win", () => {
+  it("null ratio when no wins yet — UI shows the empty-state copy", () => {
+    dealsData = [deal("a", "qualified", 100, 55)];
+    activitiesData = [];
+    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    expect(result.current.activitiesToWin.ratio).toBeNull();
+    expect(result.current.activitiesToWin.wonDealsCount).toBe(0);
+  });
+
+  it("divides total activities by won deals when at least one win exists", () => {
+    dealsData = [
+      deal("won1", "won", 100, 100),
+      deal("won2", "won", 100, 100),
+      deal("open", "qualified", 100, 55),
+    ];
+    // Build 7 activities — irrelevant which deal they're tied to;
+    // the metric is org-wide.
+    activitiesData = Array.from({ length: 7 }, (_, i) => ({
+      id: `a-${i}`, dealId: "won1", type: "call" as const,
+      disposition: "positive_engagement" as const,
+      durationMinutes: 10, outcomeNotes: "",
+      occurredAt: "2026-05-19T10:00:00Z", followUpDate: null,
+    }));
+    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    // 7 activities / 2 wins = 3.5
+    expect(result.current.activitiesToWin.ratio).toBe(3.5);
+    expect(result.current.activitiesToWin.totalActivities).toBe(7);
+    expect(result.current.activitiesToWin.wonDealsCount).toBe(2);
+  });
+});
+
 describe("useDashboardData / monthly performance", () => {
   it("always returns 4 trailing months, even with zero data", () => {
     dealsData = [];

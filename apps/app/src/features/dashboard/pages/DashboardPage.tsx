@@ -38,7 +38,6 @@ import {
   Filter as FilterIcon,
   Handshake,
   MapPin,
-  TrendingDown,
   TrendingUp,
   Users,
   Zap,
@@ -178,9 +177,27 @@ function PageHeading({ firstName: _firstName }: { firstName: string }) {
 // visually empty. Two-column on md+: content left, oversized ghost-Zap
 // glyph right to anchor the gradient. Mobile keeps a single column with
 // a smaller corner glyph so the value stays the focal point.
-function ActivitiesToWinHero() {
-  const k = MOCK.activitiesToWin;
-  const TrendIcon = k.trend.direction === "down" ? TrendingDown : TrendingUp;
+function ActivitiesToWinHero({ data }: { data: DashboardData["activitiesToWin"] }) {
+  // Two render paths:
+  //   1. Has wins → big ratio number + "X activities / Y wins" subtitle.
+  //   2. No wins yet → still show total activities as the hero number,
+  //      and copy that nudges the rep to close a deal so the ratio
+  //      becomes meaningful. Avoids an empty-card-shaped void at the
+  //      top of the dashboard on fresh orgs.
+  //
+  // The historical trend chip ("+18% vs last quarter") is intentionally
+  // gone — we don't have a baseline to compare against without a
+  // snapshot history table. Better to show the honest current ratio
+  // than to invent a delta.
+  const hasWins = data.ratio !== null;
+  const heroValue = hasWins
+    ? data.ratio!.toFixed(1)
+    : String(data.totalActivities);
+  const eyebrow = hasWins ? "ACTIVITIES PER WIN" : "ACTIVITIES LOGGED";
+  const subtitle = hasWins
+    ? `${data.totalActivities} ${data.totalActivities === 1 ? "activity" : "activities"} · ${data.wonDealsCount} ${data.wonDealsCount === 1 ? "win" : "wins"}`
+    : "Close a deal to start tracking your touchpoint efficiency";
+
   return (
     <div className="flex flex-col gap-2">
       <div
@@ -190,14 +207,10 @@ function ActivitiesToWinHero() {
           "text-text-inverse",
         )}
       >
-        {/* Decorative ghost-glyph anchoring the right side of the gradient.
-            Positioned to bleed into the bottom-right corner. aria-hidden;
-            pure decoration. */}
         <Zap
           aria-hidden
           className={cn(
             "pointer-events-none absolute text-text-inverse/10",
-            // Mobile: smaller, top-right corner. Desktop: huge, centered-right.
             "right-[-24px] top-[-16px] h-40 w-40 rotate-12",
             "sm:right-[-32px] sm:top-1/2 sm:h-64 sm:w-64 sm:-translate-y-1/2 sm:rotate-0",
             "lg:right-[-24px] lg:h-72 lg:w-72",
@@ -206,39 +219,21 @@ function ActivitiesToWinHero() {
         />
 
         <div className="relative flex flex-col gap-3 sm:max-w-[60%]">
-          {/* Eyebrow row */}
           <div className="flex items-center gap-2">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-radius-full bg-text-inverse/15">
               <Zap className="h-5 w-5" aria-hidden />
             </span>
-            <span className="text-eyebrow text-text-inverse/80">ACTIVITIES TO WIN</span>
+            <span className="text-eyebrow text-text-inverse/80">{eyebrow}</span>
           </div>
 
-          {/* Value */}
           <p className="text-kpi-lg tabular-nums leading-none text-text-inverse">
-            {k.value}
+            {heroValue}
           </p>
 
-          {/* Subtitle + trend */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-1">
-            <span className="text-caption text-text-inverse/80">{k.subtitle}</span>
-            <span className="inline-flex items-center gap-1 rounded-radius-full bg-text-inverse/15 px-2 py-0.5 text-caption font-medium tabular-nums text-text-inverse">
-              <TrendIcon className="h-3 w-3" aria-hidden />
-              {k.trend.label}
-            </span>
+            <span className="text-caption text-text-inverse/80">{subtitle}</span>
           </div>
         </div>
-      </div>
-
-      <div className="flex justify-end">
-        <Button
-          variant="tertiary"
-          size="sm"
-          trailingIcon={ArrowRight}
-          onClick={() => toast("Persistence index lands in a later session")}
-        >
-          View persistence index
-        </Button>
       </div>
     </div>
   );
@@ -667,10 +662,8 @@ function PopulatedDashboard({ firstName: _firstName }: { firstName: string }) {
       <PageHeading firstName={_firstName} />
 
       <div className="mt-6 flex flex-col gap-4 lg:gap-6">
-        {/* Hero — MOCK: the "activities-to-win" ratio needs a real
-            close-rate history we don't yet track. Returning to this
-            when we add deal_stage_history. */}
-        <ActivitiesToWinHero />
+        {/* LIVE — avg activities-per-win, real ratio from live data */}
+        <ActivitiesToWinHero data={data.activitiesToWin} />
 
         {/* LIVE — secondary KPI row from useDashboardData */}
         <SecondaryKpiRow kpis={data.kpis} />
