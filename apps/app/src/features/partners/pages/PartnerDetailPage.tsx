@@ -54,9 +54,11 @@ import {
 } from "@/features/pipeline/mockData";
 import { usePartner } from "../hooks/usePartner";
 import { useAttributeDeal, useUnattributeDeal } from "../hooks/useAttributeDeal";
+import { useUpdatePartner } from "../hooks/useUpdatePartner";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
-import { Loader2, X } from "lucide-react";
-import { Select, type SelectOption } from "@/components/navigatr";
+import { Loader2, X, Check } from "lucide-react";
+import { Select, type SelectOption, Textarea } from "@/components/navigatr";
+import { type PartnerStatus } from "../mockData";
 
 // ── Not found ──────────────────────────────────────────────────────
 
@@ -97,7 +99,7 @@ function HeroCard({ partner, dealCount, totalRevenue }: { partner: Partner; deal
             {partner.company}
           </p>
         </div>
-        <Badge kind={STATUS_BADGE_KIND[partner.status]}>{STATUS_LABEL[partner.status]}</Badge>
+        <StatusPicker partner={partner} />
       </div>
 
       {/* Metrics */}
@@ -125,18 +127,13 @@ function HeroCard({ partner, dealCount, totalRevenue }: { partner: Partner; deal
           variant="primary"
           size="md"
           leadingIcon={Plus}
-          onClick={() => toast("Partner activity logging lands in Sprint 2")}
+          onClick={() => toast("Partner activity logging lands next")}
         >
           Log touch
         </Button>
-        <Button
-          variant="secondary"
-          size="md"
-          leadingIcon={Pencil}
-          onClick={() => toast("Partner editing lands in Sprint 2")}
-        >
-          Edit
-        </Button>
+        {/* Edit is now inline: click the status pill above, or click
+            Edit on the Notes card below. A top-bar "edit everything"
+            button would need a sheet that doesn't exist yet. */}
       </div>
     </Card>
   );
@@ -184,12 +181,140 @@ function ContactCard({ partner }: { partner: Partner }) {
   );
 }
 
+const STATUS_OPTIONS: SelectOption[] = [
+  { value: "active",   label: "Active" },
+  { value: "cooling",  label: "Cooling" },
+  { value: "inactive", label: "Inactive" },
+];
+
+/** Clickable status pill. Click → reveals an inline Select; pick a new
+ *  value → optimistically mutates and collapses. The whole interaction
+ *  is keyboard-accessible (the badge is a real button). */
+function StatusPicker({ partner }: { partner: Partner }) {
+  const update = useUpdatePartner();
+  const [editing, setEditing] = React.useState(false);
+
+  const handleChange = async (next: string) => {
+    if (next === partner.status) {
+      setEditing(false);
+      return;
+    }
+    try {
+      await update.mutateAsync({
+        id: partner.id,
+        patch: { status: next as PartnerStatus },
+      });
+      toast.success(`Status set to ${STATUS_LABEL[next as PartnerStatus]}`);
+      setEditing(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not update status");
+    }
+  };
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        aria-label={`Status: ${STATUS_LABEL[partner.status]}. Click to change.`}
+        className={cn(
+          "rounded-radius-full transition-opacity",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas",
+          update.isPending && "opacity-60",
+        )}
+        disabled={update.isPending}
+      >
+        <Badge kind={STATUS_BADGE_KIND[partner.status]}>
+          {STATUS_LABEL[partner.status]}
+        </Badge>
+      </button>
+    );
+  }
+
+  return (
+    <div className="w-40">
+      <Select
+        id={`status-${partner.id}`}
+        value={partner.status}
+        onValueChange={handleChange}
+        options={STATUS_OPTIONS}
+      />
+    </div>
+  );
+}
+
 function NotesCard({ partner }: { partner: Partner }) {
-  if (!partner.notes) return null;
+  const update = useUpdatePartner();
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(partner.notes);
+
+  // When the partner prop changes (e.g. after a different partner is
+  // selected, or the cache refetches with updated notes), reset the
+  // draft so we don't keep stale text from a prior edit session.
+  React.useEffect(() => {
+    setDraft(partner.notes);
+  }, [partner.notes]);
+
+  const handleSave = async () => {
+    if (draft.trim() === partner.notes.trim()) {
+      setEditing(false);
+      return;
+    }
+    try {
+      await update.mutateAsync({ id: partner.id, patch: { notes: draft } });
+      toast.success("Notes saved");
+      setEditing(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save notes");
+    }
+  };
+
+  const handleCancel = () => {
+    setDraft(partner.notes);
+    setEditing(false);
+  };
+
+  // Render path 1: editing — textarea + Save / Cancel
+  if (editing) {
+    return (
+      <Card padding="md">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 className="text-body-strong text-text-default">Notes</h2>
+        </div>
+        <Textarea
+          id={`partner-notes-${partner.id}`}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Anything worth remembering about this partner — meeting cadence, referral patterns, hot buttons."
+          rows={5}
+          className="w-full"
+        />
+        <div className="mt-3 flex gap-2">
+          <Button variant="primary" size="sm" leadingIcon={Check} onClick={handleSave} disabled={update.isPending}>
+            {update.isPending ? "Saving…" : "Save"}
+          </Button>
+          <Button variant="tertiary" size="sm" onClick={handleCancel}>
+            Cancel
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  // Render path 2: read-only display
   return (
     <Card padding="md">
-      <h2 className="mb-2 text-body-strong text-text-default">Notes</h2>
-      <p className="whitespace-pre-wrap text-body-md text-text-default">{partner.notes}</p>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="text-body-strong text-text-default">Notes</h2>
+        <Button variant="tertiary" size="sm" leadingIcon={Pencil} onClick={() => setEditing(true)}>
+          Edit
+        </Button>
+      </div>
+      {partner.notes ? (
+        <p className="whitespace-pre-wrap text-body-md text-text-default">{partner.notes}</p>
+      ) : (
+        <p className="text-body-md text-text-muted">No notes yet. Click Edit to add some.</p>
+      )}
     </Card>
   );
 }
@@ -386,7 +511,7 @@ export function PartnerDetailPage() {
       <div className="flex flex-col gap-4 lg:gap-6">
         <HeroCard partner={partner} dealCount={deals.length} totalRevenue={totalRevenue} />
         <ContactCard partner={partner} />
-        {partner.notes && <NotesCard partner={partner} />}
+        <NotesCard partner={partner} />
         <ReferralsCard partnerId={partner.id} attributedDeals={deals} allDeals={allDeals} />
       </div>
     </div>
