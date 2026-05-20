@@ -37,6 +37,7 @@ function deal(id: string, company: string): Deal {
     nextFollowup: null,
     employeeCountRange: "1-10",
     leadSource: "",
+    updatedAt: "2026-05-18T12:00:00Z",
   };
 }
 

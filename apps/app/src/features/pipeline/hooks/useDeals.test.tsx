@@ -59,6 +59,7 @@ describe("useDeals", () => {
           next_followup_at: null,
           employee_count_range: "11-50",
           lead_source: "Partner referral",
+          updated_at: "2026-05-19T08:00:00Z",
         },
       ],
       error: null,
@@ -81,6 +82,7 @@ describe("useDeals", () => {
         nextFollowup: null,
         employeeCountRange: "11-50",
         leadSource: "Partner referral",
+        updatedAt: "2026-05-19T08:00:00Z",
       },
     ]);
   });
@@ -128,6 +130,7 @@ describe("useDeals", () => {
           next_followup_at: null,
           employee_count_range: null,
           lead_source: null,
+          updated_at: "2026-05-19T08:00:00Z",
         },
       ],
       error: null,

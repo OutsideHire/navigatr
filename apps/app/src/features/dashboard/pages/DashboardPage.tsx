@@ -433,9 +433,13 @@ function TodaysSnapshot({ snapshot }: { snapshot: DashboardData["todaysSnapshot"
   );
 }
 
-// Section 7: Monthly Performance — simple bar chart in pure CSS
-function MonthlyPerformance() {
-  const maxValue = Math.max(...MOCK.monthlyPerformance.map((m) => m.valueCents));
+// Section 7: Monthly Performance — live last-4-months won-deal chart.
+function MonthlyPerformance({ months }: { months: DashboardData["monthlyPerformance"] }) {
+  // Max value sets the scale. If no wins exist yet we clamp to 1 so we
+  // don't divide by zero — every bar renders as a zero-height stub.
+  const maxValue = Math.max(1, ...months.map((m) => m.valueCents));
+  const hasAnyWins = months.some((m) => m.deals > 0);
+
   return (
     <Card padding="lg" shadow="sm">
       <SectionHeader
@@ -444,26 +448,30 @@ function MonthlyPerformance() {
           <Button variant="tertiary" size="sm" leadingIcon={Clock4}>Last 4 months</Button>
         }
       />
+      {!hasAnyWins && (
+        <p className="mb-3 text-body-sm text-text-muted">
+          No wins yet. Close a deal to start building this chart.
+        </p>
+      )}
       {/* Bar chart: outer is a flex row of 4 columns. Each column is its own
           flex-col stretched to full height — `items-stretch` on the outer
           (default) lets each column own its height. The bar div takes a
           percentage of its parent's height; without this stretch the
           percentages resolved to 0 and bars went invisible. */}
       <div className="flex h-44 items-stretch gap-4">
-        {MOCK.monthlyPerformance.map((m) => {
+        {months.map((m) => {
           const heightPct = (m.valueCents / maxValue) * 100;
           return (
-            <div key={m.month} className="flex flex-1 flex-col items-center gap-2">
-              {/* Bar wrapper — fills column height; bar grows from the bottom. */}
+            <div key={m.monthKey} className="flex flex-1 flex-col items-center gap-2">
               <div className="relative w-full flex-1">
                 <div
                   className="absolute inset-x-0 bottom-0 rounded-t-radius-sm bg-brand-primary transition-all"
                   style={{ height: `${heightPct}%` }}
-                  aria-label={`${m.month}: ${m.deals} deals · ${formatMoney(m.valueCents)}`}
+                  aria-label={`${m.monthLabel}: ${m.deals} deals · ${formatMoney(m.valueCents)}`}
                 />
               </div>
               <div className="flex flex-col items-center">
-                <span className="text-caption text-text-muted">{m.month}</span>
+                <span className="text-caption text-text-muted">{m.monthLabel}</span>
                 <span className="text-caption font-medium tabular-nums text-text-default">
                   {m.deals} {m.deals === 1 ? "deal" : "deals"}
                 </span>
@@ -673,10 +681,9 @@ function PopulatedDashboard({ firstName: _firstName }: { firstName: string }) {
           <PipelineByStage byStage={data.byStage} />
           {/* LIVE */}
           <TodaysSnapshot snapshot={data.todaysSnapshot} />
-          {/* MOCK — needs monthly bucketing of won deals over the last
-              4 months. Doable next pass; deferred so this PR stays
-              focused on top-of-fold wins. */}
-          <MonthlyPerformance />
+          {/* LIVE — last 4 months of won deals bucketed by updated_at
+              as a proxy for "won_at" until deal_stage_history ships */}
+          <MonthlyPerformance months={data.monthlyPerformance} />
           {/* MOCK — touches-before-win + follow-up-rate need activity
               counts joined with win events we don't yet store. */}
           <PersistenceIndex />
