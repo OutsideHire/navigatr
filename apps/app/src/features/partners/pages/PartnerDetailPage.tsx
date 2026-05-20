@@ -53,8 +53,10 @@ import {
   type Deal,
 } from "@/features/pipeline/mockData";
 import { usePartner } from "../hooks/usePartner";
+import { useAttributeDeal, useUnattributeDeal } from "../hooks/useAttributeDeal";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
-import { Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
+import { Select, type SelectOption } from "@/components/navigatr";
 
 // ── Not found ──────────────────────────────────────────────────────
 
@@ -192,34 +194,144 @@ function NotesCard({ partner }: { partner: Partner }) {
   );
 }
 
-function ReferralsCard({ deals }: { deals: Deal[] }) {
+function ReferralsCard({
+  partnerId,
+  attributedDeals,
+  allDeals,
+}: {
+  partnerId: string;
+  attributedDeals: Deal[];
+  allDeals: Deal[];
+}) {
   const navigate = useNavigate();
+  const attribute = useAttributeDeal();
+  const unattribute = useUnattributeDeal();
+  const [picking, setPicking] = React.useState(false);
+  const [pickedDealId, setPickedDealId] = React.useState<string>("");
+
+  // Eligible = every deal in the org that isn't already attributed to
+  // THIS partner. (A deal can be attributed to multiple partners — the
+  // link table allows it — so we only filter against this partner's set.)
+  const attributedIds = React.useMemo(
+    () => new Set(attributedDeals.map((d) => d.id)),
+    [attributedDeals],
+  );
+  const eligibleOptions = React.useMemo<SelectOption[]>(
+    () =>
+      allDeals
+        .filter((d) => !attributedIds.has(d.id))
+        .map((d) => ({ value: d.id, label: `${d.companyName} · ${formatMoney(d.valueCents)}` })),
+    [allDeals, attributedIds],
+  );
+
+  const handleAttach = async () => {
+    if (!pickedDealId) return;
+    try {
+      await attribute.mutateAsync({ partnerId, dealId: pickedDealId });
+      toast.success("Deal attributed");
+      setPicking(false);
+      setPickedDealId("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not attribute deal");
+    }
+  };
+
+  const handleUnlink = async (dealId: string) => {
+    try {
+      await unattribute.mutateAsync({ partnerId, dealId });
+      toast.success("Attribution removed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not remove attribution");
+    }
+  };
+
   return (
     <Card padding="md">
-      <h2 className="mb-3 text-body-strong text-text-default">Referrals · {deals.length}</h2>
-      {deals.length === 0 ? (
-        <p className="text-body-md text-text-muted">No deals attributed yet.</p>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-body-strong text-text-default">Referrals · {attributedDeals.length}</h2>
+        {!picking && eligibleOptions.length > 0 && (
+          <Button variant="tertiary" size="sm" leadingIcon={Plus} onClick={() => setPicking(true)}>
+            Attach deal
+          </Button>
+        )}
+      </div>
+
+      {picking && (
+        <div className="mb-3 flex items-end gap-2 rounded-radius-md border border-border-subtle bg-surface-sunken p-3">
+          <div className="min-w-0 flex-1">
+            <label className="mb-1 block text-caption text-text-muted" htmlFor={`attach-deal-${partnerId}`}>
+              Attach a deal to this partner
+            </label>
+            <Select
+              id={`attach-deal-${partnerId}`}
+              value={pickedDealId}
+              onValueChange={setPickedDealId}
+              options={eligibleOptions}
+              placeholder="Pick a deal…"
+            />
+          </div>
+          <Button
+            variant="primary"
+            size="md"
+            onClick={handleAttach}
+            disabled={!pickedDealId || attribute.isPending}
+          >
+            {attribute.isPending ? "Attaching…" : "Attach"}
+          </Button>
+          <Button
+            variant="tertiary"
+            size="md"
+            onClick={() => { setPicking(false); setPickedDealId(""); }}
+          >
+            Cancel
+          </Button>
+        </div>
+      )}
+
+      {attributedDeals.length === 0 ? (
+        <p className="text-body-md text-text-muted">
+          No deals attributed yet.
+          {eligibleOptions.length > 0 && !picking && " Click “Attach deal” to link one."}
+        </p>
       ) : (
         <div className="flex flex-col gap-2">
-          {deals.map((d) => (
-            <button
+          {attributedDeals.map((d) => (
+            <div
               key={d.id}
-              type="button"
-              onClick={() => navigate(`/pipeline/${d.id}`)}
               className={cn(
-                "flex w-full items-center justify-between gap-3 rounded-radius-md border border-border-subtle bg-surface-default p-3 text-left transition-colors",
-                "hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas",
+                "flex items-center justify-between gap-3 rounded-radius-md border border-border-subtle bg-surface-default p-3",
+                "focus-within:ring-2 focus-within:ring-brand-primary focus-within:ring-offset-2 focus-within:ring-offset-surface-canvas",
               )}
             >
-              <div className="flex min-w-0 flex-col">
-                <p className="truncate text-body-strong text-text-default">{d.companyName}</p>
-                <p className="truncate text-caption text-text-muted">{d.contactName}</p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <span className="text-body-strong tabular-nums text-text-default">{formatMoney(d.valueCents)}</span>
-                <Badge kind={STAGE_BADGE_KIND[d.stage]}>{STAGE_LABEL[d.stage]}</Badge>
-              </div>
-            </button>
+              <button
+                type="button"
+                onClick={() => navigate(`/pipeline/${d.id}`)}
+                className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left transition-colors hover:opacity-80 focus-visible:outline-none"
+              >
+                <div className="flex min-w-0 flex-col">
+                  <p className="truncate text-body-strong text-text-default">{d.companyName}</p>
+                  <p className="truncate text-caption text-text-muted">{d.contactName}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="text-body-strong tabular-nums text-text-default">{formatMoney(d.valueCents)}</span>
+                  <Badge kind={STAGE_BADGE_KIND[d.stage]}>{STAGE_LABEL[d.stage]}</Badge>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleUnlink(d.id)}
+                disabled={unattribute.isPending}
+                aria-label={`Remove attribution for ${d.companyName}`}
+                className={cn(
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-radius-md text-text-subtle",
+                  "transition-colors hover:bg-status-danger-bg hover:text-status-danger",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-danger",
+                  "disabled:cursor-not-allowed disabled:opacity-50",
+                )}
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -275,7 +387,7 @@ export function PartnerDetailPage() {
         <HeroCard partner={partner} dealCount={deals.length} totalRevenue={totalRevenue} />
         <ContactCard partner={partner} />
         {partner.notes && <NotesCard partner={partner} />}
-        <ReferralsCard deals={deals} />
+        <ReferralsCard partnerId={partner.id} attributedDeals={deals} allDeals={allDeals} />
       </div>
     </div>
   );
