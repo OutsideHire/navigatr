@@ -74,6 +74,17 @@ export interface MonthlyPerformanceRow {
   valueCents: number;
 }
 
+export interface ActivitiesToWin {
+  /** Avg activities per won deal — null when there are no wins yet
+   *  (division would be nonsense; UI shows an empty-state hint). */
+  ratio: number | null;
+  /** Raw count of activities in the org — useful as the subtitle when
+   *  ratio is null. */
+  totalActivities: number;
+  /** Count of won deals — denominator visibility for the rep. */
+  wonDealsCount: number;
+}
+
 export interface DashboardData {
   isLoading: boolean;
   isError: boolean;
@@ -89,6 +100,8 @@ export interface DashboardData {
    *  trailing 4 months ending at "now" — empty months render as zero
    *  bars so the axis stays stable. */
   monthlyPerformance: MonthlyPerformanceRow[];
+  /** Hero "activities to win" — avg activities per won deal. */
+  activitiesToWin: ActivitiesToWin;
 }
 
 const STAGES: DealStage[] = ["new", "contacted", "qualified", "proposal", "won"];
@@ -262,6 +275,19 @@ export function useDashboardData(): DashboardData {
     return buckets;
   }, [deals]);
 
+  const activitiesToWin = React.useMemo<ActivitiesToWin>(() => {
+    const totalActivities = activities.length;
+    const wonDealsCount = kpis.wonDealsCount;
+    return {
+      // Divide-by-zero guard. Null tells the UI to show an empty state
+      // ("Close a deal to start tracking your touchpoint efficiency")
+      // instead of a misleading 0.0 or NaN.
+      ratio: wonDealsCount > 0 ? totalActivities / wonDealsCount : null,
+      totalActivities,
+      wonDealsCount,
+    };
+  }, [activities, kpis.wonDealsCount]);
+
   return {
     isLoading,
     isError,
@@ -272,5 +298,6 @@ export function useDashboardData(): DashboardData {
     totalActivities: activities.length,
     leadSources,
     monthlyPerformance,
+    activitiesToWin,
   };
 }
