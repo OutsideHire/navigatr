@@ -1,0 +1,128 @@
+// Pins the Supabase row → Partner shape mapping (especially the nested
+// partner_deals → attributedDealIds flattening), the cache-key shape
+// useCreatePartner relies on for invalidation, and the disabled state
+// when no userId is available.
+
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { renderHook, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+
+import { usePartners, PARTNERS_QUERY_KEY } from "./usePartners";
+
+const orderMock = vi.fn();
+const selectMock = vi.fn(() => ({ order: orderMock }));
+vi.mock("@/lib/supabase", () => ({
+  supabase: { from: () => ({ select: selectMock }) },
+}));
+
+let authUserId: string | undefined;
+vi.mock("@/stores/auth", () => ({
+  useAuth: (selector: (s: { user: { id: string } | null }) => unknown) =>
+    selector({ user: authUserId ? { id: authUserId } : null }),
+}));
+
+function wrapper({ children }: { children: ReactNode }) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+
+beforeEach(() => {
+  orderMock.mockReset();
+  selectMock.mockClear();
+  authUserId = "user-1";
+});
+
+describe("usePartners", () => {
+  it("maps Supabase rows to the frontend Partner shape, flattening attribution", async () => {
+    orderMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: "p-1",
+          name: "Sarah Johnson",
+          company: "Johnson & Boyle CPAs",
+          type: "cpa",
+          status: "active",
+          phone: "+12025550101",
+          email: "sarah@johnson.com",
+          city: "Austin, TX",
+          last_touch_at: "2026-05-17T00:00:00Z",
+          next_followup_at: "2026-05-22T00:00:00Z",
+          notes: "Best CPA in network",
+          partner_deals: [{ deal_id: "d-206" }, { deal_id: "d-301" }],
+        },
+      ],
+      error: null,
+    });
+
+    const { result } = renderHook(() => usePartners(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual([
+      {
+        id: "p-1",
+        name: "Sarah Johnson",
+        company: "Johnson & Boyle CPAs",
+        type: "cpa",
+        status: "active",
+        phone: "+12025550101",
+        email: "sarah@johnson.com",
+        city: "Austin, TX",
+        lastTouch: "2026-05-17T00:00:00Z",
+        nextFollowup: "2026-05-22T00:00:00Z",
+        attributedDealIds: ["d-206", "d-301"],
+        notes: "Best CPA in network",
+      },
+    ]);
+  });
+
+  it("partner with no attributed deals produces empty attributedDealIds (not undefined)", async () => {
+    orderMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: "p-2",
+          name: "X",
+          company: "X",
+          type: "other",
+          status: "cooling",
+          phone: null,
+          email: null,
+          city: null,
+          last_touch_at: null,
+          next_followup_at: null,
+          notes: "",
+          partner_deals: null,
+        },
+      ],
+      error: null,
+    });
+    const { result } = renderHook(() => usePartners(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0].attributedDealIds).toEqual([]);
+    // Nullable contact fields normalize to empty strings so consumers
+    // don't have to special-case.
+    expect(result.current.data?.[0].phone).toBe("");
+    expect(result.current.data?.[0].email).toBe("");
+    expect(result.current.data?.[0].city).toBe("");
+  });
+
+  it("disabled when not signed in (no Supabase call fires)", () => {
+    authUserId = undefined;
+    const { result } = renderHook(() => usePartners(), { wrapper });
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(orderMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces Supabase errors via isError", async () => {
+    orderMock.mockResolvedValueOnce({
+      data: null,
+      error: { message: "permission denied for table partners" },
+    });
+    const { result } = renderHook(() => usePartners(), { wrapper });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  it("cache key shape — useCreatePartner's invalidation depends on this", () => {
+    expect(PARTNERS_QUERY_KEY("u-1")).toEqual(["partners", "list", "u-1"]);
+    expect(PARTNERS_QUERY_KEY(undefined)).toEqual(["partners", "list", "anon"]);
+  });
+});

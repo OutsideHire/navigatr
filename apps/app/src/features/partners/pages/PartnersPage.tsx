@@ -39,7 +39,6 @@ import {
 } from "@/components/navigatr";
 
 import {
-  MOCK_PARTNERS,
   STATUS_BADGE_KIND,
   STATUS_LABEL,
   TYPE_LABEL,
@@ -47,8 +46,10 @@ import {
   type Partner,
   type PartnerStatus,
 } from "../mockData";
-import { MOCK_DEALS, formatMoney } from "@/features/pipeline/mockData";
+import { formatMoney } from "@/features/pipeline/mockData";
 import { AddPartnerSheet } from "../components/AddPartnerSheet";
+import { usePartners } from "../hooks/usePartners";
+import { useDeals } from "@/features/pipeline/hooks/useDeals";
 
 type StatusFilter = "all" | PartnerStatus;
 const STATUS_FILTERS: StatusFilter[] = ["all", "active", "cooling", "inactive"];
@@ -66,16 +67,19 @@ function useDebounced<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
-/** Pre-computed revenue-by-partner lookup keyed by refreshKey. Built once
- *  per refresh, not per card render. Replaces the prior pattern that
- *  built a new Map(MOCK_DEALS.map(...)) of 35 entries on EVERY call —
- *  which was ~70 calls per render once you counted sort comparisons +
- *  per-card lookups + the page total. Real cost at scale. */
-function useRevenueByPartner(refreshKey: number): Map<string, number> {
+/** Pre-compute revenue-by-partner from live data. Built once per
+ *  partners + deals snapshot, not per card render. Replaces the prior
+ *  pattern that walked MOCK_DEALS on every render — when this page
+ *  scales to hundreds of partners + deals, the per-render cost was
+ *  real (~N×M lookups per sort comparison). */
+function useRevenueByPartner(
+  partners: ReadonlyArray<Partner>,
+  deals: ReadonlyArray<{ id: string; valueCents: number }>,
+): Map<string, number> {
   return React.useMemo(() => {
-    const dealById = new Map(MOCK_DEALS.map((d) => [d.id, d]));
+    const dealById = new Map(deals.map((d) => [d.id, d]));
     const revenueById = new Map<string, number>();
-    for (const p of MOCK_PARTNERS) {
+    for (const p of partners) {
       let sum = 0;
       for (const id of p.attributedDealIds) {
         const d = dealById.get(id);
@@ -84,8 +88,7 @@ function useRevenueByPartner(refreshKey: number): Map<string, number> {
       revenueById.set(p.id, sum);
     }
     return revenueById;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  }, [partners, deals]);
 }
 
 function PartnerCard({ partner, revenue }: { partner: Partner; revenue: number }) {
@@ -152,15 +155,16 @@ export function PartnersPage() {
   const debouncedSearch = useDebounced(searchInput, 300);
   const [sortMode] = React.useState<SortMode>("revenue");
   const [sheetOpen, setSheetOpen] = React.useState(false);
-  // Bumps after a successful add so the list recomputes against the
-  // freshly-mutated MOCK_PARTNERS array. Same pattern as Activities.
-  const [refreshKey, setRefreshKey] = React.useState(0);
-
   const [searchParams, setSearchParams] = useSearchParams();
 
+  // Live data — useCreatePartner invalidates the partners cache on
+  // success, so newly added partners surface without a refreshKey hack.
+  const { data: partners = [] } = usePartners();
+  const { data: deals = [] } = useDeals();
+
   // Single shared lookup map — every "what's their revenue" question
-  // resolves with one O(1) lookup instead of rebuilding a 35-entry map.
-  const revenueByPartner = useRevenueByPartner(refreshKey);
+  // resolves with one O(1) lookup instead of rebuilding per render.
+  const revenueByPartner = useRevenueByPartner(partners, deals);
   const getRevenue = React.useCallback(
     (p: Partner) => revenueByPartner.get(p.id) ?? 0,
     [revenueByPartner],
@@ -179,7 +183,7 @@ export function PartnersPage() {
 
   const filtered = React.useMemo(() => {
     const q = debouncedSearch.trim().toLowerCase();
-    const base = MOCK_PARTNERS.filter((p) => {
+    const base = partners.filter((p) => {
       if (statusFilter !== "all" && p.status !== statusFilter) return false;
       if (q && !`${p.name} ${p.company}`.toLowerCase().includes(q)) return false;
       return true;
@@ -201,20 +205,18 @@ export function PartnersPage() {
       });
     }
     return sorted;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, debouncedSearch, sortMode, refreshKey, getRevenue]);
+  }, [partners, statusFilter, debouncedSearch, sortMode, getRevenue]);
 
   const counts = React.useMemo(() => {
     const c: Record<StatusFilter, number> = {
-      all: MOCK_PARTNERS.length,
+      all: partners.length,
       active: 0,
       cooling: 0,
       inactive: 0,
     };
-    for (const p of MOCK_PARTNERS) c[p.status]++;
+    for (const p of partners) c[p.status]++;
     return c;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  }, [partners]);
 
   const totalAttributed = React.useMemo(() => {
     let sum = 0;
@@ -230,7 +232,7 @@ export function PartnersPage() {
           <div className="flex flex-col gap-1">
             <h1 className="text-heading-lg text-text-default">Partners</h1>
             <p className="text-body-md text-text-muted">
-              {MOCK_PARTNERS.length} {MOCK_PARTNERS.length === 1 ? "partner" : "partners"}
+              {partners.length} {partners.length === 1 ? "partner" : "partners"}
               {totalAttributed > 0 && (
                 <>
                   {" "}
@@ -321,7 +323,7 @@ export function PartnersPage() {
 
         {/* List */}
         {filtered.length === 0 ? (
-          MOCK_PARTNERS.length === 0 ? (
+          partners.length === 0 ? (
             <Card padding="lg" className="flex flex-col items-center gap-3 text-center">
               <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-surface-sunken text-text-muted">
                 <Users className="h-6 w-6" aria-hidden />
@@ -374,7 +376,11 @@ export function PartnersPage() {
       <AddPartnerSheet
         open={sheetOpen}
         onOpenChange={setSheetOpen}
-        onAdded={() => setRefreshKey((n) => n + 1)}
+        onAdded={() => {
+          // useCreatePartner invalidates the partners cache on success;
+          // the list re-fetches automatically. The callback exists so
+          // the parent could navigate or focus — currently a no-op.
+        }}
       />
     </div>
   );
