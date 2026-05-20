@@ -479,14 +479,24 @@ function MonthlyPerformance({ months }: { months: DashboardData["monthlyPerforma
   );
 }
 
-// Section 8: Persistence index (3 mini-stats)
-function PersistenceIndex() {
+// Section 8: Persistence index (3 mini-stats) — first one live, other
+// two flagged as comingSoon (the dim card variant). The reasons are in
+// the hook's comments: follow-up rate needs scheduled-vs-completed
+// activity tracking; response window needs inbound-email timestamps.
+function PersistenceIndex({ stats }: { stats: DashboardData["persistenceIndex"] }) {
   return (
     <Card padding="lg" shadow="sm">
       <SectionHeader title="Persistence index" />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {MOCK.persistenceIndex.map((stat) => (
-          <div key={stat.eyebrow} className="flex flex-col gap-1 rounded-radius-md bg-surface-sunken p-4">
+        {stats.map((stat) => (
+          <div
+            key={stat.eyebrow}
+            className={cn(
+              "flex flex-col gap-1 rounded-radius-md bg-surface-sunken p-4",
+              stat.comingSoon && "opacity-60",
+            )}
+            aria-disabled={stat.comingSoon || undefined}
+          >
             <span className="text-eyebrow text-text-subtle">{stat.eyebrow}</span>
             <span className="text-kpi-md tabular-nums text-text-default">{stat.value}</span>
             <span className="text-caption text-text-muted">{stat.caption}</span>
@@ -607,17 +617,32 @@ function LeadSources({ leadSources }: { leadSources: DashboardData["leadSources"
   );
 }
 
-// Section 11: Conversion Funnel
-function ConversionFunnel() {
+// Section 11: Conversion Funnel — live data from deal_stage_history.
+function ConversionFunnel({ funnel }: { funnel: DashboardData["conversionFunnel"] }) {
+  // Empty-state: org has no stage transitions yet (every deal is in
+  // its initial stage with nothing graduated). The funnel is technically
+  // all-zeros, which would render but reads as broken — better to show
+  // an empty-state hint.
+  const hasAnyTransitions = funnel.some((step) => step.toCount > 0);
+  if (!hasAnyTransitions) {
+    return (
+      <Card padding="lg" shadow="sm">
+        <SectionHeader title="Conversion funnel" />
+        <p className="text-body-sm text-text-muted">
+          No stage transitions yet. Move a deal forward in the pipeline to see your conversion rates here.
+        </p>
+      </Card>
+    );
+  }
   return (
     <Card padding="lg" shadow="sm">
       <SectionHeader title="Conversion funnel" />
       <div className="flex flex-col gap-4">
-        {MOCK.conversionFunnel.map((step) => (
+        {funnel.map((step) => (
           <div key={`${step.from}-${step.to}`} className="flex flex-col gap-1.5">
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-body-md text-text-default">
-                {step.from} <ArrowRight className="inline h-3 w-3 text-text-subtle" aria-hidden /> {step.to}
+                {step.fromLabel} <ArrowRight className="inline h-3 w-3 text-text-subtle" aria-hidden /> {step.toLabel}
               </span>
               <span className="text-body-strong tabular-nums text-text-default">
                 {step.rate}%
@@ -677,17 +702,17 @@ function PopulatedDashboard({ firstName: _firstName }: { firstName: string }) {
           {/* LIVE — last 4 months of won deals bucketed by updated_at
               as a proxy for "won_at" until deal_stage_history ships */}
           <MonthlyPerformance months={data.monthlyPerformance} />
-          {/* MOCK — touches-before-win + follow-up-rate need activity
-              counts joined with win events we don't yet store. */}
-          <PersistenceIndex />
+          {/* LIVE (partial) — touches-before-win is real; the other
+              two stats are explicitly marked comingSoon by the hook. */}
+          <PersistenceIndex stats={data.persistenceIndex} />
           {/* LIVE */}
           <TopPartners topPartners={data.topPartners} />
           {/* LIVE */}
           <LeadSources leadSources={data.leadSources} />
-          {/* MOCK — funnel needs deal_stage_history (which deal went
-              New → Contacted, etc.). Real backend piece. */}
+          {/* LIVE — computed from deal_stage_history rolled up to
+              "ever entered" counts per stage. */}
           <div className="lg:col-span-2">
-            <ConversionFunnel />
+            <ConversionFunnel funnel={data.conversionFunnel} />
           </div>
         </div>
       </div>

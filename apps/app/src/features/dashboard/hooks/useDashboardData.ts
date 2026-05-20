@@ -23,6 +23,7 @@ import * as React from "react";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { usePartners } from "@/features/partners/hooks/usePartners";
 import { useActivitiesForOrg } from "@/features/activities/hooks/useActivities";
+import { useStageHistory } from "@/features/pipeline/hooks/useStageHistory";
 import { STAGE_LABEL, type Deal, type DealStage } from "@/features/pipeline/mockData";
 import type { Partner } from "@/features/partners/mockData";
 
@@ -74,6 +75,30 @@ export interface MonthlyPerformanceRow {
   valueCents: number;
 }
 
+export interface ConversionFunnelRow {
+  from: DealStage;
+  to: DealStage;
+  fromLabel: string;
+  toLabel: string;
+  /** Distinct deals that have ever entered the `from` stage. */
+  fromCount: number;
+  /** Distinct deals that have ever entered the `to` stage. */
+  toCount: number;
+  /** toCount / fromCount × 100, rounded. 0 when fromCount is 0. */
+  rate: number;
+}
+
+export interface PersistenceStat {
+  /** Eyebrow label (UPPERCASE), e.g. "TOUCHES BEFORE WIN". */
+  eyebrow: string;
+  /** Formatted value, e.g. "3.5" or "—" when no data. */
+  value: string;
+  /** Caption beneath the value, e.g. "across 2 wins". */
+  caption: string;
+  /** When true, the UI dims the card to signal "we don't track this yet". */
+  comingSoon?: boolean;
+}
+
 export interface ActivitiesToWin {
   /** Avg activities per won deal — null when there are no wins yet
    *  (division would be nonsense; UI shows an empty-state hint). */
@@ -102,6 +127,11 @@ export interface DashboardData {
   monthlyPerformance: MonthlyPerformanceRow[];
   /** Hero "activities to win" — avg activities per won deal. */
   activitiesToWin: ActivitiesToWin;
+  /** Stage-to-stage transition rates, computed from deal_stage_history. */
+  conversionFunnel: ConversionFunnelRow[];
+  /** Three persistence stats. Some are "coming soon" until we track
+   *  scheduled-vs-completed activities + response-window timestamps. */
+  persistenceIndex: PersistenceStat[];
 }
 
 const STAGES: DealStage[] = ["new", "contacted", "qualified", "proposal", "won"];
@@ -117,13 +147,17 @@ export function useDashboardData(): DashboardData {
   const dealsQ = useDeals();
   const partnersQ = usePartners();
   const activitiesQ = useActivitiesForOrg();
+  const stageHistoryQ = useStageHistory();
 
-  const isLoading = dealsQ.isLoading || partnersQ.isLoading || activitiesQ.isLoading;
-  const isError   = dealsQ.isError   || partnersQ.isError   || activitiesQ.isError;
+  const isLoading =
+    dealsQ.isLoading || partnersQ.isLoading || activitiesQ.isLoading || stageHistoryQ.isLoading;
+  const isError =
+    dealsQ.isError || partnersQ.isError || activitiesQ.isError || stageHistoryQ.isError;
 
   const deals     = dealsQ.data     ?? [];
   const partners  = partnersQ.data  ?? [];
   const activities = activitiesQ.data ?? [];
+  const stageHistory = stageHistoryQ.data ?? [];
 
   const kpis = React.useMemo<DashboardKpis>(() => {
     let activeCount = 0;
@@ -288,6 +322,76 @@ export function useDashboardData(): DashboardData {
     };
   }, [activities, kpis.wonDealsCount]);
 
+  const conversionFunnel = React.useMemo<ConversionFunnelRow[]>(() => {
+    // "Ever entered" set per stage: distinct deal_ids that ever
+    // transitioned INTO this stage (to_stage row exists).
+    const everIn: Record<DealStage, Set<string>> = {
+      new: new Set(),
+      contacted: new Set(),
+      qualified: new Set(),
+      proposal: new Set(),
+      won: new Set(),
+    };
+    for (const row of stageHistory) {
+      everIn[row.toStage].add(row.dealId);
+    }
+    const transitions: Array<[DealStage, DealStage]> = [
+      ["new", "contacted"],
+      ["contacted", "qualified"],
+      ["qualified", "proposal"],
+      ["proposal", "won"],
+    ];
+    return transitions.map(([from, to]) => {
+      const fromCount = everIn[from].size;
+      const toCount = everIn[to].size;
+      return {
+        from,
+        to,
+        fromLabel: STAGE_LABEL[from],
+        toLabel: STAGE_LABEL[to],
+        fromCount,
+        toCount,
+        rate: fromCount > 0 ? Math.round((toCount / fromCount) * 100) : 0,
+      };
+    });
+  }, [stageHistory]);
+
+  const persistenceIndex = React.useMemo<PersistenceStat[]>(() => {
+    // 1. Touches before win — already computed for the hero, mirror it
+    //    here so the card has a real number.
+    const touchesBeforeWin: PersistenceStat = activitiesToWin.ratio !== null
+      ? {
+          eyebrow: "TOUCHES BEFORE WIN",
+          value: activitiesToWin.ratio.toFixed(1),
+          caption: `across ${activitiesToWin.wonDealsCount} ${activitiesToWin.wonDealsCount === 1 ? "win" : "wins"}`,
+        }
+      : {
+          eyebrow: "TOUCHES BEFORE WIN",
+          value: "—",
+          caption: "needs at least one win to compute",
+        };
+
+    // 2 + 3. Follow-up rate + response window require data we don't yet
+    //    capture (scheduled-vs-completed activities, response timestamps
+    //    on inbound emails). Marked coming-soon — the UI dims these
+    //    cards so reps know they're real-but-blocked, not bugs.
+    return [
+      touchesBeforeWin,
+      {
+        eyebrow: "FOLLOW-UP RATE",
+        value: "—",
+        caption: "tracking lands with scheduled-activity coverage",
+        comingSoon: true,
+      },
+      {
+        eyebrow: "RESPONSE WINDOW",
+        value: "—",
+        caption: "needs inbound-email timestamps",
+        comingSoon: true,
+      },
+    ];
+  }, [activitiesToWin]);
+
   return {
     isLoading,
     isError,
@@ -299,5 +403,7 @@ export function useDashboardData(): DashboardData {
     leadSources,
     monthlyPerformance,
     activitiesToWin,
+    conversionFunnel,
+    persistenceIndex,
   };
 }

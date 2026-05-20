@@ -16,10 +16,17 @@ import type { Deal } from "@/features/pipeline/mockData";
 import type { Partner } from "@/features/partners/mockData";
 import type { Activity } from "@/features/activities/mockData";
 
-// Mock the three composing hooks.
+// Mock the four composing hooks.
 let dealsData: Deal[];
 let partnersData: Partner[];
 let activitiesData: Activity[];
+let stageHistoryData: Array<{
+  id: string;
+  dealId: string;
+  fromStage: Deal["stage"] | null;
+  toStage: Deal["stage"];
+  transitionedAt: string;
+}>;
 
 vi.mock("@/features/pipeline/hooks/useDeals", () => ({
   useDeals: () => ({ data: dealsData, isLoading: false, isError: false }),
@@ -29,6 +36,9 @@ vi.mock("@/features/partners/hooks/usePartners", () => ({
 }));
 vi.mock("@/features/activities/hooks/useActivities", () => ({
   useActivitiesForOrg: () => ({ data: activitiesData, isLoading: false, isError: false }),
+}));
+vi.mock("@/features/pipeline/hooks/useStageHistory", () => ({
+  useStageHistory: () => ({ data: stageHistoryData, isLoading: false, isError: false }),
 }));
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -77,6 +87,7 @@ beforeEach(() => {
   dealsData = [];
   partnersData = [];
   activitiesData = [];
+  stageHistoryData = [];
 });
 
 describe("useDashboardData / KPIs", () => {
@@ -295,6 +306,105 @@ describe("useDashboardData / monthly performance", () => {
     const keys = result.current.monthlyPerformance.map((m) => m.monthKey);
     const sorted = [...keys].sort();
     expect(keys).toEqual(sorted);
+  });
+});
+
+describe("useDashboardData / conversion funnel", () => {
+  function transition(dealId: string, toStage: Deal["stage"], fromStage: Deal["stage"] | null = null) {
+    return {
+      id: `h-${Math.random().toString(36).slice(2)}`,
+      dealId, fromStage, toStage,
+      transitionedAt: "2026-05-19T10:00:00Z",
+    };
+  }
+
+  it("returns 4 stage pairs (new→contacted ... proposal→won) always", () => {
+    stageHistoryData = [];
+    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    expect(result.current.conversionFunnel).toHaveLength(4);
+    expect(result.current.conversionFunnel.map((r) => `${r.from}->${r.to}`)).toEqual([
+      "new->contacted",
+      "contacted->qualified",
+      "qualified->proposal",
+      "proposal->won",
+    ]);
+  });
+
+  it("0% rate when no transitions yet", () => {
+    stageHistoryData = [];
+    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    for (const step of result.current.conversionFunnel) {
+      expect(step.rate).toBe(0);
+      expect(step.fromCount).toBe(0);
+      expect(step.toCount).toBe(0);
+    }
+  });
+
+  it("computes rate = (deals that reached toStage) / (deals that reached fromStage)", () => {
+    // 4 deals reached New; 3 of them reached Contacted; 1 reached Qualified.
+    stageHistoryData = [
+      transition("d1", "new"),
+      transition("d2", "new"),
+      transition("d3", "new"),
+      transition("d4", "new"),
+      transition("d1", "contacted", "new"),
+      transition("d2", "contacted", "new"),
+      transition("d3", "contacted", "new"),
+      transition("d1", "qualified", "contacted"),
+    ];
+    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const newToContacted = result.current.conversionFunnel.find((s) => s.from === "new")!;
+    expect(newToContacted).toMatchObject({ fromCount: 4, toCount: 3, rate: 75 });
+    const contactedToQualified = result.current.conversionFunnel.find((s) => s.from === "contacted")!;
+    expect(contactedToQualified).toMatchObject({ fromCount: 3, toCount: 1, rate: 33 });
+  });
+
+  it("counts each deal once per stage even if it transitions in/out multiple times", () => {
+    // Same deal goes new → contacted → new → contacted again. Both
+    // counts should remain 1 (set-based "ever entered").
+    stageHistoryData = [
+      transition("d1", "new"),
+      transition("d1", "contacted", "new"),
+      transition("d1", "new", "contacted"),
+      transition("d1", "contacted", "new"),
+    ];
+    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const newToContacted = result.current.conversionFunnel.find((s) => s.from === "new")!;
+    expect(newToContacted).toMatchObject({ fromCount: 1, toCount: 1, rate: 100 });
+  });
+});
+
+describe("useDashboardData / persistence index", () => {
+  it("returns 3 stats — first live, last two flagged comingSoon", () => {
+    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const stats = result.current.persistenceIndex;
+    expect(stats).toHaveLength(3);
+    expect(stats[0].comingSoon).toBeFalsy();    // touches before win — live
+    expect(stats[1].comingSoon).toBe(true);     // follow-up rate
+    expect(stats[2].comingSoon).toBe(true);     // response window
+  });
+
+  it("touches-before-win shows the ratio when wins exist", () => {
+    dealsData = [
+      deal("won1", "won", 100, 100),
+      deal("won2", "won", 100, 100),
+    ];
+    activitiesData = Array.from({ length: 8 }, (_, i) => ({
+      id: `a-${i}`, dealId: "won1", type: "call" as const,
+      disposition: "positive_engagement" as const,
+      durationMinutes: 10, outcomeNotes: "",
+      occurredAt: "2026-05-19T10:00:00Z", followUpDate: null,
+    }));
+    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    // 8 activities / 2 wins = 4.0
+    expect(result.current.persistenceIndex[0].value).toBe("4.0");
+    expect(result.current.persistenceIndex[0].caption).toMatch(/2 wins/);
+  });
+
+  it("touches-before-win shows em-dash when no wins yet", () => {
+    dealsData = [deal("open", "qualified", 100)];
+    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    expect(result.current.persistenceIndex[0].value).toBe("—");
   });
 });
 
