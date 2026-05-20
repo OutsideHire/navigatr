@@ -549,28 +549,42 @@ function TopPartners({ topPartners }: { topPartners: DashboardData["topPartners"
 }
 
 // Section 10: Lead Sources (single horizontal stacked bar + legend)
-function LeadSources() {
-  const segmentColors: Record<string, string> = {
-    teal:   "bg-accent-teal",
-    violet: "bg-accent-violet",
-    blue:   "bg-accent-blue",
-    orange: "bg-accent-orange",
-  };
-  const dotColors: Record<string, string> = {
-    teal:   "bg-accent-teal",
-    violet: "bg-accent-violet",
-    blue:   "bg-accent-blue",
-    orange: "bg-accent-orange",
-  };
+// Stable color rotation for lead-source labels. Free-text labels mean we
+// can't enum-key colors; we cycle through the design system's accent
+// palette in alphabetical order of label so the same source always gets
+// the same color across renders.
+const LEAD_SOURCE_COLORS = ["bg-accent-teal", "bg-accent-violet", "bg-accent-blue", "bg-accent-orange"];
+
+function LeadSources({ leadSources }: { leadSources: DashboardData["leadSources"] }) {
+  if (leadSources.length === 0) {
+    return (
+      <Card padding="lg" shadow="sm">
+        <SectionHeader title="Lead sources" />
+        <p className="text-body-sm text-text-muted">
+          Add a few deals with a lead source set to see your breakdown here.
+        </p>
+      </Card>
+    );
+  }
+  // Assign a stable color to each label by sorting alphabetically and
+  // taking modulo over the palette. This keeps "Cold outreach" the same
+  // color across renders even if the count ordering changes.
+  const labelColor = new Map<string, string>();
+  [...leadSources]
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .forEach((src, i) => {
+      labelColor.set(src.label, LEAD_SOURCE_COLORS[i % LEAD_SOURCE_COLORS.length]!);
+    });
+
   return (
     <Card padding="lg" shadow="sm">
-      <SectionHeader title="Lead sources this quarter" />
+      <SectionHeader title="Lead sources" />
       {/* Stacked bar */}
       <div className="flex h-3 w-full overflow-hidden rounded-radius-full bg-surface-sunken">
-        {MOCK.leadSources.map((seg) => (
+        {leadSources.map((seg) => (
           <div
             key={seg.label}
-            className={cn("h-full", segmentColors[seg.accent])}
+            className={cn("h-full", labelColor.get(seg.label))}
             style={{ width: `${seg.percent}%` }}
             aria-label={`${seg.label}: ${seg.percent}%`}
           />
@@ -578,9 +592,9 @@ function LeadSources() {
       </div>
       {/* Legend */}
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
-        {MOCK.leadSources.map((seg) => (
+        {leadSources.map((seg) => (
           <div key={seg.label} className="flex items-center gap-2">
-            <span className={cn("h-2.5 w-2.5 shrink-0 rounded-radius-full", dotColors[seg.accent])} aria-hidden />
+            <span className={cn("h-2.5 w-2.5 shrink-0 rounded-radius-full", labelColor.get(seg.label))} aria-hidden />
             <span className="text-body-sm text-text-default">{seg.label}</span>
             <span className="ml-auto text-body-sm tabular-nums text-text-muted">{seg.percent}%</span>
           </div>
@@ -668,9 +682,8 @@ function PopulatedDashboard({ firstName: _firstName }: { firstName: string }) {
           <PersistenceIndex />
           {/* LIVE */}
           <TopPartners topPartners={data.topPartners} />
-          {/* MOCK — deals.lead_source exists server-side but not yet
-              surfaced on the Deal frontend type. Trivial follow-up. */}
-          <LeadSources />
+          {/* LIVE */}
+          <LeadSources leadSources={data.leadSources} />
           {/* MOCK — funnel needs deal_stage_history (which deal went
               New → Contacted, etc.). Real backend piece. */}
           <div className="lg:col-span-2">

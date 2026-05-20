@@ -31,6 +31,10 @@ export interface Deal {
   /** ISO date string. Within next 14 days; null for Won. */
   nextFollowup: string | null;
   employeeCountRange: string;
+  /** Free-text source. Common values surface as the dashboard's "Lead
+   *  sources this quarter" breakdown. Nullable in the DB; empty string
+   *  here when the rep didn't specify (collapses to the "Other" bucket). */
+  leadSource: string;
 }
 
 // Static "today" so subsequent renders don't shift cards' relative dates.
@@ -78,6 +82,7 @@ function deal(
     email,
     valueCents: valueK * 100_000, // $K → cents
     stage,
+    leadSource: "Mock data",
     probability: probabilityOverride ?? STAGE_DEFAULT_PROBABILITY[stage],
     lastActivity: daysAgo(lastActivityDays),
     nextFollowup: nextFollowupDays === null ? null : daysAhead(nextFollowupDays),

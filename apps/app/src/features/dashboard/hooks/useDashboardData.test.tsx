@@ -36,13 +36,20 @@ function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
-function deal(id: string, stage: Deal["stage"], valueCents: number, probability = 50): Deal {
+function deal(
+  id: string,
+  stage: Deal["stage"],
+  valueCents: number,
+  probability = 50,
+  leadSource = "",
+): Deal {
   return {
     id, companyName: `Co-${id}`, contactName: "X",
     phone: "+12025550100", email: "x@x.x",
     valueCents, stage, probability,
     lastActivity: "2026-05-18T12:00:00Z", nextFollowup: null,
     employeeCountRange: "1-10",
+    leadSource,
   };
 }
 
@@ -169,6 +176,50 @@ describe("useDashboardData / top partners", () => {
     const { result } = renderHook(() => useDashboardData(), { wrapper });
     expect(result.current.topPartners[0].referrals).toBe(1);
     expect(result.current.topPartners[0].revenueCents).toBe(10_000_00);
+  });
+});
+
+describe("useDashboardData / lead sources", () => {
+  it("returns empty array when there are no deals", () => {
+    dealsData = [];
+    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    expect(result.current.leadSources).toEqual([]);
+  });
+
+  it("groups by leadSource, sorted by count desc with alphabetical tiebreak", () => {
+    dealsData = [
+      deal("d1", "new", 100, 20, "Partner referral"),
+      deal("d2", "new", 100, 20, "Partner referral"),
+      deal("d3", "new", 100, 20, "Cold outreach"),
+      deal("d4", "new", 100, 20, "Cold outreach"),
+      deal("d5", "new", 100, 20, "Inbound"),
+    ];
+    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    // Cold outreach (2) sorts before Partner referral (2) alphabetically when tied
+    expect(result.current.leadSources.map((s) => s.label)).toEqual([
+      "Cold outreach",
+      "Partner referral",
+      "Inbound",
+    ]);
+    expect(result.current.leadSources[0]).toMatchObject({
+      label: "Cold outreach",
+      count: 2,
+      percent: 40, // 2 / 5
+    });
+  });
+
+  it("collapses empty / whitespace leadSource into an 'Other' bucket", () => {
+    dealsData = [
+      deal("d1", "new", 100, 20, ""),
+      deal("d2", "new", 100, 20, "   "),
+      deal("d3", "new", 100, 20, "Inbound"),
+    ];
+    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const labels = result.current.leadSources.map((s) => s.label);
+    expect(labels).toContain("Other");
+    expect(labels).toContain("Inbound");
+    const other = result.current.leadSources.find((s) => s.label === "Other")!;
+    expect(other.count).toBe(2);
   });
 });
 

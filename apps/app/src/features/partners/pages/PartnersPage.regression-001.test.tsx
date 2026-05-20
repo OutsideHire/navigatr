@@ -35,6 +35,7 @@ function deal(id: string, valueCents: number): Deal {
     lastActivity: "2026-05-18T12:00:00Z",
     nextFollowup: null,
     employeeCountRange: "11-50",
+    leadSource: "",
   };
 }
 
