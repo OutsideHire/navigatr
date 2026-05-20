@@ -48,7 +48,8 @@ describe("useUpdatePartner", () => {
     });
 
     expect(updateMock).toHaveBeenCalledTimes(1);
-    expect(updateMock.mock.calls[0]?.[0]).toEqual({
+    const updateCalls = updateMock.mock.calls as unknown as Array<[Record<string, unknown>]>;
+    expect(updateCalls[0]?.[0]).toEqual({
       status: "cooling",
       notes: "Slowed down this quarter",
     });
@@ -63,7 +64,8 @@ describe("useUpdatePartner", () => {
       })),
     });
     await result.current.mutateAsync({ id: "p-1", patch: { status: "inactive" } });
-    expect(updateMock.mock.calls[0]?.[0]).toEqual({ status: "inactive" });
+    const updateCalls = updateMock.mock.calls as unknown as Array<[Record<string, unknown>]>;
+    expect(updateCalls[0]?.[0]).toEqual({ status: "inactive" });
   });
 
   it("invalidates the partners list cache on success", async () => {
