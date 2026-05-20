@@ -33,6 +33,7 @@ interface DealRow {
   next_followup_at: string | null;
   employee_count_range: string | null;
   lead_source: string | null;
+  updated_at: string;
 }
 
 /**
@@ -60,6 +61,7 @@ function toDeal(row: DealRow): Deal {
     nextFollowup: row.next_followup_at,
     employeeCountRange: row.employee_count_range ?? "",
     leadSource: row.lead_source ?? "",
+    updatedAt: row.updated_at,
   };
 }
 
@@ -77,7 +79,7 @@ export function useDeals() {
         .select(
           "id, company_name, contact_name, contact_phone, contact_email, " +
             "value_cents, stage, probability, last_activity_at, " +
-            "next_followup_at, employee_count_range, lead_source",
+            "next_followup_at, employee_count_range, lead_source, updated_at",
         )
         .order("updated_at", { ascending: false });
       if (error) throw error;

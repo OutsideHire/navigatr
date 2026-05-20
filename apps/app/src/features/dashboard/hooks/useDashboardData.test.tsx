@@ -42,6 +42,7 @@ function deal(
   valueCents: number,
   probability = 50,
   leadSource = "",
+  updatedAt = "2026-05-18T12:00:00Z",
 ): Deal {
   return {
     id, companyName: `Co-${id}`, contactName: "X",
@@ -50,6 +51,7 @@ function deal(
     lastActivity: "2026-05-18T12:00:00Z", nextFollowup: null,
     employeeCountRange: "1-10",
     leadSource,
+    updatedAt,
   };
 }
 
@@ -220,6 +222,48 @@ describe("useDashboardData / lead sources", () => {
     expect(labels).toContain("Inbound");
     const other = result.current.leadSources.find((s) => s.label === "Other")!;
     expect(other.count).toBe(2);
+  });
+});
+
+describe("useDashboardData / monthly performance", () => {
+  it("always returns 4 trailing months, even with zero data", () => {
+    dealsData = [];
+    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    expect(result.current.monthlyPerformance).toHaveLength(4);
+    for (const m of result.current.monthlyPerformance) {
+      expect(m.deals).toBe(0);
+      expect(m.valueCents).toBe(0);
+    }
+  });
+
+  it("only counts won deals; pipeline-stage deals don't show up", () => {
+    const thisMonth = new Date().toISOString();
+    dealsData = [
+      deal("won", "won", 100_000_00, 100, "", thisMonth),
+      deal("open", "qualified", 50_000_00, 55, "", thisMonth),
+    ];
+    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const currentMonth = result.current.monthlyPerformance[3]!; // last bucket = this month
+    expect(currentMonth.deals).toBe(1);
+    expect(currentMonth.valueCents).toBe(100_000_00);
+  });
+
+  it("ignores wins older than the trailing 4 months window", () => {
+    // Force a deal with updated_at ~6 months ago — outside the window.
+    const longAgo = new Date();
+    longAgo.setMonth(longAgo.getMonth() - 6);
+    dealsData = [deal("old-win", "won", 50_000_00, 100, "", longAgo.toISOString())];
+    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const total = result.current.monthlyPerformance.reduce((s, m) => s + m.deals, 0);
+    expect(total).toBe(0);
+  });
+
+  it("month buckets are in chronological order (oldest first, current last)", () => {
+    dealsData = [];
+    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const keys = result.current.monthlyPerformance.map((m) => m.monthKey);
+    const sorted = [...keys].sort();
+    expect(keys).toEqual(sorted);
   });
 });
 

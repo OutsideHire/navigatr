@@ -35,6 +35,12 @@ export interface Deal {
    *  sources this quarter" breakdown. Nullable in the DB; empty string
    *  here when the rep didn't specify (collapses to the "Other" bucket). */
   leadSource: string;
+  /** ISO timestamp of the last UPDATE on the row. Imperfect proxy for
+   *  "when did this deal close" on the monthly-performance dashboard
+   *  widget — a rep editing notes on an old won deal will re-bump this
+   *  and shift the row into the current month. Real fix is a
+   *  deal_stage_history table; until then this is the best signal. */
+  updatedAt: string;
 }
 
 // Static "today" so subsequent renders don't shift cards' relative dates.
@@ -83,6 +89,7 @@ function deal(
     valueCents: valueK * 100_000, // $K → cents
     stage,
     leadSource: "Mock data",
+    updatedAt: TODAY.toISOString(),
     probability: probabilityOverride ?? STAGE_DEFAULT_PROBABILITY[stage],
     lastActivity: daysAgo(lastActivityDays),
     nextFollowup: nextFollowupDays === null ? null : daysAhead(nextFollowupDays),

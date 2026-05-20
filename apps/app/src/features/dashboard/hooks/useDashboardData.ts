@@ -63,6 +63,17 @@ export interface LeadSourceRow {
   percent: number; // 0..100, rounded
 }
 
+export interface MonthlyPerformanceRow {
+  /** "Jan", "Feb", … — short month label used in the chart x-axis. */
+  monthLabel: string;
+  /** YYYY-MM key for stable identity across renders. */
+  monthKey: string;
+  /** Won deals whose updated_at lands in this month. */
+  deals: number;
+  /** Sum of value_cents for those deals. */
+  valueCents: number;
+}
+
 export interface DashboardData {
   isLoading: boolean;
   isError: boolean;
@@ -74,6 +85,10 @@ export interface DashboardData {
   totalActivities: number;
   /** Lead source breakdown — empty leadSource bucketed as "Other". */
   leadSources: LeadSourceRow[];
+  /** Last 4 months of won-deal performance. Buckets are always the
+   *  trailing 4 months ending at "now" — empty months render as zero
+   *  bars so the axis stays stable. */
+  monthlyPerformance: MonthlyPerformanceRow[];
 }
 
 const STAGES: DealStage[] = ["new", "contacted", "qualified", "proposal", "won"];
@@ -221,6 +236,32 @@ export function useDashboardData(): DashboardData {
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
   }, [deals]);
 
+  const monthlyPerformance = React.useMemo<MonthlyPerformanceRow[]>(() => {
+    // Build the trailing 4 months ending at this month, in chronological
+    // order (left = oldest, right = current month). Empty buckets stay so
+    // the chart's x-axis is stable for new orgs.
+    const now = new Date();
+    const buckets: MonthlyPerformanceRow[] = [];
+    for (let i = 3; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const monthLabel = d.toLocaleString("en-US", { month: "short" });
+      buckets.push({ monthKey, monthLabel, deals: 0, valueCents: 0 });
+    }
+    const indexByKey = new Map(buckets.map((b, i) => [b.monthKey, i]));
+
+    for (const d of deals) {
+      if (d.stage !== "won") continue;
+      const ts = new Date(d.updatedAt);
+      const key = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, "0")}`;
+      const idx = indexByKey.get(key);
+      if (idx === undefined) continue; // outside the last 4 months
+      buckets[idx]!.deals += 1;
+      buckets[idx]!.valueCents += d.valueCents;
+    }
+    return buckets;
+  }, [deals]);
+
   return {
     isLoading,
     isError,
@@ -230,5 +271,6 @@ export function useDashboardData(): DashboardData {
     todaysSnapshot,
     totalActivities: activities.length,
     leadSources,
+    monthlyPerformance,
   };
 }
