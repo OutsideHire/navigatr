@@ -23,6 +23,7 @@ function deal(id: string, stage: Deal["stage"], valueCents: number, company = `C
     lastActivity: "2026-05-18T12:00:00Z",
     nextFollowup: null,
     employeeCountRange: "1-10",
+    leadSource: "",
   };
 }
 

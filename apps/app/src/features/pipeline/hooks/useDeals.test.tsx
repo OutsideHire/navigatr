@@ -58,6 +58,7 @@ describe("useDeals", () => {
           last_activity_at: "2026-05-18T12:00:00Z",
           next_followup_at: null,
           employee_count_range: "11-50",
+          lead_source: "Partner referral",
         },
       ],
       error: null,
@@ -79,6 +80,7 @@ describe("useDeals", () => {
         lastActivity: "2026-05-18T12:00:00Z",
         nextFollowup: null,
         employeeCountRange: "11-50",
+        leadSource: "Partner referral",
       },
     ]);
   });
@@ -125,6 +127,7 @@ describe("useDeals", () => {
           last_activity_at: null,
           next_followup_at: null,
           employee_count_range: null,
+          lead_source: null,
         },
       ],
       error: null,
@@ -132,6 +135,9 @@ describe("useDeals", () => {
     const { result } = renderHook(() => useDeals(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.[0].employeeCountRange).toBe("");
+    // Null lead_source coerces to empty string (the "Other" bucket on
+    // the dashboard's lead-sources breakdown).
+    expect(result.current.data?.[0].leadSource).toBe("");
     // Null last_activity_at falls back to a real ISO string (not null) so
     // the relative-date formatter doesn't crash.
     expect(result.current.data?.[0].lastActivity).toMatch(/\d{4}-\d{2}-\d{2}T/);

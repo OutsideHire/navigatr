@@ -57,6 +57,12 @@ export interface TodaysSnapshot {
   partnersOverdue: number;
 }
 
+export interface LeadSourceRow {
+  label: string;
+  count: number;
+  percent: number; // 0..100, rounded
+}
+
 export interface DashboardData {
   isLoading: boolean;
   isError: boolean;
@@ -66,6 +72,8 @@ export interface DashboardData {
   todaysSnapshot: TodaysSnapshot;
   /** Total activities logged in this org — feeds the "activities-to-win" hero. */
   totalActivities: number;
+  /** Lead source breakdown — empty leadSource bucketed as "Other". */
+  leadSources: LeadSourceRow[];
 }
 
 const STAGES: DealStage[] = ["new", "contacted", "qualified", "proposal", "won"];
@@ -190,6 +198,29 @@ export function useDashboardData(): DashboardData {
     return { tasksDueToday, partnersOverdue };
   }, [activities, partners]);
 
+  const leadSources = React.useMemo<LeadSourceRow[]>(() => {
+    if (deals.length === 0) return [];
+    const counts = new Map<string, number>();
+    for (const d of deals) {
+      // Normalize: trim whitespace, collapse empty/whitespace to "Other"
+      // bucket. Free-text comes from the AddDealSheet's lead_source field,
+      // so we expect some inconsistency ("partner referral" vs "Partner
+      // Referral"). Case-insensitive grouping prevents fragmentation.
+      const raw = (d.leadSource ?? "").trim();
+      const key = raw === "" ? "Other" : raw;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const total = deals.length;
+    return Array.from(counts.entries())
+      .map(([label, count]) => ({
+        label,
+        count,
+        percent: Math.round((count / total) * 100),
+      }))
+      // Largest source first; ties broken alphabetically for stability.
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  }, [deals]);
+
   return {
     isLoading,
     isError,
@@ -198,5 +229,6 @@ export function useDashboardData(): DashboardData {
     topPartners,
     todaysSnapshot,
     totalActivities: activities.length,
+    leadSources,
   };
 }
