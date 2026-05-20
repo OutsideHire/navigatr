@@ -39,7 +39,6 @@ import {
 } from "@/components/navigatr";
 
 import {
-  MOCK_PARTNERS,
   STATUS_BADGE_KIND,
   STATUS_LABEL,
   TYPE_LABEL,
@@ -48,12 +47,14 @@ import {
   type Partner,
 } from "../mockData";
 import {
-  MOCK_DEALS,
   STAGE_BADGE_KIND,
   STAGE_LABEL,
   formatMoney,
   type Deal,
 } from "@/features/pipeline/mockData";
+import { usePartner } from "../hooks/usePartner";
+import { useDeals } from "@/features/pipeline/hooks/useDeals";
+import { Loader2 } from "lucide-react";
 
 // ── Not found ──────────────────────────────────────────────────────
 
@@ -232,21 +233,28 @@ export function PartnerDetailPage() {
   const { partnerId } = useParams<{ partnerId: string }>();
   const navigate = useNavigate();
 
-  const partner = React.useMemo(
-    () => MOCK_PARTNERS.find((p) => p.id === partnerId),
-    [partnerId],
-  );
+  // usePartner subscribes to usePartners — same cache as /partners list.
+  const { partner, isLoading } = usePartner(partnerId);
+  const { data: allDeals = [] } = useDeals();
 
   const deals = React.useMemo<Deal[]>(() => {
     if (!partner) return [];
-    const byId = new Map(MOCK_DEALS.map((d) => [d.id, d]));
+    const byId = new Map(allDeals.map((d) => [d.id, d]));
     return partner.attributedDealIds.map((id) => byId.get(id)).filter(Boolean) as Deal[];
-  }, [partner]);
+  }, [partner, allDeals]);
 
   const totalRevenue = React.useMemo(
     () => deals.reduce((sum, d) => sum + d.valueCents, 0),
     [deals],
   );
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-text-subtle" aria-hidden />
+      </div>
+    );
+  }
 
   if (!partner) return <NotFound />;
 

@@ -24,11 +24,8 @@ import {
   Select,
   type SelectOption,
 } from "@/components/navigatr";
-import {
-  MOCK_PARTNERS,
-  type Partner,
-  type PartnerType,
-} from "../mockData";
+import { type PartnerType } from "../mockData";
+import { useCreatePartner } from "../hooks/useCreatePartner";
 
 function digitsOnly(s: string): string {
   return s.replace(/\D/g, "");
@@ -73,6 +70,7 @@ export interface AddPartnerSheetProps {
 }
 
 export function AddPartnerSheet({ open, onOpenChange, onAdded }: AddPartnerSheetProps) {
+  const createPartner = useCreatePartner();
   const {
     register,
     handleSubmit,
@@ -94,29 +92,27 @@ export function AddPartnerSheet({ open, onOpenChange, onAdded }: AddPartnerSheet
   });
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
-    const newPartner: Partner = {
-      id: `p-local-${Date.now()}`,
-      name: values.name,
-      company: values.company,
-      type: values.type,
-      status: "active",
-      phone: values.phone,
-      email: values.email,
-      city: values.city ?? "",
-      lastTouch: null,
-      nextFollowup: null,
-      attributedDealIds: [],
-      notes: values.notes ?? "",
-    };
-    // Mock submit — module-level mutation, same pattern as appendActivity.
-    // Sprint 2: PartnersService.create + queryClient.invalidateQueries.
-    MOCK_PARTNERS.unshift(newPartner);
-    // eslint-disable-next-line no-console
-    console.log("[mock submit] partner created:", newPartner);
-    toast.success(`${values.name} added`);
-    reset();
-    onOpenChange(false);
-    onAdded?.();
+    try {
+      // Normalize phone to E.164 — same contract as deals.contact_phone.
+      // Validator already guarantees 10 digits.
+      const e164 = "+1" + digitsOnly(values.phone);
+      await createPartner.mutateAsync({
+        name: values.name,
+        company: values.company,
+        type: values.type,
+        phone: e164,
+        email: values.email,
+        city: values.city ?? "",
+        notes: values.notes ?? "",
+      });
+      toast.success(`${values.name} added`);
+      reset();
+      onOpenChange(false);
+      onAdded?.();
+    } catch (err) {
+      // RLS denial / network / unique violation — surface raw message.
+      toast.error(err instanceof Error ? err.message : "Could not add partner");
+    }
   };
 
   return (
