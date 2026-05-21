@@ -31,10 +31,15 @@ type Mode = "password" | "magic-link";
 export function LoginForm() {
   const signInWithEmail = useAuth((s) => s.signInWithEmail);
   const signInWithMagicLink = useAuth((s) => s.signInWithMagicLink);
+  const verifyMagicLinkCode = useAuth((s) => s.verifyMagicLinkCode);
   const navigate = useNavigate();
 
   const [mode, setMode] = React.useState<Mode>("password");
+  // Email we sent the code to. Drives the code-entry UI state — when
+  // non-null, we show the 6-digit input instead of the email form.
   const [magicSentTo, setMagicSentTo] = React.useState<string | null>(null);
+  const [otpCode, setOtpCode] = React.useState("");
+  const [verifying, setVerifying] = React.useState(false);
 
   const {
     register,
@@ -71,25 +76,71 @@ export function LoginForm() {
     }
   };
 
-  // ── Post-magic-link confirmation card ────────────────────────────
+  // ── Post-magic-link: enter the 6-digit code from the email ───────
   if (magicSentTo) {
+    const handleVerify = async (e?: React.FormEvent) => {
+      e?.preventDefault();
+      const code = otpCode.replace(/\D/g, "");
+      if (code.length !== 6) {
+        toast.error("Enter the 6-digit code from your email");
+        return;
+      }
+      setVerifying(true);
+      try {
+        await verifyMagicLinkCode(magicSentTo, code);
+        navigate("/dashboard");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Couldn't verify code");
+      } finally {
+        setVerifying(false);
+      }
+    };
+
     return (
-      <div className="flex flex-col items-center gap-4 text-center">
+      <form onSubmit={handleVerify} className="flex flex-col items-center gap-4 text-center">
         <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-brand-primary-10 text-brand-primary">
           <Mail className="h-6 w-6" aria-hidden />
         </span>
         <div className="flex flex-col gap-1">
           <h2 className="text-heading-sm text-text-default">Check your inbox</h2>
           <p className="text-body-md text-text-muted">
-            We sent a sign-in link to <span className="font-medium text-text-default">{magicSentTo}</span>. Open it on this device to finish signing in.
+            We sent a 6-digit code to{" "}
+            <span className="font-medium text-text-default">{magicSentTo}</span>.
           </p>
         </div>
+
+        <FormField label="Verification code" htmlFor="otp-code" showLabel={false}>
+          <Input
+            id="otp-code"
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            autoFocus
+            placeholder="123456"
+            maxLength={6}
+            value={otpCode}
+            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            className="text-center text-heading-sm tracking-[0.4em] tabular-nums"
+          />
+        </FormField>
+
+        <Button
+          type="submit"
+          size="lg"
+          fullWidth
+          loading={verifying}
+          disabled={otpCode.length !== 6 || verifying}
+        >
+          {verifying ? "Verifying…" : "Sign in"}
+        </Button>
+
         <p className="text-caption text-text-subtle">
           Didn&apos;t get it? Check spam, or{" "}
           <button
             type="button"
             onClick={() => {
               setMagicSentTo(null);
+              setOtpCode("");
               setMode("magic-link");
             }}
             className="font-medium text-brand-primary underline-offset-4 hover:underline"
@@ -98,7 +149,7 @@ export function LoginForm() {
           </button>
           .
         </p>
-      </div>
+      </form>
     );
   }
 

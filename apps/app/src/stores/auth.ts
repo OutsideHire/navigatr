@@ -26,6 +26,7 @@ interface AuthState {
 
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signInWithMagicLink: (email: string) => Promise<void>;
+  verifyMagicLinkCode: (email: string, code: string) => Promise<void>;
   signInWithGoogle: (inviteCode?: string) => Promise<void>;
   signInWithMicrosoft: (inviteCode?: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string, inviteCode: string) => Promise<void>;
@@ -60,13 +61,23 @@ export const useAuth = create<AuthState>((set) => ({
   },
 
   /**
-   * Send a passwordless sign-in link. Existing users only — `shouldCreateUser:
-   * false` so a typo'd email doesn't silently provision a new auth.users row.
-   * Onboarding new users still requires the invite-code flow.
+   * Send a passwordless sign-in OTP. The email contains BOTH a 6-digit
+   * code and a clickable link (Supabase sends both by default with the
+   * built-in "Magic Link" template). Our UI directs the user to type
+   * the code into the app — works from any browser, any device, any
+   * email client.
    *
-   * The email arrives with a link to `${origin}/auth/callback?…&type=magiclink`.
-   * Supabase parses the hash, the existing onAuthStateChange listener
-   * fires, the user lands authed without ever typing a password.
+   * Why not the clickable link path: with flowType='pkce' (which the
+   * client uses), the link contains a `?code=` that requires a verifier
+   * stored client-side at request time. If the user clicks the link in
+   * a different browser/device than where they requested it (mobile
+   * inbox preview, scanning email client, secondary device), the
+   * verifier isn't found and Supabase rejects the exchange. The OTP
+   * code path is stateless — the code IS the credential — so it works
+   * regardless of where the email is opened.
+   *
+   * shouldCreateUser=false so a typo'd email doesn't silently provision
+   * a new auth.users row. Onboarding still requires invite-code signup.
    */
   signInWithMagicLink: async (email) => {
     set({ error: null });
@@ -74,8 +85,34 @@ export const useAuth = create<AuthState>((set) => ({
       email,
       options: {
         shouldCreateUser: false,
+        // emailRedirectTo is still set so the clickable-link path
+        // (which Supabase sends alongside the code) works for users
+        // who happen to be in the same browser context. The OTP code
+        // is the primary path our UI directs them to.
         emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
+    });
+    if (error) {
+      set({ error: error.message });
+      throw error;
+    }
+  },
+
+  /**
+   * Verify a 6-digit OTP code the user typed in from the email. On
+   * success Supabase establishes a session and the onAuthStateChange
+   * listener flips the store's user/session — the LoginForm then
+   * navigates to /dashboard.
+   *
+   * type: 'email' here matches what Supabase emits for signInWithOtp
+   * email codes (NOT 'magiclink' — that's the legacy hash-fragment flow).
+   */
+  verifyMagicLinkCode: async (email, code) => {
+    set({ error: null });
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token: code.trim(),
+      type: "email",
     });
     if (error) {
       set({ error: error.message });
