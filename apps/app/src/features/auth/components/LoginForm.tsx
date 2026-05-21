@@ -40,6 +40,12 @@ export function LoginForm() {
   const [magicSentTo, setMagicSentTo] = React.useState<string | null>(null);
   const [otpCode, setOtpCode] = React.useState("");
   const [verifying, setVerifying] = React.useState(false);
+  // Inline persistent error state for the magic-link send path. Sonner
+  // toasts auto-dismiss in a few seconds; users repeatedly missed the
+  // failure (especially rate-limit "wait 60s" responses) and thought
+  // the button was just broken because the form stayed on the email
+  // screen. The inline error survives until the user retries.
+  const [sendError, setSendError] = React.useState<string | null>(null);
 
   const {
     register,
@@ -54,11 +60,23 @@ export function LoginForm() {
 
   const onSubmit = async (values: Values) => {
     if (mode === "magic-link") {
+      setSendError(null);
       try {
         await signInWithMagicLink(values.email);
         setMagicSentTo(values.email);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Couldn't send the link");
+        const raw = err instanceof Error ? err.message : "Couldn't send the code";
+        // Friendlier copy for the most common cause: Supabase's per-email
+        // rate limit (default 1/60s). The raw message is technical
+        // ("For security purposes, you can only request this every 60 seconds")
+        // and frequently misread as a security warning. Rewrite to plain
+        // English when we can pattern-match.
+        const friendly = /every (\d+) seconds?/i.test(raw)
+          ? "Hold on — codes can only be requested every 60 seconds. Try again in a moment."
+          : /rate limit/i.test(raw)
+            ? "Too many requests right now. Try again in a minute."
+            : raw;
+        setSendError(friendly);
       }
       return;
     }
@@ -201,10 +219,22 @@ export function LoginForm() {
         </>
       )}
 
+      {/* Inline send-error — persists until the user retries / toggles modes.
+          Sonner toasts auto-dismiss; users were missing rate-limit failures
+          and assumed the button was broken. */}
+      {sendError && (
+        <div
+          role="alert"
+          className="rounded-radius-md border border-status-danger/30 bg-status-danger-bg/50 p-3 text-body-sm text-status-danger"
+        >
+          {sendError}
+        </div>
+      )}
+
       <Button type="submit" size="lg" fullWidth loading={isSubmitting}>
         {isSubmitting
-          ? mode === "magic-link" ? "Sending link…" : "Signing in…"
-          : mode === "magic-link" ? "Email me a sign-in link" : "Sign in"}
+          ? mode === "magic-link" ? "Sending code…" : "Signing in…"
+          : mode === "magic-link" ? "Email me a sign-in code" : "Sign in"}
       </Button>
 
       {/* Mode toggle — single text link. Keeps the password path as the
@@ -212,7 +242,10 @@ export function LoginForm() {
       <div className="-mt-2 text-center">
         <button
           type="button"
-          onClick={() => setMode(mode === "password" ? "magic-link" : "password")}
+          onClick={() => {
+            setMode(mode === "password" ? "magic-link" : "password");
+            setSendError(null);
+          }}
           className="text-caption text-brand-primary underline-offset-4 hover:underline"
         >
           {mode === "password"
