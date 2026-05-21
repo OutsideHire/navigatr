@@ -25,14 +25,15 @@ import * as React from "react";
 import {
   CalendarClock,
   Check,
+  Copy,
   CreditCard,
   Landmark,
+  Link2,
   LogOut,
   Moon,
   Monitor,
   Sun,
   Trash2,
-  Users,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -48,6 +49,7 @@ import {
 } from "@/stores/auth";
 import { useTheme, type Theme } from "@/stores/theme";
 import { supabase } from "@/lib/supabase";
+import { useOrganization } from "@/features/auth/useOrganization";
 
 // ── Profile ──────────────────────────────────────────────────────────
 
@@ -316,26 +318,101 @@ function NotificationsSection() {
 // ── Team (admin only) ────────────────────────────────────────────────
 
 function TeamSection() {
+  const org = useOrganization();
+  const [copied, setCopied] = React.useState<"link" | "code" | null>(null);
+
+  // The invite link points new teammates at /signup?code=<invite_code>.
+  // The signup form pre-fills the code so they only need to type their
+  // name/email/password (or click Continue with Google). Using window.
+  // location.origin works for both dev (localhost:5173) and prod (the
+  // Vercel URL) — no env vars needed.
+  const inviteLink = org.data
+    ? `${window.location.origin}/signup?code=${encodeURIComponent(org.data.inviteCode)}`
+    : null;
+
+  const copyToClipboard = async (value: string, kind: "link" | "code") => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(kind);
+      toast.success(kind === "link" ? "Invite link copied" : "Invite code copied");
+      // Auto-clear the visual confirmation after a moment so the icon
+      // doesn't stick as a checkmark forever.
+      setTimeout(() => setCopied(null), 2000);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't copy to clipboard");
+    }
+  };
+
   return (
     <Card padding="md">
       <h2 className="mb-1 text-body-strong text-text-default">Team</h2>
       <p className="mb-4 text-caption text-text-muted">
-        Invite teammates and manage roles.
+        Invite teammates to {org.data?.name ?? "your team"}. They&apos;ll join the same workspace.
       </p>
-      <div className="flex flex-col items-start gap-3 rounded-radius-md bg-surface-sunken p-4">
-        <div className="flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-radius-full bg-accent-blue-20 text-accent-blue">
-            <Users className="h-4 w-4" />
-          </span>
-          <div className="flex flex-col">
-            <p className="text-body-strong text-text-default">You&apos;re the only one here.</p>
-            <p className="text-caption text-text-muted">Team management lands in Sprint 2.</p>
+
+      {org.isLoading && (
+        <div className="flex h-20 items-center justify-center text-caption text-text-muted">
+          Loading invite link…
+        </div>
+      )}
+
+      {org.isError && (
+        <div className="rounded-radius-md bg-status-danger-bg p-3 text-body-sm text-status-danger">
+          Couldn&apos;t load your organization. Refresh to try again.
+        </div>
+      )}
+
+      {org.data && inviteLink && (
+        <div className="flex flex-col gap-4">
+          {/* Share link — the primary action. Click-to-copy of a full URL
+              the teammate just clicks; lands them on /signup with the
+              invite code pre-filled. */}
+          <div className="flex flex-col gap-2 rounded-radius-md bg-surface-sunken p-4">
+            <div className="flex items-center gap-2">
+              <span className="flex h-9 w-9 items-center justify-center rounded-radius-full bg-accent-blue-20 text-accent-blue">
+                <Link2 className="h-4 w-4" />
+              </span>
+              <div className="flex min-w-0 flex-col">
+                <p className="text-body-strong text-text-default">Share invite link</p>
+                <p className="text-caption text-text-muted">Teammates click + sign up in one shot.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 truncate rounded-radius-sm bg-surface-default px-3 py-2 font-mono text-caption text-text-default">
+                {inviteLink}
+              </code>
+              <Button
+                variant="primary"
+                size="sm"
+                leadingIcon={copied === "link" ? Check : Copy}
+                onClick={() => copyToClipboard(inviteLink, "link")}
+              >
+                {copied === "link" ? "Copied" : "Copy"}
+              </Button>
+            </div>
+          </div>
+
+          {/* Raw invite code — for the small % of cases where a teammate
+              prefers to type it into the signup form (e.g. shared via
+              voice over a call, or pasted into a non-clickable channel). */}
+          <div className="flex items-center justify-between gap-3 rounded-radius-md border border-border-subtle p-3">
+            <div className="flex min-w-0 flex-col">
+              <p className="text-caption text-text-muted">Or share just the code</p>
+              <code className="truncate font-mono text-body-strong text-text-default">
+                {org.data.inviteCode}
+              </code>
+            </div>
+            <Button
+              variant="tertiary"
+              size="sm"
+              leadingIcon={copied === "code" ? Check : Copy}
+              onClick={() => copyToClipboard(org.data!.inviteCode, "code")}
+            >
+              {copied === "code" ? "Copied" : "Copy"}
+            </Button>
           </div>
         </div>
-        <Button variant="tertiary" size="sm" disabled>
-          Invite teammates
-        </Button>
-      </div>
+      )}
     </Card>
   );
 }
