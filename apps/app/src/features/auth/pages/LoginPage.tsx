@@ -7,7 +7,7 @@ export function LoginPage() {
       title="Welcome back."
       subtitle="Sign in to your navigatr account."
       heroEyebrow="From sidewalk to signed"
-      heroTitle="Every drop-in, every follow-up, every win — in one place."
+      heroTitle="Every drop-in, every follow-up, every win. All in one place."
       heroBody="The field-first CRM your reps will actually use. Built for payroll, merchant services, and treasury teams."
     >
       <LoginForm />
