@@ -44,17 +44,35 @@ export function AuthCallbackPage() {
       }
 
       // Primary carrier: URL (?invite=). Fallback: sessionStorage.
-      const code = params.get("invite") ?? sessionStorage.getItem("pending_invite") ?? "";
+      const urlInvite = params.get("invite");
+      const stashedInvite = sessionStorage.getItem("pending_invite");
+      const code = urlInvite ?? stashedInvite ?? "";
+      // Did the user INTEND to be here? "Intent" = the URL or sessionStorage
+      // carried an invite hint. Without either, the user is here by accident
+      // (stale tab, back button, post-sign-out redirect chain) and the
+      // alarming error UI is wrong — they should just go back to /login.
+      const intentionallyHere = Boolean(urlInvite || stashedInvite);
 
       const { error: rpcError } = await supabase.rpc("claim_invite_code", { p_code: code });
       if (rpcError) {
+        if (cancelled) return;
+        const msg = rpcError.message ?? "";
+        console.error("[claim_invite_code]", rpcError, "code was:", code, "intentional:", intentionallyHere);
+
+        // Accidental hit + invite_code_required: silent sign-out + bounce.
+        // The user didn't try to sign up — they just ended up here. Showing
+        // "We could not find your invite code" reads as a scary error;
+        // bouncing to /login is the truthful resolution.
+        if (!intentionallyHere && msg.includes("invite_code_required")) {
+          await supabase.auth.signOut();
+          if (!cancelled) navigate("/login", { replace: true });
+          return;
+        }
+
         // Set error FIRST. signOut() fires onAuthStateChange which clears
         // `user` synchronously via the store subscription; if we signOut
         // before setError, the re-render sees `!user && !error` and the
         // Navigate-to-/login branch fires, hiding the real error.
-        if (cancelled) return;
-        const msg = rpcError.message ?? "";
-        console.error("[claim_invite_code]", rpcError, "code was:", code);
         setError(
           msg.includes("invalid_invite_code")
             ? "Your invite link is invalid or expired. Contact your account owner."
