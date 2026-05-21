@@ -123,6 +123,11 @@ export const useAuth = create<AuthState>((set) => ({
       options: {
         redirectTo: callback,
         scopes: "email openid profile",
+        // Same account-picker fix as Google: force Microsoft to ask
+        // which identity, instead of silently picking the browser's
+        // last-active one. Microsoft honors the OAuth 2.0 `prompt`
+        // param the same way (select_account = show the picker).
+        queryParams: { prompt: "select_account" },
       },
     });
     if (error) {
