@@ -55,8 +55,10 @@ import {
 import { usePartner } from "../hooks/usePartner";
 import { useAttributeDeal, useUnattributeDeal } from "../hooks/useAttributeDeal";
 import { useUpdatePartner } from "../hooks/useUpdatePartner";
+import { usePartnerActivities, type PartnerTouch, type PartnerTouchType } from "../hooks/usePartnerActivities";
+import { useLogPartnerTouch } from "../hooks/useLogPartnerTouch";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
-import { Loader2, X, Check } from "lucide-react";
+import { Loader2, X, Check, MessageSquare } from "lucide-react";
 import { Select, type SelectOption, Textarea } from "@/components/navigatr";
 import { type PartnerStatus } from "../mockData";
 
@@ -84,7 +86,17 @@ function NotFound() {
 
 // ── Cards ─────────────────────────────────────────────────────────
 
-function HeroCard({ partner, dealCount, totalRevenue }: { partner: Partner; dealCount: number; totalRevenue: number }) {
+function HeroCard({
+  partner,
+  dealCount,
+  totalRevenue,
+  onLogTouch,
+}: {
+  partner: Partner;
+  dealCount: number;
+  totalRevenue: number;
+  onLogTouch: () => void;
+}) {
   return (
     <Card padding="lg" className="flex flex-col gap-4">
       <div className="flex items-start gap-4">
@@ -127,7 +139,7 @@ function HeroCard({ partner, dealCount, totalRevenue }: { partner: Partner; deal
           variant="primary"
           size="md"
           leadingIcon={Plus}
-          onClick={() => toast("Partner activity logging lands next")}
+          onClick={onLogTouch}
         >
           Log touch
         </Button>
@@ -464,6 +476,224 @@ function ReferralsCard({
   );
 }
 
+// ── Touch timeline (with inline log-touch form) ──────────────────
+
+const TOUCH_TYPE_OPTIONS: SelectOption[] = [
+  { value: "call",    label: "Call" },
+  { value: "email",   label: "Email" },
+  { value: "meeting", label: "Meeting" },
+  { value: "note",    label: "Note" },
+];
+
+const TOUCH_TYPE_LABEL: Record<PartnerTouchType, string> = {
+  call: "Call",
+  email: "Email",
+  meeting: "Meeting",
+  note: "Note",
+};
+
+/** Self-contained card: log-touch form (collapsible) + chronological
+ *  timeline. The "Log touch" button at the top scrolls into view from
+ *  the HeroCard CTA via the openExternal prop. */
+const TouchTimelineCard = React.forwardRef<
+  HTMLDivElement,
+  { partnerId: string; open: boolean; onOpenChange: (open: boolean) => void }
+>(function TouchTimelineCard({ partnerId, open, onOpenChange }, ref) {
+  const activities = usePartnerActivities(partnerId);
+  const logTouch = useLogPartnerTouch();
+
+  const [type, setType] = React.useState<PartnerTouchType>("call");
+  const [notes, setNotes] = React.useState("");
+  const [durationStr, setDurationStr] = React.useState("");
+  const [followUp, setFollowUp] = React.useState("");
+
+  const reset = () => {
+    setType("call");
+    setNotes("");
+    setDurationStr("");
+    setFollowUp("");
+  };
+
+  const handleSubmit = async () => {
+    const duration = durationStr ? Number.parseInt(durationStr, 10) : null;
+    if (duration !== null && Number.isNaN(duration)) {
+      toast.error("Duration must be a number");
+      return;
+    }
+    try {
+      await logTouch.mutateAsync({
+        partnerId,
+        type,
+        notes: notes.trim(),
+        durationMinutes: duration,
+        // Convert YYYY-MM-DD from <input type="date"> to ISO midnight UTC.
+        followUpDate: followUp ? new Date(followUp + "T00:00:00Z").toISOString() : null,
+      });
+      toast.success("Touch logged");
+      reset();
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not log touch");
+    }
+  };
+
+  const touches = activities.data ?? [];
+
+  return (
+    <Card padding="md" ref={ref}>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-body-strong text-text-default">Touch history · {touches.length}</h2>
+        {!open && (
+          <Button
+            variant="tertiary"
+            size="sm"
+            leadingIcon={Plus}
+            onClick={() => onOpenChange(true)}
+          >
+            Log touch
+          </Button>
+        )}
+      </div>
+
+      {/* Inline log-touch form — collapsible. */}
+      {open && (
+        <div className="mb-4 flex flex-col gap-3 rounded-radius-md border border-border-subtle bg-surface-sunken p-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-caption text-text-muted" htmlFor={`touch-type-${partnerId}`}>
+                Type
+              </label>
+              <Select
+                id={`touch-type-${partnerId}`}
+                value={type}
+                onValueChange={(v) => setType(v as PartnerTouchType)}
+                options={TOUCH_TYPE_OPTIONS}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-caption text-text-muted" htmlFor={`touch-duration-${partnerId}`}>
+                Duration (minutes) <span className="text-text-subtle">— optional</span>
+              </label>
+              <input
+                id={`touch-duration-${partnerId}`}
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={durationStr}
+                onChange={(e) => setDurationStr(e.target.value)}
+                placeholder="e.g. 15"
+                className="block w-full rounded-radius-md border border-border-subtle bg-surface-default px-3 py-2 text-body-md text-text-default focus:outline-none focus:ring-2 focus:ring-brand-primary"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-caption text-text-muted" htmlFor={`touch-notes-${partnerId}`}>
+              What happened?
+            </label>
+            <Textarea
+              id={`touch-notes-${partnerId}`}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              placeholder="Discussed Q4 referral pipeline. They've got two restaurants closing on financing this month."
+              className="w-full"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-caption text-text-muted" htmlFor={`touch-followup-${partnerId}`}>
+              Next follow-up <span className="text-text-subtle">— optional</span>
+            </label>
+            <input
+              id={`touch-followup-${partnerId}`}
+              type="date"
+              value={followUp}
+              onChange={(e) => setFollowUp(e.target.value)}
+              className="block rounded-radius-md border border-border-subtle bg-surface-default px-3 py-2 text-body-md text-text-default focus:outline-none focus:ring-2 focus:ring-brand-primary"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <Button
+              variant="primary"
+              size="sm"
+              leadingIcon={Check}
+              onClick={handleSubmit}
+              disabled={logTouch.isPending}
+            >
+              {logTouch.isPending ? "Saving…" : "Save touch"}
+            </Button>
+            <Button
+              variant="tertiary"
+              size="sm"
+              onClick={() => {
+                reset();
+                onOpenChange(false);
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Timeline */}
+      {activities.isLoading && (
+        <div className="flex h-24 items-center justify-center text-caption text-text-muted">
+          Loading touches…
+        </div>
+      )}
+      {activities.isError && (
+        <div className="rounded-radius-md bg-status-danger-bg p-3 text-body-sm text-status-danger">
+          Couldn&apos;t load touch history. Refresh to try again.
+        </div>
+      )}
+      {!activities.isLoading && !activities.isError && touches.length === 0 && (
+        <p className="text-body-md text-text-muted">
+          No touches logged yet. {open ? "Save your first one above." : "Click “Log touch” to record one."}
+        </p>
+      )}
+      {touches.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {touches.map((t) => (
+            <TouchRow key={t.id} touch={t} />
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+});
+
+function TouchRow({ touch }: { touch: PartnerTouch }) {
+  const dateLabel = formatShortDate(touch.occurredAt);
+  const followUpLabel = touch.followUpDate
+    ? `Next: ${formatShortDate(touch.followUpDate)}`
+    : null;
+  return (
+    <div className="flex items-start gap-3 rounded-radius-md border border-border-subtle bg-surface-default p-3">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-blue-20 text-accent-blue">
+        <MessageSquare className="h-4 w-4" aria-hidden />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="text-body-strong text-text-default">{TOUCH_TYPE_LABEL[touch.type]}</span>
+          {touch.durationMinutes != null && (
+            <span className="text-caption text-text-muted">{touch.durationMinutes} min</span>
+          )}
+          <span className="text-caption text-text-subtle">· {dateLabel}</span>
+          {followUpLabel && (
+            <span className="text-caption font-medium text-accent-orange">· {followUpLabel}</span>
+          )}
+        </div>
+        {touch.notes && (
+          <p className="whitespace-pre-wrap text-body-sm text-text-default">{touch.notes}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────
 
 export function PartnerDetailPage() {
@@ -473,6 +703,20 @@ export function PartnerDetailPage() {
   // usePartner subscribes to usePartners — same cache as /partners list.
   const { partner, isLoading } = usePartner(partnerId);
   const { data: allDeals = [] } = useDeals();
+
+  // HeroCard's "Log touch" button toggles this; TouchTimelineCard reads
+  // it. When the form opens, we also scroll the timeline card into view
+  // so the form is visible without the user hunting for it.
+  const [logTouchOpen, setLogTouchOpen] = React.useState(false);
+  const timelineRef = React.useRef<HTMLDivElement | null>(null);
+  const openLogTouch = React.useCallback(() => {
+    setLogTouchOpen(true);
+    // Defer scroll until after the form renders so we land on the
+    // expanded card height, not the collapsed one.
+    requestAnimationFrame(() => {
+      timelineRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, []);
 
   const deals = React.useMemo<Deal[]>(() => {
     if (!partner) return [];
@@ -509,9 +753,20 @@ export function PartnerDetailPage() {
       </div>
 
       <div className="flex flex-col gap-4 lg:gap-6">
-        <HeroCard partner={partner} dealCount={deals.length} totalRevenue={totalRevenue} />
+        <HeroCard
+          partner={partner}
+          dealCount={deals.length}
+          totalRevenue={totalRevenue}
+          onLogTouch={openLogTouch}
+        />
         <ContactCard partner={partner} />
         <NotesCard partner={partner} />
+        <TouchTimelineCard
+          ref={timelineRef}
+          partnerId={partner.id}
+          open={logTouchOpen}
+          onOpenChange={setLogTouchOpen}
+        />
         <ReferralsCard partnerId={partner.id} attributedDeals={deals} allDeals={allDeals} />
       </div>
     </div>
