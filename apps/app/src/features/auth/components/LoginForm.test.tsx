@@ -94,14 +94,13 @@ describe("LoginForm / magic link path", () => {
 
     await screen.findByText(/check your inbox/i);
     expect(screen.getByText(/ryan@navigatr\.app/)).toBeInTheDocument();
-    expect(screen.getByText(/6-digit code/i)).toBeInTheDocument();
     // Email form is gone — only the OTP entry is rendered now.
     expect(screen.queryByLabelText(/work email/i)).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText("123456")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("12345678")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /send another/i })).toBeInTheDocument();
   });
 
-  it("typing a 6-digit code and submitting calls verifyMagicLinkCode with the email + code", async () => {
+  it("typing a code and submitting calls verifyMagicLinkCode with the email + code", async () => {
     signInWithMagicLinkMock.mockResolvedValueOnce(undefined);
     verifyMagicLinkCodeMock.mockResolvedValueOnce(undefined);
     const user = userEvent.setup();
@@ -111,18 +110,18 @@ describe("LoginForm / magic link path", () => {
     await user.click(screen.getByRole("button", { name: /sign in without a password/i }));
     await user.type(screen.getByLabelText(/work email/i), "ryan@navigatr.app");
     await user.click(screen.getByRole("button", { name: /email me a sign-in link/i }));
-    await screen.findByPlaceholderText("123456");
+    await screen.findByPlaceholderText("12345678");
 
-    // Type the code
-    await user.type(screen.getByPlaceholderText("123456"), "123456");
+    // Type an 8-digit code (the length your Supabase project uses)
+    await user.type(screen.getByPlaceholderText("12345678"), "61703862");
     await user.click(screen.getByRole("button", { name: /^sign in$/i }));
 
     await waitFor(() => {
-      expect(verifyMagicLinkCodeMock).toHaveBeenCalledWith("ryan@navigatr.app", "123456");
+      expect(verifyMagicLinkCodeMock).toHaveBeenCalledWith("ryan@navigatr.app", "61703862");
     });
   });
 
-  it("non-numeric input is filtered out and 7+ digits are truncated to 6", async () => {
+  it("non-numeric input is filtered out; >10 digits are truncated to 10", async () => {
     signInWithMagicLinkMock.mockResolvedValueOnce(undefined);
     const user = userEvent.setup();
     renderForm();
@@ -130,12 +129,12 @@ describe("LoginForm / magic link path", () => {
     await user.click(screen.getByRole("button", { name: /sign in without a password/i }));
     await user.type(screen.getByLabelText(/work email/i), "ryan@navigatr.app");
     await user.click(screen.getByRole("button", { name: /email me a sign-in link/i }));
-    const input = await screen.findByPlaceholderText("123456");
+    const input = await screen.findByPlaceholderText("12345678");
 
     // User pastes a long alphanumeric string
-    await user.type(input, "1a2b3c4d5e6f7g8h");
-    // Only the first 6 digits survive
-    expect((input as HTMLInputElement).value).toBe("123456");
+    await user.type(input, "1a2b3c4d5e6f7g8h9i0jKlMn");
+    // First 10 digits survive — Supabase's max OTP length
+    expect((input as HTMLInputElement).value).toBe("1234567890");
   });
 
   it("rejects an invalid email before calling the store", async () => {
