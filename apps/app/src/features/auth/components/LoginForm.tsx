@@ -81,8 +81,13 @@ export function LoginForm() {
     const handleVerify = async (e?: React.FormEvent) => {
       e?.preventDefault();
       const code = otpCode.replace(/\D/g, "");
-      if (code.length !== 6) {
-        toast.error("Enter the 6-digit code from your email");
+      // Supabase OTP length is project-configurable: 6, 7, 8, 9, or 10
+      // digits (default 6). We accept anything in that range — server-side
+      // verifyOtp is the authoritative validator. Hard-coded 6 here
+      // silently truncated 8-digit codes for projects with the longer
+      // setting, producing a misleading "expired or invalid" error.
+      if (code.length < 6 || code.length > 10) {
+        toast.error("Enter the code from your email");
         return;
       }
       setVerifying(true);
@@ -116,10 +121,14 @@ export function LoginForm() {
             inputMode="numeric"
             autoComplete="one-time-code"
             autoFocus
-            placeholder="123456"
-            maxLength={6}
+            placeholder="12345678"
+            // Cap at 10 digits — Supabase's max OTP length. Length is
+            // project-configurable; the actual valid length is whatever
+            // the email shows. We strip non-digits but don't enforce a
+            // specific count client-side.
+            maxLength={10}
             value={otpCode}
-            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 10))}
             className="text-center text-heading-sm tracking-[0.4em] tabular-nums"
           />
         </FormField>
@@ -129,7 +138,7 @@ export function LoginForm() {
           size="lg"
           fullWidth
           loading={verifying}
-          disabled={otpCode.length !== 6 || verifying}
+          disabled={otpCode.length < 6 || verifying}
         >
           {verifying ? "Verifying…" : "Sign in"}
         </Button>
