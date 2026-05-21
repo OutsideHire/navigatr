@@ -52,30 +52,36 @@ export function ResetPasswordForm() {
   React.useEffect(() => {
     let cancelled = false;
 
-    // The recovery session lands via supabase.auth.onAuthStateChange with
-    // event === "PASSWORD_RECOVERY" (or via the initial detectSessionInUrl
-    // resolving). Subscribe + also poll getSession in case the event
-    // already fired before we mounted.
+    // Subscribe FIRST so we don't miss the auth event Supabase fires when
+    // the PKCE code-for-session exchange completes. Recovery flows emit
+    // either PASSWORD_RECOVERY or SIGNED_IN (varies by Supabase version).
     const sub = supabase.auth.onAuthStateChange((event, session) => {
       if (cancelled) return;
-      if (session) setStatus("ready");
-      // Belt and suspenders — explicit PASSWORD_RECOVERY signal also
-      // means the session is ready, even if the session object is missing
-      // for whatever reason.
-      if (event === "PASSWORD_RECOVERY") setStatus("ready");
+      if (event === "PASSWORD_RECOVERY" || (event === "SIGNED_IN" && session)) {
+        setStatus("ready");
+      }
     });
 
-    // Initial probe: if the session is already established (page was
-    // reloaded with valid session in localStorage, or supabase-js
-    // finished detectSessionInUrl synchronously), don't wait for the
-    // event we just subscribed to.
-    void supabase.auth.getSession().then(({ data }) => {
+    // Initial probe: getUser() instead of getSession(). getSession() is
+    // local-only — it returns a stale session sitting in localStorage even
+    // if it's expired server-side. getUser() validates against Supabase,
+    // so a stale token returns an error and we stay in "checking" until
+    // the timer flips us to "expired".
+    //
+    // The bug this caught (robert@getnavigatr.io, screenshot in PR
+    // description): his localStorage held a session from days ago. The
+    // form rendered as "ready", he typed his new password, hit submit,
+    // updateUser sent the stale access token to the server, server
+    // returned 401 = "Auth session missing!" toast. The form looked
+    // fine the whole time. With getUser(), we'd have stayed in checking
+    // and eventually shown the "send a new link" CTA truthfully.
+    void supabase.auth.getUser().then(({ data, error }) => {
       if (cancelled) return;
-      if (data.session) setStatus("ready");
+      if (!error && data.user) setStatus("ready");
     });
 
-    // Failure path: no session, no event. Recovery token was probably
-    // already consumed (single-use) or expired (1h default).
+    // Failure path: no session, no event, no valid user. Recovery token
+    // was probably already consumed (single-use) or expired (1h default).
     const timer = setTimeout(() => {
       if (cancelled) return;
       setStatus((current) => (current === "checking" ? "expired" : current));
@@ -103,7 +109,17 @@ export function ResetPasswordForm() {
       toast.success("Password updated. Welcome back.");
       navigate("/dashboard");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't update password");
+      const msg = err instanceof Error ? err.message : "Couldn't update password";
+      // If Supabase says "Auth session missing" at submit time despite
+      // our server-validated check at mount, the session lapsed between
+      // mount and click (uncommon — but a 4-second tab where the user
+      // walked away matters). Flip to expired so they get the "send a
+      // new link" recovery instead of a sticky toast.
+      if (/auth session missing/i.test(msg)) {
+        setStatus("expired");
+        return;
+      }
+      toast.error(msg);
     }
   };
 
