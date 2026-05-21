@@ -64,7 +64,7 @@ describe("LoginForm / magic link path", () => {
 
     expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/forgot password\?/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /email me a sign-in link/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /email me a sign-in code/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /use a password instead/i })).toBeInTheDocument();
   });
 
@@ -75,7 +75,7 @@ describe("LoginForm / magic link path", () => {
 
     await user.click(screen.getByRole("button", { name: /sign in without a password/i }));
     await user.type(screen.getByLabelText(/work email/i), "ryan@navigatr.app");
-    await user.click(screen.getByRole("button", { name: /email me a sign-in link/i }));
+    await user.click(screen.getByRole("button", { name: /email me a sign-in code/i }));
 
     await waitFor(() => {
       expect(signInWithMagicLinkMock).toHaveBeenCalledWith("ryan@navigatr.app");
@@ -90,7 +90,7 @@ describe("LoginForm / magic link path", () => {
 
     await user.click(screen.getByRole("button", { name: /sign in without a password/i }));
     await user.type(screen.getByLabelText(/work email/i), "ryan@navigatr.app");
-    await user.click(screen.getByRole("button", { name: /email me a sign-in link/i }));
+    await user.click(screen.getByRole("button", { name: /email me a sign-in code/i }));
 
     await screen.findByText(/check your inbox/i);
     expect(screen.getByText(/ryan@navigatr\.app/)).toBeInTheDocument();
@@ -109,7 +109,7 @@ describe("LoginForm / magic link path", () => {
     // Get into the code-entry state
     await user.click(screen.getByRole("button", { name: /sign in without a password/i }));
     await user.type(screen.getByLabelText(/work email/i), "ryan@navigatr.app");
-    await user.click(screen.getByRole("button", { name: /email me a sign-in link/i }));
+    await user.click(screen.getByRole("button", { name: /email me a sign-in code/i }));
     await screen.findByPlaceholderText("12345678");
 
     // Type an 8-digit code (the length your Supabase project uses)
@@ -128,7 +128,7 @@ describe("LoginForm / magic link path", () => {
 
     await user.click(screen.getByRole("button", { name: /sign in without a password/i }));
     await user.type(screen.getByLabelText(/work email/i), "ryan@navigatr.app");
-    await user.click(screen.getByRole("button", { name: /email me a sign-in link/i }));
+    await user.click(screen.getByRole("button", { name: /email me a sign-in code/i }));
     const input = await screen.findByPlaceholderText("12345678");
 
     // User pastes a long alphanumeric string
@@ -142,7 +142,7 @@ describe("LoginForm / magic link path", () => {
     renderForm();
     await user.click(screen.getByRole("button", { name: /sign in without a password/i }));
     await user.type(screen.getByLabelText(/work email/i), "not-an-email");
-    await user.click(screen.getByRole("button", { name: /email me a sign-in link/i }));
+    await user.click(screen.getByRole("button", { name: /email me a sign-in code/i }));
 
     expect(await screen.findByText(/valid email/i)).toBeInTheDocument();
     expect(signInWithMagicLinkMock).not.toHaveBeenCalled();
