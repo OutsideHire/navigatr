@@ -69,7 +69,17 @@ export const useAuth = create<AuthState>((set) => ({
     }`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: callback },
+      options: {
+        redirectTo: callback,
+        // Always force the Google account picker. Without this, Google
+        // silently signs the user in as their last-active identity in
+        // the browser — which is the wrong account for anyone who
+        // shares a device, has multiple Google accounts, or just tested
+        // signup with a throwaway. The cost of the extra click is far
+        // less than the cost of "Sign-in failed: no invite code" because
+        // they ended up authed as an account that has no profile.
+        queryParams: { prompt: "select_account" },
+      },
     });
     if (error) {
       set({ error: error.message });
