@@ -104,20 +104,53 @@ export const useAuth = create<AuthState>((set) => ({
    * listener flips the store's user/session — the LoginForm then
    * navigates to /dashboard.
    *
-   * type: 'email' here matches what Supabase emits for signInWithOtp
-   * email codes (NOT 'magiclink' — that's the legacy hash-fragment flow).
+   * Two robustness notes from live debugging:
+   *
+   * 1. Email normalization: Supabase stores emails lowercased, so the
+   *    verify call MUST match. The login form doesn't enforce case;
+   *    a user who typed "Ryan@navigatr.app" earlier and "ryan@..." now
+   *    would get a no-match if we passed the raw form value.
+   *
+   * 2. Type fallback: signInWithOtp({email}) historically emitted OTPs
+   *    of type "magiclink"; newer Supabase versions accept "email" for
+   *    the same flow. We try "email" first, fall back to "magiclink" on
+   *    a "token has expired or is invalid" error — the only failure mode
+   *    where the type mismatch is the actual cause and the code is
+   *    otherwise correct.
    */
   verifyMagicLinkCode: async (email, code) => {
     set({ error: null });
-    const { error } = await supabase.auth.verifyOtp({
-      email,
-      token: code.trim(),
+    const normalizedEmail = email.trim().toLowerCase();
+    const token = code.trim();
+
+    const first = await supabase.auth.verifyOtp({
+      email: normalizedEmail,
+      token,
       type: "email",
     });
-    if (error) {
-      set({ error: error.message });
-      throw error;
+    if (!first.error) return;
+
+    // Some Supabase project versions expect 'magiclink' for the same
+    // OTP flow. Retry once on the specific "invalid" error before
+    // surfacing it — saves a debug session for anyone who ships this
+    // against an older Supabase instance.
+    const errMsg = first.error.message ?? "";
+    const looksLikeTypeMismatch =
+      /invalid|expired/i.test(errMsg) && !/rate/i.test(errMsg);
+    if (looksLikeTypeMismatch) {
+      const second = await supabase.auth.verifyOtp({
+        email: normalizedEmail,
+        token,
+        type: "magiclink",
+      });
+      if (!second.error) return;
+      // Both failed — prefer the second (more specific) error message.
+      set({ error: second.error.message });
+      throw second.error;
     }
+
+    set({ error: first.error.message });
+    throw first.error;
   },
 
   signInWithGoogle: async (inviteCode) => {
