@@ -25,6 +25,7 @@ interface AuthState {
   error: string | null;
 
   signInWithEmail: (email: string, password: string) => Promise<void>;
+  signInWithMagicLink: (email: string) => Promise<void>;
   signInWithGoogle: (inviteCode?: string) => Promise<void>;
   signInWithMicrosoft: (inviteCode?: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string, inviteCode: string) => Promise<void>;
@@ -52,6 +53,30 @@ export const useAuth = create<AuthState>((set) => ({
   signInWithEmail: async (email, password) => {
     set({ error: null });
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      set({ error: error.message });
+      throw error;
+    }
+  },
+
+  /**
+   * Send a passwordless sign-in link. Existing users only — `shouldCreateUser:
+   * false` so a typo'd email doesn't silently provision a new auth.users row.
+   * Onboarding new users still requires the invite-code flow.
+   *
+   * The email arrives with a link to `${origin}/auth/callback?…&type=magiclink`.
+   * Supabase parses the hash, the existing onAuthStateChange listener
+   * fires, the user lands authed without ever typing a password.
+   */
+  signInWithMagicLink: async (email) => {
+    set({ error: null });
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
     if (error) {
       set({ error: error.message });
       throw error;
