@@ -30,6 +30,9 @@ export interface Deal {
   lastActivity: string;
   /** ISO date string. Within next 14 days; null for Won. */
   nextFollowup: string | null;
+  /** Street address — used by /path to surface deals as merchants.
+   *  Null when the rep didn't fill it in. Not geocoded yet (no lat/lng). */
+  address: string | null;
   employeeCountRange: string;
   /** Free-text source. Common values surface as the dashboard's "Lead
    *  sources this quarter" breakdown. Nullable in the DB; empty string
@@ -93,6 +96,7 @@ function deal(
     probability: probabilityOverride ?? STAGE_DEFAULT_PROBABILITY[stage],
     lastActivity: daysAgo(lastActivityDays),
     nextFollowup: nextFollowupDays === null ? null : daysAhead(nextFollowupDays),
+    address: null,
     employeeCountRange: employees,
   };
 }
