@@ -67,6 +67,7 @@ import { Select, type SelectOption } from "@/components/navigatr";
 import type { Activity } from "@/features/activities/mockData";
 import { DISPOSITIONS } from "@/lib/followUpScheduling";
 import { LogActivitySheet } from "@/features/activities/components/LogActivitySheet";
+import { EditDealSheet } from "../components/EditDealSheet";
 
 // ───────────────────────────────────────────────────────────────────────
 // Not-found state
@@ -172,7 +173,7 @@ function StagePicker({ deal }: { deal: Deal }) {
   );
 }
 
-function HeroCard({ deal, onLogActivity }: { deal: Deal; onLogActivity: () => void }) {
+function HeroCard({ deal, onLogActivity, onEdit }: { deal: Deal; onLogActivity: () => void; onEdit: () => void }) {
   return (
     <CardWithStatusBand bandColor={STAGE_BAND_COLOR[deal.stage]} contentPadding="lg">
       <div className="flex flex-col gap-4">
@@ -206,7 +207,7 @@ function HeroCard({ deal, onLogActivity }: { deal: Deal; onLogActivity: () => vo
               variant="secondary"
               size="md"
               leadingIcon={Pencil}
-              onClick={() => toast("Full deal edit lands next")}
+              onClick={onEdit}
             >
               Edit
             </Button>
@@ -514,6 +515,7 @@ export function DealDetailPage() {
   const { deal, isLoading } = useDeal(dealId);
   const { data: activities = [] } = useActivities(dealId);
   const [sheetOpen, setSheetOpen] = React.useState(false);
+  const [editOpen, setEditOpen] = React.useState(false);
   const [tab, setTab] = React.useState<TabKey>("overview");
 
   if (isLoading) {
@@ -541,7 +543,11 @@ export function DealDetailPage() {
       </div>
 
       <div className="flex flex-col gap-4 lg:gap-6">
-        <HeroCard deal={deal} onLogActivity={() => setSheetOpen(true)} />
+        <HeroCard
+          deal={deal}
+          onLogActivity={() => setSheetOpen(true)}
+          onEdit={() => setEditOpen(true)}
+        />
 
         <Tabs.Root value={tab} onValueChange={(v) => setTab(v as TabKey)}>
           <TabBar />
@@ -580,6 +586,13 @@ export function DealDetailPage() {
           // refetches automatically. Just flip to the Activity tab.
           setTab("activity");
         }}
+      />
+
+      <EditDealSheet
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        deal={deal}
+        onDeleted={() => navigate("/pipeline")}
       />
 
       {/* Decorative — explicit icon ref so tree-shaking keeps Calendar
