@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
-import type { ReactNode } from "react";
 
 import { RequireRole } from "./RequireRole";
 
@@ -14,10 +13,6 @@ vi.mock("@/features/auth/useProfile", () => ({
     isError: false,
   }),
 }));
-
-function Inner({ children }: { children?: ReactNode }) {
-  return <>{children}</>;
-}
 
 function renderAt(initial: string, allow: Array<"rep" | "manager" | "admin">) {
   return render(
