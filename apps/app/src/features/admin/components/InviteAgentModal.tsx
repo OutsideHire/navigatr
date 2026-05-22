@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button, FormField, Input, Select, type SelectOption } from "@/components/navigatr";
 import { useAdminBulkInvite } from "../hooks/useAdminBulkInvite";
+import { useSendInviteEmails } from "../hooks/useSendInviteEmails";
 
 const ROLE_OPTIONS: SelectOption[] = [
   { value: "rep",     label: "Rep" },
@@ -29,6 +30,7 @@ type Values = z.infer<typeof schema>;
 
 export function InviteAgentModal({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const invite = useAdminBulkInvite();
+  const sendEmails = useSendInviteEmails();
   const { register, handleSubmit, control, reset, formState: { errors, isSubmitting } } = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: { fullName: "", email: "", role: "rep" },
@@ -42,7 +44,8 @@ export function InviteAgentModal({ open, onOpenChange }: { open: boolean; onOpen
         role: values.role,
       }]);
       const row = results[0];
-      if (row.ok) {
+      if (row.ok && row.id) {
+        try { await sendEmails.mutateAsync([row.id]); } catch { /* non-fatal */ }
         toast.success(`Invite sent to ${row.email}`);
         reset();
         onOpenChange(false);

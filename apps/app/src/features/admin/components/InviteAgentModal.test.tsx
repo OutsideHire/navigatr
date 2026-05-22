@@ -9,6 +9,10 @@ vi.mock("../hooks/useAdminBulkInvite", () => ({
   useAdminBulkInvite: () => ({ mutateAsync: mutateAsyncMock }),
 }));
 
+vi.mock("../hooks/useSendInviteEmails", () => ({
+  useSendInviteEmails: () => ({ mutateAsync: vi.fn().mockResolvedValue([]) }),
+}));
+
 describe("InviteAgentModal", () => {
   it("submits a single row through useAdminBulkInvite", async () => {
     const user = userEvent.setup();
