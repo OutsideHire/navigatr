@@ -8,10 +8,16 @@
 -- _admin_invite_token(): internal token generator — 32 hex chars (16 bytes
 -- of randomness). Only called from other SECURITY DEFINER functions in this
 -- file; no grant needed.
+--
+-- gen_random_bytes lives in the pgcrypto extension, which Supabase installs
+-- in the `extensions` schema. We qualify explicitly so SECURITY DEFINER's
+-- search_path=public doesn't lose it. (`language sql` functions validate
+-- their body at create-time, so an unqualified reference here would abort
+-- the migration with "function does not exist".)
 -- ---------------------------------------------------------------------------
 create or replace function _admin_invite_token() returns text
 language sql volatile security definer set search_path = public as $$
-  select encode(gen_random_bytes(16), 'hex')
+  select encode(extensions.gen_random_bytes(16), 'hex')
 $$;
 
 -- ---------------------------------------------------------------------------
