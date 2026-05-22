@@ -44,6 +44,10 @@ export interface Deal {
    *  and shift the row into the current month. Real fix is a
    *  deal_stage_history table; until then this is the best signal. */
   updatedAt: string;
+  /** UUID of the rep who owns this deal. Null for legacy rows created
+   *  before owner tracking was added. Used by the admin portal's
+   *  per-agent pipeline filter (?owner=<id>). */
+  owner_id: string | null;
 }
 
 // Static "today" so subsequent renders don't shift cards' relative dates.
@@ -98,6 +102,7 @@ function deal(
     nextFollowup: nextFollowupDays === null ? null : daysAhead(nextFollowupDays),
     address: null,
     employeeCountRange: employees,
+    owner_id: null,
   };
 }
 

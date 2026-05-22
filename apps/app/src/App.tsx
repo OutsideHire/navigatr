@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
+import { RequireRole } from "@/components/layout/RequireRole";
 import { setUnauthorizedHandler } from "@/api";
 import { useAuth } from "@/stores/auth";
 
@@ -75,6 +76,22 @@ const PathPage = lazy(() =>
 );
 const SettingsPage = lazy(() =>
   import("@/features/settings/pages/SettingsPage").then((m) => ({ default: m.SettingsPage })),
+);
+
+// Admin screens (role-gated: manager + admin only)
+const AgentsPage = lazy(() =>
+  import("@/features/admin/pages/AgentsPage").then((m) => ({ default: m.AgentsPage })),
+);
+const ImportAgentsPage = lazy(() =>
+  import("@/features/admin/pages/ImportAgentsPage").then((m) => ({ default: m.ImportAgentsPage })),
+);
+const AdminSettingsPage = lazy(() =>
+  import("@/features/admin/pages/AdminSettingsPage").then((m) => ({ default: m.AdminSettingsPage })),
+);
+
+// Accept-invite (public — no AppLayout, no auth required)
+const AcceptInvitePage = lazy(() =>
+  import("@/features/auth/pages/AcceptInvitePage").then((m) => ({ default: m.AcceptInvitePage })),
 );
 
 // Component preview catalogs (dev / design review). Lazy-loaded for
@@ -172,6 +189,7 @@ export function App() {
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/accept-invitation" element={<InvitationAcceptancePage />} />
+          <Route path="/accept-invite" element={<AcceptInvitePage />} />
 
           {/* ===== OAuth + email-confirm landing ===== */}
           {/* Owns the post-signup claim_invite_code flow. Never gated by
@@ -257,6 +275,43 @@ export function App() {
             element={
               <ProtectedRoute>
                 <SettingsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ===== Admin screens (manager + admin only) ===== */}
+          <Route
+            path="/admin"
+            element={<Navigate to="/admin/agents" replace />}
+          />
+          <Route
+            path="/admin/agents"
+            element={
+              <ProtectedRoute>
+                <RequireRole allow={["manager", "admin"]}>
+                  <AgentsPage />
+                </RequireRole>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/agents/import"
+            element={
+              <ProtectedRoute>
+                <RequireRole allow={["manager", "admin"]}>
+                  <ImportAgentsPage />
+                </RequireRole>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin/settings"
+            element={
+              <ProtectedRoute>
+                <RequireRole allow={["manager", "admin"]}>
+                  <AdminSettingsPage />
+                </RequireRole>
               </ProtectedRoute>
             }
           />

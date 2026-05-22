@@ -40,9 +40,11 @@ function makeDeal(overrides: Partial<Deal> = {}): Deal {
     probability: 35,
     lastActivity: "2026-05-20T00:00:00Z",
     nextFollowup: null,
+    address: null,
     employeeCountRange: "10-49",
     leadSource: "inbound",
     updatedAt: "2026-05-20T00:00:00Z",
+    owner_id: null,
     ...overrides,
   };
 }

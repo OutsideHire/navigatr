@@ -37,6 +37,7 @@ function makeDeal(overrides: Partial<Deal> = {}): Deal {
     employeeCountRange: "10-49",
     leadSource: "inbound",
     updatedAt: "2026-05-20T00:00:00Z",
+    owner_id: null,
     ...overrides,
   };
 }

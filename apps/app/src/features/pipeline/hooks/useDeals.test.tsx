@@ -60,6 +60,7 @@ describe("useDeals", () => {
           employee_count_range: "11-50",
           lead_source: "Partner referral",
           updated_at: "2026-05-19T08:00:00Z",
+          owner_id: null,
         },
       ],
       error: null,
@@ -83,6 +84,7 @@ describe("useDeals", () => {
         employeeCountRange: "11-50",
         leadSource: "Partner referral",
         updatedAt: "2026-05-19T08:00:00Z",
+        owner_id: null,
       },
     ]);
   });

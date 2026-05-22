@@ -63,6 +63,7 @@ function deal(
     employeeCountRange: "1-10",
     leadSource,
     updatedAt,
+    owner_id: null,
   };
 }
 
