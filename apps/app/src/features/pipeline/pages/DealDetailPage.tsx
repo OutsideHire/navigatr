@@ -68,6 +68,7 @@ import type { Activity } from "@/features/activities/mockData";
 import { DISPOSITIONS } from "@/lib/followUpScheduling";
 import { LogActivitySheet } from "@/features/activities/components/LogActivitySheet";
 import { EditDealSheet } from "../components/EditDealSheet";
+import { EditActivitySheet } from "@/features/activities/components/EditActivitySheet";
 
 // ───────────────────────────────────────────────────────────────────────
 // Not-found state
@@ -385,9 +386,11 @@ function PipelineProgressionCard({ deal }: { deal: Deal }) {
 function LatestActivityCard({
   activity,
   onViewAll,
+  onEdit,
 }: {
   activity: Activity | undefined;
   onViewAll: () => void;
+  onEdit?: (a: Activity) => void;
 }) {
   return (
     <Card padding="md">
@@ -398,7 +401,7 @@ function LatestActivityCard({
         </Button>
       </div>
       {activity ? (
-        <ActivityRow activity={activity} />
+        <ActivityRow activity={activity} onEdit={onEdit} />
       ) : (
         <p className="text-body-md text-text-muted">No activity yet. Log a call to get started.</p>
       )}
@@ -410,10 +413,11 @@ function LatestActivityCard({
 // Activity list (Activity tab)
 // ───────────────────────────────────────────────────────────────────────
 
-function ActivityRow({ activity }: { activity: Activity }) {
+function ActivityRow({ activity, onEdit }: { activity: Activity; onEdit?: (a: Activity) => void }) {
   const spec = DISPOSITIONS[activity.disposition];
   return (
     <ListRow
+      onClick={onEdit ? () => onEdit(activity) : undefined}
       leading={
         <span className="flex h-9 w-9 items-center justify-center rounded-radius-full bg-accent-teal-20 text-accent-teal">
           <PhoneIcon className="h-4 w-4" aria-hidden />
@@ -430,7 +434,7 @@ function ActivityRow({ activity }: { activity: Activity }) {
   );
 }
 
-function ActivityList({ activities }: { activities: Activity[] }) {
+function ActivityList({ activities, onEdit }: { activities: Activity[]; onEdit?: (a: Activity) => void }) {
   if (activities.length === 0) {
     return (
       <Card padding="lg" className="flex flex-col items-center gap-2 text-center">
@@ -463,7 +467,7 @@ function ActivityList({ activities }: { activities: Activity[] }) {
             <div className="flex flex-col">
               {items.map((a, i) => (
                 <div key={a.id} className={cn(i > 0 && "border-t border-border-subtle")}>
-                  <ActivityRow activity={a} />
+                  <ActivityRow activity={a} onEdit={onEdit} />
                 </div>
               ))}
             </div>
@@ -516,6 +520,7 @@ export function DealDetailPage() {
   const { data: activities = [] } = useActivities(dealId);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [editOpen, setEditOpen] = React.useState(false);
+  const [editingActivity, setEditingActivity] = React.useState<Activity | null>(null);
   const [tab, setTab] = React.useState<TabKey>("overview");
 
   if (isLoading) {
@@ -556,11 +561,15 @@ export function DealDetailPage() {
             <ContactInfoCard deal={deal} />
             <SourceCard deal={deal} />
             <PipelineProgressionCard deal={deal} />
-            <LatestActivityCard activity={activities[0]} onViewAll={() => setTab("activity")} />
+            <LatestActivityCard
+              activity={activities[0]}
+              onViewAll={() => setTab("activity")}
+              onEdit={setEditingActivity}
+            />
           </Tabs.Content>
 
           <Tabs.Content value="activity" className="mt-4 focus-visible:outline-none">
-            <ActivityList activities={activities} />
+            <ActivityList activities={activities} onEdit={setEditingActivity} />
           </Tabs.Content>
 
           <Tabs.Content value="contacts" className="mt-4 focus-visible:outline-none">
@@ -594,6 +603,14 @@ export function DealDetailPage() {
         deal={deal}
         onDeleted={() => navigate("/pipeline")}
       />
+
+      {editingActivity && (
+        <EditActivitySheet
+          open={!!editingActivity}
+          onOpenChange={(open) => !open && setEditingActivity(null)}
+          activity={editingActivity}
+        />
+      )}
 
       {/* Decorative — explicit icon ref so tree-shaking keeps Calendar
           available for any future "Schedule follow-up" CTA. */}
