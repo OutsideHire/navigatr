@@ -61,7 +61,9 @@ import {
   type DealStage,
 } from "../mockData";
 import { useDeal } from "../hooks/useDeal";
+import { useUpdateDeal } from "../hooks/useUpdateDeal";
 import { useActivities } from "@/features/activities/hooks/useActivities";
+import { Select, type SelectOption } from "@/components/navigatr";
 import type { Activity } from "@/features/activities/mockData";
 import { DISPOSITIONS } from "@/lib/followUpScheduling";
 import { LogActivitySheet } from "@/features/activities/components/LogActivitySheet";
@@ -99,6 +101,77 @@ function NotFound() {
 // Hero card
 // ───────────────────────────────────────────────────────────────────────
 
+const STAGE_OPTIONS: SelectOption[] = [
+  { value: "new",        label: "New" },
+  { value: "contacted",  label: "Contacted" },
+  { value: "qualified",  label: "Qualified" },
+  { value: "proposal",   label: "Proposal" },
+  { value: "won",        label: "Won" },
+];
+
+/**
+ * Clickable stage badge. Click → reveals an inline Select with the 5
+ * stages; picking a new value runs the mutation and collapses the
+ * picker. Drives the pipeline forward — without this, deals are
+ * frozen at creation. Same pattern as the partner status picker.
+ *
+ * The deal_stage_history server-side trigger writes a row whenever
+ * stage changes, so the dashboard's conversion funnel picks up the
+ * transition automatically.
+ */
+function StagePicker({ deal }: { deal: Deal }) {
+  const update = useUpdateDeal();
+  const [editing, setEditing] = React.useState(false);
+
+  const handleChange = async (next: string) => {
+    if (next === deal.stage) {
+      setEditing(false);
+      return;
+    }
+    try {
+      await update.mutateAsync({
+        id: deal.id,
+        patch: { stage: next as DealStage },
+      });
+      toast.success(`Moved to ${STAGE_LABEL[next as DealStage]}`);
+      setEditing(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't update stage");
+    }
+  };
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        aria-label={`Stage: ${STAGE_LABEL[deal.stage]}. Click to change.`}
+        className={cn(
+          "rounded-radius-full transition-opacity",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas",
+          update.isPending && "opacity-60",
+        )}
+        disabled={update.isPending}
+      >
+        <Badge kind={STAGE_BADGE_KIND[deal.stage]}>
+          {STAGE_LABEL[deal.stage]}
+        </Badge>
+      </button>
+    );
+  }
+
+  return (
+    <div className="w-48">
+      <Select
+        id={`stage-${deal.id}`}
+        value={deal.stage}
+        onValueChange={handleChange}
+        options={STAGE_OPTIONS}
+      />
+    </div>
+  );
+}
+
 function HeroCard({ deal, onLogActivity }: { deal: Deal; onLogActivity: () => void }) {
   return (
     <CardWithStatusBand bandColor={STAGE_BAND_COLOR[deal.stage]} contentPadding="lg">
@@ -124,7 +197,7 @@ function HeroCard({ deal, onLogActivity }: { deal: Deal; onLogActivity: () => vo
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Badge kind={STAGE_BADGE_KIND[deal.stage]}>{STAGE_LABEL[deal.stage]}</Badge>
+          <StagePicker deal={deal} />
           <div className="ml-auto flex flex-wrap gap-2">
             <Button variant="primary" size="md" leadingIcon={Plus} onClick={onLogActivity}>
               Log activity
@@ -133,7 +206,7 @@ function HeroCard({ deal, onLogActivity }: { deal: Deal; onLogActivity: () => vo
               variant="secondary"
               size="md"
               leadingIcon={Pencil}
-              onClick={() => toast("Deal editing lands in Sprint 2")}
+              onClick={() => toast("Full deal edit lands next")}
             >
               Edit
             </Button>
