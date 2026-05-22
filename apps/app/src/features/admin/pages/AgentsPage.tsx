@@ -12,10 +12,12 @@ import { useResendInvite } from "../hooks/useResendInvite";
 import { useRevokeMember } from "../hooks/useRevokeMember";
 import { AgentListRow } from "../components/AgentListRow";
 import { SeatUsageBadge } from "../components/SeatUsageBadge";
+import { InviteAgentModal } from "../components/InviteAgentModal";
 
 export function AgentsPage() {
   const navigate = useNavigate();
   const [page, setPage] = React.useState(0);
+  const [inviteOpen, setInviteOpen] = React.useState(false);
   const { data, isLoading } = useOrgAgents({ page });
   const resend = useResendInvite();
   const revoke = useRevokeMember();
@@ -59,7 +61,7 @@ export function AgentsPage() {
           variant="primary"
           size="md"
           leadingIcon={Plus}
-          onClick={() => toast("Single invite modal — coming in Task 9")}
+          onClick={() => setInviteOpen(true)}
         >
           Invite agent
         </Button>
@@ -119,6 +121,8 @@ export function AgentsPage() {
           </div>
         </div>
       )}
+
+      <InviteAgentModal open={inviteOpen} onOpenChange={setInviteOpen} />
     </div>
   );
 }
