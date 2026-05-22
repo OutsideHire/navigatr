@@ -85,6 +85,9 @@ const AgentsPage = lazy(() =>
 const ImportAgentsPage = lazy(() =>
   import("@/features/admin/pages/ImportAgentsPage").then((m) => ({ default: m.ImportAgentsPage })),
 );
+const AdminSettingsPage = lazy(() =>
+  import("@/features/admin/pages/AdminSettingsPage").then((m) => ({ default: m.AdminSettingsPage })),
+);
 
 // Accept-invite (public — no AppLayout, no auth required)
 const AcceptInvitePage = lazy(() =>
@@ -297,6 +300,17 @@ export function App() {
               <ProtectedRoute>
                 <RequireRole allow={["manager", "admin"]}>
                   <ImportAgentsPage />
+                </RequireRole>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin/settings"
+            element={
+              <ProtectedRoute>
+                <RequireRole allow={["manager", "admin"]}>
+                  <AdminSettingsPage />
                 </RequireRole>
               </ProtectedRoute>
             }
