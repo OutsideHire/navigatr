@@ -34,6 +34,7 @@ import {
 import { useTheme, type Theme } from "@/stores/theme";
 import { useAuth } from "@/stores/auth";
 import { Logo } from "./Logo";
+import { NotificationsBell } from "./NotificationsBell";
 
 const NEXT_THEME: Record<Theme, Theme> = {
   light: "dark",
@@ -134,6 +135,7 @@ export function TopBar({
           >
             <Search className="h-5 w-5" />
           </button>
+          {user && <NotificationsBell />}
           {user && <AvatarMenu user={user} theme={theme} resolvedTheme={resolvedTheme} setTheme={setTheme} ThemeIcon={ThemeIcon} handleSignOut={handleSignOut} />}
         </div>
       </div>
@@ -166,6 +168,7 @@ export function TopBar({
 
         {user && (
           <div className="ml-auto flex items-center gap-3">
+            <NotificationsBell />
             <AvatarMenu user={user} theme={theme} resolvedTheme={resolvedTheme} setTheme={setTheme} ThemeIcon={ThemeIcon} handleSignOut={handleSignOut} desktop />
           </div>
         )}
