@@ -35,6 +35,7 @@ function deal(id: string, company: string): Deal {
     probability: 20,
     lastActivity: "2026-05-18T12:00:00Z",
     nextFollowup: null,
+    address: null,
     employeeCountRange: "1-10",
     leadSource: "",
     updatedAt: "2026-05-18T12:00:00Z",

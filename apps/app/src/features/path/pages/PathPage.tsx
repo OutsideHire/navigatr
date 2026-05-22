@@ -27,13 +27,13 @@
  */
 
 import * as React from "react";
-import { List, Loader2, LocateFixed, Map as MapIcon, Route as RouteIcon } from "lucide-react";
+import { List, Loader2, LocateFixed, Map as MapIcon, MapPinOff, Route as RouteIcon } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
-import { Button, Chip } from "@/components/navigatr";
+import { Button, Card, Chip } from "@/components/navigatr";
 
 import {
-  MOCK_MERCHANTS,
   STATUS_LABEL,
   type Merchant,
   type MerchantStatus,
@@ -45,6 +45,7 @@ import { MerchantList, type MerchantWithDistance } from "../components/MerchantL
 import { MerchantDetailSheet } from "../components/MerchantDetailSheet";
 import { PathPlanSheet } from "../components/PathPlanSheet";
 import { usePathQueue } from "../hooks/usePathQueue";
+import { useMerchants } from "../hooks/useMerchants";
 
 type StatusFilter = "all" | MerchantStatus;
 const STATUS_FILTERS: StatusFilter[] = ["all", "untouched", "prospect", "active", "won", "cooled"];
@@ -57,10 +58,11 @@ type ViewMode = "map" | "list";
 
 export function PathPage() {
   const geo = useGeolocation();
+  const { merchants: liveMerchants, isLoading: merchantsLoading } = useMerchants();
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = React.useState(false);
-  const [view, setView] = React.useState<ViewMode>("map"); // mobile toggle
+  const [view, setView] = React.useState<ViewMode>("list"); // default to list until merchants are geocoded
   const [planOpen, setPlanOpen] = React.useState(false);
 
   // Path queue selectors. queueStops is the persisted list of stops;
@@ -68,14 +70,40 @@ export function PathPage() {
   // visit order via nearestNeighborOrder against the rep's position.
   const queueStops = usePathQueue((s) => s.stops);
 
-  // Compute distances + sort by proximity once per geo change.
+  // Are any merchants geocoded? If none have coords, the map degrades
+  // to a "no map yet" state and we suppress distance math (Infinity
+  // distances would dominate the sort).
+  const anyGeocoded = React.useMemo(
+    () => liveMerchants.some((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng)),
+    [liveMerchants],
+  );
+
+  // Compute distances + sort. Un-geocoded merchants get Infinity so they
+  // bucket to the bottom of a mixed list. When NOTHING is geocoded, we
+  // skip the distance work entirely and sort by most-recent-activity.
   const merchantsWithDistance: MerchantWithDistance[] = React.useMemo(() => {
-    const enriched = MOCK_MERCHANTS.map((m) => ({
+    if (!anyGeocoded) {
+      // No coordinates anywhere → sort by last activity desc, surface
+      // never-touched at the bottom (most useful prioritization for
+      // "who do I owe a touch to next?").
+      return liveMerchants
+        .map((m) => ({ ...m, distanceMeters: Number.POSITIVE_INFINITY }))
+        .sort((a, b) => {
+          if (!a.lastActivity && !b.lastActivity) return 0;
+          if (!a.lastActivity) return 1;
+          if (!b.lastActivity) return -1;
+          return b.lastActivity.localeCompare(a.lastActivity);
+        });
+    }
+    const enriched = liveMerchants.map((m) => ({
       ...m,
-      distanceMeters: haversineMeters({ lat: geo.lat, lng: geo.lng }, { lat: m.lat, lng: m.lng }),
+      distanceMeters:
+        Number.isFinite(m.lat) && Number.isFinite(m.lng)
+          ? haversineMeters({ lat: geo.lat, lng: geo.lng }, { lat: m.lat, lng: m.lng })
+          : Number.POSITIVE_INFINITY,
     }));
     return enriched.sort((a, b) => a.distanceMeters - b.distanceMeters);
-  }, [geo.lat, geo.lng]);
+  }, [liveMerchants, anyGeocoded, geo.lat, geo.lng]);
 
   const filtered = React.useMemo(
     () =>
@@ -117,24 +145,31 @@ export function PathPage() {
   // and PathPlanSheet's stop list — they stay in sync via this single
   // computation.
   const queuedMerchants: Merchant[] = React.useMemo(() => {
-    const byId = new Map(MOCK_MERCHANTS.map((m) => [m.id, m]));
+    const byId = new Map(liveMerchants.map((m) => [m.id, m]));
     return queueStops
       .map((s) => byId.get(s.merchantId))
       .filter((m): m is Merchant => Boolean(m));
-  }, [queueStops]);
+  }, [queueStops, liveMerchants]);
 
   const orderedQueue: Merchant[] = React.useMemo(() => {
     if (queuedMerchants.length === 0) return [];
+    // Nearest-neighbor only makes sense for geocoded stops; without
+    // coords we preserve insertion order so the rep sees what they
+    // added in the order they added it.
+    const geocoded = queuedMerchants.filter((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng));
+    if (geocoded.length === 0) return queuedMerchants;
     const idxOrder = nearestNeighborOrder(
       { lat: geo.lat, lng: geo.lng },
-      queuedMerchants.map((m) => ({ lat: m.lat, lng: m.lng })),
+      geocoded.map((m) => ({ lat: m.lat, lng: m.lng })),
     );
-    return idxOrder.map((i) => queuedMerchants[i]!);
+    return idxOrder.map((i) => geocoded[i]!);
   }, [queuedMerchants, geo.lat, geo.lng]);
 
   // Route path = origin → each stop in order. Used by the map polyline.
+  // Only drawn if every stop is geocoded — partial routes are confusing.
   const routePath = React.useMemo(() => {
     if (orderedQueue.length === 0) return undefined;
+    if (!orderedQueue.every((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng))) return undefined;
     return [
       { lat: geo.lat, lng: geo.lng },
       ...orderedQueue.map((m) => ({ lat: m.lat, lng: m.lng })),
@@ -148,8 +183,10 @@ export function PathPage() {
         <div className="flex flex-col gap-1">
           <h1 className="text-heading-lg text-text-default">Path</h1>
           <p className="text-body-md text-text-muted">
-            {filtered.length} {filtered.length === 1 ? "merchant" : "merchants"} nearby ·{" "}
-            {geo.source === "gps" ? "from your location" : "using default location"}
+            {filtered.length} {filtered.length === 1 ? "merchant" : "merchants"}
+            {anyGeocoded
+              ? ` nearby · ${geo.source === "gps" ? "from your location" : "using default location"}`
+              : " · sorted by recent activity"}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -199,7 +236,8 @@ export function PathPage() {
         ))}
       </div>
 
-      {/* Mobile view toggle */}
+      {/* Mobile view toggle — only shown when the map has something to render */}
+      {anyGeocoded && (
       <div className="mt-3 flex gap-1 self-start rounded-radius-md bg-surface-sunken p-0.5 md:hidden">
         <button
           type="button"
@@ -222,21 +260,63 @@ export function PathPage() {
           <List className="h-3.5 w-3.5" aria-hidden /> List ({filtered.length})
         </button>
       </div>
+      )}
 
-      {/* Body — mobile single pane, desktop split */}
-      <div className="mt-3 grid min-h-0 flex-1 gap-4 md:grid-cols-[1.4fr_1fr]">
-        {/* Map */}
-        <div className={cn("min-h-[320px]", view === "list" && "hidden md:block")}>
-          <MerchantMap
-            position={{ lat: geo.lat, lng: geo.lng }}
-            merchants={filtered}
-            focusedMerchantId={selectedId}
-            onMerchantClick={handleSelect}
-            routePath={routePath}
-          />
+      {/* Body — mobile single pane, desktop split. When nothing is
+          geocoded yet, drop to a list-only single column with a banner
+          explaining the missing map. When the rep has zero deals at
+          all, the merchant list itself renders its empty state. */}
+      {merchantsLoading ? (
+        <div className="mt-6 flex items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-text-subtle" aria-hidden />
         </div>
+      ) : liveMerchants.length === 0 ? (
+        <Card padding="lg" className="mt-6 flex flex-col items-center gap-3 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-surface-sunken text-text-muted">
+            <RouteIcon className="h-6 w-6" aria-hidden />
+          </span>
+          <div className="flex flex-col gap-1">
+            <p className="text-heading-sm text-text-default">No merchants yet</p>
+            <p className="text-body-md text-text-muted">
+              Path is your field-rep view of every deal in your pipeline. Add a deal to see it here.
+            </p>
+          </div>
+          <Link
+            to="/pipeline"
+            className="inline-flex h-10 items-center rounded-radius-md bg-brand-primary px-4 text-body-md font-medium text-text-inverse hover:bg-brand-primary-hover"
+          >
+            Go to Pipeline
+          </Link>
+        </Card>
+      ) : (
+      <div className={cn(
+        "mt-3 grid min-h-0 flex-1 gap-4",
+        anyGeocoded && "md:grid-cols-[1.4fr_1fr]",
+      )}>
+        {/* Map — only when at least one merchant is geocoded. */}
+        {anyGeocoded ? (
+          <div className={cn("min-h-[320px]", view === "list" && "hidden md:block")}>
+            <MerchantMap
+              position={{ lat: geo.lat, lng: geo.lng }}
+              merchants={filtered.filter((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng))}
+              focusedMerchantId={selectedId}
+              onMerchantClick={handleSelect}
+              routePath={routePath}
+            />
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 rounded-radius-md border border-dashed border-border-default bg-surface-sunken/40 p-3 md:hidden">
+            <MapPinOff className="h-4 w-4 shrink-0 text-text-muted" aria-hidden />
+            <p className="text-caption text-text-muted">
+              Map view returns once we geocode deal addresses (next session).
+            </p>
+          </div>
+        )}
         {/* List */}
-        <div className={cn("min-h-0 overflow-y-auto", view === "map" && "hidden md:block")}>
+        <div className={cn(
+          "min-h-0 overflow-y-auto",
+          anyGeocoded && view === "map" && "hidden md:block",
+        )}>
           <MerchantList
             merchants={filtered}
             selectedId={selectedId}
@@ -248,6 +328,7 @@ export function PathPage() {
           />
         </div>
       </div>
+      )}
 
       <MerchantDetailSheet
         merchant={selectedMerchant}
@@ -260,7 +341,7 @@ export function PathPage() {
         open={planOpen}
         onOpenChange={setPlanOpen}
         origin={{ lat: geo.lat, lng: geo.lng }}
-        allMerchants={MOCK_MERCHANTS}
+        allMerchants={liveMerchants}
         orderedStops={orderedQueue}
       />
     </div>

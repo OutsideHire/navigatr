@@ -59,6 +59,7 @@ function deal(
     phone: "+12025550100", email: "x@x.x",
     valueCents, stage, probability,
     lastActivity: "2026-05-18T12:00:00Z", nextFollowup: null,
+    address: null,
     employeeCountRange: "1-10",
     leadSource,
     updatedAt,
