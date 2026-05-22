@@ -11,7 +11,9 @@ const schema = z.object({
   fullName: z.string().trim().min(2, "Please enter your full name"),
   email: z.string().email("Enter a valid email address"),
   password: z.string().min(8, "At least 8 characters"),
-  inviteCode: z.string().trim().min(1, "Enter the invite code your account owner sent you"),
+  // Optional — blank means "create a new workspace" (self-serve path).
+  // The auth callback routes profile-less users to /create-organization.
+  inviteCode: z.string().trim().optional().default(""),
 });
 
 type Values = z.infer<typeof schema>;
@@ -82,7 +84,7 @@ export function SignUpForm() {
       <FormField
         label="Invite code"
         htmlFor="signup-invite"
-        helper="From your account owner. Pre-filled if you opened the invite link."
+        helper="Optional. Leave blank to start a new workspace; you can invite teammates after."
         error={errors.inviteCode?.message}
       >
         <Input

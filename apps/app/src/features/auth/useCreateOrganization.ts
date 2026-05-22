@@ -1,0 +1,43 @@
+/**
+ * useCreateOrganization — RPC mutation for self-serve org bootstrap.
+ *
+ * Used by /create-organization. On success, the caller's profile row
+ * now exists; we refetch ["profile", userId] so ProtectedRoute lets
+ * them through to /dashboard on the next navigation.
+ */
+
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/stores/auth";
+
+export interface CreateOrganizationResult {
+  org_id: string;
+  role: "manager";
+  invite_code: string;
+}
+
+export function useCreateOrganization() {
+  const queryClient = useQueryClient();
+  const userId = useAuth((s) => s.user?.id);
+
+  return useMutation({
+    mutationFn: async (name: string): Promise<CreateOrganizationResult> => {
+      if (!userId) throw new Error("Not signed in");
+
+      const { data, error } = await supabase.rpc("create_organization", {
+        p_name: name,
+      });
+      if (error) throw error;
+      // The RPC returns a single-row table; supabase-js surfaces it as an
+      // array. Pluck the first row and trust the schema.
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) throw new Error("create_organization returned no row");
+      return row as CreateOrganizationResult;
+    },
+    onSuccess: () => {
+      // The profile just appeared server-side. Invalidate so ProtectedRoute
+      // refetches and lets the user through.
+      void queryClient.invalidateQueries({ queryKey: ["profile", userId] });
+    },
+  });
+}
