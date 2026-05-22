@@ -66,9 +66,16 @@ export function AcceptInvitePage() {
       return;
     }
     try {
+      // Stash the token so AuthCallbackPage can find it after signUp.
+      // signUp also puts the token in user_metadata.invite_code, but the
+      // callback page reads from sessionStorage / URL, not user_metadata.
+      // Matches the same pattern OAuth uses (where state is lost across
+      // the auth-provider hop).
+      sessionStorage.setItem("pending_invite", token);
       await signUp(values.email, values.password, values.fullName, token);
       navigate("/auth/callback");
     } catch (err) {
+      sessionStorage.removeItem("pending_invite");
       toast.error(err instanceof Error ? err.message : "Sign up failed");
     }
   };
