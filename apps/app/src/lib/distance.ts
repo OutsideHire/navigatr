@@ -42,6 +42,9 @@ export function haversineMeters(a: LatLng, b: LatLng): number {
  * Always miles for US sales reps. Sprint 2 can add locale-aware formatting.
  */
 export function formatDistance(meters: number): string {
+  // Un-geocoded merchants get Infinity sentinels — render an em-dash
+  // instead of literal "Infinity mi". Same for NaN (defensive).
+  if (!Number.isFinite(meters)) return "—";
   const miles = meters / 1609.344;
   if (miles < 0.1) return "less than 0.1 mi";
   if (miles < 1) return `${miles.toFixed(1)} mi`;
