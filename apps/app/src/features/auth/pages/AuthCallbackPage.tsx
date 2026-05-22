@@ -59,13 +59,14 @@ export function AuthCallbackPage() {
         const msg = rpcError.message ?? "";
         console.error("[claim_invite_code]", rpcError, "code was:", code, "intentional:", intentionallyHere);
 
-        // Accidental hit + invite_code_required: silent sign-out + bounce.
-        // The user didn't try to sign up — they just ended up here. Showing
-        // "We could not find your invite code" reads as a scary error;
-        // bouncing to /login is the truthful resolution.
-        if (!intentionallyHere && msg.includes("invite_code_required")) {
-          await supabase.auth.signOut();
-          if (!cancelled) navigate("/login", { replace: true });
+        // No invite code? The user signed up to start a fresh workspace.
+        // Route to /create-organization — they'll name the org, the RPC
+        // will create the org + their manager profile, and we'll land at
+        // /dashboard. Applies whether or not "intentionallyHere" is true:
+        // a user with a session but no invite is unambiguously the
+        // self-serve flow, not a stale-tab accident.
+        if (msg.includes("invite_code_required")) {
+          if (!cancelled) navigate("/create-organization", { replace: true });
           return;
         }
 

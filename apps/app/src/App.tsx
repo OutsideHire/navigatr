@@ -47,6 +47,9 @@ const ProfessionSelectorPage = lazy(() =>
 const AuthCallbackPage = lazy(() =>
   import("@/features/auth/pages/AuthCallbackPage").then((m) => ({ default: m.AuthCallbackPage })),
 );
+const CreateOrganizationPage = lazy(() =>
+  import("@/features/auth/pages/CreateOrganizationPage").then((m) => ({ default: m.CreateOrganizationPage })),
+);
 
 // Protected screens (each wrapped in AppLayout by ProtectedRoute)
 const DashboardPage = lazy(() =>
@@ -175,6 +178,8 @@ export function App() {
               PublicOnlyRoute — the user IS authed here, and the page itself
               decides where to send them next. */}
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
+          {/* Self-serve org bootstrap. Authed users w/o a profile land here. */}
+          <Route path="/create-organization" element={<CreateOrganizationPage />} />
 
           {/* ===== Authenticated but profession not yet set ===== */}
           {/* Kept reachable (deep links from old emails) but no longer
