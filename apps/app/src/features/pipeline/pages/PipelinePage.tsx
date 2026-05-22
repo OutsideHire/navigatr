@@ -441,6 +441,10 @@ export function PipelinePage() {
     }
   }, [searchParams, setSearchParams]);
 
+  // ?owner=<id> filter — set by the admin portal when drilling into one
+  // agent's pipeline. A banner is shown at the top with a "Clear filter" link.
+  const ownerFilter = searchParams.get("owner");
+
   // Reads from Supabase via RLS — server scopes to the user's org_id.
   // Stage/search filters still applied in-memory below; dataset is small
   // enough that round-tripping per chip click would be wasteful.
@@ -452,15 +456,33 @@ export function PipelinePage() {
     if (!deals) return [];
     const q = debouncedSearch.trim().toLowerCase();
     return deals.filter((d) => {
+      if (ownerFilter && d.owner_id !== ownerFilter) return false;
       if (stageFilter !== "all" && d.stage !== stageFilter) return false;
       if (q && !d.companyName.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [deals, stageFilter, debouncedSearch]);
+  }, [deals, stageFilter, debouncedSearch, ownerFilter]);
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
       <div className="flex flex-col gap-4 lg:gap-6">
+        {ownerFilter && (
+          <div className="flex items-center justify-between rounded-radius-md border border-border-subtle bg-surface-sunken px-4 py-2.5 text-body-sm text-text-muted">
+            <span>Viewing one agent&rsquo;s pipeline.</span>
+            <button
+              type="button"
+              onClick={() => {
+                const next = new URLSearchParams(searchParams);
+                next.delete("owner");
+                setSearchParams(next, { replace: true });
+              }}
+              className="text-brand-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+            >
+              Clear filter
+            </button>
+          </div>
+        )}
+
         <PageHeader
           search={searchInput}
           onSearchChange={setSearchInput}

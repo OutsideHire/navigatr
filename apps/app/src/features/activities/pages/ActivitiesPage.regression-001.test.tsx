@@ -39,6 +39,7 @@ function deal(id: string, company: string): Deal {
     employeeCountRange: "1-10",
     leadSource: "",
     updatedAt: "2026-05-18T12:00:00Z",
+    owner_id: null,
   };
 }
 

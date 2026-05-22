@@ -20,9 +20,10 @@
  */
 
 import { NavLink } from "react-router-dom";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MAIN_TABS, SETTINGS_TAB, type NavTabSpec } from "./nav-tabs";
+import { useProfile } from "@/features/auth/useProfile";
 
 export interface SidebarNavProps {
   collapsed?: boolean;
@@ -82,7 +83,18 @@ function SidebarNavItem({ tab, collapsed }: { tab: NavTabSpec; collapsed: boolea
   );
 }
 
+const TEAM_TAB: NavTabSpec = {
+  key: "team",
+  label: "Team",
+  to: "/admin/agents",
+  icon: Users,
+};
+
 export function SidebarNav({ collapsed = false, onCollapseToggle, className }: SidebarNavProps) {
+  const profile = useProfile();
+  const isManagerOrAdmin =
+    profile.data?.role === "manager" || profile.data?.role === "admin";
+
   return (
     <aside
       aria-label="Primary"
@@ -101,6 +113,10 @@ export function SidebarNav({ collapsed = false, onCollapseToggle, className }: S
         {MAIN_TABS.map((tab) => (
           <SidebarNavItem key={tab.key} tab={tab} collapsed={collapsed} />
         ))}
+
+        {isManagerOrAdmin && (
+          <SidebarNavItem tab={TEAM_TAB} collapsed={collapsed} />
+        )}
 
         <div className="my-2 h-px bg-border-subtle" />
 
