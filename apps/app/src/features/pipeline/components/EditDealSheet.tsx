@@ -45,6 +45,14 @@ function formatUSPhone(input: string): string {
   if (d.length === 0) return "";
   return new AsYouType("US").input(d.slice(0, d.startsWith("1") ? 11 : 10));
 }
+/** Stored phones are E.164 ("+15555555555"). The Zod validator wants 10
+ *  digits exactly; pre-filling "1 (555) 555-5555" would fail validation
+ *  and force the rep to re-type the phone every time they hit Save. Strip
+ *  the leading country code so the form sees a clean 10-digit value. */
+function stripUsCountryCode(phone: string): string {
+  const d = digitsOnly(phone);
+  return d.length === 11 && d.startsWith("1") ? d.slice(1) : d;
+}
 const emptyToUndefined = (v: unknown) =>
   v === "" || v === null || v === undefined ? undefined : v;
 
@@ -131,7 +139,7 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
       companyName: deal.companyName,
       contactName: deal.contactName,
       contactEmail: deal.email,
-      contactPhone: formatUSPhone(deal.phone),
+      contactPhone: formatUSPhone(stripUsCountryCode(deal.phone)),
       dealValue: Math.round(deal.valueCents / 100) as unknown as number,
       stage: deal.stage,
       probability: deal.probability,
