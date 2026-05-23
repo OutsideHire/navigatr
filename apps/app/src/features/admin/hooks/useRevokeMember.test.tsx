@@ -45,7 +45,7 @@ describe("useRevokeMember", () => {
     });
   });
 
-  it("invalidates both org-agents and seat-usage caches on success", async () => {
+  it("invalidates both leaderboard prefix and seat-usage caches on success", async () => {
     rpcMock.mockResolvedValueOnce({ data: null, error: null });
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -57,7 +57,7 @@ describe("useRevokeMember", () => {
     await result.current.mutateAsync({ targetId: "t-1", kind: "profile" });
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
     const keys = spy.mock.calls.map((c) => c[0]?.queryKey);
-    expect(keys).toContainEqual(["admin", "agents", "user-1"]);
+    expect(keys).toContainEqual(["admin", "leaderboard", "user-1"]);
     expect(keys).toContainEqual(["admin", "seat-usage", "user-1"]);
   });
 

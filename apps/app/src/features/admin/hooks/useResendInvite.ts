@@ -5,7 +5,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
-import { ORG_AGENTS_QUERY_KEY } from "./useOrgAgents";
 
 export interface ResendInviteResult {
   id: string;
@@ -29,7 +28,7 @@ export function useResendInvite() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ORG_AGENTS_QUERY_KEY(userId),
+        queryKey: ["admin", "leaderboard", userId ?? "anon"],
       });
     },
   });

@@ -49,7 +49,7 @@ describe("useAdminBulkInvite", () => {
     });
   });
 
-  it("invalidates the org-agents cache on success", async () => {
+  it("invalidates the leaderboard cache prefix on success", async () => {
     rpcMock.mockResolvedValueOnce({ data: [], error: null });
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -61,7 +61,7 @@ describe("useAdminBulkInvite", () => {
     await result.current.mutateAsync([]);
     await waitFor(() => expect(spy).toHaveBeenCalled());
     expect(spy.mock.calls.map((c) => c[0]?.queryKey)).toContainEqual([
-      "admin", "agents", "user-1",
+      "admin", "leaderboard", "user-1",
     ]);
   });
 

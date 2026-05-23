@@ -1,6 +1,7 @@
 /**
  * AgentListRow — one row of the AgentsPage table. Status badge, name,
- * email, role, open deal count, pipeline value, overflow menu.
+ * email, role, open deal count, pipeline value, won metrics, activities,
+ * last active, and overflow menu.
  *
  * NOTE: The plan specified Badge kind values "success" | "info" | "muted"
  * which don't exist in the actual Badge component. Mapped to the closest
@@ -18,43 +19,54 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { AgentRow } from "../hooks/useOrgAgents";
+import type { LeaderboardRow } from "../hooks/useTeamLeaderboard";
+import { formatMoney, formatRelative } from "@/features/pipeline/mockData";
 
-const STATUS_BADGE: Record<AgentRow["status"], { label: string; kind: BadgeKind }> = {
+const STATUS_BADGE: Record<LeaderboardRow["status"], { label: string; kind: BadgeKind }> = {
   active:  { label: "Active",  kind: "status-on-track" },
   invited: { label: "Invited", kind: "status-upcoming" },
   revoked: { label: "Revoked", kind: "priority-low" },
 };
 
-function formatMoney(cents: number): string {
-  if (cents >= 1_000_000_000) return `$${(cents / 100_000_000_000).toFixed(1)}B`;
-  if (cents >= 100_000_000) return `$${Math.round(cents / 100_000_000)}M`;
-  if (cents >= 100_000) return `$${Math.round(cents / 100_000)}K`;
-  return `$${(cents / 100).toFixed(0)}`;
-}
-
 export function AgentListRow({
   row,
+  onNameClick,
   onViewPipeline,
   onResend,
   onRevoke,
   onPromote,
 }: {
-  row: AgentRow;
-  onViewPipeline: (row: AgentRow) => void;
-  onResend: (row: AgentRow) => void;
-  onRevoke: (row: AgentRow) => void;
-  onPromote: (row: AgentRow) => void;
+  row: LeaderboardRow;
+  onNameClick: (row: LeaderboardRow) => void;
+  onViewPipeline: (row: LeaderboardRow) => void;
+  onResend: (row: LeaderboardRow) => void;
+  onRevoke: (row: LeaderboardRow) => void;
+  onPromote: (row: LeaderboardRow) => void;
 }) {
   const status = STATUS_BADGE[row.status];
+  const lastActive = row.last_activity ? formatRelative(row.last_activity) : "—";
   return (
     <tr className="border-b border-border-subtle">
-      <td className="px-3 py-2 text-body-md">{row.fullName ?? "—"}</td>
+      <td className="px-3 py-2 text-body-md">
+        <button
+          type="button"
+          className="text-left text-text-default hover:underline focus:outline-none"
+          onClick={() => onNameClick(row)}
+        >
+          {row.full_name ?? "—"}
+        </button>
+      </td>
       <td className="px-3 py-2 text-body-md text-text-muted">{row.email}</td>
       <td className="px-3 py-2"><Badge kind={status.kind}>{status.label}</Badge></td>
       <td className="px-3 py-2 text-body-md capitalize">{row.role}</td>
-      <td className="px-3 py-2 text-body-md tabular-nums">{row.openDealCount}</td>
-      <td className="px-3 py-2 text-body-md tabular-nums">{formatMoney(row.pipelineValueCents)}</td>
+      <td className="px-3 py-2 text-body-md tabular-nums">{row.open_deals}</td>
+      <td className="px-3 py-2 text-body-md tabular-nums">{formatMoney(row.pipeline_cents)}</td>
+      <td className="px-3 py-2 text-body-md tabular-nums">
+        {formatMoney(row.won_cents_window)}{" "}
+        <span className="text-text-muted">({row.won_deals_window})</span>
+      </td>
+      <td className="px-3 py-2 text-body-md tabular-nums">{row.activities_window}</td>
+      <td className="px-3 py-2 text-body-md text-text-muted">{lastActive}</td>
       <td className="px-3 py-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -67,7 +79,7 @@ export function AgentListRow({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {row.kind === "profile" && row.status === "active" && (
+            {row.status === "active" && (
               <DropdownMenuItem onSelect={() => onViewPipeline(row)}>
                 View pipeline
               </DropdownMenuItem>
@@ -82,7 +94,7 @@ export function AgentListRow({
                 {row.status === "invited" ? "Revoke invite" : "Deactivate agent"}
               </DropdownMenuItem>
             )}
-            {row.kind === "profile" && row.status === "active" && row.role === "rep" && (
+            {row.status === "active" && row.role === "rep" && (
               <DropdownMenuItem onSelect={() => onPromote(row)}>
                 Promote to manager
               </DropdownMenuItem>
