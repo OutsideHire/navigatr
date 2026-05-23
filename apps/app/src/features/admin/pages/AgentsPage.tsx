@@ -129,7 +129,7 @@ export function AgentsPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+    <div className="mx-auto w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
       <header className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-heading-lg text-text-default">Team</h1>
         <SeatUsageBadge />
