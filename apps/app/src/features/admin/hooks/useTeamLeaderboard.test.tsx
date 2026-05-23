@@ -39,6 +39,8 @@ const SAMPLE_ROW = {
   pipeline_cents: 150_000,
   won_deals_window: 1,
   won_cents_window: 50_000,
+  lost_deals_window: 0,
+  lost_cents_window: 0,
   activities_window: 12,
   last_activity: "2026-05-20T10:00:00Z",
 };

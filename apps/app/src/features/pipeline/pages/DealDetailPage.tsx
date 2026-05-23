@@ -109,6 +109,7 @@ const STAGE_OPTIONS: SelectOption[] = [
   { value: "qualified",  label: "Qualified" },
   { value: "proposal",   label: "Proposal" },
   { value: "won",        label: "Won" },
+  { value: "lost",       label: "Lost" },
 ];
 
 /**
@@ -339,7 +340,9 @@ function SourceCard({ deal }: { deal: Deal }) {
 const STAGE_ORDER: DealStage[] = ["new", "contacted", "qualified", "proposal", "won"];
 
 function PipelineProgressionCard({ deal }: { deal: Deal }) {
-  const currentIdx = STAGE_ORDER.indexOf(deal.stage);
+  // Lost deals: treat as if the deal never made it past the start — show all
+  // progression steps as future/dim with a "Lost" note above the stepper.
+  const currentIdx = deal.stage === "lost" ? -1 : STAGE_ORDER.indexOf(deal.stage);
   return (
     <Card padding="md">
       <h3 className="mb-4 text-body-strong text-text-default">Pipeline progression</h3>

@@ -14,18 +14,21 @@ import { AgentListRow } from "../components/AgentListRow";
 import { SeatUsageBadge } from "../components/SeatUsageBadge";
 import { InviteAgentModal } from "../components/InviteAgentModal";
 
-type SortKey = keyof Pick<
-  LeaderboardRow,
-  | "full_name"
-  | "email"
-  | "status"
-  | "role"
-  | "open_deals"
-  | "pipeline_cents"
-  | "won_cents_window"
-  | "activities_window"
-  | "last_activity"
->;
+type SortKey =
+  | keyof Pick<
+      LeaderboardRow,
+      | "full_name"
+      | "email"
+      | "status"
+      | "role"
+      | "open_deals"
+      | "pipeline_cents"
+      | "won_cents_window"
+      | "lost_cents_window"
+      | "activities_window"
+      | "last_activity"
+    >
+  | "win_rate";
 
 type SortDir = "asc" | "desc";
 
@@ -42,15 +45,24 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
     : <ChevronDown className="ml-1 inline h-3 w-3" />;
 }
 
+function winRate(row: LeaderboardRow): number {
+  const denom = row.won_deals_window + row.lost_deals_window;
+  return denom === 0 ? -1 : row.won_deals_window / denom;
+}
+
 function sortRows(rows: LeaderboardRow[], key: SortKey, dir: SortDir): LeaderboardRow[] {
   return [...rows].sort((a, b) => {
-    const av = a[key] ?? "";
-    const bv = b[key] ?? "";
     let cmp: number;
-    if (typeof av === "number" && typeof bv === "number") {
-      cmp = av - bv;
+    if (key === "win_rate") {
+      cmp = winRate(a) - winRate(b);
     } else {
-      cmp = String(av).localeCompare(String(bv));
+      const av = a[key] ?? "";
+      const bv = b[key] ?? "";
+      if (typeof av === "number" && typeof bv === "number") {
+        cmp = av - bv;
+      } else {
+        cmp = String(av).localeCompare(String(bv));
+      }
     }
     return dir === "asc" ? cmp : -cmp;
   });
@@ -181,6 +193,12 @@ export function AgentsPage() {
                 </th>
                 <th {...thProps("won_cents_window")}>
                   Won <SortIcon col="won_cents_window" sortKey={sortKey} sortDir={sortDir} />
+                </th>
+                <th {...thProps("lost_cents_window")}>
+                  Lost <SortIcon col="lost_cents_window" sortKey={sortKey} sortDir={sortDir} />
+                </th>
+                <th {...thProps("win_rate")}>
+                  Win rate <SortIcon col="win_rate" sortKey={sortKey} sortDir={sortDir} />
                 </th>
                 <th {...thProps("activities_window")}>
                   Activities <SortIcon col="activities_window" sortKey={sortKey} sortDir={sortDir} />

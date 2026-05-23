@@ -38,6 +38,7 @@ const STAGE_TO_STATUS: Record<DealStage, MerchantStatus> = {
   qualified: "active",
   proposal:  "active",
   won:       "won",
+  lost:      "cooled",
 };
 
 /** Convert one deal into a Merchant. Address-free deals still show in the

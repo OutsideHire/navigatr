@@ -19,6 +19,8 @@ vi.mock("../hooks/useTeamLeaderboard", () => ({
         pipeline_cents: 48_700_000, // $487K
         won_deals_window: 4,
         won_cents_window: 8_900_000, // $89K
+        lost_deals_window: 1,
+        lost_cents_window: 2_000_000,
         activities_window: 47,
         last_activity: null,
       },

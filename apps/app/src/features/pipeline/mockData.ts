@@ -12,7 +12,7 @@
  * is mostly a name-mapping exercise.
  */
 
-export type DealStage = "new" | "contacted" | "qualified" | "proposal" | "won";
+export type DealStage = "new" | "contacted" | "qualified" | "proposal" | "won" | "lost";
 
 export interface Deal {
   id: string;
@@ -71,6 +71,7 @@ const STAGE_DEFAULT_PROBABILITY: Record<DealStage, number> = {
   qualified: 55,
   proposal: 75,
   won: 100,
+  lost: 0,
 };
 
 // Compact factory — fills in defaults so the table below stays readable.
@@ -208,6 +209,7 @@ export const STAGE_BADGE_KIND: Record<DealStage, BadgeKind> = {
   qualified: "stage-qualified",
   proposal: "stage-proposal",
   won: "stage-won",
+  lost: "priority-low",
 };
 
 export const STAGE_BAND_COLOR: Record<DealStage, BandColor> = {
@@ -216,6 +218,7 @@ export const STAGE_BAND_COLOR: Record<DealStage, BandColor> = {
   qualified: "teal",
   proposal: "violet",
   won: "success",
+  lost: "danger",
 };
 
 export const STAGE_LABEL: Record<DealStage, string> = {
@@ -224,6 +227,7 @@ export const STAGE_LABEL: Record<DealStage, string> = {
   qualified: "Qualified",
   proposal: "Proposal",
   won: "Won",
+  lost: "Lost",
 };
 
 /**
@@ -240,6 +244,7 @@ export const STAGE_NEXT_VERB: Record<DealStage, string> = {
   qualified: "Send proposal",
   proposal: "Follow up",
   won: "Onboard",
+  lost: "Re-engage",
 };
 
 // Chip counts authored to match the dashboard story (47 total active across
@@ -252,6 +257,7 @@ export const STAGE_CHIP_COUNTS: Record<"all" | DealStage, number> = {
   qualified: 10,
   proposal: 7,
   won: 3,
+  lost: 0,
 };
 
 export const HEADER_SUBHEAD = "47 active deals · $163K weighted";

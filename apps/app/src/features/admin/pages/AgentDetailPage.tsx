@@ -162,8 +162,8 @@ export function AgentDetailPage() {
         ))}
       </div>
 
-      {/* KPI row */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {/* KPI row — 6 cards: Open Deals / Pipeline / Won / Lost / Win rate / Activities */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Card padding="md">
           <p className="text-eyebrow text-text-subtle uppercase tracking-wider">Open Deals</p>
           <p className="mt-1 text-heading-lg tabular-nums">{agent.open_deals}</p>
@@ -177,6 +177,22 @@ export function AgentDetailPage() {
           <p className="mt-1 text-heading-lg tabular-nums">
             {formatMoney(agent.won_cents_window)}{" "}
             <span className="text-body-md text-text-muted">({agent.won_deals_window})</span>
+          </p>
+        </Card>
+        <Card padding="md">
+          <p className="text-eyebrow text-text-subtle uppercase tracking-wider">Lost ({windowDays}d)</p>
+          <p className="mt-1 text-heading-lg tabular-nums">
+            {formatMoney(agent.lost_cents_window)}{" "}
+            <span className="text-body-md text-text-muted">({agent.lost_deals_window})</span>
+          </p>
+        </Card>
+        <Card padding="md">
+          <p className="text-eyebrow text-text-subtle uppercase tracking-wider">Win Rate ({windowDays}d)</p>
+          <p className="mt-1 text-heading-lg tabular-nums">
+            {(() => {
+              const denom = agent.won_deals_window + agent.lost_deals_window;
+              return denom === 0 ? "—" : `${Math.round((agent.won_deals_window / denom) * 100)}%`;
+            })()}
           </p>
         </Card>
         <Card padding="md">
