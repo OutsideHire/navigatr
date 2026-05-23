@@ -45,6 +45,8 @@ function makeDeal(overrides: Partial<Deal> = {}): Deal {
     leadSource: "inbound",
     updatedAt: "2026-05-20T00:00:00Z",
     owner_id: null,
+    lostReasonCategory: null,
+    lostReasonNotes: null,
     ...overrides,
   };
 }
