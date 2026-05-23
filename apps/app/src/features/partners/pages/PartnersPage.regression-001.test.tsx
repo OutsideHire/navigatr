@@ -39,6 +39,8 @@ function deal(id: string, valueCents: number): Deal {
     leadSource: "",
     updatedAt: "2026-05-18T12:00:00Z",
     owner_id: null,
+    lostReasonCategory: null,
+    lostReasonNotes: null,
   };
 }
 

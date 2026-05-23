@@ -17,6 +17,7 @@
 
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import * as RadioGroup from "@radix-ui/react-radio-group";
 import { useForm, Controller, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -35,7 +36,12 @@ import {
 import { useUpdateDeal } from "../hooks/useUpdateDeal";
 import { useDeleteDeal } from "../hooks/useDeleteDeal";
 import { useProfile } from "@/features/auth/useProfile";
-import { type Deal, type DealStage } from "../mockData";
+import {
+  type Deal,
+  type DealStage,
+  type LostReasonCategory,
+  LOST_REASON_LABEL,
+} from "../mockData";
 
 function digitsOnly(s: string): string {
   return s.replace(/\D/g, "");
@@ -101,6 +107,19 @@ const editSchema = z.object({
   expectedClose: z.string().optional(),
   leadSource: z.string().optional(),
   employeeCountRange: z.string().optional(),
+  lostReasonCategory: z
+    .enum(["price", "competitor", "timing", "no_decision", "incumbent", "unqualified", "other"])
+    .nullable()
+    .optional(),
+  lostReasonNotes: z.string().max(500).nullable().optional(),
+}).superRefine((data, ctx) => {
+  if (data.stage === "lost" && !data.lostReasonCategory) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Pick a reason for the loss.",
+      path: ["lostReasonCategory"],
+    });
+  }
 });
 
 export type EditDealValues = z.infer<typeof editSchema>;
@@ -147,6 +166,8 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
       expectedClose: toDateInput(deal.nextFollowup),
       leadSource: deal.leadSource || undefined,
       employeeCountRange: deal.employeeCountRange || undefined,
+      lostReasonCategory: deal.lostReasonCategory ?? null,
+      lostReasonNotes: deal.lostReasonNotes ?? null,
     }),
     [deal],
   );
@@ -156,6 +177,7 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
     handleSubmit,
     control,
     reset,
+    watch,
     formState: { errors, isSubmitting, dirtyFields },
   } = useForm<EditDealValues>({
     resolver: zodResolver(editSchema),
@@ -167,6 +189,9 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
   React.useEffect(() => {
     if (open) reset(defaultValues);
   }, [open, defaultValues, reset]);
+
+  const watchedStage = watch("stage");
+  const showLostReason = watchedStage === "lost";
 
   const onSubmit: SubmitHandler<EditDealValues> = async (values) => {
     // Build a patch of ONLY dirty fields so we don't write back unchanged
@@ -197,6 +222,12 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
     if (dirtyFields.leadSource) patch.leadSource = values.leadSource;
     if (dirtyFields.employeeCountRange) {
       patch.employeeCountRange = values.employeeCountRange;
+    }
+    if (dirtyFields.lostReasonCategory) {
+      patch.lostReasonCategory = values.lostReasonCategory ?? null;
+    }
+    if (dirtyFields.lostReasonNotes) {
+      patch.lostReasonNotes = values.lostReasonNotes ?? null;
     }
 
     if (Object.keys(patch).length === 0) {
@@ -352,6 +383,90 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
                     </FormField>
                   )}
                 />
+                {showLostReason && (
+                  <Controller
+                    control={control}
+                    name="lostReasonCategory"
+                    render={({ field }) => (
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-1">
+                          <span className="text-body-strong text-text-default">Loss reason</span>
+                          <span className="text-body-md text-status-danger">*</span>
+                        </div>
+                        {errors.lostReasonCategory && (
+                          <p className="text-caption text-status-danger" role="alert">
+                            {errors.lostReasonCategory.message}
+                          </p>
+                        )}
+                        <RadioGroup.Root
+                          value={field.value ?? ""}
+                          onValueChange={(v) => field.onChange(v as LostReasonCategory)}
+                          aria-label="Loss reason"
+                          className="flex flex-col gap-1.5"
+                        >
+                          {(Object.keys(LOST_REASON_LABEL) as LostReasonCategory[]).map((key) => (
+                            <RadioGroup.Item
+                              key={key}
+                              value={key}
+                              id={`edit-lost-reason-${key}`}
+                              className={cn(
+                                "group flex w-full cursor-pointer items-center gap-3 rounded-radius-md border px-3 py-2.5 text-left transition-colors",
+                                "border-border-subtle bg-surface-default",
+                                "hover:bg-surface-elevated",
+                                "data-[state=checked]:border-brand-primary data-[state=checked]:bg-brand-primary-5",
+                                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2",
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "flex h-4 w-4 shrink-0 items-center justify-center rounded-radius-full border-2 transition-colors",
+                                  "border-border-default group-data-[state=checked]:border-brand-primary",
+                                )}
+                                aria-hidden
+                              >
+                                <span className="hidden h-2 w-2 rounded-radius-full bg-brand-primary group-data-[state=checked]:block" />
+                              </span>
+                              <label
+                                htmlFor={`edit-lost-reason-${key}`}
+                                className="cursor-pointer text-body-md text-text-default"
+                              >
+                                {LOST_REASON_LABEL[key]}
+                              </label>
+                            </RadioGroup.Item>
+                          ))}
+                        </RadioGroup.Root>
+                        <div className="mt-1 flex flex-col gap-1">
+                          <label
+                            htmlFor="edit-lost-reason-notes"
+                            className="text-body-strong text-text-default"
+                          >
+                            Notes{" "}
+                            <span className="text-body-md font-normal text-text-muted">(optional)</span>
+                          </label>
+                          <Controller
+                            control={control}
+                            name="lostReasonNotes"
+                            render={({ field: notesField }) => (
+                              <textarea
+                                id="edit-lost-reason-notes"
+                                value={notesField.value ?? ""}
+                                onChange={(e) => notesField.onChange(e.target.value || null)}
+                                maxLength={500}
+                                rows={3}
+                                placeholder="Add context for your manager…"
+                                className={cn(
+                                  "w-full resize-none rounded-radius-md border border-border-default bg-surface-default px-3 py-2",
+                                  "text-body-md text-text-default placeholder:text-text-subtle",
+                                  "focus:border-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary focus:ring-offset-0",
+                                )}
+                              />
+                            )}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  />
+                )}
                 <FormField htmlFor="probability" label="Win probability" required error={errors.probability?.message}>
                   <Input id="probability" type="number" suffix="%" {...register("probability")} />
                 </FormField>

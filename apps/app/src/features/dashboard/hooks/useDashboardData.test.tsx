@@ -64,6 +64,8 @@ function deal(
     leadSource,
     updatedAt,
     owner_id: null,
+    lostReasonCategory: null,
+    lostReasonNotes: null,
   };
 }
 

@@ -14,6 +14,25 @@
 
 export type DealStage = "new" | "contacted" | "qualified" | "proposal" | "won" | "lost";
 
+export type LostReasonCategory =
+  | "price"
+  | "competitor"
+  | "timing"
+  | "no_decision"
+  | "incumbent"
+  | "unqualified"
+  | "other";
+
+export const LOST_REASON_LABEL: Record<LostReasonCategory, string> = {
+  price:       "Price / budget",
+  competitor:  "Chose a competitor",
+  timing:      "Bad timing",
+  no_decision: "No decision / stalled",
+  incumbent:   "Staying with current vendor",
+  unqualified: "Not a fit / unqualified",
+  other:       "Other",
+};
+
 export interface Deal {
   id: string;
   companyName: string;
@@ -48,6 +67,12 @@ export interface Deal {
    *  before owner tracking was added. Used by the admin portal's
    *  per-agent pipeline filter (?owner=<id>). */
   owner_id: string | null;
+  /** Structured reason category for why this deal was lost.
+   *  Null for non-lost deals and historical lost deals created before
+   *  this column was added. */
+  lostReasonCategory: LostReasonCategory | null;
+  /** Optional free-text notes supplementing the loss reason category. */
+  lostReasonNotes: string | null;
 }
 
 // Static "today" so subsequent renders don't shift cards' relative dates.
@@ -104,6 +129,8 @@ function deal(
     address: null,
     employeeCountRange: employees,
     owner_id: null,
+    lostReasonCategory: null,
+    lostReasonNotes: null,
   };
 }
 
