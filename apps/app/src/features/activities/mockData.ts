@@ -24,6 +24,8 @@ export interface Activity {
   occurredAt: string; // ISO
   /** Calculated follow-up date for the activity (null when terminal). */
   followUpDate: string | null;
+  /** UUID of the user who logged this activity. Present on org-wide queries. */
+  loggedBy?: string | null;
 }
 
 const TODAY = new Date("2026-04-30T12:00:00Z");
@@ -45,6 +47,7 @@ export const MOCK_ACTIVITIES: Activity[] = [
     outcomeNotes: "Spoke with Sarah. Walked her through the rate comparison. She wants a follow-up next week with a written proposal.",
     occurredAt: isoDaysAgo(2),
     followUpDate: isoDaysAgo(-3),
+    loggedBy: null,
   },
   {
     id: "a-002",
@@ -55,6 +58,7 @@ export const MOCK_ACTIVITIES: Activity[] = [
     outcomeNotes: "DM was in a meeting. Left voicemail.",
     occurredAt: isoDaysAgo(5),
     followUpDate: isoDaysAgo(-2),
+    loggedBy: null,
   },
   {
     id: "a-003",
@@ -65,6 +69,7 @@ export const MOCK_ACTIVITIES: Activity[] = [
     outcomeNotes: "Got the last 3 months of processing statements. Effective rate is 2.94%. Big opportunity — we can take that to 2.45%.",
     occurredAt: isoDaysAgo(1),
     followUpDate: isoDaysAgo(0),
+    loggedBy: null,
   },
 ];
 

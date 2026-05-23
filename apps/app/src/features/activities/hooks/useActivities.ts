@@ -22,6 +22,7 @@ interface ActivityRow {
   outcome_notes: string;
   occurred_at: string;
   follow_up_date: string | null;
+  logged_by?: string | null;
 }
 
 function toActivity(row: ActivityRow): Activity {
@@ -38,6 +39,7 @@ function toActivity(row: ActivityRow): Activity {
     followUpDate: row.follow_up_date
       ? new Date(row.follow_up_date + "T00:00:00Z").toISOString()
       : null,
+    loggedBy: row.logged_by ?? null,
   };
 }
 
@@ -84,7 +86,7 @@ export function useActivitiesForOrg() {
         .from("activities")
         .select(
           "id, deal_id, type, disposition, duration_minutes, " +
-            "outcome_notes, occurred_at, follow_up_date",
+            "outcome_notes, occurred_at, follow_up_date, logged_by",
         )
         .order("occurred_at", { ascending: false });
       if (error) throw error;
