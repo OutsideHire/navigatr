@@ -25,7 +25,7 @@ import {
   type DealStage,
 } from "../mockData";
 
-const STAGES: DealStage[] = ["new", "contacted", "qualified", "proposal", "won"];
+const STAGES: DealStage[] = ["new", "contacted", "qualified", "proposal", "won", "lost"];
 
 // Map the stage band's semantic color name to the tailwind class for the
 // 8px dot in the column header. Kept here (not in mockData) because the
@@ -36,6 +36,7 @@ const STAGE_DOT_CLASS: Record<DealStage, string> = {
   qualified:  "bg-accent-teal",
   proposal:   "bg-accent-violet",
   won:        "bg-status-success",
+  lost:       "bg-status-danger",
 };
 
 function KanbanCard({ deal }: { deal: Deal }) {
@@ -121,20 +122,21 @@ function Column({ stage, deals }: { stage: DealStage; deals: Deal[] }) {
 export function KanbanBoard({ deals }: { deals: Deal[] }) {
   // Bucket by stage. One pass.
   const byStage: Record<DealStage, Deal[]> = {
-    new: [], contacted: [], qualified: [], proposal: [], won: [],
+    new: [], contacted: [], qualified: [], proposal: [], won: [], lost: [],
   };
   for (const d of deals) byStage[d.stage].push(d);
 
   return (
     <div
       role="list"
-      className="grid grid-cols-5 gap-3"
-      // The five-column kanban is the canonical desktop layout. Below
-      // lg breakpoint the parent renders the list view instead, so we
-      // don't need a responsive column collapse here.
+      className="grid grid-cols-6 gap-3"
+      // Six-column kanban: new/contacted/qualified/proposal/won/lost.
+      // Below lg breakpoint the parent renders the list view instead.
     >
       {STAGES.map((s) => (
-        <Column key={s} stage={s} deals={byStage[s]} />
+        <div key={s} className={cn(s === "lost" && "opacity-75")}>
+          <Column stage={s} deals={byStage[s]} />
+        </div>
       ))}
     </div>
   );

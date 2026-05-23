@@ -193,6 +193,7 @@ export function useDashboardData(): DashboardData {
       qualified: { count: 0, valueCents: 0 },
       proposal: { count: 0, valueCents: 0 },
       won: { count: 0, valueCents: 0 },
+      lost: { count: 0, valueCents: 0 },
     };
     let totalCents = 0;
     for (const d of deals) {
@@ -331,6 +332,7 @@ export function useDashboardData(): DashboardData {
       qualified: new Set(),
       proposal: new Set(),
       won: new Set(),
+      lost: new Set(),
     };
     for (const row of stageHistory) {
       everIn[row.toStage].add(row.dealId);

@@ -14,6 +14,8 @@ export interface LeaderboardRow {
   pipeline_cents: number;
   won_deals_window: number;
   won_cents_window: number;
+  lost_deals_window: number;
+  lost_cents_window: number;
   activities_window: number;
   last_activity: string | null;
 }

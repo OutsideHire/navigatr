@@ -65,6 +65,16 @@ export function AgentListRow({
         {formatMoney(row.won_cents_window)}{" "}
         <span className="text-text-muted">({row.won_deals_window})</span>
       </td>
+      <td className="px-3 py-2 text-body-md tabular-nums">
+        {formatMoney(row.lost_cents_window)}{" "}
+        <span className="text-text-muted">({row.lost_deals_window})</span>
+      </td>
+      <td className="px-3 py-2 text-body-md tabular-nums">
+        {(() => {
+          const denom = row.won_deals_window + row.lost_deals_window;
+          return denom === 0 ? "—" : `${Math.round((row.won_deals_window / denom) * 100)}%`;
+        })()}
+      </td>
       <td className="px-3 py-2 text-body-md tabular-nums">{row.activities_window}</td>
       <td className="px-3 py-2 text-body-md text-text-muted">{lastActive}</td>
       <td className="px-3 py-2">

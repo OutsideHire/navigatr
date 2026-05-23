@@ -62,6 +62,7 @@ const STAGE_OPTIONS: SelectOption[] = [
   { value: "qualified", label: "Qualified" },
   { value: "proposal", label: "Proposal" },
   { value: "won", label: "Won" },
+  { value: "lost", label: "Lost" },
 ];
 
 const EMPLOYEE_COUNT_OPTIONS: SelectOption[] = [
@@ -92,7 +93,7 @@ const editSchema = z.object({
     emptyToUndefined,
     z.coerce.number().int().positive("Enter a deal value"),
   ),
-  stage: z.enum(["new", "contacted", "qualified", "proposal", "won"]),
+  stage: z.enum(["new", "contacted", "qualified", "proposal", "won", "lost"]),
   probability: z.preprocess(
     emptyToUndefined,
     z.coerce.number().int().min(0).max(100),
