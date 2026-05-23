@@ -101,7 +101,7 @@ export function AgentDetailPage() {
 
   if (!agent) {
     return (
-      <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <p className="text-body-md text-text-muted">Agent not found.</p>
         <Link to="/admin/agents" className="mt-2 inline-block text-body-md text-text-default underline">
           Back to team
@@ -113,7 +113,7 @@ export function AgentDetailPage() {
   const statusBadge = STATUS_BADGE[agent.status] ?? STATUS_BADGE.active;
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 lg:px-8 flex flex-col gap-6">
+    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 flex flex-col gap-6">
       {/* Back link */}
       <button
         type="button"
