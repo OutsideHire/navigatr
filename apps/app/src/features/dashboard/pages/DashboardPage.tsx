@@ -683,7 +683,7 @@ function PopulatedDashboard({ firstName: _firstName }: { firstName: string }) {
     // Mobile: vertical stack, gap 12 (matches Figma 234:541 gap 16 ≈ space-3/4).
     // Desktop: heading + hero + KPI row are full-width, sections 5-11 fall
     // into a 2-column grid with the Conversion Funnel spanning both cols.
-    <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+    <div className="mx-auto w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
       <PageHeading firstName={_firstName} />
 
       <div className="mt-6 flex flex-col gap-4 lg:gap-6">
