@@ -13,6 +13,7 @@ import { useRevokeMember } from "../hooks/useRevokeMember";
 import { AgentListRow } from "../components/AgentListRow";
 import { SeatUsageBadge } from "../components/SeatUsageBadge";
 import { InviteAgentModal } from "../components/InviteAgentModal";
+import { RevokeAgentDialog } from "../components/RevokeAgentDialog";
 
 type SortKey =
   | keyof Pick<
@@ -71,6 +72,7 @@ function sortRows(rows: LeaderboardRow[], key: SortKey, dir: SortDir): Leaderboa
 export function AgentsPage() {
   const navigate = useNavigate();
   const [inviteOpen, setInviteOpen] = React.useState(false);
+  const [revokeDialogAgent, setRevokeDialogAgent] = React.useState<LeaderboardRow | null>(null);
   const [windowDays, setWindowDays] = React.useState<number>(30);
   const [sortKey, setSortKey] = React.useState<SortKey>("pipeline_cents");
   const [sortDir, setSortDir] = React.useState<SortDir>("desc");
@@ -110,20 +112,19 @@ export function AgentsPage() {
   };
 
   const handleRevoke = async (row: LeaderboardRow) => {
-    const confirmed = window.confirm(
-      row.status === "invited"
-        ? `Revoke invite for ${row.email}?`
-        : `Deactivate ${row.full_name ?? row.email}? Their deals stay attached and visible to you.`,
-    );
-    if (!confirmed) return;
-    try {
-      await revoke.mutateAsync({
-        targetId: row.agent_id,
-        kind: row.status === "invited" ? "invite" : "profile",
-      });
-      toast.success("Done.");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not revoke");
+    if (row.status === "invited") {
+      // Invites have no deals to reassign — keep as plain confirm.
+      const confirmed = window.confirm(`Revoke invite for ${row.email}?`);
+      if (!confirmed) return;
+      try {
+        await revoke.mutateAsync({ targetId: row.agent_id, kind: "invite" });
+        toast.success("Done.");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Could not revoke");
+      }
+    } else {
+      // Active profile — open the dialog so deals can be reassigned first.
+      setRevokeDialogAgent(row);
     }
   };
 
@@ -227,6 +228,15 @@ export function AgentsPage() {
       )}
 
       <InviteAgentModal open={inviteOpen} onOpenChange={setInviteOpen} />
+
+      {revokeDialogAgent && (
+        <RevokeAgentDialog
+          open={revokeDialogAgent !== null}
+          onOpenChange={(o) => { if (!o) setRevokeDialogAgent(null); }}
+          agent={revokeDialogAgent}
+          activeAgents={rows.filter((r) => r.status === "active")}
+        />
+      )}
     </div>
   );
 }

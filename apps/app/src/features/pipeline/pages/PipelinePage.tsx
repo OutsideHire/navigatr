@@ -333,13 +333,88 @@ function PageHeader({
   );
 }
 
-function KpiStrip() {
+interface KpiStripProps {
+  deals: Deal[] | undefined;
+  /** When true, KPIs are filtered to an agent subset. */
+  filtered: boolean;
+}
+
+function KpiStrip({ deals, filtered }: KpiStripProps) {
+  const kpi = React.useMemo(() => {
+    if (!deals || deals.length === 0) {
+      return { totalPipeline: 0, weighted: 0, activeDeals: 0, wonThisMonth: 0, wonDealsThisMonth: 0 };
+    }
+
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    let totalPipeline = 0;
+    let weighted = 0;
+    let activeDeals = 0;
+    let wonThisMonth = 0;
+    let wonDealsThisMonth = 0;
+
+    for (const d of deals) {
+      if (d.stage === "won" || d.stage === "lost") {
+        // Count won deals closed this calendar month
+        if (d.stage === "won") {
+          const updatedAt = new Date(d.updatedAt);
+          if (updatedAt >= monthStart) {
+            wonThisMonth += d.valueCents;
+            wonDealsThisMonth += 1;
+          }
+        }
+      } else {
+        totalPipeline += d.valueCents;
+        weighted += Math.round(d.valueCents * (d.probability / 100));
+        activeDeals += 1;
+      }
+    }
+
+    return { totalPipeline, weighted, activeDeals, wonThisMonth, wonDealsThisMonth };
+  }, [deals]);
+
+  function fmt(cents: number): string {
+    const dollars = cents / 100;
+    if (dollars >= 1_000_000) return `$${(dollars / 1_000_000).toFixed(1)}M`;
+    if (dollars >= 1_000) return `$${Math.round(dollars / 1_000)}K`;
+    return `$${Math.round(dollars)}`;
+  }
+
+  const wonSubtitle = kpi.wonDealsThisMonth === 0
+    ? "this month"
+    : `${kpi.wonDealsThisMonth} ${kpi.wonDealsThisMonth === 1 ? "deal" : "deals"}`;
+
   return (
     <div className="hidden gap-4 md:grid md:grid-cols-4">
-      <KpiCard eyebrow="TOTAL PIPELINE"  value="$163K" subtitle="annualized"   accent="teal"   size="standard" />
-      <KpiCard eyebrow="WEIGHTED"        value="$98K"  subtitle="probability·value" accent="violet" size="standard" />
-      <KpiCard eyebrow="ACTIVE DEALS"    value="47"    subtitle="across stages" accent="blue"   size="standard" />
-      <KpiCard eyebrow="WON THIS MONTH"  value="$10K"  subtitle="3 deals"       accent="orange" size="standard" />
+      <KpiCard
+        eyebrow={filtered ? "PIPELINE (FILTERED)" : "TOTAL PIPELINE"}
+        value={fmt(kpi.totalPipeline)}
+        subtitle="open stages"
+        accent="teal"
+        size="standard"
+      />
+      <KpiCard
+        eyebrow="WEIGHTED"
+        value={fmt(kpi.weighted)}
+        subtitle="probability·value"
+        accent="violet"
+        size="standard"
+      />
+      <KpiCard
+        eyebrow="ACTIVE DEALS"
+        value={String(kpi.activeDeals)}
+        subtitle="across stages"
+        accent="blue"
+        size="standard"
+      />
+      <KpiCard
+        eyebrow="WON THIS MONTH"
+        value={fmt(kpi.wonThisMonth)}
+        subtitle={wonSubtitle}
+        accent="orange"
+        size="standard"
+      />
     </div>
   );
 }
@@ -491,7 +566,7 @@ export function PipelinePage() {
           onViewModeChange={setViewMode}
         />
 
-        <KpiStrip />
+        <KpiStrip deals={ownerFilter ? filtered : deals} filtered={Boolean(ownerFilter)} />
 
         {/* Stage chips: when kanban is the active view AND we're at lg+,
             the columns ARE the stages, so the chip filter is redundant.
