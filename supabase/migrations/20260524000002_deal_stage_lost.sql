@@ -36,6 +36,11 @@ alter type deal_stage add value if not exists 'lost';
 --   lost_deals_window / lost_cents_window — deals marked lost inside the window
 --   activities_window                   — activities logged inside the window
 --   last_activity                       — max(occurred_at) over all time; null if none
+--
+-- DROP first: adding columns to RETURNS TABLE counts as a return-type
+-- change, which CREATE OR REPLACE FUNCTION refuses (SQLSTATE 42P13).
+drop function if exists team_leaderboard(int);
+
 create or replace function team_leaderboard(p_window_days int default 30)
 returns table (
   agent_id            uuid,
