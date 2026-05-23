@@ -27,6 +27,8 @@ function deal(id: string, stage: Deal["stage"], valueCents: number, company = `C
     leadSource: "",
     updatedAt: "2026-05-18T12:00:00Z",
     owner_id: null,
+    lostReasonCategory: null,
+    lostReasonNotes: null,
   };
 }
 

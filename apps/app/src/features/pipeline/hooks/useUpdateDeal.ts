@@ -20,7 +20,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
 import { DEALS_QUERY_KEY } from "./useDeals";
 import { STAGE_HISTORY_QUERY_KEY } from "./useStageHistory";
-import type { DealStage } from "../mockData";
+import type { DealStage, LostReasonCategory } from "../mockData";
 
 export interface UpdateDealInput {
   id: string;
@@ -40,6 +40,8 @@ export interface UpdateDealInput {
     leadSource?: string;
     notes?: string;
     nextFollowupAt?: string | null;
+    lostReasonCategory?: LostReasonCategory | null;
+    lostReasonNotes?: string | null;
   };
 }
 
@@ -62,6 +64,9 @@ function toSnakeCase(patch: UpdateDealInput["patch"]): Record<string, unknown> {
   if (patch.leadSource !== undefined)         out.lead_source = patch.leadSource;
   if (patch.notes !== undefined)              out.notes = patch.notes;
   if (patch.nextFollowupAt !== undefined)     out.next_followup_at = patch.nextFollowupAt;
+  // Send even when value is null so we can clear the columns.
+  if ("lostReasonCategory" in patch)          out.lost_reason_category = patch.lostReasonCategory;
+  if ("lostReasonNotes" in patch)             out.lost_reason_notes = patch.lostReasonNotes;
   return out;
 }
 

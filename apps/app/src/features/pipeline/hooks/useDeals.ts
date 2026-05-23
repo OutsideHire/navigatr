@@ -17,7 +17,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
-import type { Deal, DealStage } from "../mockData";
+import type { Deal, DealStage, LostReasonCategory } from "../mockData";
 
 /** Shape Supabase returns. Snake_case + nullable timestamps. */
 interface DealRow {
@@ -36,6 +36,8 @@ interface DealRow {
   lead_source: string | null;
   updated_at: string;
   owner_id: string | null;
+  lost_reason_category: LostReasonCategory | null;
+  lost_reason_notes: string | null;
 }
 
 /**
@@ -66,6 +68,8 @@ function toDeal(row: DealRow): Deal {
     leadSource: row.lead_source ?? "",
     updatedAt: row.updated_at,
     owner_id: row.owner_id,
+    lostReasonCategory: row.lost_reason_category,
+    lostReasonNotes: row.lost_reason_notes,
   };
 }
 
@@ -84,7 +88,7 @@ export function useDeals() {
           "id, company_name, contact_name, contact_phone, contact_email, " +
             "value_cents, stage, probability, last_activity_at, " +
             "next_followup_at, address, employee_count_range, lead_source, " +
-            "updated_at, owner_id",
+            "updated_at, owner_id, lost_reason_category, lost_reason_notes",
         )
         .order("updated_at", { ascending: false });
       if (error) throw error;

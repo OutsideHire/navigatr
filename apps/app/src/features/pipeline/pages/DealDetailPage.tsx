@@ -54,12 +54,15 @@ import {
   formatMoney,
   formatRelative,
   formatShortDate,
+  LOST_REASON_LABEL,
   STAGE_BADGE_KIND,
   STAGE_BAND_COLOR,
   STAGE_LABEL,
   type Deal,
   type DealStage,
+  type LostReasonCategory,
 } from "../mockData";
+import { LostReasonModal } from "../components/LostReasonModal";
 import { useDeal } from "../hooks/useDeal";
 import { useUpdateDeal } from "../hooks/useUpdateDeal";
 import { useActivities } from "@/features/activities/hooks/useActivities";
@@ -125,10 +128,17 @@ const STAGE_OPTIONS: SelectOption[] = [
 function StagePicker({ deal }: { deal: Deal }) {
   const update = useUpdateDeal();
   const [editing, setEditing] = React.useState(false);
+  const [lostModalOpen, setLostModalOpen] = React.useState(false);
 
   const handleChange = async (next: string) => {
     if (next === deal.stage) {
       setEditing(false);
+      return;
+    }
+    // Intercept "lost" transition — open modal to capture reason before persisting.
+    if (next === "lost" && deal.stage !== "lost") {
+      setEditing(false);
+      setLostModalOpen(true);
       return;
     }
     try {
@@ -143,35 +153,64 @@ function StagePicker({ deal }: { deal: Deal }) {
     }
   };
 
+  const handleLostSubmit = async (
+    category: LostReasonCategory,
+    notes: string | null,
+  ) => {
+    await update.mutateAsync({
+      id: deal.id,
+      patch: {
+        stage: "lost",
+        lostReasonCategory: category,
+        lostReasonNotes: notes,
+      },
+    });
+    toast.success("Moved to Lost");
+  };
+
   if (!editing) {
     return (
-      <button
-        type="button"
-        onClick={() => setEditing(true)}
-        aria-label={`Stage: ${STAGE_LABEL[deal.stage]}. Click to change.`}
-        className={cn(
-          "rounded-radius-full transition-opacity",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas",
-          update.isPending && "opacity-60",
-        )}
-        disabled={update.isPending}
-      >
-        <Badge kind={STAGE_BADGE_KIND[deal.stage]}>
-          {STAGE_LABEL[deal.stage]}
-        </Badge>
-      </button>
+      <>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          aria-label={`Stage: ${STAGE_LABEL[deal.stage]}. Click to change.`}
+          className={cn(
+            "rounded-radius-full transition-opacity",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas",
+            update.isPending && "opacity-60",
+          )}
+          disabled={update.isPending}
+        >
+          <Badge kind={STAGE_BADGE_KIND[deal.stage]}>
+            {STAGE_LABEL[deal.stage]}
+          </Badge>
+        </button>
+        <LostReasonModal
+          open={lostModalOpen}
+          onOpenChange={setLostModalOpen}
+          onSubmit={handleLostSubmit}
+        />
+      </>
     );
   }
 
   return (
-    <div className="w-48">
-      <Select
-        id={`stage-${deal.id}`}
-        value={deal.stage}
-        onValueChange={handleChange}
-        options={STAGE_OPTIONS}
+    <>
+      <div className="w-48">
+        <Select
+          id={`stage-${deal.id}`}
+          value={deal.stage}
+          onValueChange={handleChange}
+          options={STAGE_OPTIONS}
+        />
+      </div>
+      <LostReasonModal
+        open={lostModalOpen}
+        onOpenChange={setLostModalOpen}
+        onSubmit={handleLostSubmit}
       />
-    </div>
+    </>
   );
 }
 
@@ -322,6 +361,7 @@ function SourceCard({ deal }: { deal: Deal }) {
     { eyebrow: "CREATED",         value: "Apr 12, 2026" },
     { eyebrow: "LAST ACTIVITY",   value: formatRelative(deal.lastActivity) },
   ];
+  const showLostReason = deal.stage === "lost" && deal.lostReasonCategory !== null;
   return (
     <Card padding="md">
       <h3 className="mb-3 text-body-strong text-text-default">Source</h3>
@@ -333,6 +373,21 @@ function SourceCard({ deal }: { deal: Deal }) {
           </div>
         ))}
       </div>
+      {showLostReason && (
+        <div className="mt-4 border-t border-border-subtle pt-4">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-eyebrow text-text-subtle">LOST REASON</span>
+            <span className="text-body-md text-text-default">
+              {LOST_REASON_LABEL[deal.lostReasonCategory!]}
+            </span>
+            {deal.lostReasonNotes && (
+              <p className="mt-1 max-w-prose text-body-md text-text-muted">
+                {deal.lostReasonNotes}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </Card>
   );
 }
