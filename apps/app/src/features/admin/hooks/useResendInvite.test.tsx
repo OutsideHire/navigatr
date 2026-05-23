@@ -48,7 +48,7 @@ describe("useResendInvite", () => {
     expect(res).toEqual({ id: "inv-1", email: "a@x.com", token: "tok123" });
   });
 
-  it("invalidates the org-agents cache on success", async () => {
+  it("invalidates the leaderboard cache prefix on success", async () => {
     rpcMock.mockResolvedValueOnce({
       data: { id: "inv-1", email: "a@x.com", token: "tok123" },
       error: null,
@@ -63,7 +63,7 @@ describe("useResendInvite", () => {
     await result.current.mutateAsync("inv-1");
     await waitFor(() => expect(spy).toHaveBeenCalled());
     expect(spy.mock.calls.map((c) => c[0]?.queryKey)).toContainEqual([
-      "admin", "agents", "user-1",
+      "admin", "leaderboard", "user-1",
     ]);
   });
 

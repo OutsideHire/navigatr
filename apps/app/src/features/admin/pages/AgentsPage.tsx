@@ -1,47 +1,113 @@
 /**
- * AgentsPage — the admin's primary work surface. Lists every member of
- * the org (active + invited + revoked) with a row menu for each.
+ * AgentsPage — the admin's primary work surface. Shows every team member
+ * with sortable leaderboard columns and a window selector (7 / 30 / 90 days).
  */
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Plus, Upload } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronsUpDown, Plus, Upload } from "lucide-react";
 import { Button } from "@/components/navigatr";
-import { useOrgAgents, type AgentRow } from "../hooks/useOrgAgents";
+import { useTeamLeaderboard, type LeaderboardRow } from "../hooks/useTeamLeaderboard";
 import { useResendInvite } from "../hooks/useResendInvite";
 import { useRevokeMember } from "../hooks/useRevokeMember";
 import { AgentListRow } from "../components/AgentListRow";
 import { SeatUsageBadge } from "../components/SeatUsageBadge";
 import { InviteAgentModal } from "../components/InviteAgentModal";
 
+type SortKey = keyof Pick<
+  LeaderboardRow,
+  | "full_name"
+  | "email"
+  | "status"
+  | "role"
+  | "open_deals"
+  | "pipeline_cents"
+  | "won_cents_window"
+  | "activities_window"
+  | "last_activity"
+>;
+
+type SortDir = "asc" | "desc";
+
+const WINDOW_OPTIONS: { label: string; value: number }[] = [
+  { label: "7 days", value: 7 },
+  { label: "30 days", value: 30 },
+  { label: "90 days", value: 90 },
+];
+
+function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) {
+  if (col !== sortKey) return <ChevronsUpDown className="ml-1 inline h-3 w-3 opacity-40" />;
+  return sortDir === "asc"
+    ? <ChevronUp className="ml-1 inline h-3 w-3" />
+    : <ChevronDown className="ml-1 inline h-3 w-3" />;
+}
+
+function sortRows(rows: LeaderboardRow[], key: SortKey, dir: SortDir): LeaderboardRow[] {
+  return [...rows].sort((a, b) => {
+    const av = a[key] ?? "";
+    const bv = b[key] ?? "";
+    let cmp: number;
+    if (typeof av === "number" && typeof bv === "number") {
+      cmp = av - bv;
+    } else {
+      cmp = String(av).localeCompare(String(bv));
+    }
+    return dir === "asc" ? cmp : -cmp;
+  });
+}
+
 export function AgentsPage() {
   const navigate = useNavigate();
-  const [page, setPage] = React.useState(0);
   const [inviteOpen, setInviteOpen] = React.useState(false);
-  const { data, isLoading } = useOrgAgents({ page });
+  const [windowDays, setWindowDays] = React.useState<number>(30);
+  const [sortKey, setSortKey] = React.useState<SortKey>("pipeline_cents");
+  const [sortDir, setSortDir] = React.useState<SortDir>("desc");
+
+  const { data: rows = [], isLoading } = useTeamLeaderboard(windowDays);
   const resend = useResendInvite();
   const revoke = useRevokeMember();
 
-  const handleResend = async (row: AgentRow) => {
+  const sorted = React.useMemo(
+    () => sortRows(rows, sortKey, sortDir),
+    [rows, sortKey, sortDir],
+  );
+
+  function handleSortClick(col: SortKey) {
+    if (col === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(col);
+      setSortDir("desc");
+    }
+  }
+
+  function thProps(col: SortKey) {
+    return {
+      className: "px-3 py-2 font-medium cursor-pointer select-none whitespace-nowrap",
+      onClick: () => handleSortClick(col),
+    };
+  }
+
+  const handleResend = async (row: LeaderboardRow) => {
     try {
-      await resend.mutateAsync(row.id);
+      await resend.mutateAsync(row.agent_id);
       toast.success(`Invite resent to ${row.email}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not resend invite");
     }
   };
 
-  const handleRevoke = async (row: AgentRow) => {
+  const handleRevoke = async (row: LeaderboardRow) => {
     const confirmed = window.confirm(
       row.status === "invited"
         ? `Revoke invite for ${row.email}?`
-        : `Deactivate ${row.fullName ?? row.email}? Their deals stay attached and visible to you.`,
+        : `Deactivate ${row.full_name ?? row.email}? Their deals stay attached and visible to you.`,
     );
     if (!confirmed) return;
     try {
       await revoke.mutateAsync({
-        targetId: row.id,
-        kind: row.kind === "invite" ? "invite" : "profile",
+        targetId: row.agent_id,
+        kind: row.status === "invited" ? "invite" : "profile",
       });
       toast.success("Done.");
     } catch (err) {
@@ -56,7 +122,7 @@ export function AgentsPage() {
         <SeatUsageBadge />
       </header>
 
-      <div className="mb-4 flex gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <Button
           variant="primary"
           size="md"
@@ -73,52 +139,72 @@ export function AgentsPage() {
         >
           Import CSV
         </Button>
+
+        <div className="ml-auto flex items-center gap-1">
+          {WINDOW_OPTIONS.map((opt) => (
+            <Button
+              key={opt.value}
+              variant={windowDays === opt.value ? "secondary" : "tertiary"}
+              size="sm"
+              onClick={() => setWindowDays(opt.value)}
+            >
+              {opt.label}
+            </Button>
+          ))}
+        </div>
       </div>
 
       {isLoading ? (
         <p className="text-body-md text-text-muted">Loading…</p>
       ) : (
-        <table className="w-full text-left">
-          <thead className="border-b border-border-default text-eyebrow text-text-subtle">
-            <tr>
-              <th className="px-3 py-2 font-medium">Name</th>
-              <th className="px-3 py-2 font-medium">Email</th>
-              <th className="px-3 py-2 font-medium">Status</th>
-              <th className="px-3 py-2 font-medium">Role</th>
-              <th className="px-3 py-2 font-medium">Open deals</th>
-              <th className="px-3 py-2 font-medium">Pipeline</th>
-              <th className="px-3 py-2 font-medium" aria-label="actions" />
-            </tr>
-          </thead>
-          <tbody>
-            {data?.rows.map((row) => (
-              <AgentListRow
-                key={`${row.kind}:${row.id}`}
-                row={row}
-                onViewPipeline={() => navigate(`/pipeline?owner=${row.id}`)}
-                onResend={handleResend}
-                onRevoke={handleRevoke}
-                onPromote={() => toast("Promote — coming in v1.1")}
-              />
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {/* Pager — only renders when there are more pages */}
-      {(data?.totalCount ?? 0) > 50 && (
-        <div className="mt-4 flex items-center justify-between">
-          <span className="text-caption text-text-muted">
-            Page {page + 1}
-          </span>
-          <div className="flex gap-2">
-            <Button variant="tertiary" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-              Previous
-            </Button>
-            <Button variant="tertiary" size="sm" onClick={() => setPage((p) => p + 1)}>
-              Next
-            </Button>
-          </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="border-b border-border-default text-eyebrow text-text-subtle">
+              <tr>
+                <th {...thProps("full_name")}>
+                  Name <SortIcon col="full_name" sortKey={sortKey} sortDir={sortDir} />
+                </th>
+                <th {...thProps("email")}>
+                  Email <SortIcon col="email" sortKey={sortKey} sortDir={sortDir} />
+                </th>
+                <th {...thProps("status")}>
+                  Status <SortIcon col="status" sortKey={sortKey} sortDir={sortDir} />
+                </th>
+                <th {...thProps("role")}>
+                  Role <SortIcon col="role" sortKey={sortKey} sortDir={sortDir} />
+                </th>
+                <th {...thProps("open_deals")}>
+                  Open deals <SortIcon col="open_deals" sortKey={sortKey} sortDir={sortDir} />
+                </th>
+                <th {...thProps("pipeline_cents")}>
+                  Pipeline <SortIcon col="pipeline_cents" sortKey={sortKey} sortDir={sortDir} />
+                </th>
+                <th {...thProps("won_cents_window")}>
+                  Won <SortIcon col="won_cents_window" sortKey={sortKey} sortDir={sortDir} />
+                </th>
+                <th {...thProps("activities_window")}>
+                  Activities <SortIcon col="activities_window" sortKey={sortKey} sortDir={sortDir} />
+                </th>
+                <th {...thProps("last_activity")}>
+                  Last active <SortIcon col="last_activity" sortKey={sortKey} sortDir={sortDir} />
+                </th>
+                <th className="px-3 py-2 font-medium" aria-label="actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((row) => (
+                <AgentListRow
+                  key={row.agent_id}
+                  row={row}
+                  onNameClick={(r) => navigate(`/admin/agents/${r.agent_id}`)}
+                  onViewPipeline={(r) => navigate(`/pipeline?owner=${r.agent_id}`)}
+                  onResend={handleResend}
+                  onRevoke={handleRevoke}
+                  onPromote={() => toast("Promote — coming in v1.1")}
+                />
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
