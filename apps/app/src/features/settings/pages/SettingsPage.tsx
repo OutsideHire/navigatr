@@ -466,11 +466,12 @@ export function SettingsPage() {
   const showTeamSection = canInviteTeam(user);
 
   return (
-    <div className="mx-auto w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
-      <header className="mb-6 flex flex-col gap-1">
-        <h1 className="text-heading-lg text-text-default">Settings</h1>
-        <p className="text-body-md text-text-muted">Profile, industry, appearance, and account.</p>
-      </header>
+    <div className="w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+      <div className="mx-auto w-full max-w-3xl">
+        <header className="mb-6 flex flex-col gap-1">
+          <h1 className="text-heading-lg text-text-default">Settings</h1>
+          <p className="text-body-md text-text-muted">Profile, industry, appearance, and account.</p>
+        </header>
 
       <div className="flex flex-col gap-4 lg:gap-6">
         <ProfileSection />
@@ -479,6 +480,7 @@ export function SettingsPage() {
         <NotificationsSection />
         {showTeamSection && <TeamSection />}
         <AccountSection />
+      </div>
       </div>
     </div>
   );
