@@ -18,10 +18,11 @@ export function AdminSettingsPage() {
 
   return (
     <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
-      {/* Inner container constrains form/settings content to a readable width
-          while the outer wrapper keeps page chrome full-bleed (matches the
-          Sidebar's edge-to-edge feel). */}
-      <div className="mx-auto w-full max-w-3xl flex flex-col gap-4">
+      {/* Inner container constrains form/settings content to a readable width.
+          Left-aligned (not mx-auto) so the title + cards start at the same
+          x-position as every other page's header — centering created a
+          huge left margin that looked like a layout bug. */}
+      <div className="w-full max-w-3xl flex flex-col gap-4">
         <h1 className="text-heading-lg">Settings</h1>
 
         <Card padding="md">
