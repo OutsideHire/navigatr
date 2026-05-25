@@ -130,42 +130,46 @@ export function AgentsPage() {
 
   return (
     <div className="mx-auto w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
-      <header className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      {/* Single-row header: title (left) + actions + window selector + seat usage (right).
+          Wraps on narrow viewports. Previously this was two rows with
+          inconsistent left/right groupings (title↔seats, then buttons↔window tabs)
+          which created a disjointed feel at desktop width. */}
+      <header className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-heading-lg text-text-default">Team</h1>
-        <SeatUsageBadge />
-      </header>
-
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Button
-          variant="primary"
-          size="md"
-          leadingIcon={Plus}
-          onClick={() => setInviteOpen(true)}
-        >
-          Invite agent
-        </Button>
-        <Button
-          variant="secondary"
-          size="md"
-          leadingIcon={Upload}
-          onClick={() => navigate("/admin/agents/import")}
-        >
-          Import CSV
-        </Button>
-
-        <div className="ml-auto flex items-center gap-1">
-          {WINDOW_OPTIONS.map((opt) => (
-            <Button
-              key={opt.value}
-              variant={windowDays === opt.value ? "secondary" : "tertiary"}
-              size="sm"
-              onClick={() => setWindowDays(opt.value)}
-            >
-              {opt.label}
-            </Button>
-          ))}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Button
+            variant="primary"
+            size="md"
+            leadingIcon={Plus}
+            onClick={() => setInviteOpen(true)}
+          >
+            Invite agent
+          </Button>
+          <Button
+            variant="secondary"
+            size="md"
+            leadingIcon={Upload}
+            onClick={() => navigate("/admin/agents/import")}
+          >
+            Import CSV
+          </Button>
+          <div className="ml-2 flex items-center gap-1 border-l border-border-subtle pl-2">
+            {WINDOW_OPTIONS.map((opt) => (
+              <Button
+                key={opt.value}
+                variant={windowDays === opt.value ? "secondary" : "tertiary"}
+                size="sm"
+                onClick={() => setWindowDays(opt.value)}
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
+          <div className="ml-2 border-l border-border-subtle pl-3">
+            <SeatUsageBadge />
+          </div>
         </div>
-      </div>
+      </header>
 
       {isLoading ? (
         <p className="text-body-md text-text-muted">Loading…</p>

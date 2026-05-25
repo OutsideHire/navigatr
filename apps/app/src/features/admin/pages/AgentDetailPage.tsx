@@ -113,53 +113,49 @@ export function AgentDetailPage() {
   const statusBadge = STATUS_BADGE[agent.status] ?? STATUS_BADGE.active;
 
   return (
-    <div className="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8 flex flex-col gap-6">
-      {/* Back link */}
+    <div className="mx-auto w-full px-4 py-6 sm:px-6 lg:px-8 flex flex-col gap-4">
+      {/* Back link — small, inline above the header */}
       <button
         type="button"
-        className="inline-flex items-center gap-1 text-body-md text-text-muted hover:text-text-default"
+        className="inline-flex w-fit items-center gap-1 text-caption text-text-muted hover:text-text-default"
         onClick={() => navigate("/admin/agents")}
       >
-        <ArrowLeft className="h-4 w-4" />
+        <ArrowLeft className="h-3.5 w-3.5" />
         Back to team
       </button>
 
-      {/* Header */}
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-heading-lg text-text-default">
-            {agent.full_name ?? agent.email}
-          </h1>
+      {/* Header row — name + status on left, View pipeline CTA on right */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-heading-lg text-text-default">
+              {agent.full_name ?? agent.email}
+            </h1>
+            <Badge kind={statusBadge.kind}>{statusBadge.label}</Badge>
+          </div>
           <p className="text-body-md text-text-muted">
             {agent.email} · {agent.role}
           </p>
         </div>
-        <Badge kind={statusBadge.kind}>{statusBadge.label}</Badge>
-      </div>
-
-      {/* Pipeline deep-link */}
-      <div>
-        <Button
-          variant="secondary"
-          size="md"
-          onClick={() => navigate(`/pipeline?owner=${agentId}`)}
-        >
-          View their pipeline →
-        </Button>
-      </div>
-
-      {/* Window selector */}
-      <div className="flex items-center gap-1">
-        {WINDOW_OPTIONS.map((opt) => (
+        <div className="flex flex-wrap items-center gap-2">
+          {WINDOW_OPTIONS.map((opt) => (
+            <Button
+              key={opt.value}
+              variant={windowDays === opt.value ? "secondary" : "tertiary"}
+              size="sm"
+              onClick={() => setWindowDays(opt.value)}
+            >
+              {opt.label}
+            </Button>
+          ))}
           <Button
-            key={opt.value}
-            variant={windowDays === opt.value ? "secondary" : "tertiary"}
-            size="sm"
-            onClick={() => setWindowDays(opt.value)}
+            variant="primary"
+            size="md"
+            onClick={() => navigate(`/pipeline?owner=${agentId}`)}
           >
-            {opt.label}
+            View their pipeline →
           </Button>
-        ))}
+        </div>
       </div>
 
       {/* KPI row — 6 cards: Open Deals / Pipeline / Won / Lost / Win rate / Activities */}
@@ -201,53 +197,57 @@ export function AgentDetailPage() {
         </Card>
       </div>
 
-      {/* Activity breakdown */}
-      <Card padding="md">
-        <h2 className="text-body-strong">Activity breakdown ({windowDays} days)</h2>
-        <ul className="mt-3 flex flex-col gap-2">
-          {(["call", "email", "drop_in", "appointment"] as ActivityType[]).map((type) => {
-            const { label, Icon } = ACTIVITY_TYPE_CONFIG[type];
-            return (
-              <li key={type} className="flex items-center gap-2 text-body-md">
-                <Icon className="h-4 w-4 text-text-subtle" />
-                <span className="flex-1 text-text-default">{label}</span>
-                <span className="tabular-nums text-text-default">{breakdown[type]}</span>
-              </li>
-            );
-          })}
-        </ul>
-      </Card>
-
-      {/* Recent activity */}
-      <Card padding="md">
-        <h2 className="text-body-strong">Recent activity</h2>
-        {recentActivities.length === 0 ? (
-          <p className="mt-2 text-body-md text-text-muted">No activities in this window.</p>
-        ) : (
+      {/* Activity breakdown + Recent activity — side-by-side on lg+, stacked below.
+          Breakdown is short (4 fixed rows); Recent is the longer list. lg:grid-cols-3
+          gives the wider Recent column 2/3 of the row — matches the relative
+          content density. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card padding="md" className="lg:col-span-1">
+          <h2 className="text-body-strong">Activity breakdown ({windowDays} days)</h2>
           <ul className="mt-3 flex flex-col gap-2">
-            {recentActivities.map((a) => {
-              const { label, Icon } = ACTIVITY_TYPE_CONFIG[a.type];
+            {(["call", "email", "drop_in", "appointment"] as ActivityType[]).map((type) => {
+              const { label, Icon } = ACTIVITY_TYPE_CONFIG[type];
               return (
-                <li key={a.id} className="flex items-start gap-2 text-body-md">
-                  <Icon className="mt-0.5 h-4 w-4 shrink-0 text-text-subtle" />
-                  <div className="flex-1 min-w-0">
-                    <span className="text-text-default">{label}</span>
-                    {" · "}
-                    <span className="text-text-muted capitalize">
-                      {a.disposition.replace(/_/g, " ")}
-                    </span>
-                    {" · "}
-                    <span className="text-text-muted">{formatRelative(a.occurredAt)}</span>
-                    {a.outcomeNotes && (
-                      <p className="mt-0.5 truncate text-text-subtle">{a.outcomeNotes}</p>
-                    )}
-                  </div>
+                <li key={type} className="flex items-center gap-2 text-body-md">
+                  <Icon className="h-4 w-4 text-text-subtle" />
+                  <span className="flex-1 text-text-default">{label}</span>
+                  <span className="tabular-nums text-text-default">{breakdown[type]}</span>
                 </li>
               );
             })}
           </ul>
-        )}
-      </Card>
+        </Card>
+
+        <Card padding="md" className="lg:col-span-2">
+          <h2 className="text-body-strong">Recent activity</h2>
+          {recentActivities.length === 0 ? (
+            <p className="mt-2 text-body-md text-text-muted">No activities in this window.</p>
+          ) : (
+            <ul className="mt-3 flex flex-col gap-2">
+              {recentActivities.map((a) => {
+                const { label, Icon } = ACTIVITY_TYPE_CONFIG[a.type];
+                return (
+                  <li key={a.id} className="flex items-start gap-2 text-body-md">
+                    <Icon className="mt-0.5 h-4 w-4 shrink-0 text-text-subtle" />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-text-default">{label}</span>
+                      {" · "}
+                      <span className="text-text-muted capitalize">
+                        {a.disposition.replace(/_/g, " ")}
+                      </span>
+                      {" · "}
+                      <span className="text-text-muted">{formatRelative(a.occurredAt)}</span>
+                      {a.outcomeNotes && (
+                        <p className="mt-0.5 truncate text-text-subtle">{a.outcomeNotes}</p>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
