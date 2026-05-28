@@ -1,0 +1,79 @@
+/**
+ * tabs.ts — single source of truth for Settings hub tab definitions.
+ *
+ * Each tab carries:
+ *   id        : URL slug (`?tab=<id>` on desktop, `/settings/<id>` on mobile)
+ *   label     : display name in the left rail
+ *   roles     : which user_role values may see + access this tab
+ *   adminSection : whether this tab sits under the "ADMIN" divider
+ *
+ * The role array uses the same enum as the rest of the app (`user_role`
+ * from auth.ts: 'rep' | 'manager' | 'admin'). When the 7-role hierarchy
+ * RLS work lands later, this list extends without changing the gating
+ * mechanism.
+ *
+ * Adding a future tab (Members, Billing, Audit log): append an entry
+ * here + a content component. No other coordination needed.
+ */
+// Mirrors the inline role union used by useProfile + RequireRole.
+// Defined here (not imported) because the rest of the app uses inline
+// literals rather than a shared type alias. When that's consolidated
+// later, swap this for the canonical import.
+export type UserRole = "rep" | "manager" | "admin";
+
+export type SettingsTabId =
+  | "personal"
+  | "organization"
+  | "branding"
+  | "profession"
+  | "danger";
+
+export interface SettingsTabDef {
+  id: SettingsTabId;
+  label: string;
+  /** Which roles can see + access this tab. */
+  roles: UserRole[];
+  /** True = under the visual ADMIN divider; False = above it. */
+  adminSection: boolean;
+}
+
+/** Order matters — this is the order tabs render in the left rail. */
+export const SETTINGS_TABS: SettingsTabDef[] = [
+  { id: "personal",     label: "Personal",     roles: ["rep", "manager", "admin"], adminSection: false },
+  { id: "organization", label: "Organization", roles: ["rep", "manager", "admin"], adminSection: false },
+  { id: "branding",     label: "Branding",     roles: ["manager", "admin"],        adminSection: true  },
+  { id: "profession",   label: "Profession",   roles: ["manager", "admin"],        adminSection: true  },
+  { id: "danger",       label: "Danger zone",  roles: ["admin"],                   adminSection: true  },
+];
+
+/**
+ * Filter the tab list to those visible to the given role. Pure function,
+ * easy to unit-test.
+ */
+export function visibleTabs(role: UserRole | undefined): SettingsTabDef[] {
+  if (!role) return SETTINGS_TABS.filter((t) => t.roles.includes("rep"));
+  return SETTINGS_TABS.filter((t) => t.roles.includes(role));
+}
+
+/**
+ * Resolve a raw URL tab parameter to a valid tab for this user.
+ * - Unknown id → 'personal' (always valid)
+ * - Known but role-forbidden id → 'personal'
+ * - Known + role-allowed → the requested id
+ *
+ * Returns the resolved id + whether a redirect was forced. Callers use
+ * the redirect flag to decide whether to push or replace history.
+ */
+export function resolveTab(
+  raw: string | null | undefined,
+  role: UserRole | undefined,
+): { id: SettingsTabId; redirected: boolean } {
+  const valid = visibleTabs(role);
+  const match = valid.find((t) => t.id === raw);
+  if (match) return { id: match.id, redirected: false };
+  // Default to 'personal' which is visible to every role. Treat null,
+  // undefined, and empty string as "no tab requested" → no redirect.
+  // A *non-empty* unknown or role-forbidden value IS a redirect.
+  const noRequest = raw === null || raw === undefined || raw === "";
+  return { id: "personal", redirected: !noRequest };
+}

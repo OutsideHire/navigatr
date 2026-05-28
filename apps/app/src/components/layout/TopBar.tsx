@@ -135,6 +135,7 @@ export function TopBar({
           >
             <Search className="h-5 w-5" />
           </button>
+          {user && <SettingsButton onClick={() => navigate("/settings")} />}
           {user && <NotificationsBell />}
           {user && <AvatarMenu user={user} theme={theme} resolvedTheme={resolvedTheme} setTheme={setTheme} ThemeIcon={ThemeIcon} handleSignOut={handleSignOut} />}
         </div>
@@ -168,12 +169,33 @@ export function TopBar({
 
         {user && (
           <div className="ml-auto flex items-center gap-3">
+            <SettingsButton onClick={() => navigate("/settings")} />
             <NotificationsBell />
             <AvatarMenu user={user} theme={theme} resolvedTheme={resolvedTheme} setTheme={setTheme} ThemeIcon={ThemeIcon} handleSignOut={handleSignOut} desktop />
           </div>
         )}
       </div>
     </header>
+  );
+}
+
+/**
+ * SettingsButton — gear icon in the TopBar. Universal SaaS pattern: gear
+ * means settings. Click navigates to /settings. Visible on every breakpoint
+ * so admins can reach org settings from anywhere without hunting in the
+ * sidebar.
+ */
+function SettingsButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Settings"
+      title="Settings"
+      className="inline-flex h-9 w-9 items-center justify-center rounded-radius-sm text-text-default hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+    >
+      <SettingsIcon className="h-5 w-5" aria-hidden />
+    </button>
   );
 }
 
