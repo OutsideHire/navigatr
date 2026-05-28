@@ -4,12 +4,16 @@
  * card already implements the whole form.
  */
 import { BrandSettingsCard } from "@/features/branding/components/BrandSettingsCard";
+import { TabHeader } from "./TabHeader";
 
 export function BrandingTab() {
   return (
-    <div className="flex flex-col gap-4">
-      <h2 className="text-heading-lg">Branding</h2>
+    <>
+      <TabHeader
+        title="Branding"
+        subtitle="Customize how navigatr looks for everyone in your workspace."
+      />
       <BrandSettingsCard />
-    </div>
+    </>
   );
 }

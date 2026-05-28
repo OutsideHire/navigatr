@@ -11,12 +11,19 @@
  */
 import { toast } from "sonner";
 import { Button, Card } from "@/components/navigatr";
+import { TabHeader } from "./TabHeader";
 
 export function DangerZoneTab() {
   return (
-    <div className="flex flex-col gap-4">
-      <h2 className="text-heading-lg">Danger zone</h2>
-      <Card padding="md">
+    <>
+      <TabHeader
+        title="Danger zone"
+        subtitle="Irreversible workspace-level actions."
+      />
+      <Card
+        padding="md"
+        className="border-status-danger/30 bg-status-danger-bg/30"
+      >
         <h3 className="text-body-strong text-status-danger">Irreversible actions</h3>
         <p className="mt-1 text-body-md text-text-muted">
           These actions can't be undone. The buttons are stubs in v1.0 — full flows land in v1.1.
@@ -38,6 +45,6 @@ export function DangerZoneTab() {
           </Button>
         </div>
       </Card>
-    </div>
+    </>
   );
 }

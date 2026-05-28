@@ -2,12 +2,16 @@
  * ProfessionTab — org-level profession picker.
  */
 import { ProfessionSettingsCard } from "@/features/profession/components/ProfessionSettingsCard";
+import { TabHeader } from "./TabHeader";
 
 export function ProfessionTab() {
   return (
-    <div className="flex flex-col gap-4">
-      <h2 className="text-heading-lg">Profession</h2>
+    <>
+      <TabHeader
+        title="Profession"
+        subtitle="Tunes terminology and form fields for your industry."
+      />
       <ProfessionSettingsCard />
-    </div>
+    </>
   );
 }
