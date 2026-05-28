@@ -6,6 +6,7 @@ import { Copy } from "lucide-react";
 import { Button, Card } from "@/components/navigatr";
 import { SeatUsageBadge } from "../components/SeatUsageBadge";
 import { useOrganization } from "@/features/auth/useOrganization";
+import { BrandSettingsCard } from "@/features/branding/components/BrandSettingsCard";
 
 export function AdminSettingsPage() {
   const org = useOrganization();
@@ -45,6 +46,8 @@ export function AdminSettingsPage() {
             <Button variant="secondary" size="md" leadingIcon={Copy} onClick={copyLink}>Copy</Button>
           </div>
         </Card>
+
+        <BrandSettingsCard />
 
         <Card padding="md">
           <h2 className="text-body-strong text-status-danger">Danger zone</h2>

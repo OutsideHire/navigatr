@@ -28,6 +28,12 @@ vi.mock("./AppLayout", () => ({
   ),
 }));
 
+// BrandProvider runs a query on mount; stub it out so this test doesn't
+// need a QueryClientProvider. Tested separately in features/branding.
+vi.mock("@/features/branding/BrandProvider", () => ({
+  BrandProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
 interface AuthShape {
   user: { id: string; email: string; user_metadata: Record<string, unknown> } | null;
   loading: boolean;

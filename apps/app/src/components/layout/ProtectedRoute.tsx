@@ -23,6 +23,7 @@ import { useAuth } from "@/stores/auth";
 import { useProfile } from "@/features/auth/useProfile";
 import { AppLayout } from "./AppLayout";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
+import { BrandProvider } from "@/features/branding/BrandProvider";
 import type { TopBarUser } from "./TopBar";
 
 function Spinner() {
@@ -92,12 +93,17 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
     avatarUrl,
   };
 
+  // BrandProvider sits ABOVE AppLayout so the white-label theme (custom
+  // primary color, product name in document.title) applies to every
+  // protected surface — TopBar, sidebar, content, modals.
   // RouteErrorBoundary sits INSIDE AppLayout so a page crash collapses
   // only the main pane — TopBar + Sidebar + BottomNav keep working and
   // the user can navigate out. The boundary auto-resets on route change.
   return (
-    <AppLayout user={topBarUser}>
-      <RouteErrorBoundary>{children}</RouteErrorBoundary>
-    </AppLayout>
+    <BrandProvider>
+      <AppLayout user={topBarUser}>
+        <RouteErrorBoundary>{children}</RouteErrorBoundary>
+      </AppLayout>
+    </BrandProvider>
   );
 }
