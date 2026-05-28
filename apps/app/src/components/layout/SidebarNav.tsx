@@ -22,7 +22,7 @@
 import { NavLink } from "react-router-dom";
 import { BarChart3, ChevronLeft, ChevronRight, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MAIN_TABS, SETTINGS_TAB, type NavTabSpec } from "./nav-tabs";
+import { MAIN_TABS, type NavTabSpec } from "./nav-tabs";
 import { useProfile } from "@/features/auth/useProfile";
 
 export interface SidebarNavProps {
@@ -128,9 +128,9 @@ export function SidebarNav({ collapsed = false, onCollapseToggle, className }: S
           </>
         )}
 
-        <div className="my-2 h-px bg-border-subtle" />
-
-        <SidebarNavItem tab={SETTINGS_TAB} collapsed={collapsed} />
+        {/* Settings (personal + org) intentionally not in sidebar — lives
+            behind the gear icon in the TopBar. This separates work
+            surfaces (sidebar) from configuration (gear). */}
       </nav>
 
       {/* Collapse toggle (bottom) */}

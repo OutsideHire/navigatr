@@ -74,8 +74,8 @@ const PartnerDetailPage = lazy(() =>
 const PathPage = lazy(() =>
   import("@/features/path/pages/PathPage").then((m) => ({ default: m.PathPage })),
 );
-const SettingsPage = lazy(() =>
-  import("@/features/settings/pages/SettingsPage").then((m) => ({ default: m.SettingsPage })),
+const SettingsHubPage = lazy(() =>
+  import("@/features/settings-hub/SettingsHubPage").then((m) => ({ default: m.SettingsHubPage })),
 );
 
 // Admin screens (role-gated: manager + admin only)
@@ -85,9 +85,8 @@ const AgentsPage = lazy(() =>
 const ImportAgentsPage = lazy(() =>
   import("@/features/admin/pages/ImportAgentsPage").then((m) => ({ default: m.ImportAgentsPage })),
 );
-const AdminSettingsPage = lazy(() =>
-  import("@/features/admin/pages/AdminSettingsPage").then((m) => ({ default: m.AdminSettingsPage })),
-);
+// AdminSettingsPage dissolved into the SettingsHubPage tabs. The
+// /admin/settings route now redirects to /settings?tab=organization.
 const InsightsPage = lazy(() =>
   import("@/features/admin/pages/InsightsPage").then((m) => ({ default: m.InsightsPage })),
 );
@@ -276,11 +275,24 @@ export function App() {
               </ProtectedRoute>
             }
           />
+          {/* Settings hub: one component, two URL shapes.
+              Desktop: /settings?tab=<id>
+              Mobile:  /settings/<id>
+              Both render <SettingsHubPage/>; the component switches layout
+              based on viewport. */}
           <Route
             path="/settings"
             element={
               <ProtectedRoute>
-                <SettingsPage />
+                <SettingsHubPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings/:tabId"
+            element={
+              <ProtectedRoute>
+                <SettingsHubPage />
               </ProtectedRoute>
             }
           />
@@ -332,15 +344,13 @@ export function App() {
             }
           />
 
+          {/* Back-compat redirect: old /admin/settings bookmarks land on the
+              Organization tab of the new hub. Anyone hitting this path is
+              implicitly an admin user (they bookmarked it), so the
+              destination tab is admin-relevant. */}
           <Route
             path="/admin/settings"
-            element={
-              <ProtectedRoute>
-                <RequireRole allow={["manager", "admin"]}>
-                  <AdminSettingsPage />
-                </RequireRole>
-              </ProtectedRoute>
-            }
+            element={<Navigate to="/settings?tab=organization" replace />}
           />
 
           {/* Root + 404 → /dashboard (ProtectedRoute will bounce to /login if needed) */}
