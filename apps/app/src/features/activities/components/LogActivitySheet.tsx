@@ -4,8 +4,15 @@
  * Source: Figma `navigatr v1` Activity Logging master frame —
  * Call variant × {mobile bottom sheet, desktop centered modal}.
  *
- * Sprint 1 ships Call only. Email / Drop-In / Appointment tiles are
- * shown in the type picker but toast "Coming in sprint 2" on tap.
+ * All four activity types (Call / Email / Drop-In / Appointment) share
+ * one form. The only per-type difference is whether duration is asked:
+ *   call / appointment   → duration_minutes required (it's a length of time)
+ *   email / drop_in      → duration omitted (these are point-in-time events)
+ *
+ * Disposition + outcome notes are shared across all types because the
+ * smart follow-up calculator works on disposition alone (a "positive
+ * engagement" reschedules in 3 business days whether you got there by
+ * phone, email, or footwork).
  *
  * The smart follow-up preview is the differentiator made visible: as
  * soon as the rep picks a disposition, the sheet shows the calculated
@@ -132,26 +139,70 @@ const ALL_DISPOSITIONS: Disposition[] = [
 const emptyToUndefined = (v: unknown) =>
   v === "" || v === null || v === undefined ? undefined : v;
 
-const callSchema = z.object({
+const DISPOSITION_ENUM = [
+  "statement_secured",
+  "positive_engagement",
+  "connected_with_dm",
+  "dm_unavailable",
+  "followup_requested",
+  "future_potential",
+  "low_probability",
+  "not_interested",
+  "wrong_number",
+  "closed_lost",
+] as const;
+
+// Two schemas because the duration field's validation rules differ. Call /
+// Appointment require a positive integer; Email / Drop-In skip duration
+// entirely (logged-by-the-trigger schema column is nullable so any value
+// is forwarded as null). Both schemas resolve to the same FormValues shape
+// so the form body doesn't need to branch on type.
+const schemaWithDuration = z.object({
   durationMinutes: z.preprocess(
     emptyToUndefined,
-    z.coerce.number().int().positive("Enter call duration"),
+    z.coerce.number().int().positive("Enter duration"),
   ),
-  disposition: z.enum([
-    "statement_secured",
-    "positive_engagement",
-    "connected_with_dm",
-    "dm_unavailable",
-    "followup_requested",
-    "future_potential",
-    "low_probability",
-    "not_interested",
-    "wrong_number",
-    "closed_lost",
-  ]),
+  disposition: z.enum(DISPOSITION_ENUM),
   outcomeNotes: z.string().optional(),
 });
-type CallFormValues = z.infer<typeof callSchema>;
+
+const schemaNoDuration = z.object({
+  // Field stays in the shape so onSubmit can treat values uniformly, but
+  // it's optional + ignored when serializing for these types.
+  durationMinutes: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().optional()),
+  disposition: z.enum(DISPOSITION_ENUM),
+  outcomeNotes: z.string().optional(),
+});
+
+type FormValues = z.infer<typeof schemaWithDuration>;
+
+/** Per-type config: does this type ask for duration, and what's the label? */
+const TYPE_CONFIG: Record<ActivityType, { needsDuration: boolean; verb: string; durationLabel: string; notesPlaceholder: string }> = {
+  call: {
+    needsDuration: true,
+    verb: "call",
+    durationLabel: "Duration",
+    notesPlaceholder: "What happened on this call...",
+  },
+  appointment: {
+    needsDuration: true,
+    verb: "appointment",
+    durationLabel: "Length",
+    notesPlaceholder: "What was discussed in the meeting...",
+  },
+  email: {
+    needsDuration: false,
+    verb: "email",
+    durationLabel: "",
+    notesPlaceholder: "Subject line + what was sent or received...",
+  },
+  drop_in: {
+    needsDuration: false,
+    verb: "drop-in",
+    durationLabel: "",
+    notesPlaceholder: "Who you met with, what you saw...",
+  },
+};
 
 function FollowUpPreview({ disposition }: { disposition: Disposition }) {
   const spec = DISPOSITIONS[disposition];
@@ -208,12 +259,14 @@ function FollowUpPreview({ disposition }: { disposition: Disposition }) {
   );
 }
 
-function CallForm({
+function ActivityForm({
+  type,
   dealId,
   onLogged,
   onBack,
   onClose,
 }: {
+  type: ActivityType;
   dealId: string;
   onLogged: () => void;
   onBack: () => void;
@@ -221,17 +274,18 @@ function CallForm({
 }) {
   const [showAll, setShowAll] = React.useState(false);
   const logActivity = useLogActivity();
+  const cfg = TYPE_CONFIG[type];
 
   const {
     register,
     handleSubmit,
     control,
     formState: { errors, isSubmitting },
-  } = useForm<CallFormValues>({
-    resolver: zodResolver(callSchema),
+  } = useForm<FormValues>({
+    resolver: zodResolver(cfg.needsDuration ? schemaWithDuration : schemaNoDuration),
     defaultValues: {
       // Empty-string default so the "0" placeholder shows; the schema's
-      // preprocess turns "" into undefined → "Enter call duration" on submit.
+      // preprocess turns "" into undefined → "Enter duration" on submit.
       durationMinutes: "" as unknown as number,
       disposition: undefined,
       outcomeNotes: "",
@@ -239,14 +293,16 @@ function CallForm({
     mode: "onBlur",
   });
 
-  const onSubmit: SubmitHandler<CallFormValues> = async (values) => {
+  const onSubmit: SubmitHandler<FormValues> = async (values) => {
     const followUpIso = calculateFollowUpDate(values.disposition);
     try {
       await logActivity.mutateAsync({
         dealId,
-        type: "call",
+        type,
         disposition: values.disposition,
-        durationMinutes: values.durationMinutes,
+        // Email + Drop-In don't track duration — send null. The DB column
+        // is nullable and the consistency trigger doesn't care.
+        durationMinutes: cfg.needsDuration ? values.durationMinutes : null,
         outcomeNotes: values.outcomeNotes ?? "",
         occurredAt: new Date().toISOString(),
         followUpDate: followUpIso,
@@ -276,27 +332,31 @@ function CallForm({
         <div className="flex flex-col gap-5">
           {/* Header row inside scroll body so it scrolls with content */}
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-body-strong text-text-default">Log call</h2>
+            <h2 className="text-body-strong text-text-default">Log {cfg.verb}</h2>
             <Button type="button" variant="tertiary" size="sm" onClick={onBack}>
               Change type
             </Button>
           </div>
 
-          {/* Duration */}
-          <FormField
-            htmlFor="durationMinutes"
-            label="Duration"
-            helper="In minutes — pre-fill from call log if available"
-            error={errors.durationMinutes?.message}
-          >
-            <Input
-              id="durationMinutes"
-              type="number"
-              suffix="min"
-              placeholder="0"
-              {...register("durationMinutes")}
-            />
-          </FormField>
+          {/* Duration — call + appointment only. Email + Drop-In are
+              point-in-time events; asking for "duration: 0 min" reads as
+              a data-entry burden, not insight. */}
+          {cfg.needsDuration && (
+            <FormField
+              htmlFor="durationMinutes"
+              label={cfg.durationLabel}
+              helper="In minutes"
+              error={errors.durationMinutes?.message}
+            >
+              <Input
+                id="durationMinutes"
+                type="number"
+                suffix="min"
+                placeholder="0"
+                {...register("durationMinutes")}
+              />
+            </FormField>
+          )}
 
           {/* Disposition */}
           <Controller
@@ -358,7 +418,7 @@ function CallForm({
                   id="outcomeNotes"
                   value={field.value ?? ""}
                   onChange={field.onChange}
-                  placeholder="What happened on this call..."
+                  placeholder={cfg.notesPlaceholder}
                 />
               </FormField>
             )}
@@ -410,17 +470,9 @@ export function LogActivitySheet({
     if (!open) setType(null);
   }, [open]);
 
-  const handleTypeSelect = (t: ActivityType) => {
-    if (t === "call") {
-      setType("call");
-      return;
-    }
-    toast(
-      t === "email" ? "Email logging lands in sprint 2" :
-      t === "drop_in" ? "Drop-In logging lands in sprint 2" :
-      "Appointment logging lands in sprint 2",
-    );
-  };
+  // All four types route to the shared ActivityForm; duration field is
+  // gated per-type via TYPE_CONFIG.
+  const handleTypeSelect = (t: ActivityType) => setType(t);
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -452,7 +504,7 @@ export function LogActivitySheet({
 
           <div className="flex shrink-0 items-center justify-between gap-2 px-5 pb-3 pt-3 sm:pt-5">
             <Dialog.Title className="text-heading-sm text-text-default">
-              {type === "call" ? "Log activity" : "What did you do?"}
+              {type ? "Log activity" : "What did you do?"}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button
@@ -465,8 +517,9 @@ export function LogActivitySheet({
             </Dialog.Close>
           </div>
 
-          {type === "call" ? (
-            <CallForm
+          {type ? (
+            <ActivityForm
+              type={type}
               dealId={dealId}
               onLogged={onLogged ?? (() => {})}
               onBack={() => setType(null)}
