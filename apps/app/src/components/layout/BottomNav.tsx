@@ -20,13 +20,15 @@
 
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { MAIN_TABS } from "./nav-tabs";
+import { useNavTabs } from "./useNavTabs";
 
 export interface BottomNavProps {
   className?: string;
 }
 
 export function BottomNav({ className }: BottomNavProps) {
+  // Profession-aware labels (Pipeline → Book for treasury).
+  const mainTabs = useNavTabs();
   return (
     <nav
       aria-label="Primary"
@@ -41,7 +43,7 @@ export function BottomNav({ className }: BottomNavProps) {
       )}
     >
       <ul className="grid h-16 grid-cols-5">
-        {MAIN_TABS.map((tab) => (
+        {mainTabs.map((tab) => (
           <li key={tab.key}>
             <NavLink
               to={tab.to}
