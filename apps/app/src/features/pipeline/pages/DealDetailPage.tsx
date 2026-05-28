@@ -64,6 +64,7 @@ import {
 } from "../mockData";
 import { LostReasonModal } from "../components/LostReasonModal";
 import { useDeal } from "../hooks/useDeal";
+import { useTerm, useTermCapitalized } from "@/features/profession/useTerm";
 import { useUpdateDeal } from "../hooks/useUpdateDeal";
 import { useActivities } from "@/features/activities/hooks/useActivities";
 import { Select, type SelectOption } from "@/components/navigatr";
@@ -78,6 +79,8 @@ import { EditActivitySheet } from "@/features/activities/components/EditActivity
 // ───────────────────────────────────────────────────────────────────────
 
 function NotFound() {
+  const dealCap = useTermCapitalized("deal");
+  const dealLower = useTerm("deal");
   const navigate = useNavigate();
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center gap-4 px-4 py-12 text-center">
@@ -85,9 +88,9 @@ function NotFound() {
         <Building2 className="h-6 w-6" aria-hidden />
       </span>
       <div className="flex flex-col gap-1">
-        <p className="text-heading-sm text-text-default">Deal not found</p>
+        <p className="text-heading-sm text-text-default">{dealCap} not found</p>
         <p className="text-body-md text-text-muted">
-          This deal may have been deleted or is on a different rep&apos;s pipeline.
+          This {dealLower} may have been deleted or is on a different rep&apos;s pipeline.
         </p>
       </div>
       {/* IMPORTANT: do NOT combine `asChild` with `leadingIcon` on Button —

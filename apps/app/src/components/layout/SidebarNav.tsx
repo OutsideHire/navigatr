@@ -22,7 +22,8 @@
 import { NavLink } from "react-router-dom";
 import { BarChart3, ChevronLeft, ChevronRight, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MAIN_TABS, type NavTabSpec } from "./nav-tabs";
+import { type NavTabSpec } from "./nav-tabs";
+import { useNavTabs } from "./useNavTabs";
 import { useProfile } from "@/features/auth/useProfile";
 
 export interface SidebarNavProps {
@@ -101,6 +102,8 @@ export function SidebarNav({ collapsed = false, onCollapseToggle, className }: S
   const profile = useProfile();
   const isManagerOrAdmin =
     profile.data?.role === "manager" || profile.data?.role === "admin";
+  // Main tabs with profession-aware labels (Pipeline → Book for treasury).
+  const mainTabs = useNavTabs();
 
   return (
     <aside
@@ -117,7 +120,7 @@ export function SidebarNav({ collapsed = false, onCollapseToggle, className }: S
     >
       {/* Main destinations */}
       <nav className="flex flex-1 flex-col gap-1 p-3">
-        {MAIN_TABS.map((tab) => (
+        {mainTabs.map((tab) => (
           <SidebarNavItem key={tab.key} tab={tab} collapsed={collapsed} />
         ))}
 

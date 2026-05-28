@@ -63,6 +63,7 @@ import { cn } from "@/lib/utils";
 import { MOCK, formatMoney } from "../mockData";
 import { useDashboardData, type DashboardData } from "../hooks/useDashboardData";
 import { STAGE_BADGE_KIND } from "@/features/pipeline/mockData";
+import { useTerm } from "@/features/profession/useTerm";
 
 // ───────────────────────────────────────────────────────────────────────
 // Empty state — copied from Session 11. Lives here so the page picks
@@ -248,6 +249,9 @@ const KPI_ICONS: Record<string, LucideIcon> = {
 };
 
 function SecondaryKpiRow({ kpis }: { kpis: DashboardData["kpis"] }) {
+  // Profession-aware singular/plural for the subtitles.
+  const dealSingular = useTerm("deal");
+  const dealPlural = useTerm("deals");
   // 4 KPI cards derived from live deals data. Order matches the canonical
   // Figma reading order: active count → open pipeline → won this period
   // → win rate. We dropped "avg close time" from the mock because we
@@ -258,7 +262,7 @@ function SecondaryKpiRow({ kpis }: { kpis: DashboardData["kpis"] }) {
       key: "leads",
       eyebrow: "ACTIVE LEADS",
       value: String(kpis.activeDealsCount),
-      subtitle: kpis.activeDealsCount === 1 ? "active deal" : "active deals",
+      subtitle: kpis.activeDealsCount === 1 ? `active ${dealSingular}` : `active ${dealPlural}`,
       accent: "blue" as const,
     },
     {
@@ -272,14 +276,14 @@ function SecondaryKpiRow({ kpis }: { kpis: DashboardData["kpis"] }) {
       key: "won",
       eyebrow: "WON",
       value: formatMoney(kpis.wonRevenueCents),
-      subtitle: `${kpis.wonDealsCount} ${kpis.wonDealsCount === 1 ? "deal" : "deals"} closed`,
+      subtitle: `${kpis.wonDealsCount} ${kpis.wonDealsCount === 1 ? dealSingular : dealPlural} closed`,
       accent: "violet" as const,
     },
     {
       key: "win",
       eyebrow: "WIN RATE",
       value: `${Math.round(kpis.winRate * 100)}%`,
-      subtitle: "of all deals",
+      subtitle: `of all ${dealPlural}`,
       accent: "orange" as const,
     },
   ];
@@ -312,6 +316,8 @@ function SecondaryKpiRow({ kpis }: { kpis: DashboardData["kpis"] }) {
 // Section 5: Pipeline by Stage — live data from useDashboardData.
 function PipelineByStage({ byStage }: { byStage: DashboardData["byStage"] }) {
   const navigate = useNavigate();
+  const dealSingular = useTerm("deal");
+  const dealPlural = useTerm("deals");
   return (
     <Card padding="lg" shadow="sm">
       <SectionHeader
@@ -329,7 +335,7 @@ function PipelineByStage({ byStage }: { byStage: DashboardData["byStage"] }) {
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-caption text-text-muted">
-                  {stage.count} {stage.count === 1 ? "deal" : "deals"} · <span className="tabular-nums text-text-default">{formatMoney(stage.valueCents)}</span>
+                  {stage.count} {stage.count === 1 ? dealSingular : dealPlural} · <span className="tabular-nums text-text-default">{formatMoney(stage.valueCents)}</span>
                 </span>
                 <span className="text-caption tabular-nums text-text-subtle">{stage.percentOfPipeline}%</span>
               </div>
@@ -434,6 +440,8 @@ function MonthlyPerformance({ months }: { months: DashboardData["monthlyPerforma
   // don't divide by zero — every bar renders as a zero-height stub.
   const maxValue = Math.max(1, ...months.map((m) => m.valueCents));
   const hasAnyWins = months.some((m) => m.deals > 0);
+  const dealSingular = useTerm("deal");
+  const dealPlural = useTerm("deals");
 
   return (
     <Card padding="lg" shadow="sm">
@@ -445,7 +453,7 @@ function MonthlyPerformance({ months }: { months: DashboardData["monthlyPerforma
       />
       {!hasAnyWins && (
         <p className="mb-3 text-body-sm text-text-muted">
-          No wins yet. Close a deal to start building this chart.
+          No wins yet. Close a {dealSingular} to start building this chart.
         </p>
       )}
       {/* Bar chart: outer is a flex row of 4 columns. Each column is its own
@@ -462,13 +470,13 @@ function MonthlyPerformance({ months }: { months: DashboardData["monthlyPerforma
                 <div
                   className="absolute inset-x-0 bottom-0 rounded-t-radius-sm bg-brand-primary transition-all"
                   style={{ height: `${heightPct}%` }}
-                  aria-label={`${m.monthLabel}: ${m.deals} deals · ${formatMoney(m.valueCents)}`}
+                  aria-label={`${m.monthLabel}: ${m.deals} ${dealPlural} · ${formatMoney(m.valueCents)}`}
                 />
               </div>
               <div className="flex flex-col items-center">
                 <span className="text-caption text-text-muted">{m.monthLabel}</span>
                 <span className="text-caption font-medium tabular-nums text-text-default">
-                  {m.deals} {m.deals === 1 ? "deal" : "deals"}
+                  {m.deals} {m.deals === 1 ? dealSingular : dealPlural}
                 </span>
               </div>
             </div>

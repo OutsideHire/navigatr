@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
-import { useTerm, useFieldVisible } from "./useTerm";
+import { useTerm, useFieldVisible, useTermCapitalized } from "./useTerm";
 import type { OrgProfessionShape } from "./useOrgProfession";
 
 let queryReturn: { data?: OrgProfessionShape } = {};
@@ -90,5 +90,52 @@ describe("useFieldVisible", () => {
     queryReturn = {};
     const { result } = renderHook(() => useFieldVisible("annual_volume"));
     expect(result.current).toBe(true);
+  });
+});
+
+describe("useTermCapitalized", () => {
+  it("capitalizes the first letter of the resolved term", () => {
+    queryReturn = {
+      data: {
+        profession: "merchant_services",
+        terminology: {},
+        hiddenFields: [],
+        pipelineStages: [],
+      },
+    };
+    const { result } = renderHook(() => useTermCapitalized("company"));
+    expect(result.current).toBe("Merchant");
+  });
+
+  it("capitalizes treasury_management's profession-specific terms", () => {
+    queryReturn = {
+      data: {
+        profession: "treasury_management",
+        terminology: {},
+        hiddenFields: [],
+        pipelineStages: [],
+      },
+    };
+    const { result } = renderHook(() => useTermCapitalized("pipeline"));
+    expect(result.current).toBe("Book");
+  });
+
+  it("capitalizes the fallback when no profession is set", () => {
+    queryReturn = {};
+    const { result } = renderHook(() => useTermCapitalized("deal"));
+    expect(result.current).toBe("Deal");
+  });
+
+  it("respects per-org override before capitalizing", () => {
+    queryReturn = {
+      data: {
+        profession: "merchant_services",
+        terminology: { deal: "policy" },
+        hiddenFields: [],
+        pipelineStages: [],
+      },
+    };
+    const { result } = renderHook(() => useTermCapitalized("deal"));
+    expect(result.current).toBe("Policy");
   });
 });

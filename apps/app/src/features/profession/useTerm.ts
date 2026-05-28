@@ -37,3 +37,17 @@ export function useFieldVisible(field: string): boolean {
   if (!data) return true;
   return !data.hiddenFields.includes(field);
 }
+
+/**
+ * Like useTerm, but capitalized for sentence-start use ("Add deal" →
+ * "Add Deal" wouldn't be right; "Add deal" → with this helper at the
+ * start, "Deal" is correct.)
+ *
+ * Use this for page headers, button labels that lead a sentence, and
+ * section titles. For "X deals closed" mid-sentence, use plain useTerm.
+ */
+export function useTermCapitalized(key: TermKey): string {
+  const t = useTerm(key);
+  if (t.length === 0) return t;
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}

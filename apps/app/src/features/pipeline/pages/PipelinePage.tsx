@@ -63,6 +63,7 @@ import {
 import { DealCardSkeleton } from "../components/DealCardSkeleton";
 import { AddDealSheet } from "../components/AddDealSheet";
 import { KanbanBoard } from "../components/KanbanBoard";
+import { useTerm, useTermCapitalized } from "@/features/profession/useTerm";
 
 // ───────────────────────────────────────────────────────────────────────
 // Filter / search state
@@ -223,19 +224,21 @@ function DealCard({ deal }: { deal: Deal }) {
 // ───────────────────────────────────────────────────────────────────────
 
 function EmptyState({ onAddDeal }: { onAddDeal: () => void }) {
+  const deals = useTerm("deals");
+  const deal = useTerm("deal");
   return (
     <Card padding="xl" shadow="sm" className="flex flex-col items-center gap-3 text-center">
       <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-surface-sunken text-text-muted">
         <PackageOpen className="h-6 w-6" aria-hidden />
       </span>
       <div className="flex flex-col gap-1">
-        <p className="text-body-strong text-text-default">No deals match</p>
+        <p className="text-body-strong text-text-default">No {deals} match</p>
         <p className="text-caption text-text-muted">
-          Try a different stage filter or add a new deal.
+          Try a different stage filter or add a new {deal}.
         </p>
       </div>
       <Button variant="primary" size="sm" leadingIcon={Plus} onClick={onAddDeal}>
-        Add deal
+        Add {deal}
       </Button>
     </Card>
   );
@@ -268,10 +271,15 @@ function PageHeader({
   viewMode: ViewMode;
   onViewModeChange: (m: ViewMode) => void;
 }) {
+  // Profession-aware labels. Page title uses the capitalized form
+  // (sentence-start); inline noun usage stays lowercase.
+  const pipelineTitle = useTermCapitalized("pipeline");
+  const dealsNoun = useTerm("deals");
+  const dealNoun = useTerm("deal");
   return (
     <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div className="flex flex-col gap-1">
-        <h1 className="text-heading-lg text-text-default">Pipeline</h1>
+        <h1 className="text-heading-lg text-text-default">{pipelineTitle}</h1>
         <p className="text-body-md text-text-muted">{HEADER_SUBHEAD}</p>
       </div>
 
@@ -282,19 +290,19 @@ function PageHeader({
         leadingIcon={Plus}
         onClick={onAddDeal}
         className="fixed bottom-24 right-4 z-30 shadow-card-hover sm:hidden"
-        aria-label="Add deal"
+        aria-label={`Add ${dealNoun}`}
       >
-        Add deal
+        Add {dealNoun}
       </Button>
 
       {/* Desktop action row */}
       <div className="hidden items-center gap-2 sm:flex">
         <div className="w-64">
-          <FormField htmlFor="pipeline-search" label="Search deals" showLabel={false}>
+          <FormField htmlFor="pipeline-search" label={`Search ${dealsNoun}`} showLabel={false}>
             <Input
               id="pipeline-search"
               type="search"
-              placeholder="Search deals..."
+              placeholder={`Search ${dealsNoun}...`}
               leadingIcon={Search}
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
@@ -326,7 +334,7 @@ function PageHeader({
           Sort: Last activity
         </Button>
         <Button variant="primary" size="md" leadingIcon={Plus} onClick={onAddDeal}>
-          Add deal
+          Add {dealNoun}
         </Button>
       </div>
     </header>
@@ -381,9 +389,12 @@ function KpiStrip({ deals, filtered }: KpiStripProps) {
     return `$${Math.round(dollars)}`;
   }
 
+  // Profession-aware singular/plural ("deals" → "relationships" for treasury).
+  const dealSingular = useTerm("deal");
+  const dealPlural = useTerm("deals");
   const wonSubtitle = kpi.wonDealsThisMonth === 0
     ? "this month"
-    : `${kpi.wonDealsThisMonth} ${kpi.wonDealsThisMonth === 1 ? "deal" : "deals"}`;
+    : `${kpi.wonDealsThisMonth} ${kpi.wonDealsThisMonth === 1 ? dealSingular : dealPlural}`;
 
   return (
     <div className="hidden gap-4 md:grid md:grid-cols-4">
