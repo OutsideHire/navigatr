@@ -88,6 +88,9 @@ const ImportAgentsPage = lazy(() =>
 const AdminSettingsPage = lazy(() =>
   import("@/features/admin/pages/AdminSettingsPage").then((m) => ({ default: m.AdminSettingsPage })),
 );
+const InsightsPage = lazy(() =>
+  import("@/features/admin/pages/InsightsPage").then((m) => ({ default: m.InsightsPage })),
+);
 const AgentDetailPage = lazy(() =>
   import("@/features/admin/pages/AgentDetailPage").then((m) => ({ default: m.AgentDetailPage })),
 );
@@ -313,6 +316,17 @@ export function App() {
               <ProtectedRoute>
                 <RequireRole allow={["manager", "admin"]}>
                   <ImportAgentsPage />
+                </RequireRole>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin/insights"
+            element={
+              <ProtectedRoute>
+                <RequireRole allow={["manager", "admin"]}>
+                  <InsightsPage />
                 </RequireRole>
               </ProtectedRoute>
             }

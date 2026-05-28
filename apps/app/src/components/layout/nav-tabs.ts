@@ -22,7 +22,7 @@ export type NavTabKey =
   | "path";
 
 export interface NavTabSpec {
-  key: NavTabKey | "settings" | "team";
+  key: NavTabKey | "settings" | "team" | "insights";
   label: string;
   to: string;
   icon: LucideIcon;

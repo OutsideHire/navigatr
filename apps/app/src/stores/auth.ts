@@ -324,6 +324,14 @@ if (typeof window !== "undefined") {
       user: session?.user ?? null,
       loading: false,
     });
+    // Identify the user in Sentry (no PII beyond auth user id). On sign-out,
+    // pass null so subsequent errors aren't tagged with a stale user. Lazy
+    // import to keep this side-effect file from pulling Sentry into the
+    // bundle when observability is disabled. (initObservability is a no-op
+    // when VITE_SENTRY_DSN is unset, so the import itself is the only cost.)
+    void import("@/lib/observability").then(({ setUser }) => {
+      setUser(session?.user ? { id: session.user.id } : null);
+    });
   });
 }
 

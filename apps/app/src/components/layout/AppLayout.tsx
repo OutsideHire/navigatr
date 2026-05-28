@@ -37,6 +37,7 @@ import * as React from "react";
 import { TopBar, type TopBarUser } from "./TopBar";
 import { BottomNav } from "./BottomNav";
 import { SidebarNav } from "./SidebarNav";
+import { useBrand } from "@/features/branding/useBrand";
 
 const STORAGE_KEY = "navigatr-sidebar-collapsed";
 
@@ -84,14 +85,25 @@ export function AppLayout({
   const effectiveCollapsed = collapsedOverride ?? collapsed;
   const effectiveToggle = onCollapseToggleOverride ?? toggle;
 
+  // useBrand returns undefined.data when no user/org (component preview
+  // routes, sign-in screens that happen to mount this layout). Defaults
+  // to the navigatr brand in that case. Explicit props passed by the
+  // caller win over the brand query — useful for storybook fixtures.
+  const brand = useBrand();
+  const resolvedLogo = tenantLogo ?? brand.data?.logoUrl ?? undefined;
+  const resolvedAppName = tenantAppName ?? brand.data?.productName ?? "navigatr";
+  // showPoweredBy defaults to true so component-preview routes (no brand
+  // data) match the default ISO experience.
+  const showPoweredBy = brand.data?.showPoweredBy ?? true;
+
   return (
     <div className="flex min-h-dvh flex-col bg-surface-canvas text-text-default">
       {/* TopBar — full viewport width, sticky top. The logo lives here at
           the true top-left (x=0) of the page on every breakpoint. */}
       <TopBar
         user={user}
-        tenantLogo={tenantLogo}
-        tenantAppName={tenantAppName}
+        tenantLogo={resolvedLogo}
+        tenantAppName={resolvedAppName}
         showSearch={showSearch}
       />
 
@@ -108,6 +120,23 @@ export function AppLayout({
           className="min-w-0 flex-1 overflow-x-hidden pb-20 md:pb-0"
         >
           {children}
+          {/* Powered-by footer. Desktop only — mobile already has BottomNav
+              taking the bottom edge, adding another row would feel cluttered.
+              Hidden when the admin turns it off. Discreet, low-contrast styling
+              so it doesn't compete with page content. */}
+          {showPoweredBy && (
+            <footer className="mt-12 hidden border-t border-border-subtle px-6 py-4 text-caption text-text-subtle md:block">
+              Powered by{" "}
+              <a
+                href="https://navigatr.app"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-text-muted underline-offset-4 hover:text-text-default hover:underline"
+              >
+                navigatr
+              </a>
+            </footer>
+          )}
         </main>
       </div>
 
