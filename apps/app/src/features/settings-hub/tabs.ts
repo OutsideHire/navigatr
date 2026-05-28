@@ -2,10 +2,11 @@
  * tabs.ts — single source of truth for Settings hub tab definitions.
  *
  * Each tab carries:
- *   id        : URL slug (`?tab=<id>` on desktop, `/settings/<id>` on mobile)
- *   label     : display name in the left rail
- *   roles     : which user_role values may see + access this tab
- *   adminSection : whether this tab sits under the "ADMIN" divider
+ *   id     : URL slug (`?tab=<id>` on desktop, `/settings/<id>` on mobile)
+ *   label  : display name in the left rail
+ *   roles  : which user_role values may see + access this tab
+ *   group  : which sub-nav group cluster this tab belongs to (the renderer
+ *            inserts a group label whenever the group changes)
  *
  * The role array uses the same enum as the rest of the app (`user_role`
  * from auth.ts: 'rep' | 'manager' | 'admin'). When the 7-role hierarchy
@@ -28,22 +29,42 @@ export type SettingsTabId =
   | "profession"
   | "danger";
 
+/**
+ * Logical groups for the sub-nav rail. Replaces the single "ADMIN" divider
+ * pattern with three labeled clusters that mirror how users mentally
+ * organize settings:
+ *
+ *   Account   — "this is about me" (personal info, org membership)
+ *   Workspace — "this is about how we look + work" (branding, profession)
+ *   Advanced  — "this is dangerous or rarely-used" (danger zone, future
+ *               admin tabs like audit log)
+ */
+export type SettingsGroup = "account" | "workspace" | "advanced";
+
+export const GROUP_LABEL: Record<SettingsGroup, string> = {
+  account: "Account",
+  workspace: "Workspace",
+  advanced: "Advanced",
+};
+
 export interface SettingsTabDef {
   id: SettingsTabId;
   label: string;
   /** Which roles can see + access this tab. */
   roles: UserRole[];
-  /** True = under the visual ADMIN divider; False = above it. */
-  adminSection: boolean;
+  /** Sub-nav group this tab belongs to. */
+  group: SettingsGroup;
 }
 
-/** Order matters — this is the order tabs render in the left rail. */
+/** Order matters — this is the order tabs render in the left rail.
+ *  Tabs are clustered by group; the renderer inserts a group label
+ *  whenever the group changes between adjacent tabs. */
 export const SETTINGS_TABS: SettingsTabDef[] = [
-  { id: "personal",     label: "Personal",     roles: ["rep", "manager", "admin"], adminSection: false },
-  { id: "organization", label: "Organization", roles: ["rep", "manager", "admin"], adminSection: false },
-  { id: "branding",     label: "Branding",     roles: ["manager", "admin"],        adminSection: true  },
-  { id: "profession",   label: "Profession",   roles: ["manager", "admin"],        adminSection: true  },
-  { id: "danger",       label: "Danger zone",  roles: ["admin"],                   adminSection: true  },
+  { id: "personal",     label: "Personal",     roles: ["rep", "manager", "admin"], group: "account"   },
+  { id: "organization", label: "Organization", roles: ["rep", "manager", "admin"], group: "account"   },
+  { id: "branding",     label: "Branding",     roles: ["manager", "admin"],        group: "workspace" },
+  { id: "profession",   label: "Profession",   roles: ["manager", "admin"],        group: "workspace" },
+  { id: "danger",       label: "Danger zone",  roles: ["admin"],                   group: "advanced"  },
 ];
 
 /**

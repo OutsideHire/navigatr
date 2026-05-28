@@ -1,24 +1,18 @@
 /**
- * Settings — Session 20.
+ * SettingsPage — the "Personal" tab content of the Settings hub.
  *
- * Single-column scroll with sectioned Cards. Each Card has a heading,
- * optional description, and the relevant controls. Same layout
- * scale as the other authenticated pages (max-w-5xl + gap-4).
+ * Refactored per the design critique (SETTINGS_DESIGN_CRITIQUE.md):
+ *  - Auto-save everywhere with toast; no Save buttons (debounced 500ms
+ *    on text inputs, instant on radios/checkboxes).
+ *  - Industry tiles neutralized (one indigo treatment per page, on the
+ *    active card only).
+ *  - "Backend wires in Sprint 2" copy leak removed.
+ *  - Team card consolidated: single card with Link/Code switcher.
+ *  - Account split into Session + Danger zone (red wash on Danger).
+ *  - Section H2s carry subtitles for clarity.
  *
- * Sections:
- *   1. Profile        — full name editable, email read-only
- *   2. Profession     — 3-tile picker, drives the AddDealSheet's
- *                       qualification branch on /pipeline + the
- *                       dashboard's hero copy
- *   3. Appearance     — light / dark / system theme radio
- *   4. Notifications  — placeholder toggles (Sprint 2 wires actual
- *                       email/push backend)
- *   5. Team           — admin-only placeholder
- *   6. Account        — sign-out + delete-account stub
- *
- * The Profile name edit calls supabase.auth.updateUser via the auth
- * store's signOut/setProfession pattern. The profession picker
- * reuses setProfession from the same store. Theme uses useTheme.
+ * Header ("Personal settings" + subtitle) rendered by PersonalTab, not
+ * here. SettingsPage is the body — sections only.
  */
 
 import * as React from "react";
@@ -28,7 +22,6 @@ import {
   Copy,
   CreditCard,
   Landmark,
-  Link2,
   LogOut,
   Moon,
   Monitor,
@@ -51,13 +44,23 @@ import { useTheme, type Theme } from "@/stores/theme";
 import { supabase } from "@/lib/supabase";
 import { useOrganization } from "@/features/auth/useOrganization";
 
+// Debounce delay for text-input auto-save. 500ms is the standard "fast
+// enough to feel reactive, slow enough not to thrash" window — Linear,
+// Notion, and Vercel all use 400-600ms.
+const AUTOSAVE_DELAY_MS = 500;
+
 // ── Profile ──────────────────────────────────────────────────────────
 
 function ProfileSection() {
   const user = useAuth((s) => s.user);
   const initialName = getFullName(user);
   const [name, setName] = React.useState(initialName);
-  const [saving, setSaving] = React.useState(false);
+  // Three save states for the inline indicator:
+  //   idle   — input matches server; nothing to show
+  //   saving — debounce expired, request in flight
+  //   saved  — request succeeded; show "Saved" briefly then idle
+  type SaveState = "idle" | "saving" | "saved";
+  const [saveState, setSaveState] = React.useState<SaveState>("idle");
 
   // Keep input in sync if `user` updates from another source (e.g.
   // OAuth profile refresh) and the local edit hasn't diverged.
@@ -65,30 +68,44 @@ function ProfileSection() {
     setName(initialName);
   }, [initialName]);
 
-  const dirty = name.trim() !== initialName && name.trim().length > 0;
-
-  const onSave = async () => {
-    setSaving(true);
-    try {
-      const { error } = await supabase.auth.updateUser({
-        data: { full_name: name.trim() },
-      });
-      if (error) throw error;
-      toast.success("Name updated");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't save name");
-    } finally {
-      setSaving(false);
+  // Debounced auto-save. The effect re-runs on every keystroke; the
+  // cleanup cancels the timer if another keystroke arrives within the
+  // window. Net effect: save fires 500ms after typing stops.
+  React.useEffect(() => {
+    const trimmed = name.trim();
+    if (trimmed === initialName || trimmed.length === 0) {
+      setSaveState("idle");
+      return;
     }
-  };
+    const timer = setTimeout(async () => {
+      setSaveState("saving");
+      try {
+        const { error } = await supabase.auth.updateUser({
+          data: { full_name: trimmed },
+        });
+        if (error) throw error;
+        setSaveState("saved");
+        toast.success("Saved");
+        // Drop back to idle after a moment so the indicator doesn't stick.
+        setTimeout(() => setSaveState("idle"), 1500);
+      } catch (e) {
+        setSaveState("idle");
+        toast.error(e instanceof Error ? e.message : "Couldn't save name");
+      }
+    }, AUTOSAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [name, initialName]);
 
   return (
     <Card padding="md">
-      <h2 className="mb-1 text-body-strong text-text-default">Profile</h2>
-      <p className="mb-4 text-caption text-text-muted">
-        How you appear across navigatr.
-      </p>
-      <div className="flex flex-col gap-3">
+      <SectionHeader
+        title="Profile"
+        subtitle="How you appear across navigatr."
+        // Inline save indicator. Quiet when idle; "Saving…" while
+        // pending; brief "Saved" confirmation after success.
+        trailing={<AutoSavePill state={saveState} />}
+      />
+      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
         <FormField htmlFor="profile-name" label="Full name">
           <Input
             id="profile-name"
@@ -97,50 +114,48 @@ function ProfileSection() {
             placeholder="Jamie Rivera"
           />
         </FormField>
-        <FormField htmlFor="profile-email" label="Work email" helper="Email is tied to your account and cannot be changed here.">
+        <FormField
+          htmlFor="profile-email"
+          label="Work email"
+          helper="Tied to your account. Contact support to change."
+        >
           <Input id="profile-email" type="email" value={user?.email ?? ""} disabled />
         </FormField>
-        <div className="flex justify-end">
-          <Button variant="primary" size="sm" disabled={!dirty} loading={saving} onClick={onSave}>
-            Save name
-          </Button>
-        </div>
       </div>
     </Card>
   );
 }
 
-// ── Profession ───────────────────────────────────────────────────────
+// ── Industry / Profession ────────────────────────────────────────────
 
 interface ProfessionOption {
   value: Profession;
   label: string;
   description: string;
   Icon: typeof CreditCard;
-  accent: string;
 }
 
+// Critique #2 fix: drop per-profession brand colors. Unselected cards
+// share a neutral icon tile; only the active card gets the brand
+// treatment. One indigo per page.
 const PROFESSION_OPTIONS: ProfessionOption[] = [
   {
     value: "payroll",
     label: "Payroll",
-    description: "Payroll, HR, benefits, time & attendance.",
+    description: "HR, benefits, time & attendance.",
     Icon: CalendarClock,
-    accent: "bg-accent-orange-20 text-accent-orange",
   },
   {
     value: "merchant_services",
     label: "Merchant Services",
     description: "Payment processing, terminals, ISVs.",
     Icon: CreditCard,
-    accent: "bg-accent-teal-20 text-accent-teal",
   },
   {
     value: "treasury_management",
     label: "Treasury Management",
     description: "Banking, treasury, cash management.",
     Icon: Landmark,
-    accent: "bg-accent-blue-20 text-accent-blue",
   },
 ];
 
@@ -155,7 +170,7 @@ function ProfessionSection() {
     setSaving(next);
     try {
       await setProfession(next);
-      toast.success(`Switched to ${PROFESSION_OPTIONS.find((o) => o.value === next)?.label}`);
+      toast.success("Saved");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't switch profession");
     } finally {
@@ -165,11 +180,11 @@ function ProfessionSection() {
 
   return (
     <Card padding="md">
-      <h2 className="mb-1 text-body-strong text-text-default">Industry</h2>
-      <p className="mb-4 text-caption text-text-muted">
-        Drives the qualification fields, KPI defaults, and ICP filter.
-      </p>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <SectionHeader
+        title="Industry"
+        subtitle="Drives qualification fields, KPI defaults, and ICP filters."
+      />
+      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
         {PROFESSION_OPTIONS.map((opt) => {
           const isActive = current === opt.value;
           return (
@@ -180,21 +195,33 @@ function ProfessionSection() {
               aria-pressed={isActive}
               disabled={saving !== null && saving !== opt.value}
               className={cn(
-                "group relative flex flex-col gap-3 rounded-radius-md border bg-surface-elevated p-4 text-left transition-all",
+                "group relative flex flex-col gap-3 rounded-radius-md border bg-surface-elevated p-4 text-left transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-default",
                 "disabled:cursor-not-allowed disabled:opacity-60",
                 isActive
-                  ? "border-brand-primary shadow-sm ring-2 ring-brand-primary/30"
+                  ? "border-brand-primary bg-brand-primary-10"
                   : "border-border-subtle hover:border-border-default",
               )}
             >
               <div className="flex items-start justify-between">
-                <span className={cn("flex h-9 w-9 items-center justify-center rounded-radius-md", opt.accent)}>
+                <span
+                  className={cn(
+                    "flex h-9 w-9 items-center justify-center rounded-radius-md transition-colors",
+                    // Neutral unselected, brand-primary on the active one.
+                    // One indigo per page (critique #2).
+                    isActive
+                      ? "bg-brand-primary text-brand-primary-foreground"
+                      : "bg-surface-sunken text-text-muted",
+                  )}
+                >
                   <opt.Icon className="h-4 w-4" />
                 </span>
                 {isActive && (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-radius-full bg-brand-primary text-brand-primary-foreground">
-                    <Check className="h-3 w-3" aria-hidden />
+                  <span
+                    aria-hidden
+                    className="flex h-5 w-5 items-center justify-center rounded-radius-full bg-brand-primary text-brand-primary-foreground"
+                  >
+                    <Check className="h-3 w-3" />
                   </span>
                 )}
               </div>
@@ -227,16 +254,23 @@ function AppearanceSection() {
   const theme = useTheme((s) => s.theme);
   const setTheme = useTheme((s) => s.setTheme);
 
+  const onPick = (next: Theme) => {
+    if (next === theme) return;
+    setTheme(next);
+    // Theme store is local + persisted; toast confirms the auto-save.
+    toast.success("Saved");
+  };
+
   return (
     <Card padding="md">
-      <h2 className="mb-1 text-body-strong text-text-default">Appearance</h2>
-      <p className="mb-4 text-caption text-text-muted">
-        Choose your theme. System follows your OS preference.
-      </p>
+      <SectionHeader
+        title="Appearance"
+        subtitle="Theme follows your OS preference unless overridden."
+      />
       <div
         role="radiogroup"
         aria-label="Theme"
-        className="flex flex-wrap gap-2"
+        className="mt-4 flex flex-wrap gap-2"
       >
         {THEME_OPTIONS.map((opt) => {
           const isActive = theme === opt.value;
@@ -246,7 +280,7 @@ function AppearanceSection() {
               type="button"
               role="radio"
               aria-checked={isActive}
-              onClick={() => setTheme(opt.value)}
+              onClick={() => onPick(opt.value)}
               className={cn(
                 "inline-flex items-center gap-2 rounded-radius-md border px-3 py-2 text-body-sm font-medium transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-default",
@@ -265,79 +299,120 @@ function AppearanceSection() {
   );
 }
 
-// ── Notifications (placeholder) ──────────────────────────────────────
+// ── Notifications ────────────────────────────────────────────────────
+
+// Notification toggles persist to localStorage. The actual notification
+// backend (email digest, push, etc.) wiring is a separate work block;
+// when it lands, this section reads/writes through a NotificationsService
+// instead of localStorage. The UI contract stays the same either way.
+//
+// Critique #4 fix: removed the "Backend wires in Sprint 2" subtitle leak.
+const NOTIFICATIONS_STORAGE_KEY = "navigatr:notifications";
+
+interface NotificationPrefs {
+  emailDigest: boolean;
+  emailUrgent: boolean;
+  pushDropIn: boolean;
+  pushFollowup: boolean;
+}
+const DEFAULT_NOTIFICATIONS: NotificationPrefs = {
+  emailDigest: true,
+  emailUrgent: true,
+  pushDropIn: true,
+  pushFollowup: false,
+};
+
+function loadNotifications(): NotificationPrefs {
+  if (typeof window === "undefined") return DEFAULT_NOTIFICATIONS;
+  try {
+    const raw = window.localStorage.getItem(NOTIFICATIONS_STORAGE_KEY);
+    if (!raw) return DEFAULT_NOTIFICATIONS;
+    return { ...DEFAULT_NOTIFICATIONS, ...JSON.parse(raw) };
+  } catch {
+    return DEFAULT_NOTIFICATIONS;
+  }
+}
 
 function NotificationsSection() {
-  // Local state only — Sprint 2 wires actual notification preferences
-  // to a NotificationsService and the device push token.
-  const [emailDigest, setEmailDigest] = React.useState(true);
-  const [emailUrgent, setEmailUrgent] = React.useState(true);
-  const [pushDropIn, setPushDropIn] = React.useState(true);
-  const [pushFollowup, setPushFollowup] = React.useState(false);
+  const [prefs, setPrefs] = React.useState<NotificationPrefs>(() => loadNotifications());
+
+  const update = (key: keyof NotificationPrefs, value: boolean) => {
+    const next = { ...prefs, [key]: value };
+    setPrefs(next);
+    try {
+      window.localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(next));
+      toast.success("Saved");
+    } catch {
+      toast.error("Couldn't save notification preference");
+    }
+  };
 
   return (
     <Card padding="md">
-      <h2 className="mb-1 text-body-strong text-text-default">Notifications</h2>
-      <p className="mb-4 text-caption text-text-muted">
-        Choose what you want to hear about. <span className="text-text-subtle">Backend wires in Sprint 2.</span>
-      </p>
-      <div className="flex flex-col gap-3">
+      <SectionHeader
+        title="Notifications"
+        subtitle="Choose what you want to hear about."
+      />
+      <div className="mt-4 flex flex-col gap-3">
         <Checkbox
           id="notif-email-digest"
           label="Daily email digest"
           helper="Morning summary: today's tasks, overdue follow-ups, new partners."
-          checked={emailDigest}
-          onCheckedChange={setEmailDigest}
+          checked={prefs.emailDigest}
+          onCheckedChange={(v) => update("emailDigest", v)}
         />
         <Checkbox
           id="notif-email-urgent"
           label="Urgent email alerts"
           helper="High-value deal stalled, smart follow-up missed."
-          checked={emailUrgent}
-          onCheckedChange={setEmailUrgent}
+          checked={prefs.emailUrgent}
+          onCheckedChange={(v) => update("emailUrgent", v)}
         />
         <Checkbox
           id="notif-push-dropin"
           label="Push: nearby drop-in opportunity"
           helper="When Path discovers a high-ICP merchant within 0.5 mi."
-          checked={pushDropIn}
-          onCheckedChange={setPushDropIn}
+          checked={prefs.pushDropIn}
+          onCheckedChange={(v) => update("pushDropIn", v)}
         />
         <Checkbox
           id="notif-push-followup"
           label="Push: follow-up reminder"
           helper="15 minutes before a scheduled next-touch."
-          checked={pushFollowup}
-          onCheckedChange={setPushFollowup}
+          checked={prefs.pushFollowup}
+          onCheckedChange={(v) => update("pushFollowup", v)}
         />
       </div>
     </Card>
   );
 }
 
-// ── Team (admin only) ────────────────────────────────────────────────
+// ── Team ─────────────────────────────────────────────────────────────
+
+// Critique #5 + #6 fix: consolidate Link + Code into ONE card with a
+// segmented control switcher. No more "Or share just the code" second
+// card. No raw slug exposed as a top-level UI element.
+type InviteShareMode = "link" | "code";
 
 function TeamSection() {
   const org = useOrganization();
-  const [copied, setCopied] = React.useState<"link" | "code" | null>(null);
+  const [mode, setMode] = React.useState<InviteShareMode>("link");
+  const [copied, setCopied] = React.useState(false);
 
-  // The invite link points new teammates at /signup?code=<invite_code>.
-  // The signup form pre-fills the code so they only need to type their
-  // name/email/password (or click Continue with Google). Using window.
-  // location.origin works for both dev (localhost:5173) and prod (the
-  // Vercel URL) — no env vars needed.
   const inviteLink = org.data
     ? `${window.location.origin}/signup?code=${encodeURIComponent(org.data.inviteCode)}`
     : null;
+  const inviteCode = org.data?.inviteCode ?? "";
 
-  const copyToClipboard = async (value: string, kind: "link" | "code") => {
+  const copyValue = mode === "link" ? inviteLink ?? "" : inviteCode;
+
+  const copyToClipboard = async () => {
+    if (!copyValue) return;
     try {
-      await navigator.clipboard.writeText(value);
-      setCopied(kind);
-      toast.success(kind === "link" ? "Invite link copied" : "Invite code copied");
-      // Auto-clear the visual confirmation after a moment so the icon
-      // doesn't stick as a checkmark forever.
-      setTimeout(() => setCopied(null), 2000);
+      await navigator.clipboard.writeText(copyValue);
+      setCopied(true);
+      toast.success(mode === "link" ? "Invite link copied" : "Invite code copied");
+      setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't copy to clipboard");
     }
@@ -345,81 +420,120 @@ function TeamSection() {
 
   return (
     <Card padding="md">
-      <h2 className="mb-1 text-body-strong text-text-default">Team</h2>
-      <p className="mb-4 text-caption text-text-muted">
-        Invite teammates to {org.data?.name ?? "your team"}. They&apos;ll join the same workspace.
-      </p>
+      <SectionHeader
+        title="Invite teammates"
+        subtitle={
+          <>
+            They&apos;ll join{" "}
+            <span className="text-text-default">{org.data?.name ?? "your team"}</span>{" "}
+            with one click.
+          </>
+        }
+        trailing={<ShareModeSwitcher mode={mode} onChange={setMode} />}
+      />
 
       {org.isLoading && (
-        <div className="flex h-20 items-center justify-center text-caption text-text-muted">
-          Loading invite link…
+        <div className="mt-4 flex h-12 items-center justify-center text-caption text-text-muted">
+          Loading…
         </div>
       )}
 
       {org.isError && (
-        <div className="rounded-radius-md bg-status-danger-bg p-3 text-body-sm text-status-danger">
+        <div className="mt-4 rounded-radius-md bg-status-danger-bg p-3 text-body-sm text-status-danger">
           Couldn&apos;t load your organization. Refresh to try again.
         </div>
       )}
 
-      {org.data && inviteLink && (
-        <div className="flex flex-col gap-4">
-          {/* Share link — the primary action. Click-to-copy of a full URL
-              the teammate just clicks; lands them on /signup with the
-              invite code pre-filled. */}
-          <div className="flex flex-col gap-2 rounded-radius-md bg-surface-sunken p-4">
-            <div className="flex items-center gap-2">
-              <span className="flex h-9 w-9 items-center justify-center rounded-radius-full bg-accent-blue-20 text-accent-blue">
-                <Link2 className="h-4 w-4" />
-              </span>
-              <div className="flex min-w-0 flex-col">
-                <p className="text-body-strong text-text-default">Share invite link</p>
-                <p className="text-caption text-text-muted">Teammates click + sign up in one shot.</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 truncate rounded-radius-sm bg-surface-default px-3 py-2 font-mono text-caption text-text-default">
-                {inviteLink}
-              </code>
-              <Button
-                variant="primary"
-                size="sm"
-                leadingIcon={copied === "link" ? Check : Copy}
-                onClick={() => copyToClipboard(inviteLink, "link")}
-              >
-                {copied === "link" ? "Copied" : "Copy"}
-              </Button>
-            </div>
-          </div>
-
-          {/* Raw invite code — for the small % of cases where a teammate
-              prefers to type it into the signup form (e.g. shared via
-              voice over a call, or pasted into a non-clickable channel). */}
-          <div className="flex items-center justify-between gap-3 rounded-radius-md border border-border-subtle p-3">
-            <div className="flex min-w-0 flex-col">
-              <p className="text-caption text-text-muted">Or share just the code</p>
-              <code className="truncate font-mono text-body-strong text-text-default">
-                {org.data.inviteCode}
-              </code>
-            </div>
-            <Button
-              variant="tertiary"
-              size="sm"
-              leadingIcon={copied === "code" ? Check : Copy}
-              onClick={() => copyToClipboard(org.data!.inviteCode, "code")}
+      {org.data && (
+        <>
+          <div className="mt-4 flex items-center gap-2">
+            <code
+              aria-label={mode === "link" ? "Invite link" : "Invite code"}
+              className="flex-1 truncate rounded-radius-sm border border-border-subtle bg-surface-sunken px-3 py-2 font-mono text-caption text-text-default"
             >
-              {copied === "code" ? "Copied" : "Copy"}
+              {copyValue}
+            </code>
+            <Button
+              variant="secondary"
+              size="sm"
+              leadingIcon={copied ? Check : Copy}
+              onClick={copyToClipboard}
+            >
+              {copied ? "Copied" : "Copy"}
             </Button>
           </div>
-        </div>
+          {/* Soft helper row mirrors the mockup — no behavior yet on rotate
+              or email-invites links; they toast a "coming soon" message
+              instead of pretending to work. */}
+          <div className="mt-3 flex items-center justify-between gap-3 text-caption text-text-muted">
+            <span>
+              Anyone with this {mode} can join.{" "}
+              <button
+                type="button"
+                onClick={() => toast("Link expiry + rotation lands in v1.1")}
+                className="text-brand-primary hover:underline"
+              >
+                Rotate
+              </button>
+            </span>
+            <button
+              type="button"
+              onClick={() => toast("Per-agent email invites: see the Team page")}
+              className="text-brand-primary hover:underline"
+            >
+              Email invites instead →
+            </button>
+          </div>
+        </>
       )}
     </Card>
   );
 }
 
-// ── Account ──────────────────────────────────────────────────────────
+function ShareModeSwitcher({
+  mode,
+  onChange,
+}: {
+  mode: InviteShareMode;
+  onChange: (m: InviteShareMode) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Share invite as"
+      className="inline-flex items-center gap-0.5 rounded-radius-sm border border-border-subtle bg-surface-sunken p-0.5"
+    >
+      {(["link", "code"] as const).map((m) => {
+        const active = mode === m;
+        return (
+          <button
+            key={m}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(m)}
+            className={cn(
+              "rounded-radius-sm px-2.5 py-1 text-caption font-medium transition-colors",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary",
+              active
+                ? "bg-surface-default text-text-default shadow-sm"
+                : "text-text-muted hover:text-text-default",
+            )}
+          >
+            {m === "link" ? "Link" : "Code"}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
-function AccountSection() {
+// ── Session + Danger zone ────────────────────────────────────────────
+// Critique #11 (paraphrased): destructive actions deserve a wall.
+// Splitting Account into two cards puts "Sign out" on a normal card and
+// "Delete account" inside a red-washed Danger zone.
+
+function SessionSection() {
   const navigate = useNavigate();
   const signOut = useAuth((s) => s.signOut);
   const [signingOut, setSigningOut] = React.useState(false);
@@ -437,25 +551,97 @@ function AccountSection() {
 
   return (
     <Card padding="md">
-      <h2 className="mb-1 text-body-strong text-text-default">Account</h2>
-      <p className="mb-4 text-caption text-text-muted">
-        Sign out, or permanently delete your account.
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" size="md" leadingIcon={LogOut} onClick={onSignOut} loading={signingOut}>
-          Sign out
-        </Button>
-        <Button
-          variant="tertiary"
-          size="md"
-          leadingIcon={Trash2}
-          onClick={() => toast("Delete account lands in Sprint 2")}
-          className="text-status-danger hover:bg-status-danger-bg"
-        >
-          Delete account
-        </Button>
-      </div>
+      <SectionHeader
+        title="Session"
+        subtitle="Sign out of this device."
+        trailing={
+          <Button variant="secondary" size="md" leadingIcon={LogOut} onClick={onSignOut} loading={signingOut}>
+            Sign out
+          </Button>
+        }
+      />
     </Card>
+  );
+}
+
+function DangerZoneSection() {
+  return (
+    // Red wash + red border per design critique. Status-danger tokens used
+    // throughout the app for destructive surfaces.
+    <Card
+      padding="md"
+      className="border-status-danger/30 bg-status-danger-bg/30"
+    >
+      <SectionHeader
+        title={<span className="text-status-danger">Danger zone</span>}
+        subtitle={
+          <>
+            Deleting your account is permanent. Your workspace data,
+            partners, and pipeline history will be removed.
+          </>
+        }
+        trailing={
+          <Button
+            variant="tertiary"
+            size="md"
+            leadingIcon={Trash2}
+            onClick={() => toast("Delete account lands in v1.1")}
+            className="border-status-danger/40 text-status-danger hover:bg-status-danger-bg"
+          >
+            Delete account
+          </Button>
+        }
+      />
+    </Card>
+  );
+}
+
+// ── Shared section primitives ────────────────────────────────────────
+
+interface SectionHeaderProps {
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  /** Optional element rendered on the right side of the header row
+   *  (e.g. an action button or a "Saved" pill). */
+  trailing?: React.ReactNode;
+}
+
+function SectionHeader({ title, subtitle, trailing }: SectionHeaderProps) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <h2 className="text-body-strong text-text-default">{title}</h2>
+        {subtitle && (
+          <p className="mt-1 text-caption text-text-muted">{subtitle}</p>
+        )}
+      </div>
+      {trailing}
+    </div>
+  );
+}
+
+/**
+ * AutoSavePill — inline status indicator for auto-saved fields.
+ * Idle: no pill (avoids visual noise during normal use).
+ * Saving: "Saving…" in a muted pill.
+ * Saved: "Saved" in a subtle success pill that fades back to idle after
+ *        1.5 seconds.
+ */
+function AutoSavePill({ state }: { state: "idle" | "saving" | "saved" }) {
+  if (state === "idle") return null;
+  const isSaved = state === "saved";
+  return (
+    <span
+      aria-live="polite"
+      className={cn(
+        "inline-flex items-center rounded-radius-full px-2 py-0.5 text-caption font-medium",
+        isSaved
+          ? "bg-status-success-bg text-status-success"
+          : "bg-surface-sunken text-text-muted",
+      )}
+    >
+      {isSaved ? "Saved" : "Saving…"}
+    </span>
   );
 }
 
@@ -465,23 +651,17 @@ export function SettingsPage() {
   const user = useAuth((s) => s.user);
   const showTeamSection = canInviteTeam(user);
 
+  // No page-level chrome here — the H1 + subtitle live in PersonalTab.
+  // SettingsPage just renders sections in order.
   return (
-    <div className="w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
-      <div className="w-full max-w-3xl">
-        <header className="mb-6 flex flex-col gap-1">
-          <h1 className="text-heading-lg text-text-default">Settings</h1>
-          <p className="text-body-md text-text-muted">Profile, industry, appearance, and account.</p>
-        </header>
-
-      <div className="flex flex-col gap-4 lg:gap-6">
-        <ProfileSection />
-        <ProfessionSection />
-        <AppearanceSection />
-        <NotificationsSection />
-        {showTeamSection && <TeamSection />}
-        <AccountSection />
-      </div>
-      </div>
+    <div className="flex flex-col gap-4 lg:gap-6">
+      <ProfileSection />
+      <ProfessionSection />
+      <AppearanceSection />
+      <NotificationsSection />
+      {showTeamSection && <TeamSection />}
+      <SessionSection />
+      <DangerZoneSection />
     </div>
   );
 }

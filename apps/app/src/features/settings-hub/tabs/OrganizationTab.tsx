@@ -11,6 +11,7 @@ import { Button, Card } from "@/components/navigatr";
 import { SeatUsageBadge } from "@/features/admin/components/SeatUsageBadge";
 import { useOrganization } from "@/features/auth/useOrganization";
 import { useProfile } from "@/features/auth/useProfile";
+import { TabHeader } from "./TabHeader";
 
 export function OrganizationTab() {
   const org = useOrganization();
@@ -24,8 +25,12 @@ export function OrganizationTab() {
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <h2 className="text-heading-lg">Organization</h2>
+    <>
+      <TabHeader
+        title="Organization"
+        subtitle={`Settings for ${org.data?.name ?? "your workspace"}.`}
+      />
+      <div className="flex flex-col gap-4">
 
       <Card padding="md">
         <h3 className="text-body-strong">Workspace</h3>
@@ -60,6 +65,7 @@ export function OrganizationTab() {
           </Button>
         </div>
       </Card>
-    </div>
+      </div>
+    </>
   );
 }

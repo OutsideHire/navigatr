@@ -133,18 +133,21 @@ describe("SettingsHubPage — desktop layout", () => {
     expect(screen.getByTestId("tab-content")).toHaveTextContent("BRANDING_TAB_CONTENT");
   });
 
-  it("shows the ADMIN divider above branding for admins", () => {
+  it("renders all three group labels for admins (Account/Workspace/Advanced)", () => {
     profileShape = { data: { role: "admin" } };
     renderAt("/settings");
-    // The divider has aria-hidden but its text "ADMIN" should still be in DOM.
     const tablist = screen.getByRole("tablist");
-    expect(tablist.textContent).toMatch(/ADMIN/);
+    expect(tablist.textContent).toMatch(/Account/);
+    expect(tablist.textContent).toMatch(/Workspace/);
+    expect(tablist.textContent).toMatch(/Advanced/);
   });
 
-  it("does NOT show ADMIN divider when user is rep (no admin tabs visible)", () => {
+  it("renders only the Account group label for reps (no admin tabs visible)", () => {
     profileShape = { data: { role: "rep" } };
     renderAt("/settings");
     const tablist = screen.getByRole("tablist");
-    expect(tablist.textContent).not.toMatch(/ADMIN/);
+    expect(tablist.textContent).toMatch(/Account/);
+    expect(tablist.textContent).not.toMatch(/Workspace/);
+    expect(tablist.textContent).not.toMatch(/Advanced/);
   });
 });

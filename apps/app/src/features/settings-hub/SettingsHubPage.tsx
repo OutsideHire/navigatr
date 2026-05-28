@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { useProfile } from "@/features/auth/useProfile";
 import {
   SETTINGS_TABS,
+  GROUP_LABEL,
   visibleTabs,
   resolveTab,
   type SettingsTabId,
@@ -114,15 +115,19 @@ export function SettingsHubPage() {
   }
 
   // ---- Desktop: left rail + content panel ----------------------------------
+  // Layout per the design critique: tab rail flush against the AppLayout
+  // sidebar (no left padding outside the rail), content panel takes the
+  // remaining width capped at 920px. Kills the previous "dead column" on
+  // the left that pushed the content panel ~400px right.
   return (
-    <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-5xl gap-6">
-        <DesktopTabList
-          tabs={tabs}
-          activeId={activeDef.id}
-          onSelect={(id) => setSearchParams({ tab: id })}
-        />
-        <div className="min-w-0 flex-1">
+    <div className="flex w-full">
+      <DesktopTabList
+        tabs={tabs}
+        activeId={activeDef.id}
+        onSelect={(id) => setSearchParams({ tab: id })}
+      />
+      <div className="min-w-0 flex-1 px-6 py-10 lg:px-12">
+        <div className="max-w-[920px]">
           <ActiveContent />
         </div>
       </div>
@@ -165,20 +170,29 @@ function DesktopTabList({
       role="tablist"
       aria-orientation="vertical"
       aria-label="Settings sections"
-      className="w-56 shrink-0"
+      // Flush against AppLayout sidebar (no left margin), 180px wide.
+      // Right border separates rail from content panel.
+      className="w-[180px] shrink-0 border-r border-border-subtle px-2 py-6"
     >
       {tabs.map((tab, idx) => {
         const isActive = tab.id === activeId;
-        // Render the ADMIN divider before the first admin-section tab.
-        const showDivider = tab.adminSection && (idx === 0 || !tabs[idx - 1].adminSection);
+        // Render the group label whenever this tab's group differs from
+        // the previous one (or on the first tab).
+        const showGroupLabel = idx === 0 || tabs[idx - 1].group !== tab.group;
         return (
           <React.Fragment key={tab.id}>
-            {showDivider && (
+            {showGroupLabel && (
               <div
-                className="my-2 px-3 text-eyebrow text-text-subtle"
+                className={cn(
+                  "px-3 text-eyebrow text-text-subtle",
+                  // First label sits tight to the rail top; subsequent
+                  // labels get extra breathing room above to visually
+                  // separate from the previous group.
+                  idx === 0 ? "pb-1.5" : "pb-1.5 pt-4",
+                )}
                 aria-hidden
               >
-                ADMIN
+                {GROUP_LABEL[tab.group]}
               </div>
             )}
             <button
@@ -216,12 +230,12 @@ function MobileIndex({ tabs }: { tabs: SettingsTabDef[] }) {
       <h1 className="mb-4 text-heading-lg">Settings</h1>
       <ul className="flex flex-col gap-px overflow-hidden rounded-radius-md border border-border-default bg-surface-default">
         {tabs.map((tab, idx) => {
-          const showDivider = tab.adminSection && (idx === 0 || !tabs[idx - 1].adminSection);
+          const showGroupLabel = idx === 0 || tabs[idx - 1].group !== tab.group;
           return (
             <React.Fragment key={tab.id}>
-              {showDivider && (
+              {showGroupLabel && (
                 <li className="bg-surface-canvas px-4 py-2 text-eyebrow text-text-subtle" aria-hidden>
-                  ADMIN
+                  {GROUP_LABEL[tab.group]}
                 </li>
               )}
               <li>
