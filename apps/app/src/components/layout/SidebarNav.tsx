@@ -20,7 +20,7 @@
  */
 
 import { NavLink } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Users } from "lucide-react";
+import { BarChart3, ChevronLeft, ChevronRight, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MAIN_TABS, SETTINGS_TAB, type NavTabSpec } from "./nav-tabs";
 import { useProfile } from "@/features/auth/useProfile";
@@ -90,6 +90,13 @@ const TEAM_TAB: NavTabSpec = {
   icon: Users,
 };
 
+const INSIGHTS_TAB: NavTabSpec = {
+  key: "insights",
+  label: "Insights",
+  to: "/admin/insights",
+  icon: BarChart3,
+};
+
 export function SidebarNav({ collapsed = false, onCollapseToggle, className }: SidebarNavProps) {
   const profile = useProfile();
   const isManagerOrAdmin =
@@ -115,7 +122,10 @@ export function SidebarNav({ collapsed = false, onCollapseToggle, className }: S
         ))}
 
         {isManagerOrAdmin && (
-          <SidebarNavItem tab={TEAM_TAB} collapsed={collapsed} />
+          <>
+            <SidebarNavItem tab={TEAM_TAB} collapsed={collapsed} />
+            <SidebarNavItem tab={INSIGHTS_TAB} collapsed={collapsed} />
+          </>
         )}
 
         <div className="my-2 h-px bg-border-subtle" />

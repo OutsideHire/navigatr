@@ -4,7 +4,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { Toaster } from "sonner";
 import { App } from "@/App";
+import { initObservability } from "@/lib/observability";
 import "@/index.css";
+
+// Observability MUST init before any other side-effect import — otherwise
+// errors thrown during auth bootstrap or service-worker registration
+// would happen before Sentry is listening. No-op if VITE_SENTRY_DSN unset.
+initObservability();
+
 // Side-effect imports — order matters:
 //   1. theme:   applies persisted light/dark to <html> before first paint
 //   2. install: wires `beforeinstallprompt` + `appinstalled` listeners

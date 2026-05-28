@@ -38,6 +38,7 @@ import * as React from "react";
 import { AlertTriangle, ArrowLeft, RefreshCw } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button, Card } from "@/components/navigatr";
+import { captureException } from "@/lib/observability";
 
 interface FallbackProps {
   error: Error;
@@ -61,9 +62,9 @@ function ErrorFallback({ error, onReset }: FallbackProps) {
 
         <div className="flex flex-col gap-1">
           <h1 className="text-heading-sm text-text-default">Something went wrong</h1>
-          {/* IMPORTANT: this copy does NOT promise observability. Until Sentry
-              is wired (Sprint 2 TODO in componentDidCatch), only console.error
-              receives the stack. Saying "we've logged it" would be a lie. */}
+          {/* Sentry capture happens in componentDidCatch below. Copy stays
+              vague because we don't want to promise "our team is on it" to
+              the user — that's a customer-success commitment, not a tech one. */}
           <p className="text-body-md text-text-muted">
             This page hit a snag. Try again, or head back to the dashboard.
           </p>
@@ -134,10 +135,12 @@ class ErrorBoundaryInner extends React.Component<BoundaryProps, BoundaryState> {
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    // Keep the full error in the console so devs can debug from DevTools.
-    // TODO Sprint 2: send to Sentry / observability backend here.
+    // Keep the full error in the console so devs can debug from DevTools
+    // even when Sentry isn't configured (local dev).
     // eslint-disable-next-line no-console
     console.error("[RouteErrorBoundary] render error:", error, info.componentStack);
+    // Sentry: no-op if VITE_SENTRY_DSN unset, so safe to call unconditionally.
+    captureException(error, { componentStack: info.componentStack });
   }
 
   handleReset = () => {
