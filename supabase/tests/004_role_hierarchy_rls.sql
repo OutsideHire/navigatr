@@ -59,6 +59,20 @@ insert into deals (
   ('50000000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-0000000000b1', '40000000-0000-0000-0000-000000000006', 'Rep3 Deal',  'R', 'r3@x.example','+15550000006', 60000),
   ('50000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-0000000000b1', '40000000-0000-0000-0000-000000000007', 'Loner Deal', 'L', 'l@x.example', '+15550000007', 70000);
 
+-- ───────────────────────────────────────────────────────────────────
+-- Activity fixtures — must be seeded UPFRONT, before any role-switching
+-- test case runs. Once a `set_config('role', 'authenticated', true)`
+-- fires inside a DO block, the role stays sticky for the rest of the
+-- transaction, and subsequent inserts go through RLS instead of
+-- bypassing it as superuser. The activities_insert policy requires
+-- logged_by = auth.uid(), which wouldn't match if we tried to seed
+-- after the assertions had set auth.uid to a different user.
+insert into activities (org_id, deal_id, logged_by, type, disposition, occurred_at, outcome_notes) values
+  ('00000000-0000-0000-0000-0000000000b1', '50000000-0000-0000-0000-000000000003',
+   '40000000-0000-0000-0000-000000000002', 'call', 'positive_engagement', now(), 'vp note on rep1 deal'),
+  ('00000000-0000-0000-0000-0000000000b1', '50000000-0000-0000-0000-000000000005',
+   '40000000-0000-0000-0000-000000000002', 'call', 'positive_engagement', now(), 'vp note on vp2 deal');
+
 -- Helper to count visible deals as a specific user. set_config seeds
 -- the JWT-derived auth.uid() that RLS reads.
 create or replace function _test_visible_deal_count(p_user uuid)
@@ -205,20 +219,8 @@ end $$;
 -- outside the deal owner's subtree should NOT see the activity even
 -- if they're a peer of whoever logged it.
 
--- Seed: vp logs an activity on rep1's deal (manager logging on a rep's
--- pipeline — common case). Then vp logs one on vp2's deal (cross-subtree;
--- this would not happen in practice but lets us test isolation).
-insert into activities (
-  org_id, deal_id, logged_by, type, disposition, occurred_at, outcome_notes
-) values
-  ('00000000-0000-0000-0000-0000000000b1',
-   '50000000-0000-0000-0000-000000000003',  -- on REP1's deal
-   '40000000-0000-0000-0000-000000000002',  -- logged by VP
-   'call', 'positive_engagement', now(), 'vp logged on rep1 deal'),
-  ('00000000-0000-0000-0000-0000000000b1',
-   '50000000-0000-0000-0000-000000000005',  -- on VP2's deal
-   '40000000-0000-0000-0000-000000000002',  -- logged by VP (cross-subtree)
-   'call', 'positive_engagement', now(), 'vp logged on vp2 deal — should be invisible to rep1');
+-- Fixtures for these assertions were seeded at the top of the file,
+-- before any role-switching DO blocks ran. See "Activity fixtures" comment.
 
 do $$
 declare visible boolean;
