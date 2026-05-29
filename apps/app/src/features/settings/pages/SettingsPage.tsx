@@ -43,6 +43,7 @@ import {
 import { useTheme, type Theme } from "@/stores/theme";
 import { supabase } from "@/lib/supabase";
 import { useOrganization } from "@/features/auth/useOrganization";
+import { DeleteAccountDialog } from "@/features/account/DeleteAccountDialog";
 
 // Debounce delay for text-input auto-save. 500ms is the standard "fast
 // enough to feel reactive, slow enough not to thrash" window — Linear,
@@ -565,34 +566,40 @@ function SessionSection() {
 }
 
 function DangerZoneSection() {
+  // Two-stage delete flow: button opens the confirmation dialog;
+  // dialog requires typing "DELETE" then calls the RPC + signs out.
+  // No more "lands in v1.1" stub.
+  const [dialogOpen, setDialogOpen] = React.useState(false);
   return (
-    // Red wash + red border per design critique. Status-danger tokens used
-    // throughout the app for destructive surfaces.
-    <Card
-      padding="md"
-      className="border-status-danger/30 bg-status-danger-bg/30"
-    >
-      <SectionHeader
-        title={<span className="text-status-danger">Danger zone</span>}
-        subtitle={
-          <>
-            Deleting your account is permanent. Your workspace data,
-            partners, and pipeline history will be removed.
-          </>
-        }
-        trailing={
-          <Button
-            variant="tertiary"
-            size="md"
-            leadingIcon={Trash2}
-            onClick={() => toast("Delete account lands in v1.1")}
-            className="border-status-danger/40 text-status-danger hover:bg-status-danger-bg"
-          >
-            Delete account
-          </Button>
-        }
-      />
-    </Card>
+    <>
+      <Card
+        padding="md"
+        className="border-status-danger/30 bg-status-danger-bg/30"
+      >
+        <SectionHeader
+          title={<span className="text-status-danger">Danger zone</span>}
+          subtitle={
+            <>
+              Deleting your account anonymizes your name + email and signs
+              you out. Your deals + activities stay with the team for
+              business-record purposes.
+            </>
+          }
+          trailing={
+            <Button
+              variant="tertiary"
+              size="md"
+              leadingIcon={Trash2}
+              onClick={() => setDialogOpen(true)}
+              className="border-status-danger/40 text-status-danger hover:bg-status-danger-bg"
+            >
+              Delete account
+            </Button>
+          }
+        />
+      </Card>
+      <DeleteAccountDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+    </>
   );
 }
 
