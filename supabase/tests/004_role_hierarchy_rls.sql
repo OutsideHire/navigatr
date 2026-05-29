@@ -73,27 +73,34 @@ begin
 end $$;
 
 -- ───────────────────────────────────────────────────────────────────
--- Case 1: leaf user (rep1) sees only own deal
+-- Case 1: leaf user (rep1) sees own deal + loner's deal
 -- ───────────────────────────────────────────────────────────────────
+-- The loner has NULL role_path. Per Decision D2 (priority 3 in
+-- user_can_see_owner), a NULL-role_path target is visible to everyone
+-- as the backward-compatibility fallback. So rep1 sees:
+--   own (priority 1) + loner (priority 3) = 2
+-- This is intentional. Without it, rolling out role_path one user at a
+-- time would silently make unplaced users disappear mid-rollout.
 do $$
 declare n int;
 begin
   n := _test_visible_deal_count('40000000-0000-0000-0000-000000000003');
-  if n <> 1 then
-    raise exception 'case1: rep1 should see exactly 1 deal (own), got %', n;
+  if n <> 2 then
+    raise exception 'case1: rep1 should see 2 (own + loner via NULL fallback), got %', n;
   end if;
 end $$;
 
 -- ───────────────────────────────────────────────────────────────────
--- Case 2: middle user (vp) sees own + 2 descendants (rep1, rep2)
+-- Case 2: middle user (vp) sees own + 2 descendants + loner
 -- ───────────────────────────────────────────────────────────────────
+-- vp sees: own (priority 1) + rep1 + rep2 (priority 4, ltree descendants)
+--          + loner (priority 3, NULL fallback) = 4
 do $$
 declare n int;
 begin
   n := _test_visible_deal_count('40000000-0000-0000-0000-000000000002');
-  -- vp sees: own deal (vp) + rep1 + rep2 = 3
-  if n <> 3 then
-    raise exception 'case2: vp should see 3 deals (own + 2 reps), got %', n;
+  if n <> 4 then
+    raise exception 'case2: vp should see 4 (own + 2 reps + loner), got %', n;
   end if;
 end $$;
 
