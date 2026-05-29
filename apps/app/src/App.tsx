@@ -10,6 +10,7 @@ import { Loader2 } from "lucide-react";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { RequireRole } from "@/components/layout/RequireRole";
 import { setUnauthorizedHandler } from "@/api";
+import { CookieBanner } from "@/features/legal/CookieBanner";
 import { useAuth } from "@/stores/auth";
 
 /**
@@ -97,6 +98,16 @@ const AgentDetailPage = lazy(() =>
 // Accept-invite (public — no AppLayout, no auth required)
 const AcceptInvitePage = lazy(() =>
   import("@/features/auth/pages/AcceptInvitePage").then((m) => ({ default: m.AcceptInvitePage })),
+);
+
+// Legal pages (public — must be reachable without auth for vendor
+// security review + contract review). Lazy-loaded since most users
+// never visit them.
+const TermsPage = lazy(() =>
+  import("@/features/legal/pages/TermsPage").then((m) => ({ default: m.TermsPage })),
+);
+const PrivacyPage = lazy(() =>
+  import("@/features/legal/pages/PrivacyPage").then((m) => ({ default: m.PrivacyPage })),
 );
 
 // Component preview catalogs (dev / design review). Lazy-loaded for
@@ -195,6 +206,10 @@ export function App() {
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/accept-invitation" element={<InvitationAcceptancePage />} />
           <Route path="/accept-invite" element={<AcceptInvitePage />} />
+
+          {/* Legal — public, no auth, no AppLayout */}
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
 
           {/* ===== OAuth + email-confirm landing ===== */}
           {/* Owns the post-signup claim_invite_code flow. Never gated by
@@ -358,6 +373,11 @@ export function App() {
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Suspense>
+
+      {/* Cookie banner — sits inside <BrowserRouter> because it links to
+          /privacy via <Link>. Self-hides once the user records a consent
+          decision; re-shows if the consent schema version bumps. */}
+      <CookieBanner />
     </BrowserRouter>
   );
 }
