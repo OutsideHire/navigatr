@@ -303,8 +303,12 @@ begin
   end if;
 end $$;
 
--- Clean up the test helper function.
-drop function _test_visible_deal_count(uuid);
+-- No explicit `drop function _test_visible_deal_count` here — by the time
+-- this line would execute, set_config has switched the role to
+-- 'authenticated' (sticky for the transaction), and 'authenticated' is
+-- not the owner of the function so the drop would fail with a permission
+-- error. The rollback below undoes the CREATE OR REPLACE FUNCTION
+-- anyway, so the function never persists outside this transaction.
 
 -- All cases passed. Wrapping ROLLBACK keeps the DB clean.
 rollback;
