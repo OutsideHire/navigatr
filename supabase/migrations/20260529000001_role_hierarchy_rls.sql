@@ -211,13 +211,20 @@ create policy activities_delete on activities for delete
 -- before via the existing self-join. That keeps the Team page rendering
 -- and avoids breaking RequireRole, useProfile, etc.
 
+-- CRITICAL: use public.user_org_id() (SECURITY DEFINER, bypasses RLS),
+-- NOT an inline subquery against profiles. The inline subquery causes
+-- infinite recursion through this very policy and 500s every profile
+-- read in the app. This was fixed by migration
+-- 20260518000003_fix_profiles_select_recursion; do NOT regress.
+
 drop policy if exists profiles_select on profiles;
 create policy profiles_select on profiles for select
   using (
     -- See own profile.
     id = auth.uid()
-    -- See others in same org (existing behavior, preserved verbatim).
-    or org_id = (select p.org_id from profiles p where p.id = auth.uid())
+    -- See others in same org (existing behavior, preserved verbatim
+    -- from the v1 foundation set — recursion-safe via helper).
+    or org_id = public.user_org_id()
   );
 
 -- Note: we did NOT replace the org-wide visibility with hierarchy-only
