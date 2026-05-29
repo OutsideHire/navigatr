@@ -53,12 +53,15 @@ export function initObservability(): void {
       "ResizeObserver loop completed with undelivered notifications",
       "ResizeObserver loop limit exceeded",
     ],
-    // Strip access tokens from URLs before they hit Sentry.
+    // Strip tokens AND user PII (emails, phone numbers) from every part
+    // of the event before it leaves the browser. Sentry events are shared
+    // across the dev team + retained by Sentry; an email or phone in an
+    // error payload is a privacy leak any audit will flag.
     beforeSend(event) {
       if (event.request?.url) {
         event.request.url = stripTokensFromUrl(event.request.url);
       }
-      return event;
+      return redactPii(event);
     },
   });
   initialized = true;
@@ -134,4 +137,112 @@ function stripTokensFromUrl(url: string): string {
     // Not a parseable URL (could be a relative path). Best-effort redact.
     return url.replace(/([?&](?:[^=&]*(?:token|key|code|secret)[^=&]*)=)[^&]+/gi, "$1[redacted]");
   }
+}
+
+// ---------------------------------------------------------------------------
+// PII redaction
+// ---------------------------------------------------------------------------
+//
+// Sentry events carry strings that originated from anywhere — error
+// messages, fetch payloads, breadcrumbs, the user's clipboard, JSX prop
+// names that happened to include user data. We can't know in advance
+// where PII will surface, so we walk the event structure and mask any
+// string that *looks like* an email or a phone number.
+//
+// This is best-effort. A determined attacker who controls error content
+// could craft a payload that evades these regexes. But we cover the
+// 99% case: form-input bleed, RPC error messages containing the user's
+// row, etc.
+//
+// We export the redactor for unit testing without spinning up Sentry.
+
+// Email: anything-anything@anything.tld. Deliberately lax — better to
+// over-redact than under-redact.
+const EMAIL_RE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+
+// Phone: E.164 (`+15551234567`) and common US formats. The US-formatted
+// regex requires explicit separators so we don't accidentally redact
+// long random integers (deal IDs, timestamps).
+const PHONE_RE = /(?:\+?\d{1,3}[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]\d{3}[\s.-]\d{4}|\+\d{10,15}/g;
+
+export function redactString(input: string): string {
+  return input.replace(EMAIL_RE, "[email]").replace(PHONE_RE, "[phone]");
+}
+
+/**
+ * Walk an arbitrary value and redact strings. Mutates structurally —
+ * objects/arrays are visited in-place. Non-string scalars (numbers,
+ * booleans, null, undefined) pass through untouched. Circular refs
+ * are guarded by a WeakSet so we don't loop forever on Sentry's
+ * event objects (which sometimes self-reference).
+ */
+function redactDeep(value: unknown, seen: WeakSet<object>): unknown {
+  if (typeof value === "string") return redactString(value);
+  if (value === null || typeof value !== "object") return value;
+  if (seen.has(value as object)) return value;
+  seen.add(value as object);
+
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      value[i] = redactDeep(value[i], seen);
+    }
+    return value;
+  }
+
+  // Plain object: redact each enumerable property in place.
+  const obj = value as Record<string, unknown>;
+  for (const key of Object.keys(obj)) {
+    obj[key] = redactDeep(obj[key], seen);
+  }
+  return obj;
+}
+
+/**
+ * Walk a Sentry event and redact PII from the surfaces most likely to
+ * contain it. Returns the (mutated) event so beforeSend can return it
+ * directly.
+ *
+ * Surfaces covered:
+ *   - event.message            (raw captureMessage string)
+ *   - event.exception.values[].value  (error message text)
+ *   - event.breadcrumbs[].message + .data
+ *   - event.extra              (anything passed via captureException context)
+ *   - event.contexts           (Sentry-managed but sometimes echoes input)
+ *   - event.request.data       (POST body if Sentry captures one)
+ *
+ * NOT covered:
+ *   - event.user               (we only set { id } — no PII expected)
+ *   - event.tags               (we control these; org_id is opaque)
+ *   - event.request.url        (already handled by stripTokensFromUrl above)
+ *
+ * Typed loosely so it accepts both the unit-test fixture shape AND the
+ * Sentry ErrorEvent (which has many optional + heterogeneous fields).
+ * We cast through `unknown` at call sites where needed.
+ */
+export function redactPii<T>(event: T): T {
+  if (!event || typeof event !== "object") return event;
+  const e = event as Record<string, unknown>;
+  const seen = new WeakSet<object>();
+
+  if (typeof e.message === "string") {
+    e.message = redactString(e.message);
+  }
+  if (e.exception && typeof e.exception === "object") {
+    redactDeep(e.exception, seen);
+  }
+  if (Array.isArray(e.breadcrumbs)) {
+    redactDeep(e.breadcrumbs, seen);
+  }
+  if (e.extra && typeof e.extra === "object") {
+    redactDeep(e.extra, seen);
+  }
+  if (e.contexts && typeof e.contexts === "object") {
+    redactDeep(e.contexts, seen);
+  }
+  const req = e.request as { data?: unknown; url?: unknown } | undefined;
+  if (req?.data) {
+    req.data = redactDeep(req.data, seen);
+  }
+
+  return event;
 }

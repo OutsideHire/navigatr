@@ -102,6 +102,32 @@ describe("observability", () => {
     expect(Sentry.setTag).toHaveBeenCalledWith("org_id", undefined);
   });
 
+  it("beforeSend strips PII (emails + phones) from event payloads", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { initObservability } = await import("./observability");
+    initObservability();
+    const initArg = (Sentry.init as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+      beforeSend: (e: Record<string, unknown>) => Record<string, unknown>;
+    };
+    const event = {
+      message: "User ceo@outsidehire.com hit error at +15551234567",
+      exception: {
+        values: [{ value: "deal owner alice@acme.com (555) 123-4567 not found" }],
+      },
+      extra: { customer_email: "lead@example.com" },
+    };
+    const out = initArg.beforeSend(event);
+    expect((out.message as string)).not.toContain("ceo@outsidehire.com");
+    expect((out.message as string)).toContain("[email]");
+    expect((out.message as string)).not.toContain("+15551234567");
+    expect((out.message as string)).toContain("[phone]");
+    const exceptionValue = (out.exception as { values: { value: string }[] }).values[0].value;
+    expect(exceptionValue).toContain("[email]");
+    expect(exceptionValue).toContain("[phone]");
+    expect((out.extra as { customer_email: string }).customer_email).toBe("[email]");
+  });
+
   it("beforeSend strips token-ish query params from request URL", async () => {
     vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
     const Sentry = await import("@sentry/react");
