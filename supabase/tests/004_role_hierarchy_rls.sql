@@ -36,14 +36,16 @@ insert into auth.users (id, email, aud, role, created_at, updated_at, email_conf
   ('40000000-0000-0000-0000-000000000006', 'rep3@h.example',  'authenticated', 'authenticated', now(), now(), now()),
   ('40000000-0000-0000-0000-000000000007', 'loner@h.example', 'authenticated', 'authenticated', now(), now(), now());
 
-insert into profiles (id, org_id, role, full_name, role_path) values
-  ('40000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000b1', 'admin',   'CEO',   'ceo'::ltree),
-  ('40000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000b1', 'manager', 'VP',    'ceo.vp'::ltree),
-  ('40000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-0000000000b1', 'rep',     'Rep 1', 'ceo.vp.rep1'::ltree),
-  ('40000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-0000000000b1', 'rep',     'Rep 2', 'ceo.vp.rep2'::ltree),
-  ('40000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-0000000000b1', 'manager', 'VP 2',  'ceo.vp2'::ltree),
-  ('40000000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-0000000000b1', 'rep',     'Rep 3', 'ceo.vp2.rep3'::ltree),
-  ('40000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-0000000000b1', 'rep',     'Loner', null);
+-- profiles.email is NOT NULL since 20260523000001_admin_portal. Seed must
+-- include it. The values mirror the auth.users emails above.
+insert into profiles (id, org_id, role, full_name, email, role_path) values
+  ('40000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000b1', 'admin',   'CEO',   'ceo@h.example',   'ceo'::ltree),
+  ('40000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000b1', 'manager', 'VP',    'vp@h.example',    'ceo.vp'::ltree),
+  ('40000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-0000000000b1', 'rep',     'Rep 1', 'rep1@h.example',  'ceo.vp.rep1'::ltree),
+  ('40000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-0000000000b1', 'rep',     'Rep 2', 'rep2@h.example',  'ceo.vp.rep2'::ltree),
+  ('40000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-0000000000b1', 'manager', 'VP 2',  'vp2@h.example',   'ceo.vp2'::ltree),
+  ('40000000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-0000000000b1', 'rep',     'Rep 3', 'rep3@h.example',  'ceo.vp2.rep3'::ltree),
+  ('40000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-0000000000b1', 'rep',     'Loner', 'loner@h.example', null);
 
 -- One deal per user, owned by that user.
 insert into deals (
