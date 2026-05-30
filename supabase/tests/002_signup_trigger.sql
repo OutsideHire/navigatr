@@ -1,4 +1,19 @@
--- Tests for migration 002 (handle_new_user_signup trigger + claim_invite_code RPC).
+-- Tests for the handle_new_user_signup trigger on auth.users INSERT.
+--
+-- Behavior under test (current, post-self-serve-org-creation):
+--   * email signup WITH a valid live-org invite code -> profile created
+--     (first user = manager, subsequent = rep).            [cases 1, 2]
+--   * email signup with NO / invalid / disabled-org code  -> NO raise, NO
+--     profile; the user is left for the frontend to route to
+--     /create-organization (self-serve path, see 006).     [cases 3, 4, 5]
+--   * OAuth signup (provider != 'email')                   -> trigger no-ops.
+--                                                            [case 6]
+--
+-- HISTORY: cases 3/4/5 previously asserted the trigger RAISED
+-- 'signup_requires_invite_code' / 'invalid_invite_code'. That raising
+-- behavior was removed when self-serve org creation landed (migration
+-- 20260529000003) — a missing or bad invite code is now a valid profile-less
+-- state, not an error. These cases now assert the no-raise contract.
 --
 -- Run with the service-role connection (which bypasses RLS but still fires
 -- triggers on auth.users INSERTs):
@@ -61,78 +76,74 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
--- Case 3: missing invite_code on email signup raises and rolls back.
+-- Case 3: email signup with NO invite_code — trigger returns early, leaving
+-- the user profile-less. The auth.users row is a legitimate signup and stays;
+-- the frontend routes the user to /create-organization (the self-serve path
+-- covered by 006_create_organization.sql).
+--
+-- NOTE: an earlier version of handle_new_user_signup RAISED
+-- 'signup_requires_invite_code' here. That was removed when self-serve org
+-- creation landed — a missing code is now a valid state, not an error.
 -- ---------------------------------------------------------------------------
-do $$
-begin
-  begin
-    insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data, aud, role, created_at, updated_at, email_confirmed_at)
-    values (
-      '10000000-0000-0000-0000-000000000003',
-      'noinvite@test-iso.example',
-      '{}'::jsonb,
-      jsonb_build_object('provider', 'email'),
-      'authenticated', 'authenticated', now(), now(), now()
-    );
-    raise exception 'case3: expected trigger to raise, but insert succeeded';
-  exception when sqlstate 'P0001' then
-    -- expected. SQLERRM contains the raise message.
-    if sqlerrm not like '%signup_requires_invite_code%' then
-      raise exception 'case3: wrong error %', sqlerrm;
-    end if;
-  end;
-end $$;
+insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data, aud, role, created_at, updated_at, email_confirmed_at)
+values (
+  '10000000-0000-0000-0000-000000000003',
+  'noinvite@test-iso.example',
+  '{}'::jsonb,
+  jsonb_build_object('provider', 'email'),
+  'authenticated', 'authenticated', now(), now(), now()
+);
 
--- Confirm no orphan auth.users row exists.
 do $$
 declare c int;
 begin
+  -- The signup row persists (it did not raise / roll back).
   select count(*) into c from auth.users where id = '10000000-0000-0000-0000-000000000003';
-  if c <> 0 then raise exception 'case3: orphan auth.users row left behind'; end if;
+  if c <> 1 then raise exception 'case3: expected auth.users row to persist, found %', c; end if;
+  -- But no profile was created — the user has not picked/created an org yet.
+  select count(*) into c from profiles where id = '10000000-0000-0000-0000-000000000003';
+  if c <> 0 then raise exception 'case3: trigger should not create a profile without an invite code'; end if;
 end $$;
 
 -- ---------------------------------------------------------------------------
--- Case 4: invalid invite_code raises.
+-- Case 4: invalid invite_code — trigger returns early, no profile. (Same
+-- no-raise contract as case 3; the bad code is surfaced later at AcceptInvite.)
 -- ---------------------------------------------------------------------------
+insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data, aud, role, created_at, updated_at, email_confirmed_at)
+values (
+  '10000000-0000-0000-0000-000000000004',
+  'badcode@test-iso.example',
+  jsonb_build_object('invite_code', 'does-not-exist'),
+  jsonb_build_object('provider', 'email'),
+  'authenticated', 'authenticated', now(), now(), now()
+);
+
 do $$
+declare c int;
 begin
-  begin
-    insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data, aud, role, created_at, updated_at, email_confirmed_at)
-    values (
-      '10000000-0000-0000-0000-000000000004',
-      'badcode@test-iso.example',
-      jsonb_build_object('invite_code', 'does-not-exist'),
-      jsonb_build_object('provider', 'email'),
-      'authenticated', 'authenticated', now(), now(), now()
-    );
-    raise exception 'case4: expected trigger to raise';
-  exception when sqlstate 'P0001' then
-    if sqlerrm not like '%invalid_invite_code%' then
-      raise exception 'case4: wrong error %', sqlerrm;
-    end if;
-  end;
+  select count(*) into c from profiles where id = '10000000-0000-0000-0000-000000000004';
+  if c <> 0 then raise exception 'case4: trigger should not create a profile for an invalid invite code'; end if;
 end $$;
 
 -- ---------------------------------------------------------------------------
--- Case 5: disabled org rejects signup.
+-- Case 5: disabled-org invite_code — trigger returns early, no profile. The
+-- code matches a row, but `not o.is_disabled` filters it out, so the lookup
+-- finds nothing and the trigger leaves the user profile-less.
 -- ---------------------------------------------------------------------------
+insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data, aud, role, created_at, updated_at, email_confirmed_at)
+values (
+  '10000000-0000-0000-0000-000000000005',
+  'dead@dead-iso.example',
+  jsonb_build_object('invite_code', 'dead-iso-bbbb'),
+  jsonb_build_object('provider', 'email'),
+  'authenticated', 'authenticated', now(), now(), now()
+);
+
 do $$
+declare c int;
 begin
-  begin
-    insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data, aud, role, created_at, updated_at, email_confirmed_at)
-    values (
-      '10000000-0000-0000-0000-000000000005',
-      'dead@dead-iso.example',
-      jsonb_build_object('invite_code', 'dead-iso-bbbb'),
-      jsonb_build_object('provider', 'email'),
-      'authenticated', 'authenticated', now(), now(), now()
-    );
-    raise exception 'case5: expected disabled-org rejection';
-  exception when sqlstate 'P0001' then
-    if sqlerrm not like '%invalid_invite_code%' then
-      raise exception 'case5: wrong error %', sqlerrm;
-    end if;
-  end;
+  select count(*) into c from profiles where id = '10000000-0000-0000-0000-000000000005';
+  if c <> 0 then raise exception 'case5: trigger should not create a profile for a disabled org'; end if;
 end $$;
 
 -- ---------------------------------------------------------------------------
