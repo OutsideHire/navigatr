@@ -92,19 +92,30 @@ describe("useCreateOrganization", () => {
     expect(keys).toContainEqual(["profile", "user-1"]);
   });
 
-  it("surfaces server-side errors (already_in_organization, name too short)", async () => {
+  it("surfaces server-side errors as a real Error (already_in_organization, name too short)", async () => {
+    // Supabase returns a PostgrestError plain object, NOT an Error. The hook
+    // must wrap it in `new Error(error.message)` — CreateOrganizationPage does
+    // `err instanceof Error ? err.message : "Could not create workspace"`, so a
+    // raw object falls through to the generic toast and hides the real reason.
+    // This is the regression that bit rpatton@gmail.com in prod: the message
+    // was right but the thing thrown wasn't an Error, so the user saw nothing
+    // useful. Assert BOTH the instance type and the message.
     rpcMock.mockResolvedValueOnce({
       data: null,
-      error: { message: "already_in_organization" },
+      error: { message: "already_in_organization", code: "P0001", hint: null, details: null },
     });
     const { result } = renderHook(() => useCreateOrganization(), {
       wrapper: makeWrapper(new QueryClient({
         defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
       })),
     });
-    await expect(result.current.mutateAsync("Acme")).rejects.toMatchObject({
-      message: expect.stringMatching(/already_in_organization/),
-    });
+
+    const err = await result.current.mutateAsync("Acme").then(
+      () => { throw new Error("expected mutation to reject"); },
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toBe("already_in_organization");
   });
 
   it("throws when the RPC returns no row (defensive)", async () => {

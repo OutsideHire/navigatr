@@ -27,7 +27,13 @@ export function useCreateOrganization() {
       const { data, error } = await supabase.rpc("create_organization", {
         p_name: name,
       });
-      if (error) throw error;
+      // Supabase surfaces RPC failures as a PostgrestError plain object,
+      // NOT a JS Error. Throwing it raw means CreateOrganizationPage's
+      // `err instanceof Error` check fails and the user sees the generic
+      // "Could not create workspace" instead of the real reason
+      // (already_in_organization, org_name_too_short, etc.). Wrap it so
+      // the actual message propagates — same as every other mutation hook.
+      if (error) throw new Error(error.message);
       // The RPC returns a single-row table; supabase-js surfaces it as an
       // array. Pluck the first row and trust the schema.
       const row = Array.isArray(data) ? data[0] : data;
