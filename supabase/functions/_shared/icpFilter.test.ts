@@ -36,8 +36,18 @@ describe("normalizeCategory", () => {
 });
 
 describe("isConsumerOnly", () => {
-  it("true for a hotel (lodging)", () => {
-    expect(isConsumerOnly(["lodging", "establishment"])).toBe(true);
+  it("false for a hotel (lodging is now a valid prospect)", () => {
+    // Hotels process card volume + run payroll → in profile (PATH_DESIGN §6.1).
+    expect(isConsumerOnly(["lodging", "establishment"])).toBe(false);
+  });
+  it("true for a large venue (arena)", () => {
+    expect(isConsumerOnly(["arena", "establishment"])).toBe(true);
+  });
+  it("true for a parking garage", () => {
+    expect(isConsumerOnly(["parking_garage"])).toBe(true);
+  });
+  it("true for a municipal swimming pool (city-run rec, e.g. Barton Springs)", () => {
+    expect(isConsumerOnly(["swimming_pool"])).toBe(true);
   });
   it("true for a place of worship", () => {
     expect(isConsumerOnly(["church", "place_of_worship"])).toBe(true);
@@ -56,6 +66,9 @@ describe("isInstitutional", () => {
   });
   it("true for a government office", () => {
     expect(isInstitutional(["local_government_office", "city_hall"])).toBe(true);
+  });
+  it("true for a public library", () => {
+    expect(isInstitutional(["library"])).toBe(true);
   });
   it("false for a retail store", () => {
     expect(isInstitutional(["store", "establishment"])).toBe(false);
@@ -94,11 +107,17 @@ describe("classifyProspect — gate ordering and outcomes", () => {
   });
 
   it("category gate wins first: a consumer-only place is out of profile even if it also looks like a seed match", () => {
-    // name contains 'subway' (seed) AND type is lodging (consumer-only).
-    const v = classifyProspect(candidate({ name: "Subway Inn Lodging", types: ["lodging"] }), SEED, 0);
+    // name contains 'subway' (seed) AND type is church (consumer-only). The
+    // category gate runs before the seed check, so it's simply out of profile.
+    const v = classifyProspect(candidate({ name: "Subway Community Church", types: ["church", "place_of_worship"] }), SEED, 0);
     expect(v.inProfile).toBe(false);
     expect(v.isChain).toBe(false);
     expect(v.chainReason).toBeNull();
+  });
+
+  it("a hotel is servable (lodging is in profile after the §6.1 decision)", () => {
+    const v = classifyProspect(candidate({ name: "Downtown Boutique Hotel", types: ["lodging"] }), SEED, 0);
+    expect(v).toEqual({ category: "lodging", inProfile: true, isChain: false, chainReason: null });
   });
 
   it("institutional gate flags gov before seed/density", () => {

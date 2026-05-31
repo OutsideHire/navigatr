@@ -32,15 +32,12 @@ export const DEFAULT_ICP_CONFIG: IcpConfig = {
   sameNameChainThreshold: 10, // ">10 same-name within radius" → 11th+ is a chain
   maxEmployeeCount: null, // vendor-gated; no employee data from Places
   consumerOnlyTypes: [
-    // residential / lodging
-    "lodging",
-    "hotel",
-    "motel",
-    "rv_park",
-    "campground",
+    // residential — NOT lodging. Hotels/motels/RV parks process large card
+    // volume AND run payroll, so they're valid B2B prospects (PATH_DESIGN §6.1,
+    // "include hotels" decision). Only true residential property stays out.
     "apartment_complex",
     "apartment_building",
-    // tourist
+    // tourist / civic attractions
     "tourist_attraction",
     "amusement_park",
     "aquarium",
@@ -48,6 +45,24 @@ export const DEFAULT_ICP_CONFIG: IcpConfig = {
     "national_park",
     "park",
     "museum",
+    // large venues / recreation — usually institutional or corporate-managed,
+    // not the independent-SMB target. These leaked through in early testing
+    // (arena, event venue, parking garage), so they're excluded explicitly.
+    "stadium",
+    "arena",
+    "amphitheatre",
+    "event_venue",
+    "convention_center",
+    "performing_arts_theater",
+    "concert_hall",
+    "parking",
+    "parking_garage",
+    // municipal recreation — city-run pools/rec centers. Google tags these
+    // "swimming_pool" with no government type, so the institutional gate misses
+    // them (e.g. Barton Springs Pool, austintexas.gov). A private swim school
+    // is rare enough in the SMB target that blanket-excluding the type is the
+    // right Phase-1 tradeoff (PATH_DESIGN §6.1).
+    "swimming_pool",
     // worship
     "place_of_worship",
     "church",
@@ -71,6 +86,7 @@ export const DEFAULT_ICP_CONFIG: IcpConfig = {
     "post_office",
     "hospital",
     "military_base",
+    "library", // public libraries are civic/government, not SMB prospects
   ],
 };
 
