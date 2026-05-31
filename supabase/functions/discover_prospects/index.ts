@@ -79,6 +79,15 @@ interface BucketPull {
   places: PlacesNewPlace[];
 }
 
+/** Outcome of firing all the per-bucket pulls: the ones that came back, and the
+ *  ones that threw (bad includedTypes value, transient 5xx, …). Failed buckets
+ *  are NOT cache-marked, so they stay cold and retry on the next request rather
+ *  than poisoning the whole discovery call. */
+interface BucketPullResult {
+  fulfilled: BucketPull[];
+  failed: Array<{ bucket: CategoryBucket; error: string }>;
+}
+
 /**
  * One searchNearby scoped to a set of includedTypes, ranked by POPULARITY.
  * PLACES_MOCK short-circuits to fixtures (which ignore includedTypes — fine, the
@@ -138,22 +147,38 @@ async function searchNearbyForTypes(
 }
 
 /**
- * Fire one searchNearby per cold bucket, in parallel (Promise.all), so a cold
- * cell stays ~2-3s instead of 7× serial. Each pull is scoped to that bucket's
- * Table A includedTypes. Returns the pulls paired with their bucket.
+ * Fire one searchNearby per cold bucket, in parallel (Promise.allSettled), so a
+ * cold cell stays ~2-3s instead of 7× serial. Each pull is scoped to that
+ * bucket's Table A includedTypes. allSettled (not all) so a single bucket that
+ * 400s on a bad type or hits a transient error degrades to "that bucket stays
+ * cold and retries" instead of failing the whole discovery call.
  */
-function fetchPlacesByCategory(
+async function fetchPlacesByCategory(
   lat: number,
   lng: number,
   radiusM: number,
   buckets: CategoryBucket[],
-): Promise<BucketPull[]> {
-  return Promise.all(
-    buckets.map(async (bucket): Promise<BucketPull> => ({
-      bucket,
-      places: await searchNearbyForTypes(lat, lng, radiusM, CATEGORY_TYPES[bucket]),
-    })),
+): Promise<BucketPullResult> {
+  const settled = await Promise.allSettled(
+    buckets.map((bucket) =>
+      searchNearbyForTypes(lat, lng, radiusM, CATEGORY_TYPES[bucket]).then(
+        (places): BucketPull => ({ bucket, places }),
+      ),
+    ),
   );
+  const fulfilled: BucketPull[] = [];
+  const failed: Array<{ bucket: CategoryBucket; error: string }> = [];
+  settled.forEach((r, i) => {
+    if (r.status === "fulfilled") {
+      fulfilled.push(r.value);
+    } else {
+      failed.push({
+        bucket: buckets[i],
+        error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+      });
+    }
+  });
+  return { fulfilled, failed };
 }
 
 Deno.serve(async (req) => {
@@ -225,12 +250,20 @@ Deno.serve(async (req) => {
   let keptCount = 0;
 
   // ---- Cold buckets: pull Places (parallel), classify the union, upsert ----
+  let failedBuckets: Array<{ bucket: CategoryBucket; error: string }> = [];
   if (!warm) {
-    let pulls: BucketPull[];
-    try {
-      pulls = await fetchPlacesByCategory(lat, lng, radiusM, coldBuckets);
-    } catch (e) {
-      return json({ error: "places_fetch_failed", detail: e instanceof Error ? e.message : String(e) }, 502);
+    const { fulfilled: pulls, failed } = await fetchPlacesByCategory(lat, lng, radiusM, coldBuckets);
+    failedBuckets = failed;
+    // Every bucket failed → nothing to classify or cache; surface it. (A partial
+    // failure falls through: we ingest what we got, leave failed buckets cold.)
+    if (pulls.length === 0) {
+      return json(
+        {
+          error: "places_fetch_failed",
+          detail: failed.map((f) => `${f.bucket}: ${f.error}`).join("; ").slice(0, 500),
+        },
+        502,
+      );
     }
 
     // Dedup the union by place_id (a business returned by two buckets collapses
@@ -364,6 +397,7 @@ Deno.serve(async (req) => {
     cell,
     cache: warm ? "warm" : "cold",
     cold_buckets: coldBuckets,
+    failed_buckets: failedBuckets.map((f) => f.bucket),
     raw_count: rawCount,
     filtered_count: filteredCount,
     kept_count: keptCount,
