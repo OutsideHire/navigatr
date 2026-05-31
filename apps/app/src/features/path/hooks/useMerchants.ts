@@ -58,110 +58,35 @@ interface DiscoverResponse {
 }
 
 /**
- * Map a raw Google Places category string into our coarse 8-value
- * MerchantCategory. Google emits hundreds of specific types
- * ("barbecue_restaurant", "hair_salon", "car_repair", …); we bucket
- * them by keyword so the filter chips stay manageable. First match
- * wins; unmatched → "other".
+ * Validate the stored `category` against our MerchantCategory enum.
+ *
+ * As of Phase 2.5 the Edge Function buckets every prospect into one of the 7
+ * coarse buckets at ingest (via the shared `categoryTaxonomy` that also drives
+ * the per-category Google pulls — PATH_DESIGN.md §11), so the `category` we get
+ * back is ALREADY a MerchantCategory string. This is now just a guard: known
+ * value → pass through, anything else → "other".
+ *
+ * The old brittle substring rules lived here (and mis-bucketed `barber_shop`
+ * → restaurant because "bar" is a substring); bucketing is one place now, on
+ * the server, shared with ingest. Legacy rows written by Phase-1 ingest carry
+ * fine-grained types (e.g. "dentist") and fall to "other" here until the cell's
+ * per-bucket cache expires and re-pulls them with a coarse bucket — acceptable
+ * self-healing, no migration needed.
  */
-const CATEGORY_RULES: Array<{ test: (c: string) => boolean; category: MerchantCategory }> = [
-  {
-    category: "restaurant",
-    test: (c) =>
-      c.includes("restaurant") ||
-      c.includes("cafe") ||
-      c.includes("coffee") ||
-      c.includes("bakery") ||
-      c.includes("bar") ||
-      c.includes("food") ||
-      c.includes("meal_") ||
-      c.includes("diner") ||
-      c.includes("pub") ||
-      c.includes("eatery"),
-  },
-  {
-    category: "healthcare",
-    test: (c) =>
-      c.includes("dentist") ||
-      c.includes("dental") ||
-      c.includes("doctor") ||
-      c.includes("clinic") ||
-      c.includes("medical") ||
-      c.includes("pharmacy") ||
-      c.includes("physio") ||
-      c.includes("chiropractor") ||
-      c.includes("veterinary") ||
-      c.includes("vet") ||
-      c.includes("health"),
-  },
-  {
-    category: "automotive",
-    test: (c) =>
-      c.includes("car_") ||
-      c.includes("auto") ||
-      c.includes("vehicle") ||
-      c.includes("gas_station") ||
-      c.includes("tire") ||
-      c.includes("mechanic"),
-  },
-  {
-    category: "personal_services",
-    test: (c) =>
-      c.includes("hair") ||
-      c.includes("salon") ||
-      c.includes("barber") ||
-      c.includes("spa") ||
-      c.includes("beauty") ||
-      c.includes("nail") ||
-      c.includes("gym") ||
-      c.includes("fitness") ||
-      c.includes("yoga") ||
-      c.includes("massage") ||
-      c.includes("laundry") ||
-      c.includes("dry_cleaning"),
-  },
-  {
-    category: "hospitality",
-    test: (c) => c.includes("lodging") || c.includes("hotel") || c.includes("motel") || c.includes("resort"),
-  },
-  {
-    category: "professional_services",
-    test: (c) =>
-      c.includes("lawyer") ||
-      c.includes("legal") ||
-      c.includes("accounting") ||
-      c.includes("insurance") ||
-      c.includes("real_estate") ||
-      c.includes("finance") ||
-      c.includes("consult") ||
-      c.includes("agency") ||
-      c.includes("plumb") ||
-      c.includes("electrician") ||
-      c.includes("contractor"),
-  },
-  {
-    category: "retail",
-    test: (c) =>
-      c.includes("store") ||
-      c.includes("shop") ||
-      c.includes("retail") ||
-      c.includes("market") ||
-      c.includes("boutique") ||
-      c.includes("supermarket") ||
-      c.includes("grocery") ||
-      c.includes("clothing") ||
-      c.includes("florist") ||
-      c.includes("furniture"),
-  },
-];
+const MERCHANT_CATEGORIES = new Set<string>([
+  "restaurant",
+  "retail",
+  "healthcare",
+  "personal_services",
+  "automotive",
+  "professional_services",
+  "hospitality",
+  "other",
+]);
 
 export function categoryFromPlaces(raw: string | null | undefined): MerchantCategory {
   const c = (raw ?? "").toLowerCase().trim();
-  if (!c) return "other";
-  for (const rule of CATEGORY_RULES) {
-    if (rule.test(c)) return rule.category;
-  }
-  return "other";
+  return MERCHANT_CATEGORIES.has(c) ? (c as MerchantCategory) : "other";
 }
 
 /**

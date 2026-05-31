@@ -234,7 +234,7 @@ dense rep coverage in one metro.
 - Card: address, contact, est. value, one-click call/email, launch Google Maps turn-by-turn
   (FR-PATH-04/05). Employee count per §6.
 
-**Phase 2.5 — Categorized ingest (fast-follow, fixes service-business coverage)**
+**Phase 2.5 — Categorized ingest (BUILT, fixes service-business coverage)**
 - Per-category `searchNearby` (7 buckets, `POPULARITY`), one shared taxonomy driving both
   ingest targeting and `categoryFromPlaces`, per-bucket cell warmth. Full spec in §11.
 
@@ -269,7 +269,11 @@ dense rep coverage in one metro.
 
 ## 11. Categorized ingest (chosen — fixes the service-business gap)
 
-**Status:** designed, not yet built. Fast-follow to Phase 2. Decisions locked below.
+**Status:** BUILT (Phase 2.5). Shipped as `_shared/categoryTaxonomy.ts` (7-bucket
+`{bucket → Table A types}` map + `bucketForType`), per-bucket parallel pulls in
+`discover_prospects/index.ts` (`fetchPlacesByCategory`, `rankPreference: "POPULARITY"`),
+per-bucket `geo_cell_cache` warmth, and `categoryFromPlaces` reduced to an enum guard.
+Decisions below are the as-built spec.
 
 **Problem.** Phase 1 ingest issues a single category-agnostic `searchNearby`
 (`discover_prospects/index.ts:92`) with `maxResultCount: 20` and no `includedTypes`.

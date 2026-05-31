@@ -60,35 +60,29 @@ beforeEach(() => {
 });
 
 // ── categoryFromPlaces ─────────────────────────────────────────────
+// Phase 2.5: the Edge stores a coarse MerchantCategory bucket at ingest
+// (bucketing lives in supabase/functions/_shared/categoryTaxonomy.ts now),
+// so this is purely an enum guard — pass known values through, else "other".
 describe("categoryFromPlaces", () => {
-  it("buckets food-ish Google types into restaurant", () => {
-    expect(categoryFromPlaces("barbecue_restaurant")).toBe("restaurant");
-    expect(categoryFromPlaces("coffee_shop")).toBe("restaurant");
-    expect(categoryFromPlaces("bakery")).toBe("restaurant");
+  it("passes every known MerchantCategory bucket through unchanged", () => {
+    for (const c of [
+      "restaurant",
+      "retail",
+      "healthcare",
+      "personal_services",
+      "automotive",
+      "professional_services",
+      "hospitality",
+      "other",
+    ] as const) {
+      expect(categoryFromPlaces(c)).toBe(c);
+    }
   });
-  it("buckets clinical types into healthcare", () => {
-    expect(categoryFromPlaces("dentist")).toBe("healthcare");
-    expect(categoryFromPlaces("veterinary_care")).toBe("healthcare");
-  });
-  it("buckets car types into automotive", () => {
-    expect(categoryFromPlaces("car_repair")).toBe("automotive");
-    expect(categoryFromPlaces("gas_station")).toBe("automotive");
-  });
-  it("buckets grooming/fitness into personal_services", () => {
-    expect(categoryFromPlaces("hair_salon")).toBe("personal_services");
-    expect(categoryFromPlaces("gym")).toBe("personal_services");
-  });
-  it("buckets lodging into hospitality", () => {
-    expect(categoryFromPlaces("lodging")).toBe("hospitality");
-    expect(categoryFromPlaces("motel")).toBe("hospitality");
-  });
-  it("buckets pro-services types into professional_services", () => {
-    expect(categoryFromPlaces("lawyer")).toBe("professional_services");
-    expect(categoryFromPlaces("plumber")).toBe("professional_services");
-  });
-  it("buckets shops into retail", () => {
-    expect(categoryFromPlaces("clothing_store")).toBe("retail");
-    expect(categoryFromPlaces("grocery_store")).toBe("retail");
+  it("falls back to other for legacy fine-grained types (pre-2.5 rows)", () => {
+    // Phase-1 rows stored normalizeCategory output like "dentist" /
+    // "general_contractor"; those self-heal to a coarse bucket on re-pull.
+    expect(categoryFromPlaces("dentist")).toBe("other");
+    expect(categoryFromPlaces("general_contractor")).toBe("other");
   });
   it("falls back to other for unknown or empty input", () => {
     expect(categoryFromPlaces("zzz_unknown_type")).toBe("other");
@@ -97,7 +91,7 @@ describe("categoryFromPlaces", () => {
     expect(categoryFromPlaces(undefined)).toBe("other");
   });
   it("is case-insensitive and trims", () => {
-    expect(categoryFromPlaces("  Hair_Salon  ")).toBe("personal_services");
+    expect(categoryFromPlaces("  Personal_Services  ")).toBe("personal_services");
   });
 });
 
