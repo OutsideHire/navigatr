@@ -12,7 +12,14 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    // App tests live under src. We also run the pure unit tests for the
+    // Supabase Edge Function shared modules (ICP filter, geohash) — they live
+    // in supabase/functions/_shared so they ship in the Deno deploy bundle,
+    // but they're plain dependency-free TS, so vitest verifies them here.
+    include: [
+      "src/**/*.{test,spec}.{ts,tsx}",
+      "../../supabase/functions/_shared/**/*.{test,spec}.ts",
+    ],
     css: false,
   },
 });
