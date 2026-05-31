@@ -57,6 +57,24 @@ function chipLabel(f: CategoryFilter): string {
 
 type ViewMode = "map" | "list";
 
+// "Near me" radius options (miles → meters). useMerchants ingests this whole
+// universe ONCE (DEFAULT_RADIUS_M, tiled across geohash cells and cached); these
+// chips filter that already-loaded list client-side — no extra Google calls per
+// chip. Labels are miles because formatDistance renders miles for US reps.
+// Capped at 5mi: this is the parked-rep "what's around me now" case. Wide
+// driving territories are served by the separate territory mode (town/corridor),
+// NOT by a bigger radius — a 60mi circle is ~$350 to cold-fill (see design doc).
+// Every option must stay ≤ DEFAULT_RADIUS_M (8047m) or it would promise data
+// we never fetched.
+const RADIUS_OPTIONS: Array<{ label: string; meters: number }> = [
+  { label: "1 mi", meters: 1609 },
+  { label: "2 mi", meters: 3219 },
+  { label: "3 mi", meters: 4828 },
+  { label: "5 mi", meters: 8047 },
+];
+const DEFAULT_DISPLAY_RADIUS_M = 4828; // 3 mi
+const MAX_DISPLAY_RADIUS_M = RADIUS_OPTIONS[RADIUS_OPTIONS.length - 1]!.meters; // 5 mi
+
 export function PathPage() {
   const geo = useGeolocation();
   // Don't fire the discovery call (and a possible Google pull) until
@@ -69,6 +87,7 @@ export function PathPage() {
     isError: merchantsError,
   } = useMerchants(origin);
   const [categoryFilter, setCategoryFilter] = React.useState<CategoryFilter>("all");
+  const [displayRadiusM, setDisplayRadiusM] = React.useState<number>(DEFAULT_DISPLAY_RADIUS_M);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [view, setView] = React.useState<ViewMode>("list"); // default to list until merchants are geocoded
@@ -114,23 +133,36 @@ export function PathPage() {
     return enriched.sort((a, b) => a.distanceMeters - b.distanceMeters);
   }, [liveMerchants, anyGeocoded, geo.lat, geo.lng]);
 
+  // Radius gate. The rep picks a display radius (1/2/3 mi); we hide anything
+  // beyond it. Only applies when we actually have coordinates to measure —
+  // when nothing is geocoded, distances are Infinity and a radius gate would
+  // wipe the whole list, so we pass everything through and let the
+  // activity-sorted view stand. This is the layer the category chips,
+  // counts, and the list all read from, so narrowing the radius narrows
+  // everything consistently.
+  const withinRadius = React.useMemo<MerchantWithDistance[]>(() => {
+    if (!anyGeocoded) return merchantsWithDistance;
+    return merchantsWithDistance.filter((m) => m.distanceMeters <= displayRadiusM);
+  }, [merchantsWithDistance, anyGeocoded, displayRadiusM]);
+
   const filtered = React.useMemo(
     () =>
       categoryFilter === "all"
-        ? merchantsWithDistance
-        : merchantsWithDistance.filter((m) => m.category === categoryFilter),
-    [merchantsWithDistance, categoryFilter],
+        ? withinRadius
+        : withinRadius.filter((m) => m.category === categoryFilter),
+    [withinRadius, categoryFilter],
   );
 
-  // Per-category counts over the full set. Only categories actually present
-  // near the rep get a chip — no empty "Healthcare (0)" noise.
+  // Per-category counts over the radius-filtered set. Only categories actually
+  // present within the chosen radius get a chip — no empty "Healthcare (0)"
+  // noise, and counts move when the rep tightens/loosens the radius.
   const categoryCounts = React.useMemo(() => {
     const c = new Map<MerchantCategory, number>();
-    for (const m of merchantsWithDistance) {
+    for (const m of withinRadius) {
       c.set(m.category, (c.get(m.category) ?? 0) + 1);
     }
     return c;
-  }, [merchantsWithDistance]);
+  }, [withinRadius]);
 
   // Chip list: "All" first, then present categories ordered by count desc.
   const categoryFilters = React.useMemo<CategoryFilter[]>(() => {
@@ -141,7 +173,7 @@ export function PathPage() {
   }, [categoryCounts]);
 
   const chipCount = (f: CategoryFilter): number =>
-    f === "all" ? merchantsWithDistance.length : categoryCounts.get(f) ?? 0;
+    f === "all" ? withinRadius.length : categoryCounts.get(f) ?? 0;
 
   const selectedMerchant: Merchant | null = selectedId
     ? merchantsWithDistance.find((m) => m.id === selectedId) ?? null
@@ -252,6 +284,33 @@ export function PathPage() {
         ))}
       </div>
 
+      {/* Radius control — filters the loaded list by distance. Only useful
+          once we have coordinates to measure against, so it mirrors the map's
+          geocoded gate. Labels in miles to match the list's distance display. */}
+      {anyGeocoded && (
+        <div className="mt-3 flex items-center gap-2 self-start">
+          <span className="text-caption font-medium text-text-muted">Within</span>
+          <div className="flex gap-1 rounded-radius-md bg-surface-sunken p-0.5">
+            {RADIUS_OPTIONS.map((opt) => (
+              <button
+                key={opt.meters}
+                type="button"
+                onClick={() => setDisplayRadiusM(opt.meters)}
+                aria-pressed={displayRadiusM === opt.meters}
+                className={cn(
+                  "inline-flex items-center rounded-radius-sm px-3 py-1.5 text-caption font-medium tabular-nums transition-colors",
+                  displayRadiusM === opt.meters
+                    ? "bg-surface-default text-text-default shadow-sm"
+                    : "text-text-muted hover:text-text-default",
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Mobile view toggle — only shown when the map has something to render */}
       {anyGeocoded && (
       <div className="mt-3 flex gap-1 self-start rounded-radius-md bg-surface-sunken p-0.5 md:hidden">
@@ -354,10 +413,18 @@ export function PathPage() {
             merchants={filtered}
             selectedId={selectedId}
             onSelect={handleSelect}
-            // Only show the empty-state CTA when a category filter is active —
-            // otherwise the empty state means "no prospects nearby", not "your
-            // filter is too tight" and the reset CTA would be misleading.
-            onResetFilters={categoryFilter !== "all" ? () => setCategoryFilter("all") : undefined}
+            // Show the empty-state CTA when a category OR a tighter-than-max
+            // radius is hiding rows — resetting both is what un-hides them.
+            // (When the whole discovery came back empty, PathPage renders the
+            // "No prospects nearby" card above instead, so we never get here.)
+            onResetFilters={
+              categoryFilter !== "all" || displayRadiusM < MAX_DISPLAY_RADIUS_M
+                ? () => {
+                    setCategoryFilter("all");
+                    setDisplayRadiusM(MAX_DISPLAY_RADIUS_M);
+                  }
+                : undefined
+            }
           />
         </div>
       </div>

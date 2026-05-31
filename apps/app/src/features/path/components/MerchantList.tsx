@@ -67,8 +67,8 @@ export function MerchantList({ merchants, selectedId, onSelect, onResetFilters }
           <MapPin className="h-6 w-6" aria-hidden />
         </span>
         <div className="flex flex-col gap-1">
-          <p className="text-body-strong text-text-default">No merchants in this filter</p>
-          <p className="text-caption text-text-muted">Loosen the filter or expand the radius.</p>
+          <p className="text-body-strong text-text-default">Nothing matches right now</p>
+          <p className="text-caption text-text-muted">Try a wider radius or a different category.</p>
         </div>
         {onResetFilters && (
           <Button variant="secondary" size="sm" leadingIcon={RotateCcw} onClick={onResetFilters}>
