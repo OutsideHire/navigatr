@@ -177,6 +177,29 @@ export const CATEGORY_TYPES: Record<CategoryBucket, string[]> = {
 export const CATEGORY_BUCKETS = Object.keys(CATEGORY_TYPES) as CategoryBucket[];
 
 /**
+ * Google Places "Table B" types: a place can be RETURNED carrying these, but
+ * searchNearby's `includedTypes` REJECTS them (HTTP 400 "Unsupported types").
+ * So they're useful for display bucketing (bucketForType) but must be stripped
+ * before we build a search filter. `searchableTypes()` does that strip.
+ *
+ * Caught live: `general_contractor` 400'd the professional_services pull. A
+ * business tagged general_contractor still surfaces via its other searchable
+ * types (electrician/plumber/roofing_contractor/…) and we want it labelled
+ * professional_services when it does — hence we keep it in CATEGORY_TYPES but
+ * never send it to Google.
+ *
+ * Every entry MUST also appear in some CATEGORY_TYPES bucket (the test enforces
+ * this) so the two maps can't drift into dead config.
+ */
+export const SEARCH_UNSUPPORTED_TYPES = new Set<string>(["general_contractor"]);
+
+/** The Table-A-only subset of a bucket's types — safe to send as searchNearby
+ *  `includedTypes`. Strips the Table B (display-only) types. */
+export function searchableTypes(bucket: CategoryBucket): string[] {
+  return CATEGORY_TYPES[bucket].filter((t) => !SEARCH_UNSUPPORTED_TYPES.has(t));
+}
+
+/**
  * Reverse index: { googleType → bucket }. Built once at module load. Because
  * each type lives in exactly one bucket, this is an unambiguous lookup.
  */

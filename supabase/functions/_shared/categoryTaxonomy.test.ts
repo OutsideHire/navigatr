@@ -11,6 +11,8 @@ import { describe, it, expect } from "vitest";
 import {
   CATEGORY_TYPES,
   CATEGORY_BUCKETS,
+  SEARCH_UNSUPPORTED_TYPES,
+  searchableTypes,
   bucketForType,
   type CategoryBucket,
 } from "./categoryTaxonomy";
@@ -59,6 +61,33 @@ describe("CATEGORY_TYPES shape", () => {
     for (const bucket of CATEGORY_BUCKETS) {
       expect(CATEGORY_TYPES[bucket].length, bucket).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("searchableTypes (Table A/B split)", () => {
+  it("strips Table B (display-only) types from the search filter", () => {
+    // general_contractor is returned by Places but 400s as an includedTypes
+    // value — it must not reach Google but must stay for display bucketing.
+    expect(CATEGORY_TYPES.professional_services).toContain("general_contractor");
+    expect(searchableTypes("professional_services")).not.toContain("general_contractor");
+  });
+
+  it("leaves Table A buckets untouched", () => {
+    // restaurant has no Table B types, so searchable == full list.
+    expect(searchableTypes("restaurant")).toEqual(CATEGORY_TYPES.restaurant);
+  });
+
+  it("every unsupported type is actually declared in some bucket (no dead config)", () => {
+    const all = new Set(CATEGORY_BUCKETS.flatMap((b) => CATEGORY_TYPES[b]));
+    for (const t of SEARCH_UNSUPPORTED_TYPES) {
+      expect(all.has(t), `"${t}" is unsupported but not in any bucket`).toBe(true);
+    }
+  });
+
+  it("still buckets a Table B type for display", () => {
+    // The whole point: a place tagged general_contractor still shows as
+    // professional_services even though we never search for it.
+    expect(bucketForType(["general_contractor"])).toBe("professional_services");
   });
 });
 

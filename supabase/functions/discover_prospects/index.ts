@@ -31,8 +31,8 @@ import {
 import { encodeGeohash } from "../_shared/geohash.ts";
 import {
   CATEGORY_BUCKETS,
-  CATEGORY_TYPES,
   bucketForType,
+  searchableTypes,
   type CategoryBucket,
 } from "../_shared/categoryTaxonomy.ts";
 import { mockSearchNearby, type PlacesNewPlace, type PlacesNewResponse } from "./fixtures.ts";
@@ -161,7 +161,7 @@ async function fetchPlacesByCategory(
 ): Promise<BucketPullResult> {
   const settled = await Promise.allSettled(
     buckets.map((bucket) =>
-      searchNearbyForTypes(lat, lng, radiusM, CATEGORY_TYPES[bucket]).then(
+      searchNearbyForTypes(lat, lng, radiusM, searchableTypes(bucket)).then(
         (places): BucketPull => ({ bucket, places }),
       ),
     ),
@@ -397,7 +397,7 @@ Deno.serve(async (req) => {
     cell,
     cache: warm ? "warm" : "cold",
     cold_buckets: coldBuckets,
-    failed_buckets: failedBuckets.map((f) => f.bucket),
+    failed_buckets: failedBuckets,
     raw_count: rawCount,
     filtered_count: filteredCount,
     kept_count: keptCount,
