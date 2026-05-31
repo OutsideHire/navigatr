@@ -47,6 +47,14 @@ export interface Merchant {
   lastActivity: string | null;
   /** Free-form note shown on the detail sheet. */
   note?: string;
+  /** Google Places stable ID. Present for discovered prospects (Phase 2),
+   *  absent for mock/deal-derived records. Stable across cache refreshes. */
+  placeId?: string;
+  /** Business website, when Places returns one. Shown on the detail sheet. */
+  website?: string;
+  /** Google rating count — a rough size/foot-traffic proxy for discovered
+   *  prospects (Places gives no employee count). */
+  ratingCount?: number;
 }
 
 const TODAY = new Date("2026-05-16T12:00:00Z");

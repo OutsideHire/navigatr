@@ -9,6 +9,7 @@ import {
   isConsumerOnly,
   isInstitutional,
   matchesSeed,
+  matchesEnterprise,
   classifyProspect,
   DEFAULT_ICP_CONFIG,
   type IcpConfig,
@@ -93,6 +94,27 @@ describe("matchesSeed", () => {
   });
 });
 
+describe("matchesEnterprise", () => {
+  it("matches a Big-4 office by case-insensitive substring", () => {
+    expect(matchesEnterprise("Deloitte & Touche LLP")).toBe("deloitte");
+  });
+  it("matches a listing portal (national tech, not a local brokerage)", () => {
+    expect(matchesEnterprise("Realtor.com Austin Office")).toBe("realtor.com");
+  });
+  it("does NOT match a locally-owned franchise office (real ICP)", () => {
+    // RE/MAX and Keller Williams offices run their own books — deliberately NOT
+    // in enterpriseBrands, so they survive as servable prospects.
+    expect(matchesEnterprise("Keller Williams Realty - Downtown")).toBeNull();
+    expect(matchesEnterprise("RE/MAX Capital City")).toBeNull();
+  });
+  it("returns null for an independent professional-services SMB", () => {
+    expect(matchesEnterprise("Hill Country Bookkeeping & Tax")).toBeNull();
+  });
+  it("returns null on an empty name", () => {
+    expect(matchesEnterprise("")).toBeNull();
+  });
+});
+
 describe("classifyProspect — gate ordering and outcomes", () => {
   const candidate = (over: Partial<{ name: string; types: string[]; employeeCount: number | null }> = {}) => ({
     placeId: "p1",
@@ -129,6 +151,35 @@ describe("classifyProspect — gate ordering and outcomes", () => {
     const v = classifyProspect(candidate({ name: "Subway #200", types: ["restaurant"] }), SEED, 0);
     expect(v.isChain).toBe(true);
     expect(v.chainReason).toBe("seed_list");
+  });
+
+  it("a national enterprise is flagged with reason enterprise", () => {
+    // The Deloitte case from the smoke test: tagged accounting/consultant (in
+    // profile, passes every other gate) but floated up by POPULARITY. Name match
+    // pulls it out so reps see independent SMBs, not Big-4 offices.
+    const v = classifyProspect(candidate({ name: "Deloitte Austin", types: ["accounting", "consultant"] }), SEED, 0);
+    expect(v.isChain).toBe(true);
+    expect(v.chainReason).toBe("enterprise");
+  });
+
+  it("a locally-owned franchise office survives (not flagged enterprise)", () => {
+    // Keller Williams office: real-estate franchise, runs its own books = ICP.
+    const v = classifyProspect(candidate({ name: "Keller Williams Realty Lake Travis", types: ["real_estate_agency"] }), SEED, 0);
+    expect(v).toEqual({ category: "real_estate_agency", inProfile: true, isChain: false, chainReason: null });
+  });
+
+  it("seed list wins over the enterprise gate when a name matches both", () => {
+    // Order check: seed runs before enterprise. Contrive a name in both lists.
+    const config: IcpConfig = { ...DEFAULT_ICP_CONFIG, enterpriseBrands: [...DEFAULT_ICP_CONFIG.enterpriseBrands, "subway"] };
+    const v = classifyProspect(candidate({ name: "Subway #5", types: ["restaurant"] }), SEED, 0, config);
+    expect(v.chainReason).toBe("seed_list");
+  });
+
+  it("enterprise gate wins over same-name density", () => {
+    // Deloitte with 50 same-name nearby still reports 'enterprise', not density,
+    // because the enterprise check runs first.
+    const v = classifyProspect(candidate({ name: "Deloitte", types: ["accounting"] }), SEED, 50);
+    expect(v.chainReason).toBe("enterprise");
   });
 
   it("unknown chain trips the same-name-density heuristic", () => {

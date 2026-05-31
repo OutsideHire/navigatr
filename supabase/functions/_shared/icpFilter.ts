@@ -26,6 +26,14 @@ export interface IcpConfig {
   consumerOnlyTypes: string[];
   /** Government / military / utility / major-hospital types to exclude. */
   institutionalTypes: string[];
+  /** FR-PATH-14: national/global enterprise brand fragments. POPULARITY ranking
+   *  surfaces big-enterprise offices (Deloitte, McKinsey, Realtor.com) in the
+   *  professional_services bucket — they're not the independent-SMB target, and
+   *  Places gives us no employee count to filter them structurally, so we exclude
+   *  the well-known ones by name, exactly like the chain seed list. Curated and
+   *  deliberately conservative: locally-owned franchises (RE/MAX, Keller Williams)
+   *  are NOT here because each office runs its own books = real ICP. */
+  enterpriseBrands: string[];
 }
 
 export const DEFAULT_ICP_CONFIG: IcpConfig = {
@@ -88,6 +96,27 @@ export const DEFAULT_ICP_CONFIG: IcpConfig = {
     "military_base",
     "library", // public libraries are civic/government, not SMB prospects
   ],
+  enterpriseBrands: [
+    // Big-4 accounting / global consulting — national firms, not local SMBs.
+    "deloitte",
+    "kpmg",
+    "pwc",
+    "pricewaterhousecoopers",
+    "ernst & young",
+    "ernst and young",
+    "accenture",
+    // Strategy consultancies.
+    "mckinsey",
+    "bain & company",
+    "boston consulting",
+    // Real-estate / listing portals (national tech, not a local brokerage).
+    "realtor.com",
+    "zillow",
+    "redfin",
+    // Large-enterprise HQs that leaked through POPULARITY in early testing.
+    "silicon labs",
+    "silicon laboratories",
+  ],
 };
 
 export type ChainReason =
@@ -95,6 +124,7 @@ export type ChainReason =
   | "same_name_density"
   | "category"
   | "gov"
+  | "enterprise"
   | "employee_count";
 
 export interface ProspectCandidate {
@@ -166,6 +196,22 @@ export function matchesSeed(
 }
 
 /**
+ * FR-PATH-14: does the business name match a curated national-enterprise brand?
+ * Case-insensitive substring match, same shape as matchesSeed. Returns the
+ * matched fragment (truthy) or null. Kept separate from the seed list so the
+ * verdict can carry an "enterprise" reason distinct from "seed_list".
+ */
+export function matchesEnterprise(name: string, config: IcpConfig = DEFAULT_ICP_CONFIG): string | null {
+  const n = (name ?? "").toLowerCase();
+  if (!n) return null;
+  for (const brand of config.enterpriseBrands) {
+    const b = (brand ?? "").toLowerCase().trim();
+    if (b && n.includes(b)) return b;
+  }
+  return null;
+}
+
+/**
  * The full verdict for one candidate.
  *
  * @param candidate        the raw Places business
@@ -199,13 +245,21 @@ export function classifyProspect(
     return { category, inProfile: true, isChain: true, chainReason: "seed_list" };
   }
 
-  // 4. Same-name density heuristic (FR-PATH-14). Catches UNKNOWN chains the
+  // 4. National-enterprise brand (FR-PATH-14). Big-4 / global consulting /
+  //    listing portals that POPULARITY ranking floats to the top of
+  //    professional_services. Not an independent SMB → filtered, reason
+  //    "enterprise" (distinct from a restaurant/retail chain seed match).
+  if (matchesEnterprise(candidate.name, config)) {
+    return { category, inProfile: true, isChain: true, chainReason: "enterprise" };
+  }
+
+  // 5. Same-name density heuristic (FR-PATH-14). Catches UNKNOWN chains the
   //    seed list misses. ">10 same-name within radius" → the 11th is a chain.
   if (sameNameNearby > config.sameNameChainThreshold) {
     return { category, inProfile: true, isChain: true, chainReason: "same_name_density" };
   }
 
-  // 5. Employee count (FR-PATH-14). Vendor-gated: only fires if we both have a
+  // 6. Employee count (FR-PATH-14). Vendor-gated: only fires if we both have a
   //    count AND a configured cutoff. Off by default (Places has no count).
   if (
     config.maxEmployeeCount != null &&

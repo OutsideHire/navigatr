@@ -28,15 +28,14 @@
 
 import * as React from "react";
 import { List, Loader2, LocateFixed, Map as MapIcon, MapPinOff, Route as RouteIcon } from "lucide-react";
-import { Link } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
 import { Button, Card, Chip } from "@/components/navigatr";
 
 import {
-  STATUS_LABEL,
+  CATEGORY_LABEL,
   type Merchant,
-  type MerchantStatus,
+  type MerchantCategory,
 } from "../mockData";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { haversineMeters, nearestNeighborOrder } from "@/lib/distance";
@@ -47,19 +46,29 @@ import { PathPlanSheet } from "../components/PathPlanSheet";
 import { usePathQueue } from "../hooks/usePathQueue";
 import { useMerchants } from "../hooks/useMerchants";
 
-type StatusFilter = "all" | MerchantStatus;
-const STATUS_FILTERS: StatusFilter[] = ["all", "untouched", "prospect", "active", "won", "cooled"];
+// Phase 2: discovered prospects are all cold leads, so the old deal-lifecycle
+// status chips (prospect/active/won/cooled) don't apply. Filter by business
+// CATEGORY instead — "show me only restaurants near me today".
+type CategoryFilter = "all" | MerchantCategory;
 
-function chipLabel(f: StatusFilter): string {
-  return f === "all" ? "All" : STATUS_LABEL[f];
+function chipLabel(f: CategoryFilter): string {
+  return f === "all" ? "All" : CATEGORY_LABEL[f];
 }
 
 type ViewMode = "map" | "list";
 
 export function PathPage() {
   const geo = useGeolocation();
-  const { merchants: liveMerchants, isLoading: merchantsLoading } = useMerchants();
-  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
+  // Don't fire the discovery call (and a possible Google pull) until
+  // geolocation has settled — otherwise we'd pull against the default
+  // location first, then re-pull when GPS resolves.
+  const origin = geo.loading ? null : { lat: geo.lat, lng: geo.lng };
+  const {
+    merchants: liveMerchants,
+    isLoading: merchantsLoading,
+    isError: merchantsError,
+  } = useMerchants(origin);
+  const [categoryFilter, setCategoryFilter] = React.useState<CategoryFilter>("all");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [view, setView] = React.useState<ViewMode>("list"); // default to list until merchants are geocoded
@@ -107,25 +116,32 @@ export function PathPage() {
 
   const filtered = React.useMemo(
     () =>
-      statusFilter === "all"
+      categoryFilter === "all"
         ? merchantsWithDistance
-        : merchantsWithDistance.filter((m) => m.status === statusFilter),
-    [merchantsWithDistance, statusFilter],
+        : merchantsWithDistance.filter((m) => m.category === categoryFilter),
+    [merchantsWithDistance, categoryFilter],
   );
 
-  // Filter chip counts — computed once over the full set.
-  const counts = React.useMemo(() => {
-    const c: Record<StatusFilter, number> = {
-      all: merchantsWithDistance.length,
-      untouched: 0,
-      prospect: 0,
-      active: 0,
-      won: 0,
-      cooled: 0,
-    };
-    for (const m of merchantsWithDistance) c[m.status]++;
+  // Per-category counts over the full set. Only categories actually present
+  // near the rep get a chip — no empty "Healthcare (0)" noise.
+  const categoryCounts = React.useMemo(() => {
+    const c = new Map<MerchantCategory, number>();
+    for (const m of merchantsWithDistance) {
+      c.set(m.category, (c.get(m.category) ?? 0) + 1);
+    }
     return c;
   }, [merchantsWithDistance]);
+
+  // Chip list: "All" first, then present categories ordered by count desc.
+  const categoryFilters = React.useMemo<CategoryFilter[]>(() => {
+    const present = [...categoryCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([cat]) => cat);
+    return ["all", ...present];
+  }, [categoryCounts]);
+
+  const chipCount = (f: CategoryFilter): number =>
+    f === "all" ? merchantsWithDistance.length : categoryCounts.get(f) ?? 0;
 
   const selectedMerchant: Merchant | null = selectedId
     ? merchantsWithDistance.find((m) => m.id === selectedId) ?? null
@@ -227,9 +243,9 @@ export function PathPage() {
           "[-ms-overflow-style:none] [scrollbar-width:none]",
         )}
       >
-        {STATUS_FILTERS.map((f) => (
+        {categoryFilters.map((f) => (
           <div key={f} className="snap-start">
-            <Chip active={statusFilter === f} count={counts[f]} onClick={() => setStatusFilter(f)}>
+            <Chip active={categoryFilter === f} count={chipCount(f)} onClick={() => setCategoryFilter(f)}>
               {chipLabel(f)}
             </Chip>
           </div>
@@ -266,27 +282,44 @@ export function PathPage() {
           geocoded yet, drop to a list-only single column with a banner
           explaining the missing map. When the rep has zero deals at
           all, the merchant list itself renders its empty state. */}
-      {merchantsLoading ? (
-        <div className="mt-6 flex items-center justify-center">
+      {geo.loading || merchantsLoading ? (
+        <div className="mt-6 flex flex-col items-center justify-center gap-2">
           <Loader2 className="h-6 w-6 animate-spin text-text-subtle" aria-hidden />
+          <p className="text-caption text-text-muted">
+            {geo.loading ? "Finding your location…" : "Discovering businesses nearby…"}
+          </p>
         </div>
+      ) : merchantsError ? (
+        <Card padding="lg" className="mt-6 flex flex-col items-center gap-3 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-status-warning-bg text-status-warning">
+            <MapPinOff className="h-6 w-6" aria-hidden />
+          </span>
+          <div className="flex flex-col gap-1">
+            <p className="text-heading-sm text-text-default">Couldn&apos;t load prospects</p>
+            <p className="text-body-md text-text-muted">
+              Something went wrong reaching the discovery service. Try again in a moment.
+            </p>
+          </div>
+          <Button variant="secondary" size="sm" leadingIcon={LocateFixed} onClick={geo.retry}>
+            Retry
+          </Button>
+        </Card>
       ) : liveMerchants.length === 0 ? (
         <Card padding="lg" className="mt-6 flex flex-col items-center gap-3 text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-surface-sunken text-text-muted">
             <RouteIcon className="h-6 w-6" aria-hidden />
           </span>
           <div className="flex flex-col gap-1">
-            <p className="text-heading-sm text-text-default">No merchants yet</p>
+            <p className="text-heading-sm text-text-default">No prospects nearby</p>
             <p className="text-body-md text-text-muted">
-              Path is your field-rep view of every deal in your pipeline. Add a deal to see it here.
+              We didn&apos;t find any in-profile businesses within range of{" "}
+              {geo.source === "gps" ? "your location" : "the default location"}. Try re-centering
+              on your real position, or move to a denser area.
             </p>
           </div>
-          <Link
-            to="/pipeline"
-            className="inline-flex h-10 items-center rounded-radius-md bg-brand-primary px-4 text-body-md font-medium text-text-inverse hover:bg-brand-primary-hover"
-          >
-            Go to Pipeline
-          </Link>
+          <Button variant="secondary" size="sm" leadingIcon={LocateFixed} onClick={geo.retry}>
+            {geo.source === "gps" ? "Re-center" : "Use my location"}
+          </Button>
         </Card>
       ) : (
       <div className={cn(
@@ -308,7 +341,7 @@ export function PathPage() {
           <div className="flex items-center gap-3 rounded-radius-md border border-dashed border-border-default bg-surface-sunken/40 p-3 md:hidden">
             <MapPinOff className="h-4 w-4 shrink-0 text-text-muted" aria-hidden />
             <p className="text-caption text-text-muted">
-              Map view returns once we geocode deal addresses (next session).
+              Map view appears once prospects with map coordinates load.
             </p>
           </div>
         )}
@@ -321,10 +354,10 @@ export function PathPage() {
             merchants={filtered}
             selectedId={selectedId}
             onSelect={handleSelect}
-            // Only show the empty-state CTA when a status filter is active —
-            // otherwise the empty state means "no data at all", not "your
+            // Only show the empty-state CTA when a category filter is active —
+            // otherwise the empty state means "no prospects nearby", not "your
             // filter is too tight" and the reset CTA would be misleading.
-            onResetFilters={statusFilter !== "all" ? () => setStatusFilter("all") : undefined}
+            onResetFilters={categoryFilter !== "all" ? () => setCategoryFilter("all") : undefined}
           />
         </div>
       </div>

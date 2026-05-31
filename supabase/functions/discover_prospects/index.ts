@@ -8,9 +8,15 @@
 //       and the SECURITY DEFINER `prospects_nearby` grant apply normally.
 //
 // THE CACHE DECISION (PATH_DESIGN.md §2/§3, Approach B): we bucket the request
-// into a geohash cell (precision 5, ~4.9km). If geo_cell_cache says we've pulled
-// that cell recently, we SKIP Google entirely and serve from our DB — that's the
-// ~90% Places-spend cut. Only a cold (or force_refresh) cell pays Google.
+// into a geohash cell (precision 5, ~4.9km). geo_cell_cache tracks warmth PER
+// CATEGORY BUCKET. We only call Google for the buckets that are cold/expired —
+// that's the ~90% Places-spend cut, now at bucket granularity.
+//
+// CATEGORIZED INGEST (PATH_DESIGN.md §11): instead of one category-agnostic
+// searchNearby (which Google ranks by prominence, starving low-profile service
+// businesses), we fire ONE searchNearby per cold bucket, each scoped to that
+// bucket's includedTypes, ranked by POPULARITY, in parallel. Every category
+// gets its own 20 slots so plumbers/accountants/movers actually surface.
 //
 // PLACES_MOCK=1 swaps the live Places call for fixtures.ts so the whole pipeline
 // (classify → store → query) runs with zero API cost and no key. Flip it off and
@@ -19,9 +25,16 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   classifyProspect,
+  type IcpVerdict,
   type ProspectCandidate,
 } from "../_shared/icpFilter.ts";
 import { encodeGeohash } from "../_shared/geohash.ts";
+import {
+  CATEGORY_BUCKETS,
+  bucketForType,
+  searchableTypes,
+  type CategoryBucket,
+} from "../_shared/categoryTaxonomy.ts";
 import { mockSearchNearby, type PlacesNewPlace, type PlacesNewResponse } from "./fixtures.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -30,15 +43,13 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const GOOGLE_PLACES_API_KEY = Deno.env.get("GOOGLE_PLACES_API_KEY") ?? "";
 const PLACES_MOCK = Deno.env.get("PLACES_MOCK") === "1";
 
-// How long a cell stays "warm" before we re-pull Places. 30 days is a sane
-// Phase 1 default; the Approach-C scheduled refresh (Phase 5) supersedes it.
+// How long a (cell, bucket) stays "warm" before we re-pull Places. 30 days is a
+// sane Phase 1 default; the Approach-C scheduled refresh (Phase 5) supersedes it.
 const CELL_TTL_DAYS = 30;
 // Geohash precision used to bucket cache cells. Must match the read radius
 // bracketing reasoning in _shared/geohash.ts.
 const GEO_PRECISION = 5;
-// Single broad pull per cell in Phase 1 (category-agnostic searchNearby), so the
-// geo_cell_cache row uses one sentinel category. Per-category pulls land later.
-const CACHE_CATEGORY = "_all";
+const TTL_MS = CELL_TTL_DAYS * 24 * 60 * 60 * 1000;
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -61,11 +72,33 @@ interface RequestBody {
   force_refresh?: boolean;
 }
 
+/** One bucket's Places pull, kept paired with its bucket for per-bucket cache
+ *  attribution after we dedup the union. */
+interface BucketPull {
+  bucket: CategoryBucket;
+  places: PlacesNewPlace[];
+}
+
+/** Outcome of firing all the per-bucket pulls: the ones that came back, and the
+ *  ones that threw (bad includedTypes value, transient 5xx, …). Failed buckets
+ *  are NOT cache-marked, so they stay cold and retry on the next request rather
+ *  than poisoning the whole discovery call. */
+interface BucketPullResult {
+  fulfilled: BucketPull[];
+  failed: Array<{ bucket: CategoryBucket; error: string }>;
+}
+
 /**
- * Fetch nearby businesses. PLACES_MOCK short-circuits to fixtures; otherwise we
- * hit Google Places API (New) searchNearby. Both return the same shape.
+ * One searchNearby scoped to a set of includedTypes, ranked by POPULARITY.
+ * PLACES_MOCK short-circuits to fixtures (which ignore includedTypes — fine, the
+ * caller dedups the union before counting). Otherwise hits Google Places (New).
  */
-async function fetchPlaces(lat: number, lng: number, radiusM: number): Promise<PlacesNewPlace[]> {
+async function searchNearbyForTypes(
+  lat: number,
+  lng: number,
+  radiusM: number,
+  includedTypes: string[],
+): Promise<PlacesNewPlace[]> {
   if (PLACES_MOCK) {
     return mockSearchNearby(lat, lng).places;
   }
@@ -90,6 +123,11 @@ async function fetchPlaces(lat: number, lng: number, radiusM: number): Promise<P
       ].join(","),
     },
     body: JSON.stringify({
+      includedTypes,
+      // POPULARITY pulls the most-established businesses per type; the read path
+      // (prospects_nearby) re-sorts by distance, so the rep still sees nearest-
+      // first, seeded from higher-quality prospects (PATH_DESIGN.md §11).
+      rankPreference: "POPULARITY",
       maxResultCount: 20,
       locationRestriction: {
         circle: {
@@ -106,6 +144,41 @@ async function fetchPlaces(lat: number, lng: number, radiusM: number): Promise<P
   }
   const data = (await res.json()) as PlacesNewResponse;
   return data.places ?? [];
+}
+
+/**
+ * Fire one searchNearby per cold bucket, in parallel (Promise.allSettled), so a
+ * cold cell stays ~2-3s instead of 7× serial. Each pull is scoped to that
+ * bucket's Table A includedTypes. allSettled (not all) so a single bucket that
+ * 400s on a bad type or hits a transient error degrades to "that bucket stays
+ * cold and retries" instead of failing the whole discovery call.
+ */
+async function fetchPlacesByCategory(
+  lat: number,
+  lng: number,
+  radiusM: number,
+  buckets: CategoryBucket[],
+): Promise<BucketPullResult> {
+  const settled = await Promise.allSettled(
+    buckets.map((bucket) =>
+      searchNearbyForTypes(lat, lng, radiusM, searchableTypes(bucket)).then(
+        (places): BucketPull => ({ bucket, places }),
+      ),
+    ),
+  );
+  const fulfilled: BucketPull[] = [];
+  const failed: Array<{ bucket: CategoryBucket; error: string }> = [];
+  settled.forEach((r, i) => {
+    if (r.status === "fulfilled") {
+      fulfilled.push(r.value);
+    } else {
+      failed.push({
+        bucket: buckets[i],
+        error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+      });
+    }
+  });
+  return { fulfilled, failed };
 }
 
 Deno.serve(async (req) => {
@@ -147,34 +220,60 @@ Deno.serve(async (req) => {
 
   const cell = encodeGeohash(lat, lng, GEO_PRECISION);
 
-  // ---- Cache decision -----------------------------------------------------
-  let warm = false;
+  // ---- Cache decision (per bucket) ----------------------------------------
+  // Read every cache row for this cell, then keep only the buckets that are
+  // missing or past TTL. force_refresh re-pulls all 7. Legacy "_all" Phase-1
+  // rows simply aren't in CATEGORY_BUCKETS, so they're ignored and every bucket
+  // reads cold on the first post-deploy hit — the cell self-heals to coarse
+  // buckets with no migration (PATH_DESIGN.md §11).
+  let coldBuckets: CategoryBucket[] = [...CATEGORY_BUCKETS];
   if (!forceRefresh) {
-    const { data: cacheRow } = await admin
+    const { data: cacheRows } = await admin
       .from("geo_cell_cache")
-      .select("last_pulled_at")
-      .eq("geo_cell", cell)
-      .eq("category", CACHE_CATEGORY)
-      .maybeSingle();
-    if (cacheRow?.last_pulled_at) {
-      const ageMs = Date.now() - new Date(cacheRow.last_pulled_at as string).getTime();
-      warm = ageMs < CELL_TTL_DAYS * 24 * 60 * 60 * 1000;
+      .select("category, last_pulled_at")
+      .eq("geo_cell", cell);
+    const lastPulled = new Map<string, number>();
+    for (const r of cacheRows ?? []) {
+      const ts = r.last_pulled_at as string | null;
+      if (ts) lastPulled.set(r.category as string, new Date(ts).getTime());
     }
+    const now = Date.now();
+    coldBuckets = CATEGORY_BUCKETS.filter((b) => {
+      const t = lastPulled.get(b);
+      return t == null || now - t >= TTL_MS;
+    });
   }
+  const warm = coldBuckets.length === 0;
 
   let rawCount = 0;
   let filteredCount = 0;
   let keptCount = 0;
 
-  // ---- Cold cell: pull Places, classify, upsert ---------------------------
+  // ---- Cold buckets: pull Places (parallel), classify the union, upsert ----
+  let failedBuckets: Array<{ bucket: CategoryBucket; error: string }> = [];
   if (!warm) {
-    let places: PlacesNewPlace[];
-    try {
-      places = await fetchPlaces(lat, lng, radiusM);
-    } catch (e) {
-      return json({ error: "places_fetch_failed", detail: e instanceof Error ? e.message : String(e) }, 502);
+    const { fulfilled: pulls, failed } = await fetchPlacesByCategory(lat, lng, radiusM, coldBuckets);
+    failedBuckets = failed;
+    // Every bucket failed → nothing to classify or cache; surface it. (A partial
+    // failure falls through: we ingest what we got, leave failed buckets cold.)
+    if (pulls.length === 0) {
+      return json(
+        {
+          error: "places_fetch_failed",
+          detail: failed.map((f) => `${f.bucket}: ${f.error}`).join("; ").slice(0, 500),
+        },
+        502,
+      );
     }
-    rawCount = places.length;
+
+    // Dedup the union by place_id (a business returned by two buckets collapses
+    // to one row — and with the mock, all pulls return the same fixtures).
+    const uniq = new Map<string, PlacesNewPlace>();
+    for (const { places } of pulls) {
+      for (const p of places) {
+        if (!uniq.has(p.id)) uniq.set(p.id, p);
+      }
+    }
 
     // Active exclusion seed patterns (curated chain list).
     const { data: seedRows } = await admin
@@ -187,8 +286,8 @@ Deno.serve(async (req) => {
     }));
 
     // Same-name density (FR-PATH-14): seed the count map with names already
-    // cached in this cell, then add this batch's own occurrences. Catches
-    // unknown chains the seed list misses.
+    // cached in this cell, then add the COMBINED union's occurrences (not
+    // per-pull — a chain split across buckets must still trip the heuristic).
     const nameCount = new Map<string, number>();
     const { data: existingNames } = await admin
       .from("prospects")
@@ -198,15 +297,17 @@ Deno.serve(async (req) => {
       const k = ((row.name as string) ?? "").toLowerCase();
       if (k) nameCount.set(k, (nameCount.get(k) ?? 0) + 1);
     }
-    for (const p of places) {
+    for (const p of uniq.values()) {
       const k = (p.displayName?.text ?? "").toLowerCase();
       if (k) nameCount.set(k, (nameCount.get(k) ?? 0) + 1);
     }
 
-    // Classify + build upsert rows. We store EVERY business (in-profile and not)
-    // so the cache is complete; the read path filters to servable. is_chain /
-    // in_profile carry the verdict.
-    const rows = places.map((p) => {
+    // Classify each unique business ONCE. We store EVERY business (in-profile
+    // and not) so the cache is complete; the read path filters to servable.
+    // `category` is the COARSE bucket (bucketForType) — the same taxonomy that
+    // drove the includedTypes pull, so ingest + display can't drift.
+    const verdicts = new Map<string, IcpVerdict>();
+    const rows = [...uniq.values()].map((p) => {
       const candidate: ProspectCandidate = {
         placeId: p.id,
         name: p.displayName?.text ?? "",
@@ -217,12 +318,13 @@ Deno.serve(async (req) => {
       // Exclude self from the density count (the row's own contribution).
       const sameNameNearby = Math.max(0, (nameCount.get(nameKey) ?? 1) - 1);
       const verdict = classifyProspect(candidate, seedPatterns, sameNameNearby);
+      verdicts.set(p.id, verdict);
       if (verdict.isChain || !verdict.inProfile) filteredCount++;
       else keptCount++;
       return {
         place_id: p.id,
         name: candidate.name,
-        category: verdict.category,
+        category: bucketForType(p.types ?? []),
         google_types: p.types ?? [],
         lat: p.location.latitude,
         lng: p.location.longitude,
@@ -238,6 +340,7 @@ Deno.serve(async (req) => {
         last_refreshed_at: new Date().toISOString(),
       };
     });
+    rawCount = rows.length;
 
     if (rows.length > 0) {
       const { error: upErr } = await admin
@@ -248,18 +351,30 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Observability + warm-mark the cell (FR-PATH-17).
-    const { error: cacheErr } = await admin.from("geo_cell_cache").upsert(
-      {
+    // Observability + warm-mark EACH cold bucket (FR-PATH-17). Per-bucket counts
+    // are attributed from that bucket's own pull (verdicts looked up from the
+    // shared map), so a partial failure later re-pulls only the missing buckets.
+    const pulledAt = new Date().toISOString();
+    const cacheUpserts = pulls.map(({ bucket, places }) => {
+      let kept = 0;
+      let filtered = 0;
+      for (const p of places) {
+        const v = verdicts.get(p.id);
+        if (v && !v.isChain && v.inProfile) kept++;
+        else filtered++;
+      }
+      return {
         geo_cell: cell,
-        category: CACHE_CATEGORY,
-        last_pulled_at: new Date().toISOString(),
-        raw_count: rawCount,
-        filtered_count: filteredCount,
-        kept_count: keptCount,
-      },
-      { onConflict: "geo_cell,category" },
-    );
+        category: bucket,
+        last_pulled_at: pulledAt,
+        raw_count: places.length,
+        filtered_count: filtered,
+        kept_count: kept,
+      };
+    });
+    const { error: cacheErr } = await admin
+      .from("geo_cell_cache")
+      .upsert(cacheUpserts, { onConflict: "geo_cell,category" });
     if (cacheErr) {
       return json({ error: "cache_update_failed", detail: cacheErr.message }, 500);
     }
@@ -281,6 +396,8 @@ Deno.serve(async (req) => {
   return json({
     cell,
     cache: warm ? "warm" : "cold",
+    cold_buckets: coldBuckets,
+    failed_buckets: failedBuckets,
     raw_count: rawCount,
     filtered_count: filteredCount,
     kept_count: keptCount,

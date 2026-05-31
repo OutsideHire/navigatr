@@ -138,7 +138,9 @@ Notes:
 ## 5. Filtering pipeline (FR-PATH-11→20)
 
 Runs **server-side, at ingest** (when a cell is backfilled), not per request. Reps cannot
-override (FR-PATH-19). Order:
+override (FR-PATH-19). What gets *pulled* before this pipeline runs is set by the categorized
+ingest in §11 (per-category `searchNearby`, 7 buckets) — that's what surfaces service
+businesses the single popularity pull misses. Order:
 
 1. **Category gate (FR-PATH-15):** drop consumer-only (residential, lodging, tourist, worship,
    schools); keep per-profession allowed categories.
@@ -178,6 +180,11 @@ for merchant services / payroll / treasury reps. Three failure modes:
    inside it are invisible.
 3. **Coarse categories:** Places types are retail-shaped; B2B NAICS/SIC categories don't map,
    so the ICP filter has poor signal for B2B. (Same root cause as the employee-count gap.)
+
+The *in-Places* slice of failure mode 3 — service businesses that Places carries but the single
+popularity pull never surfaces — is addressed by **categorized ingest (§11)**. That does not
+fix absent/building-level B2B (modes 1-2); those still need the firmographics vendor (§6.1
+above / Phase 5).
 
 **Decision:** **Places-only for MVP.** No firmographics vendor as a launch dependency. We prove
 the rep loop (build → drive → log → auto-deal) first. Accepted consequence: **MVP Path skews
@@ -227,6 +234,10 @@ dense rep coverage in one metro.
 - Card: address, contact, est. value, one-click call/email, launch Google Maps turn-by-turn
   (FR-PATH-04/05). Employee count per §6.
 
+**Phase 2.5 — Categorized ingest (BUILT, fixes service-business coverage)**
+- Per-category `searchNearby` (7 buckets, `POPULARITY`), one shared taxonomy driving both
+  ingest targeting and `categoryFromPlaces`, per-bucket cell warmth. Full spec in §11.
+
 **Phase 3 — Drop-In → auto-deal (the conversion)**
 - Log Drop-In from a Path record (FR-PATH-07), 10 color-coded dispositions auto-save
   (FR-PATH-08).
@@ -255,6 +266,67 @@ dense rep coverage in one metro.
 - Geocoding rep origin: device GPS (useGeolocation hook exists) — confirm permission UX.
 - Places quota ceiling + billing alerts before Phase 1 ships (cost guardrail).
 - Vendor shortlist for Phase 5 (PDL / Clearbit / other) + per-record cost vs cache model.
+
+## 11. Categorized ingest (chosen — fixes the service-business gap)
+
+**Status:** BUILT (Phase 2.5). Shipped as `_shared/categoryTaxonomy.ts` (7-bucket
+`{bucket → Table A types}` map + `bucketForType`), per-bucket parallel pulls in
+`discover_prospects/index.ts` (`fetchPlacesByCategory`, `rankPreference: "POPULARITY"`),
+per-bucket `geo_cell_cache` warmth, and `categoryFromPlaces` reduced to an enum guard.
+Decisions below are the as-built spec.
+
+**Problem.** Phase 1 ingest issues a single category-agnostic `searchNearby`
+(`discover_prospects/index.ts:92`) with `maxResultCount: 20` and no `includedTypes`.
+Google returns the 20 most *prominent* places in the circle — which skews to restaurants,
+retail, hotels, landmarks. Low-prominence service businesses (plumbers, accountants, movers,
+contractors, B2B services) almost never crack the top 20, so they're not *filtered* out —
+they're never pulled. A live audit of the in-app bucketing (`categoryFromPlaces`) confirmed
+the same gap downstream: 17 of 93 common service types fall to `"other"`, and a substring bug
+mis-bucketed `barber_shop` → restaurant (the `bar` rule ate `bar`ber). This is the in-Places
+slice of the §6.1 coverage gap, and it's fixable without a vendor.
+
+**Decision — per-category pulls.** On a cold cell, issue **one `searchNearby` per ICP category
+bucket**, each with its own `includedTypes`, so every category gets a dedicated 20 slots and
+services stop competing against prominent restaurants.
+
+- **Granularity: 7 buckets** — food, retail, automotive, healthcare, personal services,
+  professional services, hospitality. (Each maps to a UI filter chip.)
+- **Rank: `POPULARITY`** — pulls the most-established businesses per type. The read path
+  (`prospects_nearby`) re-sorts by distance anyway, so the rep still sees nearest-first, seeded
+  from higher-quality prospects.
+- Fire the 7 pulls with `Promise.all` so a cold cell stays ~2-3s, not 7× serial.
+
+**One taxonomy, both gates.** Extract a single `{ ourCategory → googleTypes[] }` map into
+`_shared`. It drives *both* the ingest `includedTypes` *and* a rewrite of `categoryFromPlaces`
+(replacing the brittle substring rules). This kills the `bar`/`barber` class of bug and the
+`"other"` dumping in the same move, and guarantees ingest targeting and display labels can
+never drift apart.
+
+**No schema change.** `geo_cell_cache` is already keyed `(geo_cell, category)`
+(migration `20260531000001:122`); the `category = "_all"` sentinel was the Phase-1 placeholder.
+Switch to **per-bucket warmth**: read all cache rows for the cell, pull only cold/expired
+buckets, mark each. Adding a category later backfills just that bucket; a partial failure
+re-pulls only what's missing. Existing `_all` rows go stale and are ignored (or cleared so
+cells re-pull cleanly). `prospects` dedupes on `place_id` (upsert `onConflict: place_id`), so a
+business returned by two buckets collapses to one row — no duplicates.
+
+**Cost.** Field mask includes phone + website → Enterprise SKU ≈ **$0.035/call**.
+1 → 7 calls per *cold* cell = **~$0.035 → ~$0.25**, once per area per 30-day TTL. For ~5 ISOs
+on a metro this is a few dollars/month; the shared 30-day cache is what makes 7× the calls a
+rounding error (the whole §2 cost thesis still holds).
+
+**Risks / guards.**
+- Invalid `includedTypes` value 400s the call → unit-test the map against Google Table A.
+- Same-name density (`index.ts:192-204`) must count over the *combined* batch + existing cache,
+  not per-pull, or a chain split across buckets could slip the heuristic.
+- Cold-cell latency → parallelize (above).
+
+**Build sequence.**
+1. Extract `{ourCategory → googleTypes[]}` taxonomy into `_shared`.
+2. Rewrite `categoryFromPlaces` on top of it (absorbs the "Fix A" relabel + barber bug).
+3. `fetchPlaces` → `fetchPlacesByCategory`, parallel pulls with `includedTypes`, `POPULARITY`.
+4. Per-bucket cache check + marking in the cold-cell block.
+5. Tests: taxonomy validity vs Table A, cold-issues-7-calls / warm-skips, density across buckets.
 
 ---
 
