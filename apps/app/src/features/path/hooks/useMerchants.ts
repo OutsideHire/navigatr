@@ -30,19 +30,11 @@ import {
   type MerchantCategory,
 } from "../mockData";
 
-/** INGEST radius (meters) for "near me" mode: the universe we pull from Google
- *  and cache around the rep's CURRENT location. This is the MAX a rep can select
- *  on the Path radius chip — the chip filters the already-loaded list
- *  client-side, it does NOT re-query Google (the geo-cell cache isn't keyed on
- *  radius, so a narrower fetch on a warm cell would be inconsistent). Fetch the
- *  whole 5mi once, filter cheap.
- *
- *  This is deliberately a SUBURBAN ceiling, not a driving-territory radius. A
- *  parked rep asking "what's around me right now" is the job this covers. Wide
- *  driving territories (30–60mi rural) are NOT served by growing this number —
- *  a 60mi circle is ~1,400 geohash cells and ~$350 to cold-fill, which doesn't
- *  scale. Those are served by the separate territory mode (town/corridor-scoped
- *  ingest) per the office-hours design doc. (8,047m == 5mi == widest chip.) */
+/** INGEST radius (meters) used when the caller doesn't pass one. The Path radius
+ *  chip (5/10/15mi) passes an explicit radiusM, so the selected radius drives the
+ *  Google ingest, not just a client filter — picking 15mi tiles + caches a 15mi
+ *  area (MAX_CELLS in the Edge bounds the cold-fill cost). 8,047m == 5mi == the
+ *  default/smallest chip. */
 export const DEFAULT_RADIUS_M = 8_047;
 
 /** One prospect row as returned by the discover_prospects Edge Function
@@ -61,6 +53,9 @@ export interface ProspectRow {
   employee_count: number | null;
   rating_count: number | null;
   rating: number | null;
+  /** Places primaryType (or types[0] fallback), set at ingest. Returned by
+   *  prospects_nearby for more reliable downstream categorization. */
+  primary_type: string | null;
   distance_m: number;
 }
 
@@ -190,13 +185,10 @@ export function useMerchants(
         { body: { lat: origin!.lat, lng: origin!.lng, radius_m: radiusM, profession } },
       );
       if (error) throw error;
-      // prospects_nearby returns nearest-first. Re-rank by opportunity (low
-      // review count up) with a STABLE sort, so equal-score ties keep the
-      // server's distance order — i.e. distance is the tiebreak (design
-      // 2026-05-31). Array.prototype.sort is stable (ES2019+).
-      return (data?.prospects ?? [])
-        .map(prospectToMerchant)
-        .sort((a, b) => opportunityScore(b) - opportunityScore(a));
+      // Returns the server's nearest-first order. Ordering for display lives in
+      // the page via sortMerchants() (distance / opportunity / popularity), so
+      // the hook stays a pure data source.
+      return (data?.prospects ?? []).map(prospectToMerchant);
     },
   });
 
