@@ -1,6 +1,6 @@
 // Supabase Edge Function: discover_prospects — the Path prospect-ingest spine.
 //
-// Body: { lat, lng, radius_m?, profession?, force_refresh? }
+// Body: { lat, lng, radius_m?, profession?, industries?, force_refresh? }
 // Auth: requires an authenticated user JWT. We verify the caller, then do the
 //       expensive work (Places fetch + classification + upsert) with the SERVICE
 //       ROLE so the shared `prospects` cache can be written (it has no client
@@ -39,11 +39,12 @@ import {
 } from "../_shared/icpFilter.ts";
 import { decodeGeohash, decodeGeohashBounds, cellsCovering } from "../_shared/geohash.ts";
 import {
-  CATEGORY_BUCKETS,
+  TIER_1_KEYS,
+  ALL_FETCHABLE_KEYS,
   bucketForType,
   searchableTypes,
-  type CategoryBucket,
-} from "../_shared/categoryTaxonomy.ts";
+  type IndustryKey,
+} from "../_shared/industryTaxonomy.ts";
 import { mockSearchNearby, type PlacesNewPlace, type PlacesNewResponse } from "./fixtures.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -133,13 +134,14 @@ interface RequestBody {
   lng?: number;
   radius_m?: number;
   profession?: string | null;
+  industries?: string[];
   force_refresh?: boolean;
 }
 
 /** One bucket's Places pull, kept paired with its bucket for per-bucket cache
  *  attribution after we dedup the union. */
 interface BucketPull {
-  bucket: CategoryBucket;
+  bucket: IndustryKey;
   places: PlacesNewPlace[];
 }
 
@@ -149,7 +151,7 @@ interface BucketPull {
  *  than poisoning the whole discovery call. */
 interface BucketPullResult {
   fulfilled: BucketPull[];
-  failed: Array<{ bucket: CategoryBucket; error: string }>;
+  failed: Array<{ bucket: IndustryKey; error: string }>;
 }
 
 /**
@@ -225,7 +227,7 @@ async function fetchPlacesByCategory(
   lat: number,
   lng: number,
   radiusM: number,
-  buckets: CategoryBucket[],
+  buckets: IndustryKey[],
 ): Promise<BucketPullResult> {
   const settled = await Promise.allSettled(
     buckets.map((bucket) =>
@@ -235,7 +237,7 @@ async function fetchPlacesByCategory(
     ),
   );
   const fulfilled: BucketPull[] = [];
-  const failed: Array<{ bucket: CategoryBucket; error: string }> = [];
+  const failed: Array<{ bucket: IndustryKey; error: string }> = [];
   settled.forEach((r, i) => {
     if (r.status === "fulfilled") {
       fulfilled.push(r.value);
@@ -272,6 +274,13 @@ Deno.serve(async (req) => {
   const profession = body?.profession ?? null;
   const forceRefresh = body?.force_refresh === true;
 
+  // Industries to cold-fill. Validate against the known fetchable set; unknown
+  // values are dropped. Empty/absent → Tier 1 default (the highest-fit B2B core).
+  const requested = Array.isArray(body?.industries)
+    ? (body!.industries.filter((s) => (ALL_FETCHABLE_KEYS as string[]).includes(s)) as IndustryKey[])
+    : [];
+  const scopeIndustries: IndustryKey[] = requested.length > 0 ? requested : [...TIER_1_KEYS];
+
   // Verify the caller is a real authenticated user (don't trust a raw header).
   const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     global: { headers: { Authorization: authHeader } },
@@ -295,7 +304,7 @@ Deno.serve(async (req) => {
   // ---- Cache decision (per cell, per bucket) ------------------------------
   // One read across every covered cell. A (cell, bucket) is cold if missing or
   // past TTL. force_refresh re-pulls all of them. Legacy "_all" Phase-1 rows
-  // aren't in CATEGORY_BUCKETS, so they're ignored and self-heal on first hit
+  // aren't in scopeIndustries, so they're ignored and self-heal on first hit
   // (PATH_DESIGN.md §11).
   const lastPulled = new Map<string, number>(); // key: `${cell}|${bucket}`
   if (!forceRefresh) {
@@ -320,11 +329,11 @@ Deno.serve(async (req) => {
     cell: string;
     center: { lat: number; lng: number };
     radiusM: number;
-    coldBuckets: CategoryBucket[];
+    coldBuckets: IndustryKey[];
   }
   const cellWork: CellWork[] = [];
   for (const c of cells) {
-    const cold = CATEGORY_BUCKETS.filter((b) => {
+    const cold = scopeIndustries.filter((b) => {
       if (forceRefresh) return true;
       const t = lastPulled.get(`${c}|${b}`);
       return t == null || now - t >= TTL_MS;
@@ -345,13 +354,13 @@ Deno.serve(async (req) => {
   let coldCells = 0;
 
   // ---- Cold cells: pull Places per cell (bounded concurrency), classify ----
-  let failedBuckets: Array<{ cell: string; bucket: CategoryBucket; error: string }> = [];
+  let failedBuckets: Array<{ cell: string; bucket: IndustryKey; error: string }> = [];
   if (!warm) {
     coldCells = cellWork.length;
     interface CellPull {
       cell: string;
       pulls: BucketPull[];
-      failed: Array<{ bucket: CategoryBucket; error: string }>;
+      failed: Array<{ bucket: IndustryKey; error: string }>;
     }
     // Fetch cells with bounded concurrency (CELL_CONCURRENCY cells in flight,
     // each fanning out to its cold buckets in parallel) so a cold territory
@@ -445,7 +454,7 @@ Deno.serve(async (req) => {
       return {
         place_id: p.id,
         name: candidate.name,
-        category: bucketForType(p.types ?? []),
+        category: bucketForType(p.types ?? [], p.primaryType ?? null),
         google_types: p.types ?? [],
         lat: p.location.latitude,
         lng: p.location.longitude,
