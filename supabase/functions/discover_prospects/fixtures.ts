@@ -22,6 +22,7 @@ export interface PlacesNewPlace {
   websiteUri?: string;
   userRatingCount?: number;
   rating?: number;
+  primaryType?: string;
 }
 
 export interface PlacesNewResponse {
@@ -47,6 +48,7 @@ export function mockSearchNearby(lat: number, lng: number): PlacesNewResponse {
         websiteUri: "https://patsdiner.example",
         userRatingCount: 84,
         rating: 4.6,
+        primaryType: "restaurant",
       },
       {
         id: "mock_subway_1",
@@ -57,6 +59,7 @@ export function mockSearchNearby(lat: number, lng: number): PlacesNewResponse {
         nationalPhoneNumber: "(512) 555-0102",
         userRatingCount: 30,
         rating: 3.9,
+        primaryType: "restaurant",
       },
       {
         id: "mock_hotel_1",
@@ -66,6 +69,7 @@ export function mockSearchNearby(lat: number, lng: number): PlacesNewResponse {
         formattedAddress: "300 Brazos St, Austin, TX",
         userRatingCount: 1200,
         rating: 4.4,
+        primaryType: "lodging",
       },
       {
         id: "mock_hospital_1",
@@ -75,6 +79,7 @@ export function mockSearchNearby(lat: number, lng: number): PlacesNewResponse {
         formattedAddress: "400 E 15th St, Austin, TX",
         userRatingCount: 540,
         rating: 3.2,
+        primaryType: "hospital",
       },
       {
         id: "mock_dental_1",
@@ -86,6 +91,7 @@ export function mockSearchNearby(lat: number, lng: number): PlacesNewResponse {
         websiteUri: "https://riversidedental.example",
         userRatingCount: 210,
         rating: 4.8,
+        primaryType: "dentist",
       },
       {
         id: "mock_hvac_1",
@@ -96,6 +102,7 @@ export function mockSearchNearby(lat: number, lng: number): PlacesNewResponse {
         nationalPhoneNumber: "(512) 555-0106",
         userRatingCount: 47,
         rating: 4.1,
+        primaryType: "general_contractor",
       },
     ],
   };

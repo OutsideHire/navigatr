@@ -52,6 +52,7 @@ function makeRow(overrides: Partial<ProspectRow> = {}): ProspectRow {
     employee_count: null,
     rating_count: 84,
     rating: 4.6,
+    primary_type: "restaurant",
     distance_m: 120,
     ...overrides,
   };
@@ -169,47 +170,6 @@ describe("useMerchants", () => {
     });
     expect(result.current.merchants.map((m) => m.id)).toEqual(["a", "b"]);
     expect(result.current.merchants[0]!.status).toBe("untouched");
-  });
-
-  it("re-ranks by opportunity: low-review prospects rise above saturated ones", async () => {
-    // Server returns nearest-first: the saturated 800-review chain is closest,
-    // an underseen 5-review independent is farther. Opportunity sort must flip
-    // them so the rep sees the under-pitched lead first.
-    invokeMock.mockResolvedValue({
-      data: {
-        prospects: [
-          makeRow({ id: "chain", rating_count: 800, distance_m: 50 }),
-          makeRow({ id: "fresh", rating_count: 5, distance_m: 400 }),
-        ],
-      },
-      error: null,
-    });
-    const { result } = renderHook(
-      () => useMerchants({ lat: 30.2672, lng: -97.7431 }),
-      { wrapper },
-    );
-    await waitFor(() => expect(result.current.merchants).toHaveLength(2));
-    expect(result.current.merchants.map((m) => m.id)).toEqual(["fresh", "chain"]);
-  });
-
-  it("keeps server distance order as the tiebreak when scores are equal", async () => {
-    // Both have the same review count → equal opportunity score → the stable
-    // sort preserves the server's nearest-first order.
-    invokeMock.mockResolvedValue({
-      data: {
-        prospects: [
-          makeRow({ id: "near", rating_count: 20, distance_m: 100 }),
-          makeRow({ id: "far", rating_count: 20, distance_m: 900 }),
-        ],
-      },
-      error: null,
-    });
-    const { result } = renderHook(
-      () => useMerchants({ lat: 30.2672, lng: -97.7431 }),
-      { wrapper },
-    );
-    await waitFor(() => expect(result.current.merchants).toHaveLength(2));
-    expect(result.current.merchants.map((m) => m.id)).toEqual(["near", "far"]);
   });
 
   it("returns an empty list when the function returns no prospects", async () => {

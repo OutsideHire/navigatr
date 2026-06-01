@@ -67,12 +67,18 @@ const TTL_MS = CELL_TTL_DAYS * 24 * 60 * 60 * 1000;
 // Each cell is independently cached (geo_cell, category), so a metro warms once
 // and is shared across every rep — cost scales with NEW cold cells, not reps.
 //
-// MAX_CELLS is the hard cost guardrail: each cell is up to 7 Google calls
-// (one per category bucket), so 25 cells × 7 × ~$0.035 ≈ $6.13 worst-case for a
-// fully-cold territory. CELL_CONCURRENCY bounds how many cells we fetch at once
-// so we don't open hundreds of sockets from one Edge invocation.
-const MAX_CELLS = 25;
-const CELL_CONCURRENCY = 4;
+// MAX_CELLS is the hard cost guardrail + the coverage floor. A 15mi radius
+// (24,140m) covers ~700 sq mi, which is ~88 precision-5 cells at ~30°N but more
+// toward the poles: cell ground-width scales with cos(lat), so the same radius
+// needs ~107 cells at 35°N (Oklahoma City) and ~115 near 49°N. We set the cap
+// at 130 so a 15mi pull isn't silently truncated to a partial area anywhere in
+// the continental US. Worst-case cold-fill = 130 cells × 7 buckets × ~$0.035 ≈
+// ~$32 one-time per fresh 15mi territory, then warm/shared for 30 days across
+// every rep. CELL_CONCURRENCY bounds how many cells we fetch at once so one
+// Edge invocation doesn't open hundreds of sockets.
+const MAX_CELLS = 130;
+const CELL_CONCURRENCY = 6;
+
 // Read-path cap (prospects_nearby maxes at 100 server-side). A wide radius can
 // legitimately surface far more than the old single-cell 30.
 const READ_LIMIT = 100;
@@ -179,6 +185,7 @@ async function searchNearbyForTypes(
         "places.websiteUri",
         "places.userRatingCount",
         "places.rating",
+        "places.primaryType",
       ].join(","),
     },
     body: JSON.stringify({
@@ -448,6 +455,9 @@ Deno.serve(async (req) => {
         website: p.websiteUri ?? null,
         rating_count: p.userRatingCount ?? null,
         rating: p.rating ?? null,
+        // primaryType is the best-guess category; fall back to the first raw
+        // type so a lead never loses its category (CSV: primary_type fallback).
+        primary_type: p.primaryType ?? p.types?.[0] ?? null,
         is_chain: verdict.isChain,
         chain_reason: verdict.chainReason,
         in_profile: verdict.inProfile,

@@ -45,6 +45,7 @@ import { MerchantDetailSheet } from "../components/MerchantDetailSheet";
 import { PathPlanSheet } from "../components/PathPlanSheet";
 import { usePathQueue } from "../hooks/usePathQueue";
 import { useMerchants } from "../hooks/useMerchants";
+import { sortMerchants, type PathSortMode } from "../lib/sortMerchants";
 
 // Phase 2: discovered prospects are all cold leads, so the old deal-lifecycle
 // status chips (prospect/active/won/cooled) don't apply. Filter by business
@@ -57,23 +58,21 @@ function chipLabel(f: CategoryFilter): string {
 
 type ViewMode = "map" | "list";
 
-// "Near me" radius options (miles → meters). useMerchants ingests this whole
-// universe ONCE (DEFAULT_RADIUS_M, tiled across geohash cells and cached); these
-// chips filter that already-loaded list client-side — no extra Google calls per
-// chip. Labels are miles because formatDistance renders miles for US reps.
-// Capped at 5mi: this is the parked-rep "what's around me now" case. Wide
-// driving territories are served by the separate territory mode (town/corridor),
-// NOT by a bigger radius — a 60mi circle is ~$350 to cold-fill (see design doc).
-// Every option must stay ≤ DEFAULT_RADIUS_M (8047m) or it would promise data
-// we never fetched.
+// Radius options (miles → meters). The selected radius drives the INGEST:
+// useMerchants(origin, { radiusM }) fetches + caches that whole area from Google
+// (tiled across geohash cells; the Edge MAX_CELLS bounds a cold 15mi fill).
+// Default is 5mi; reps working a wider territory pick 10/15mi.
 const RADIUS_OPTIONS: Array<{ label: string; meters: number }> = [
-  { label: "1 mi", meters: 1609 },
-  { label: "2 mi", meters: 3219 },
-  { label: "3 mi", meters: 4828 },
   { label: "5 mi", meters: 8047 },
+  { label: "10 mi", meters: 16093 },
+  { label: "15 mi", meters: 24140 },
 ];
-const DEFAULT_DISPLAY_RADIUS_M = 4828; // 3 mi
-const MAX_DISPLAY_RADIUS_M = RADIUS_OPTIONS[RADIUS_OPTIONS.length - 1]!.meters; // 5 mi
+const DEFAULT_DISPLAY_RADIUS_M = 8047; // 5 mi
+const MAX_DISPLAY_RADIUS_M = RADIUS_OPTIONS[RADIUS_OPTIONS.length - 1]!.meters; // 15 mi
+
+// Default list ordering for the browse page (= "Find near me"): popularity, per
+// the Path v2 spec. The route preview (Slice 2) defaults to opportunity.
+const DEFAULT_SORT_MODE: PathSortMode = "popularity";
 
 export function PathPage() {
   const geo = useGeolocation();
@@ -81,13 +80,14 @@ export function PathPage() {
   // geolocation has settled — otherwise we'd pull against the default
   // location first, then re-pull when GPS resolves.
   const origin = geo.loading ? null : { lat: geo.lat, lng: geo.lng };
+  const [displayRadiusM, setDisplayRadiusM] = React.useState<number>(DEFAULT_DISPLAY_RADIUS_M);
   const {
     merchants: liveMerchants,
     isLoading: merchantsLoading,
     isError: merchantsError,
-  } = useMerchants(origin);
+  } = useMerchants(origin, { radiusM: displayRadiusM });
   const [categoryFilter, setCategoryFilter] = React.useState<CategoryFilter>("all");
-  const [displayRadiusM, setDisplayRadiusM] = React.useState<number>(DEFAULT_DISPLAY_RADIUS_M);
+  const [sortMode, setSortMode] = React.useState<PathSortMode>(DEFAULT_SORT_MODE);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [view, setView] = React.useState<ViewMode>("list"); // default to list until merchants are geocoded
@@ -133,13 +133,13 @@ export function PathPage() {
     return enriched.sort((a, b) => a.distanceMeters - b.distanceMeters);
   }, [liveMerchants, anyGeocoded, geo.lat, geo.lng]);
 
-  // Radius gate. The rep picks a display radius (1/2/3 mi); we hide anything
-  // beyond it. Only applies when we actually have coordinates to measure —
-  // when nothing is geocoded, distances are Infinity and a radius gate would
-  // wipe the whole list, so we pass everything through and let the
-  // activity-sorted view stand. This is the layer the category chips,
-  // counts, and the list all read from, so narrowing the radius narrows
-  // everything consistently.
+  // Radius gate. The chosen radius (5/10/15 mi) already drives the ingest, so
+  // the server returned only rows within it — this client gate is now a
+  // SECONDARY trim: it catches the haversine-vs-ST_DWithin boundary fuzz and is
+  // the layer the category chips + counts + list all read from. Only applies
+  // when we have coordinates to measure — when nothing is geocoded, distances
+  // are Infinity and a radius gate would wipe the whole list, so we pass
+  // everything through and let the activity-sorted view stand.
   const withinRadius = React.useMemo<MerchantWithDistance[]>(() => {
     if (!anyGeocoded) return merchantsWithDistance;
     return merchantsWithDistance.filter((m) => m.distanceMeters <= displayRadiusM);
@@ -151,6 +151,13 @@ export function PathPage() {
         ? withinRadius
         : withinRadius.filter((m) => m.category === categoryFilter),
     [withinRadius, categoryFilter],
+  );
+
+  // Final display order: category-filtered set ordered by the chosen sort mode.
+  // merchantsWithDistance is already distance-sorted, so it's the stable tiebreak.
+  const sorted = React.useMemo(
+    () => sortMerchants(filtered, sortMode),
+    [filtered, sortMode],
   );
 
   // Per-category counts over the radius-filtered set. Only categories actually
@@ -231,7 +238,7 @@ export function PathPage() {
         <div className="flex flex-col gap-1">
           <h1 className="text-heading-lg text-text-default">Path</h1>
           <p className="text-body-md text-text-muted">
-            {filtered.length} {filtered.length === 1 ? "merchant" : "merchants"}
+            {sorted.length} {sorted.length === 1 ? "merchant" : "merchants"}
             {anyGeocoded
               ? ` nearby · ${geo.source === "gps" ? "from your location" : "using default location"}`
               : " · sorted by recent activity"}
@@ -311,6 +318,38 @@ export function PathPage() {
         </div>
       )}
 
+      {anyGeocoded && (
+        <div className="mt-2 flex items-center gap-2 self-start">
+          <span className="text-caption font-medium text-text-muted">Sort</span>
+          <div
+            role="group"
+            aria-label="Sort merchants"
+            className="flex gap-1 rounded-radius-md bg-surface-sunken p-0.5"
+          >
+            {([
+              { label: "Popular", mode: "popularity" },
+              { label: "Nearest", mode: "distance" },
+              { label: "Opportunity", mode: "opportunity" },
+            ] as Array<{ label: string; mode: PathSortMode }>).map((opt) => (
+              <button
+                key={opt.mode}
+                type="button"
+                onClick={() => setSortMode(opt.mode)}
+                aria-pressed={sortMode === opt.mode}
+                className={cn(
+                  "inline-flex items-center rounded-radius-sm px-3 py-1.5 text-caption font-medium transition-colors",
+                  sortMode === opt.mode
+                    ? "bg-surface-default text-text-default shadow-sm"
+                    : "text-text-muted hover:text-text-default",
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Mobile view toggle — only shown when the map has something to render */}
       {anyGeocoded && (
       <div className="mt-3 flex gap-1 self-start rounded-radius-md bg-surface-sunken p-0.5 md:hidden">
@@ -332,7 +371,7 @@ export function PathPage() {
             view === "list" ? "bg-surface-default text-text-default shadow-sm" : "text-text-muted hover:text-text-default",
           )}
         >
-          <List className="h-3.5 w-3.5" aria-hidden /> List ({filtered.length})
+          <List className="h-3.5 w-3.5" aria-hidden /> List ({sorted.length})
         </button>
       </div>
       )}
@@ -390,7 +429,7 @@ export function PathPage() {
           <div className={cn("min-h-[320px]", view === "list" && "hidden md:block")}>
             <MerchantMap
               position={{ lat: geo.lat, lng: geo.lng }}
-              merchants={filtered.filter((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng))}
+              merchants={sorted.filter((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng))}
               focusedMerchantId={selectedId}
               onMerchantClick={handleSelect}
               routePath={routePath}
@@ -410,7 +449,7 @@ export function PathPage() {
           anyGeocoded && view === "map" && "hidden md:block",
         )}>
           <MerchantList
-            merchants={filtered}
+            merchants={sorted}
             selectedId={selectedId}
             onSelect={handleSelect}
             // Show the empty-state CTA when a category OR a tighter-than-max
