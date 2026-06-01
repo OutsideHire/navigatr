@@ -15,8 +15,17 @@
 // CATEGORIZED INGEST (PATH_DESIGN.md §11): instead of one category-agnostic
 // searchNearby (which Google ranks by prominence, starving low-profile service
 // businesses), we fire ONE searchNearby per cold bucket, each scoped to that
-// bucket's includedTypes, ranked by POPULARITY, in parallel. Every category
+// bucket's includedTypes, ranked by DISTANCE, in parallel. Every category
 // gets its own 20 slots so plumbers/accountants/movers actually surface.
+//
+// OPPORTUNITY RANKING (Phase A, design 2026-05-31): rank is DISTANCE, not
+// POPULARITY. A merchant-services rep's edge is finding under-saturated and
+// newly-opened businesses — popular = a competing processor already got there.
+// POPULARITY rank fetched the saturated top-20 and never surfaced the underseen
+// places at all (anti-signal at the SOURCE). DISTANCE pulls complete local
+// coverage; navigatr then re-sorts in-app by an opportunity score (low
+// rating_count up, distance tiebreak). We also store `rating` (stars) now as a
+// second weak signal alongside rating_count.
 //
 // PLACES_MOCK=1 swaps the live Places call for fixtures.ts so the whole pipeline
 // (classify → store → query) runs with zero API cost and no key. Flip it off and
@@ -28,7 +37,7 @@ import {
   type IcpVerdict,
   type ProspectCandidate,
 } from "../_shared/icpFilter.ts";
-import { encodeGeohash } from "../_shared/geohash.ts";
+import { decodeGeohash, decodeGeohashBounds, cellsCovering } from "../_shared/geohash.ts";
 import {
   CATEGORY_BUCKETS,
   bucketForType,
@@ -50,6 +59,55 @@ const CELL_TTL_DAYS = 30;
 // bracketing reasoning in _shared/geohash.ts.
 const GEO_PRECISION = 5;
 const TTL_MS = CELL_TTL_DAYS * 24 * 60 * 60 * 1000;
+
+// ---- Tiling (wide-radius coverage) ----------------------------------------
+// A single searchNearby is capped at 20 results and popularity-skewed, so it
+// can't densely cover a driving territory. Instead we TILE: enumerate the
+// geohash cells the rep's radius touches and ingest each from its own center.
+// Each cell is independently cached (geo_cell, category), so a metro warms once
+// and is shared across every rep — cost scales with NEW cold cells, not reps.
+//
+// MAX_CELLS is the hard cost guardrail: each cell is up to 7 Google calls
+// (one per category bucket), so 25 cells × 7 × ~$0.035 ≈ $6.13 worst-case for a
+// fully-cold territory. CELL_CONCURRENCY bounds how many cells we fetch at once
+// so we don't open hundreds of sockets from one Edge invocation.
+const MAX_CELLS = 25;
+const CELL_CONCURRENCY = 4;
+// Read-path cap (prospects_nearby maxes at 100 server-side). A wide radius can
+// legitimately surface far more than the old single-cell 30.
+const READ_LIMIT = 100;
+// Margin on a cell's half-diagonal so the per-cell search circle fully covers
+// the square cell (corners included) with a little slack.
+const CELL_COVER_MARGIN = 1.1;
+
+/** Radius (meters) a searchNearby centered on a cell needs to cover the whole
+ *  cell — its half-diagonal plus a small margin, clamped to Places' 50km cap. */
+function cellCoverRadiusM(cell: string): number {
+  const b = decodeGeohashBounds(cell);
+  const midLat = (b.latLo + b.latHi) / 2;
+  const mPerDegLat = 111_320;
+  const mPerDegLng = Math.max(1, 111_320 * Math.cos((midLat * Math.PI) / 180));
+  const hLat = ((b.latHi - b.latLo) * mPerDegLat) / 2;
+  const hLng = ((b.lngHi - b.lngLo) * mPerDegLng) / 2;
+  const halfDiag = Math.sqrt(hLat * hLat + hLng * hLng);
+  return Math.min(50_000, Math.max(1, Math.round(halfDiag * CELL_COVER_MARGIN)));
+}
+
+/** Run `fn` over `items` with at most `limit` in flight. Preserves input order
+ *  in the results array. Keeps a cold multi-cell ingest from firing every
+ *  cell × bucket fetch simultaneously. */
+async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -89,7 +147,7 @@ interface BucketPullResult {
 }
 
 /**
- * One searchNearby scoped to a set of includedTypes, ranked by POPULARITY.
+ * One searchNearby scoped to a set of includedTypes, ranked by DISTANCE.
  * PLACES_MOCK short-circuits to fixtures (which ignore includedTypes — fine, the
  * caller dedups the union before counting). Otherwise hits Google Places (New).
  */
@@ -120,14 +178,17 @@ async function searchNearbyForTypes(
         "places.nationalPhoneNumber",
         "places.websiteUri",
         "places.userRatingCount",
+        "places.rating",
       ].join(","),
     },
     body: JSON.stringify({
       includedTypes,
-      // POPULARITY pulls the most-established businesses per type; the read path
-      // (prospects_nearby) re-sorts by distance, so the rep still sees nearest-
-      // first, seeded from higher-quality prospects (PATH_DESIGN.md §11).
-      rankPreference: "POPULARITY",
+      // DISTANCE (not POPULARITY): we want complete local coverage so the
+      // underseen/newly-opened businesses — the rep's actual edge — get fetched
+      // at all. POPULARITY returned the saturated top-20 and starved them at the
+      // source. navigatr re-ranks in-app by an opportunity score (low review
+      // count up). PATH_DESIGN.md §11 + opportunity-ranking design 2026-05-31.
+      rankPreference: "DISTANCE",
       maxResultCount: 20,
       locationRestriction: {
         circle: {
@@ -218,60 +279,112 @@ Deno.serve(async (req) => {
     auth: { persistSession: false },
   });
 
-  const cell = encodeGeohash(lat, lng, GEO_PRECISION);
+  // ---- Tiling: enumerate the cells the rep's radius touches ---------------
+  // cellsCovering returns nearest-first, capped at MAX_CELLS. cells[0] is the
+  // rep's own cell (== encodeGeohash(lat,lng)).
+  const cells = cellsCovering(lat, lng, radiusM, GEO_PRECISION, MAX_CELLS);
+  const originCell = cells[0];
 
-  // ---- Cache decision (per bucket) ----------------------------------------
-  // Read every cache row for this cell, then keep only the buckets that are
-  // missing or past TTL. force_refresh re-pulls all 7. Legacy "_all" Phase-1
-  // rows simply aren't in CATEGORY_BUCKETS, so they're ignored and every bucket
-  // reads cold on the first post-deploy hit — the cell self-heals to coarse
-  // buckets with no migration (PATH_DESIGN.md §11).
-  let coldBuckets: CategoryBucket[] = [...CATEGORY_BUCKETS];
+  // ---- Cache decision (per cell, per bucket) ------------------------------
+  // One read across every covered cell. A (cell, bucket) is cold if missing or
+  // past TTL. force_refresh re-pulls all of them. Legacy "_all" Phase-1 rows
+  // aren't in CATEGORY_BUCKETS, so they're ignored and self-heal on first hit
+  // (PATH_DESIGN.md §11).
+  const lastPulled = new Map<string, number>(); // key: `${cell}|${bucket}`
   if (!forceRefresh) {
     const { data: cacheRows } = await admin
       .from("geo_cell_cache")
-      .select("category, last_pulled_at")
-      .eq("geo_cell", cell);
-    const lastPulled = new Map<string, number>();
+      .select("geo_cell, category, last_pulled_at")
+      .in("geo_cell", cells);
     for (const r of cacheRows ?? []) {
       const ts = r.last_pulled_at as string | null;
-      if (ts) lastPulled.set(r.category as string, new Date(ts).getTime());
+      if (ts) {
+        lastPulled.set(`${r.geo_cell as string}|${r.category as string}`, new Date(ts).getTime());
+      }
     }
-    const now = Date.now();
-    coldBuckets = CATEGORY_BUCKETS.filter((b) => {
-      const t = lastPulled.get(b);
+  }
+  const now = Date.now();
+
+  // Per-cell cold work: which buckets that cell still needs, and where/how wide
+  // to search it. Each tile is searched from its OWN center at the cell's
+  // coverage radius — NOT the rep's radius — so tiles stay local and DISTANCE
+  // rank densely covers each cell instead of re-skewing to whatever's biggest.
+  interface CellWork {
+    cell: string;
+    center: { lat: number; lng: number };
+    radiusM: number;
+    coldBuckets: CategoryBucket[];
+  }
+  const cellWork: CellWork[] = [];
+  for (const c of cells) {
+    const cold = CATEGORY_BUCKETS.filter((b) => {
+      if (forceRefresh) return true;
+      const t = lastPulled.get(`${c}|${b}`);
       return t == null || now - t >= TTL_MS;
     });
+    if (cold.length === 0) continue;
+    cellWork.push({
+      cell: c,
+      center: decodeGeohash(c),
+      radiusM: cellCoverRadiusM(c),
+      coldBuckets: cold,
+    });
   }
-  const warm = coldBuckets.length === 0;
+  const warm = cellWork.length === 0;
 
   let rawCount = 0;
   let filteredCount = 0;
   let keptCount = 0;
+  let coldCells = 0;
 
-  // ---- Cold buckets: pull Places (parallel), classify the union, upsert ----
-  let failedBuckets: Array<{ bucket: CategoryBucket; error: string }> = [];
+  // ---- Cold cells: pull Places per cell (bounded concurrency), classify ----
+  let failedBuckets: Array<{ cell: string; bucket: CategoryBucket; error: string }> = [];
   if (!warm) {
-    const { fulfilled: pulls, failed } = await fetchPlacesByCategory(lat, lng, radiusM, coldBuckets);
-    failedBuckets = failed;
-    // Every bucket failed → nothing to classify or cache; surface it. (A partial
-    // failure falls through: we ingest what we got, leave failed buckets cold.)
-    if (pulls.length === 0) {
+    coldCells = cellWork.length;
+    interface CellPull {
+      cell: string;
+      pulls: BucketPull[];
+      failed: Array<{ bucket: CategoryBucket; error: string }>;
+    }
+    // Fetch cells with bounded concurrency (CELL_CONCURRENCY cells in flight,
+    // each fanning out to its cold buckets in parallel) so a cold territory
+    // doesn't open hundreds of sockets at once.
+    const cellResults = await mapPool<CellWork, CellPull>(cellWork, CELL_CONCURRENCY, async (w) => {
+      const { fulfilled, failed } = await fetchPlacesByCategory(
+        w.center.lat,
+        w.center.lng,
+        w.radiusM,
+        w.coldBuckets,
+      );
+      return { cell: w.cell, pulls: fulfilled, failed };
+    });
+    failedBuckets = cellResults.flatMap((cr) => cr.failed.map((f) => ({ cell: cr.cell, ...f })));
+
+    const totalPulls = cellResults.reduce((n, cr) => n + cr.pulls.length, 0);
+    // Every bucket of every cold cell failed → nothing to ingest; surface it.
+    // (A partial failure falls through: ingest what we got, leave failed cold.)
+    if (totalPulls === 0) {
       return json(
         {
           error: "places_fetch_failed",
-          detail: failed.map((f) => `${f.bucket}: ${f.error}`).join("; ").slice(0, 500),
+          detail: failedBuckets
+            .map((f) => `${f.cell}/${f.bucket}: ${f.error}`)
+            .join("; ")
+            .slice(0, 500),
         },
         502,
       );
     }
 
-    // Dedup the union by place_id (a business returned by two buckets collapses
-    // to one row — and with the mock, all pulls return the same fixtures).
-    const uniq = new Map<string, PlacesNewPlace>();
-    for (const { places } of pulls) {
-      for (const p of places) {
-        if (!uniq.has(p.id)) uniq.set(p.id, p);
+    // Dedup the union by place_id across ALL cells, assigning each business to
+    // the FIRST (nearest) cell that returned it — cellResults follows the
+    // nearest-first cell order — so a prospect's geo_cell is stable.
+    const uniq = new Map<string, { place: PlacesNewPlace; cell: string }>();
+    for (const cr of cellResults) {
+      for (const { places } of cr.pulls) {
+        for (const p of places) {
+          if (!uniq.has(p.id)) uniq.set(p.id, { place: p, cell: cr.cell });
+        }
       }
     }
 
@@ -285,29 +398,30 @@ Deno.serve(async (req) => {
       brand: r.brand as string,
     }));
 
-    // Same-name density (FR-PATH-14): seed the count map with names already
-    // cached in this cell, then add the COMBINED union's occurrences (not
-    // per-pull — a chain split across buckets must still trip the heuristic).
+    // Same-name density (FR-PATH-14): count across the WHOLE searched territory
+    // (every covered cell) plus the new union. "Many same-name within radius"
+    // spans cell boundaries, so territory-wide counting is more correct than
+    // the old single-cell count.
     const nameCount = new Map<string, number>();
     const { data: existingNames } = await admin
       .from("prospects")
       .select("name")
-      .eq("geo_cell", cell);
+      .in("geo_cell", cells);
     for (const row of existingNames ?? []) {
       const k = ((row.name as string) ?? "").toLowerCase();
       if (k) nameCount.set(k, (nameCount.get(k) ?? 0) + 1);
     }
-    for (const p of uniq.values()) {
+    for (const { place: p } of uniq.values()) {
       const k = (p.displayName?.text ?? "").toLowerCase();
       if (k) nameCount.set(k, (nameCount.get(k) ?? 0) + 1);
     }
 
-    // Classify each unique business ONCE. We store EVERY business (in-profile
-    // and not) so the cache is complete; the read path filters to servable.
-    // `category` is the COARSE bucket (bucketForType) — the same taxonomy that
-    // drove the includedTypes pull, so ingest + display can't drift.
+    // Classify each unique business ONCE. Store EVERY business (servable or not)
+    // so the cache is complete; the read path filters to servable. `category`
+    // is the COARSE bucket (bucketForType) — the same taxonomy that drove the
+    // includedTypes pull, so ingest + display can't drift.
     const verdicts = new Map<string, IcpVerdict>();
-    const rows = [...uniq.values()].map((p) => {
+    const rows = [...uniq.values()].map(({ place: p, cell: c }) => {
       const candidate: ProspectCandidate = {
         placeId: p.id,
         name: p.displayName?.text ?? "",
@@ -328,11 +442,12 @@ Deno.serve(async (req) => {
         google_types: p.types ?? [],
         lat: p.location.latitude,
         lng: p.location.longitude,
-        geo_cell: cell,
+        geo_cell: c,
         address: p.formattedAddress ?? null,
         phone: p.nationalPhoneNumber ?? null,
         website: p.websiteUri ?? null,
         rating_count: p.userRatingCount ?? null,
+        rating: p.rating ?? null,
         is_chain: verdict.isChain,
         chain_reason: verdict.chainReason,
         in_profile: verdict.inProfile,
@@ -351,52 +466,59 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Observability + warm-mark EACH cold bucket (FR-PATH-17). Per-bucket counts
-    // are attributed from that bucket's own pull (verdicts looked up from the
-    // shared map), so a partial failure later re-pulls only the missing buckets.
+    // Observability + warm-mark each (cell, bucket) we actually pulled (FR-PATH-17).
+    // Per-bucket counts are attributed from that bucket's own pull; failed
+    // buckets are NOT marked, so they stay cold and retry next request.
     const pulledAt = new Date().toISOString();
-    const cacheUpserts = pulls.map(({ bucket, places }) => {
-      let kept = 0;
-      let filtered = 0;
-      for (const p of places) {
-        const v = verdicts.get(p.id);
-        if (v && !v.isChain && v.inProfile) kept++;
-        else filtered++;
+    const cacheUpserts = cellResults.flatMap((cr) =>
+      cr.pulls.map(({ bucket, places }) => {
+        let kept = 0;
+        let filtered = 0;
+        for (const p of places) {
+          const v = verdicts.get(p.id);
+          if (v && !v.isChain && v.inProfile) kept++;
+          else filtered++;
+        }
+        return {
+          geo_cell: cr.cell,
+          category: bucket,
+          last_pulled_at: pulledAt,
+          raw_count: places.length,
+          filtered_count: filtered,
+          kept_count: kept,
+        };
+      }),
+    );
+    if (cacheUpserts.length > 0) {
+      const { error: cacheErr } = await admin
+        .from("geo_cell_cache")
+        .upsert(cacheUpserts, { onConflict: "geo_cell,category" });
+      if (cacheErr) {
+        return json({ error: "cache_update_failed", detail: cacheErr.message }, 500);
       }
-      return {
-        geo_cell: cell,
-        category: bucket,
-        last_pulled_at: pulledAt,
-        raw_count: places.length,
-        filtered_count: filtered,
-        kept_count: kept,
-      };
-    });
-    const { error: cacheErr } = await admin
-      .from("geo_cell_cache")
-      .upsert(cacheUpserts, { onConflict: "geo_cell,category" });
-    if (cacheErr) {
-      return json({ error: "cache_update_failed", detail: cacheErr.message }, 500);
     }
   }
 
   // ---- Read path: servable prospects, nearest first -----------------------
   // Goes through the user's JWT so the SECURITY DEFINER grant + RLS apply.
+  // p_limit READ_LIMIT (100): a wide radius across many tiles can legitimately
+  // surface far more than the old single-cell 30.
   const { data: nearby, error: rpcErr } = await userClient.rpc("prospects_nearby", {
     p_lat: lat,
     p_lng: lng,
     p_radius_m: radiusM,
     p_profession: profession,
-    p_limit: 30,
+    p_limit: READ_LIMIT,
   });
   if (rpcErr) {
     return json({ error: "nearby_query_failed", detail: rpcErr.message }, 500);
   }
 
   return json({
-    cell,
+    cell: originCell,
+    cells_searched: cells.length,
+    cold_cells: coldCells,
     cache: warm ? "warm" : "cold",
-    cold_buckets: coldBuckets,
     failed_buckets: failedBuckets,
     raw_count: rawCount,
     filtered_count: filteredCount,

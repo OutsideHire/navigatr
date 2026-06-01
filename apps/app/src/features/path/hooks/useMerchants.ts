@@ -30,10 +30,20 @@ import {
   type MerchantCategory,
 } from "../mockData";
 
-/** Default search radius (meters) when the caller doesn't specify one.
- *  ~3km ≈ a walkable/short-drive field day, and sits inside one geohash
- *  precision-5 cell so the cache stays effective. */
-export const DEFAULT_RADIUS_M = 3000;
+/** INGEST radius (meters) for "near me" mode: the universe we pull from Google
+ *  and cache around the rep's CURRENT location. This is the MAX a rep can select
+ *  on the Path radius chip — the chip filters the already-loaded list
+ *  client-side, it does NOT re-query Google (the geo-cell cache isn't keyed on
+ *  radius, so a narrower fetch on a warm cell would be inconsistent). Fetch the
+ *  whole 5mi once, filter cheap.
+ *
+ *  This is deliberately a SUBURBAN ceiling, not a driving-territory radius. A
+ *  parked rep asking "what's around me right now" is the job this covers. Wide
+ *  driving territories (30–60mi rural) are NOT served by growing this number —
+ *  a 60mi circle is ~1,400 geohash cells and ~$350 to cold-fill, which doesn't
+ *  scale. Those are served by the separate territory mode (town/corridor-scoped
+ *  ingest) per the office-hours design doc. (8,047m == 5mi == widest chip.) */
+export const DEFAULT_RADIUS_M = 8_047;
 
 /** One prospect row as returned by the discover_prospects Edge Function
  *  (mirrors the prospects_nearby RPC return shape). Nullable fields are
@@ -50,6 +60,7 @@ export interface ProspectRow {
   website: string | null;
   employee_count: number | null;
   rating_count: number | null;
+  rating: number | null;
   distance_m: number;
 }
 
@@ -110,7 +121,28 @@ export function prospectToMerchant(p: ProspectRow): Merchant {
     placeId: p.place_id,
     website: p.website ?? undefined,
     ratingCount: p.rating_count ?? undefined,
+    rating: p.rating ?? undefined,
   };
+}
+
+/**
+ * Opportunity score — the in-app re-rank that makes underseen businesses win.
+ *
+ * Phase A of the opportunity-ranking design (2026-05-31). A merchant-services
+ * rep's edge is the under-pitched and newly-opened business; a high review count
+ * means a competing processor almost certainly got there first. So review count
+ * is anti-signal: fewer reviews → higher opportunity. A brand-new place with no
+ * reviews yet (rating_count null/0) is the strongest signal, so it scores 1.
+ *
+ * 1/(1+reviews) gives a smooth, monotonic decay: 0→1.0, 30→0.032, 84→0.012,
+ * 1200→0.0008. The exact curve is a placeholder pending a rep gut-check on real
+ * lists (design open question), but the ordering it produces — underseen first —
+ * is the agreed behavior. Distance is the tiebreak, handled by the caller
+ * relying on a STABLE sort over distance-ordered input (see useMerchants).
+ */
+export function opportunityScore(m: Pick<Merchant, "ratingCount">): number {
+  const reviews = m.ratingCount ?? 0;
+  return 1 / (1 + reviews);
 }
 
 export interface UseMerchantsResult {
@@ -158,7 +190,13 @@ export function useMerchants(
         { body: { lat: origin!.lat, lng: origin!.lng, radius_m: radiusM, profession } },
       );
       if (error) throw error;
-      return (data?.prospects ?? []).map(prospectToMerchant);
+      // prospects_nearby returns nearest-first. Re-rank by opportunity (low
+      // review count up) with a STABLE sort, so equal-score ties keep the
+      // server's distance order — i.e. distance is the tiebreak (design
+      // 2026-05-31). Array.prototype.sort is stable (ES2019+).
+      return (data?.prospects ?? [])
+        .map(prospectToMerchant)
+        .sort((a, b) => opportunityScore(b) - opportunityScore(a));
     },
   });
 

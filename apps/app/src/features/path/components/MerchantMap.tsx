@@ -1,24 +1,34 @@
 /**
- * MerchantMap — Leaflet map with merchant pins.
+ * MerchantMap — MapLibre GL map with merchant pins.
  *
- * Tile source: OpenStreetMap (free, no API key, just attribution).
- * Markers: CircleMarker rather than image icons so we avoid the
- * well-known Leaflet bundler problem (default marker PNGs not
- * resolving through Vite's asset pipeline) and so we can color-code
- * each pin by status with a simple SVG circle.
+ * Engine: MapLibre GL (vector). We migrated off Leaflet/raster-OSM because the
+ * brand calls for an EXACT cartographic palette (cream land, light-blue water,
+ * near-white roads with a gray casing, gray labels) — and you can only recolor
+ * features individually with a vector renderer, not a raster tile + CSS filter.
  *
- * The map auto-centers on the rep's position and fits a sensible
- * default zoom for "everything within a few miles". If the caller
- * passes a `focusedMerchantId`, the map flies to that pin on change.
+ * Style: a purpose-built style (buildPathMapStyle) rather than recoloring a
+ * stock style, so every color and road width is ours. The exact palette comes
+ * from the design's Google-Maps style:
+ *   land #f9f5ed · water #aee0f4 · road #f5f5f5 · road casing #c9c9c9 ·
+ *   labels #878787 (no halo).
+ * Roads #f5f5f5 are nearly the land color on purpose (the source style is that
+ * minimal), so the #c9c9c9 casing is what actually makes the road network read.
  *
- * Mobile: fills its parent (parent decides the height). Desktop: same.
- * No internal padding — callers control layout.
+ * Tiles: OpenFreeMap (https://openfreemap.org) — free, keyless, no signup,
+ * OpenMapTiles vector schema. To move to MapTiler (or any OpenMapTiles host),
+ * set VITE_MAP_TILES_URL / VITE_MAP_GLYPHS_URL to that provider's endpoints;
+ * the colors and layers stay identical.
+ *
+ * Markers are DOM elements (color-coded by status), so the status palette and
+ * click handling match the old Leaflet pins. The route is a dashed GeoJSON
+ * layer. The map auto-centers on the rep and flies to a focused pin / new GPS
+ * fix, matching the previous behavior.
  */
 
 import * as React from "react";
-import "leaflet/dist/leaflet.css";
-import { MapContainer, TileLayer, CircleMarker, Polyline, Tooltip, useMap } from "react-leaflet";
-import type { LatLngExpression } from "leaflet";
+import maplibregl from "maplibre-gl";
+import type { StyleSpecification, ExpressionSpecification } from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
 
 import { cn } from "@/lib/utils";
 import { STATUS_MAP_COLOR, type Merchant } from "../mockData";
@@ -38,40 +48,195 @@ export interface MerchantMapProps {
   className?: string;
 }
 
-/** Internal — pans the map when the focused merchant changes. */
-function FlyToFocused({
-  merchants,
-  focusedMerchantId,
-}: Pick<MerchantMapProps, "merchants" | "focusedMerchantId">) {
-  const map = useMap();
-  React.useEffect(() => {
-    if (!focusedMerchantId) return;
-    const m = merchants.find((x) => x.id === focusedMerchantId);
-    if (!m) return;
-    map.flyTo([m.lat, m.lng], Math.max(map.getZoom(), 15), { duration: 0.6 });
-  }, [focusedMerchantId, merchants, map]);
-  return null;
+// ── The exact Path map palette ─────────────────────────────────────
+const COLOR = {
+  land: "#f9f5ed",
+  water: "#aee0f4",
+  road: "#f5f5f5",
+  roadCasing: "#c9c9c9",
+  label: "#878787",
+} as const;
+
+const REP_COLOR = "#2456E6"; // signal blue — "you are here" + route line
+
+// OpenMapTiles vector source + glyphs. Keyless OpenFreeMap by default; override
+// for MapTiler/self-host without touching the palette.
+const TILES_URL =
+  (import.meta.env.VITE_MAP_TILES_URL as string | undefined) ??
+  "https://tiles.openfreemap.org/planet";
+const GLYPHS_URL =
+  (import.meta.env.VITE_MAP_GLYPHS_URL as string | undefined) ??
+  "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf";
+
+const MAJOR_ROADS = ["motorway", "trunk", "primary", "secondary", "tertiary"];
+const MINOR_ROADS = ["minor", "service", "track"];
+
+/** Zoom-interpolated line width: [zoom, px] stops, smooth exponential ramp. */
+function widthRamp(stops: Array<[number, number]>): ExpressionSpecification {
+  const expr: unknown[] = ["interpolate", ["exponential", 1.4], ["zoom"]];
+  for (const [z, w] of stops) expr.push(z, w);
+  return expr as unknown as ExpressionSpecification;
 }
 
-/** Internal — pans the map when the rep's position changes (geolocation
- *  retry, etc.). MapContainer's `center` prop is init-only in react-leaflet
- *  v4, so without this the viewport stays at the initial center even
- *  after "Use my location" returns a real GPS fix. */
-function FollowPosition({ position }: { position: { lat: number; lng: number } }) {
-  const map = useMap();
-  const lastRef = React.useRef<{ lat: number; lng: number } | null>(null);
-  React.useEffect(() => {
-    const last = lastRef.current;
-    // Skip the first render — MapContainer already centered there.
-    if (!last) { lastRef.current = position; return; }
-    // Only pan when the position actually changed (avoid pan loops if a
-    // parent re-renders with a new object literal but same values).
-    if (last.lat !== position.lat || last.lng !== position.lng) {
-      map.flyTo([position.lat, position.lng], map.getZoom(), { duration: 0.5 });
-      lastRef.current = position;
-    }
-  }, [position, map]);
-  return null;
+/**
+ * The full Path map style — exact colors, our own road widths so the network
+ * reads at the rep's default zoom (a minimal stock style collapses casings
+ * below z14). OpenMapTiles schema (source-layers: water, transportation,
+ * transportation_name, place, water_name).
+ */
+function buildPathMapStyle(): StyleSpecification {
+  return {
+    version: 8,
+    name: "navigatr-path",
+    glyphs: GLYPHS_URL,
+    sources: {
+      omt: { type: "vector", url: TILES_URL },
+    },
+    layers: [
+      { id: "bg", type: "background", paint: { "background-color": COLOR.land } },
+      {
+        id: "water",
+        type: "fill",
+        source: "omt",
+        "source-layer": "water",
+        paint: { "fill-color": COLOR.water },
+      },
+      // Casings first (drawn under the bodies) so roads get a gray edge.
+      {
+        id: "road-casing-minor",
+        type: "line",
+        source: "omt",
+        "source-layer": "transportation",
+        filter: ["match", ["get", "class"], MINOR_ROADS, true, false],
+        minzoom: 13,
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": COLOR.roadCasing,
+          "line-width": widthRamp([
+            [13, 1.5],
+            [16, 5],
+            [20, 18],
+          ]),
+        },
+      },
+      {
+        id: "road-casing-major",
+        type: "line",
+        source: "omt",
+        "source-layer": "transportation",
+        filter: ["match", ["get", "class"], MAJOR_ROADS, true, false],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": COLOR.roadCasing,
+          "line-width": widthRamp([
+            [6, 1],
+            [12, 4],
+            [16, 12],
+            [20, 30],
+          ]),
+        },
+      },
+      // Road bodies on top of casings.
+      {
+        id: "road-minor",
+        type: "line",
+        source: "omt",
+        "source-layer": "transportation",
+        filter: ["match", ["get", "class"], MINOR_ROADS, true, false],
+        minzoom: 13,
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": COLOR.road,
+          "line-width": widthRamp([
+            [13, 0.8],
+            [16, 3.5],
+            [20, 14],
+          ]),
+        },
+      },
+      {
+        id: "road-major",
+        type: "line",
+        source: "omt",
+        "source-layer": "transportation",
+        filter: ["match", ["get", "class"], MAJOR_ROADS, true, false],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": COLOR.road,
+          "line-width": widthRamp([
+            [6, 0.5],
+            [12, 2.5],
+            [16, 9],
+            [20, 24],
+          ]),
+        },
+      },
+      // Labels — gray, no halo.
+      {
+        id: "road-labels",
+        type: "symbol",
+        source: "omt",
+        "source-layer": "transportation_name",
+        minzoom: 13,
+        layout: {
+          "symbol-placement": "line",
+          "text-field": ["coalesce", ["get", "name:en"], ["get", "name"]],
+          "text-font": ["Noto Sans Regular"],
+          "text-size": 11,
+        },
+        paint: { "text-color": COLOR.label, "text-halo-width": 0 },
+      },
+      {
+        id: "water-labels",
+        type: "symbol",
+        source: "omt",
+        "source-layer": "water_name",
+        layout: {
+          "text-field": ["coalesce", ["get", "name:en"], ["get", "name"]],
+          "text-font": ["Noto Sans Italic"],
+          "text-size": 12,
+        },
+        paint: { "text-color": COLOR.label, "text-halo-width": 0 },
+      },
+      {
+        id: "place-labels",
+        type: "symbol",
+        source: "omt",
+        "source-layer": "place",
+        layout: {
+          "text-field": ["coalesce", ["get", "name:en"], ["get", "name"]],
+          "text-font": ["Noto Sans Regular"],
+          "text-size": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            8,
+            ["match", ["get", "class"], "city", 14, 11],
+            14,
+            ["match", ["get", "class"], "city", 20, 14],
+          ],
+        },
+        paint: { "text-color": COLOR.label, "text-halo-width": 0 },
+      },
+    ],
+  };
+}
+
+/** Build the colored DOM element for a merchant pin. */
+function makePinElement(color: string, focused: boolean): HTMLDivElement {
+  const el = document.createElement("div");
+  const size = focused ? 18 : 14;
+  el.style.cssText = [
+    `width:${size}px`,
+    `height:${size}px`,
+    "border-radius:9999px",
+    `background:${color}`,
+    `border:${focused ? 3 : 2}px solid #ffffff`,
+    "box-shadow:0 0 0 1px rgba(0,0,0,.2)",
+    "cursor:pointer",
+    "box-sizing:border-box",
+  ].join(";");
+  return el;
 }
 
 export function MerchantMap({
@@ -82,86 +247,156 @@ export function MerchantMap({
   routePath,
   className,
 }: MerchantMapProps) {
-  const center: LatLngExpression = [position.lat, position.lng];
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const mapRef = React.useRef<maplibregl.Map | null>(null);
+  const userMarkerRef = React.useRef<maplibregl.Marker | null>(null);
+  const merchantMarkersRef = React.useRef<maplibregl.Marker[]>([]);
+  const popupRef = React.useRef<maplibregl.Popup | null>(null);
+  const lastPosRef = React.useRef<{ lat: number; lng: number } | null>(null);
+  const [styleLoaded, setStyleLoaded] = React.useState(false);
+
+  // Keep the latest click handler without re-subscribing every marker.
+  const onClickRef = React.useRef(onMerchantClick);
+  onClickRef.current = onMerchantClick;
+
+  // ── Create the map once ──────────────────────────────────────────
+  React.useEffect(() => {
+    if (!containerRef.current) return;
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: buildPathMapStyle(),
+      center: [position.lng, position.lat],
+      zoom: 13,
+      attributionControl: { compact: true },
+    });
+    mapRef.current = map;
+    popupRef.current = new maplibregl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      offset: 12,
+    });
+    lastPosRef.current = { lat: position.lat, lng: position.lng };
+    map.on("load", () => setStyleLoaded(true));
+    return () => {
+      map.remove();
+      mapRef.current = null;
+      setStyleLoaded(false);
+    };
+    // Create-once: position is only the initial center; the follow effect
+    // handles later changes. Intentionally empty deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── "You are here" marker + follow on position change ────────────
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleLoaded) return;
+    if (!userMarkerRef.current) {
+      const el = document.createElement("div");
+      el.style.cssText = [
+        "width:16px",
+        "height:16px",
+        "border-radius:9999px",
+        `background:${REP_COLOR}`,
+        "border:3px solid #ffffff",
+        "box-shadow:0 0 0 1px rgba(0,0,0,.25)",
+        "box-sizing:border-box",
+      ].join(";");
+      userMarkerRef.current = new maplibregl.Marker({ element: el })
+        .setLngLat([position.lng, position.lat])
+        .addTo(map);
+    } else {
+      userMarkerRef.current.setLngLat([position.lng, position.lat]);
+    }
+    const last = lastPosRef.current;
+    if (last && (last.lat !== position.lat || last.lng !== position.lng)) {
+      map.flyTo({ center: [position.lng, position.lat], duration: 500 });
+    }
+    lastPosRef.current = { lat: position.lat, lng: position.lng };
+  }, [position, styleLoaded]);
+
+  // ── Merchant pins ────────────────────────────────────────────────
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleLoaded) return;
+    for (const m of merchantMarkersRef.current) m.remove();
+    merchantMarkersRef.current = [];
+    for (const merchant of merchants) {
+      if (!Number.isFinite(merchant.lat) || !Number.isFinite(merchant.lng)) continue;
+      const color = STATUS_MAP_COLOR[merchant.status];
+      const focused = focusedMerchantId === merchant.id;
+      const el = makePinElement(color, focused);
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onClickRef.current?.(merchant);
+      });
+      el.addEventListener("mouseenter", () => {
+        const popup = popupRef.current;
+        if (!popup) return;
+        popup.setLngLat([merchant.lng, merchant.lat]).setText(merchant.name).addTo(map);
+      });
+      el.addEventListener("mouseleave", () => popupRef.current?.remove());
+      const marker = new maplibregl.Marker({ element: el })
+        .setLngLat([merchant.lng, merchant.lat])
+        .addTo(map);
+      merchantMarkersRef.current.push(marker);
+    }
+  }, [merchants, focusedMerchantId, styleLoaded]);
+
+  // ── Fly to the focused merchant ──────────────────────────────────
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleLoaded || !focusedMerchantId) return;
+    const m = merchants.find((x) => x.id === focusedMerchantId);
+    if (!m || !Number.isFinite(m.lat) || !Number.isFinite(m.lng)) return;
+    map.flyTo({ center: [m.lng, m.lat], zoom: Math.max(map.getZoom(), 15), duration: 600 });
+  }, [focusedMerchantId, merchants, styleLoaded]);
+
+  // ── Route polyline (dashed) ──────────────────────────────────────
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleLoaded) return;
+    const coords = (routePath ?? []).map((p) => [p.lng, p.lat]);
+    const data: GeoJSON.Feature<GeoJSON.LineString> = {
+      type: "Feature",
+      properties: {},
+      geometry: { type: "LineString", coordinates: coords },
+    };
+    const src = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
+    if (coords.length >= 2) {
+      if (src) {
+        src.setData(data);
+      } else {
+        map.addSource("route", { type: "geojson", data });
+        map.addLayer({
+          id: "route-line",
+          type: "line",
+          source: "route",
+          layout: { "line-cap": "round", "line-join": "round" },
+          paint: {
+            "line-color": REP_COLOR,
+            "line-width": 3,
+            "line-opacity": 0.7,
+            "line-dasharray": [2, 1.5],
+          },
+        });
+      }
+    } else if (src) {
+      src.setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: [] } });
+    }
+  }, [routePath, styleLoaded]);
 
   return (
-    // `isolation: isolate` contains Leaflet's internal z-indexes (panes are
-    // 200-700, controls are 1000) inside this stacking context. Without it,
-    // those z-indexes leak to the root and a Dialog at z-40/z-50 renders
-    // BEHIND the map tiles. Reported by user 2026-05-17 — modal opened but
-    // map covered its body.
-    <div className={cn("relative h-full w-full overflow-hidden rounded-radius-md [isolation:isolate]", className)}>
-      <MapContainer
-        center={center}
-        zoom={13}
-        scrollWheelZoom
-        className="h-full w-full"
-        // Leaflet's default attribution can crowd the map; we use a
-        // tighter prefix and keep OSM credit (required by their tile ToS).
-        attributionControl
-      >
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        />
-
-        {/* Rep position — slightly larger blue ring + filled center.
-            Keeps it visually distinct from merchant pins. */}
-        <CircleMarker
-          center={[position.lat, position.lng]}
-          radius={8}
-          pathOptions={{
-            color: "#2456E6",     // signal blue ring
-            fillColor: "#2456E6",
-            fillOpacity: 0.9,
-            weight: 3,
-          }}
-        >
-          <Tooltip direction="top" offset={[0, -8]}>You are here</Tooltip>
-        </CircleMarker>
-
-        {/* Merchant pins — color by status, click to select. */}
-        {merchants.map((m) => {
-          const color = STATUS_MAP_COLOR[m.status];
-          const isFocused = focusedMerchantId === m.id;
-          return (
-            <CircleMarker
-              key={m.id}
-              center={[m.lat, m.lng]}
-              radius={isFocused ? 10 : 7}
-              pathOptions={{
-                color: "#FAFAF7",       // outer ring for contrast on tiles
-                fillColor: color,
-                fillOpacity: 0.95,
-                weight: isFocused ? 3 : 2,
-              }}
-              eventHandlers={{
-                click: () => onMerchantClick?.(m),
-              }}
-            >
-              <Tooltip direction="top" offset={[0, -8]}>{m.name}</Tooltip>
-            </CircleMarker>
-          );
-        })}
-
-        {/* Route polyline — visualizes the queued drop-in path. Dashed
-            so it reads as "planned" rather than a real road route. */}
-        {routePath && routePath.length >= 2 && (
-          <Polyline
-            positions={routePath.map((p) => [p.lat, p.lng])}
-            pathOptions={{
-              color: "#2456E6",
-              weight: 3,
-              opacity: 0.7,
-              dashArray: "8 6",
-            }}
-          />
-        )}
-
-        <FollowPosition position={position} />
-        <FlyToFocused merchants={merchants} focusedMerchantId={focusedMerchantId} />
-      </MapContainer>
-    </div>
+    // `isolation: isolate` contains MapLibre's internal z-indexes inside this
+    // stacking context so a Dialog at z-40/z-50 isn't covered by the map
+    // (same fix as the old Leaflet version).
+    <div
+      ref={containerRef}
+      className={cn(
+        "relative h-full w-full overflow-hidden rounded-radius-md [isolation:isolate]",
+        className,
+      )}
+    />
   );
 }
 

@@ -15,6 +15,7 @@ import {
   useMerchants,
   categoryFromPlaces,
   prospectToMerchant,
+  opportunityScore,
   type ProspectRow,
 } from "./useMerchants";
 
@@ -50,6 +51,7 @@ function makeRow(overrides: Partial<ProspectRow> = {}): ProspectRow {
     website: "https://pats.example",
     employee_count: null,
     rating_count: 84,
+    rating: 4.6,
     distance_m: 120,
     ...overrides,
   };
@@ -107,6 +109,7 @@ describe("prospectToMerchant", () => {
     expect(m.placeId).toBe("ChIJ_test");
     expect(m.website).toBe("https://pats.example");
     expect(m.ratingCount).toBe(84);
+    expect(m.rating).toBe(4.6);
     expect(m.employeeCountRange).toBe("");
   });
   it("falls back to a placeholder address when missing", () => {
@@ -115,10 +118,30 @@ describe("prospectToMerchant", () => {
   it("uses an empty phone string when Places gives none", () => {
     expect(prospectToMerchant(makeRow({ phone: null })).phone).toBe("");
   });
-  it("leaves website/ratingCount undefined when absent", () => {
-    const m = prospectToMerchant(makeRow({ website: null, rating_count: null }));
+  it("leaves website/ratingCount/rating undefined when absent", () => {
+    const m = prospectToMerchant(makeRow({ website: null, rating_count: null, rating: null }));
     expect(m.website).toBeUndefined();
     expect(m.ratingCount).toBeUndefined();
+    expect(m.rating).toBeUndefined();
+  });
+});
+
+// ── opportunityScore ───────────────────────────────────────────────
+// Phase A opportunity ranking: fewer reviews → higher opportunity (under-pitched
+// / newly-opened is the rep's edge; saturated popular spots are anti-signal).
+describe("opportunityScore", () => {
+  it("scores a no-review business at the maximum (1)", () => {
+    expect(opportunityScore({ ratingCount: 0 })).toBe(1);
+    // null/undefined review count == brand-new with no reviews yet == max.
+    expect(opportunityScore({ ratingCount: undefined })).toBe(1);
+  });
+  it("decays monotonically as review count climbs", () => {
+    const fresh = opportunityScore({ ratingCount: 5 });
+    const mid = opportunityScore({ ratingCount: 84 });
+    const saturated = opportunityScore({ ratingCount: 1200 });
+    expect(fresh).toBeGreaterThan(mid);
+    expect(mid).toBeGreaterThan(saturated);
+    expect(saturated).toBeGreaterThan(0);
   });
 });
 
@@ -142,10 +165,51 @@ describe("useMerchants", () => {
     );
     await waitFor(() => expect(result.current.merchants).toHaveLength(2));
     expect(invokeMock).toHaveBeenCalledWith("discover_prospects", {
-      body: { lat: 30.2672, lng: -97.7431, radius_m: 3000, profession: "merchant_services" },
+      body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services" },
     });
     expect(result.current.merchants.map((m) => m.id)).toEqual(["a", "b"]);
     expect(result.current.merchants[0]!.status).toBe("untouched");
+  });
+
+  it("re-ranks by opportunity: low-review prospects rise above saturated ones", async () => {
+    // Server returns nearest-first: the saturated 800-review chain is closest,
+    // an underseen 5-review independent is farther. Opportunity sort must flip
+    // them so the rep sees the under-pitched lead first.
+    invokeMock.mockResolvedValue({
+      data: {
+        prospects: [
+          makeRow({ id: "chain", rating_count: 800, distance_m: 50 }),
+          makeRow({ id: "fresh", rating_count: 5, distance_m: 400 }),
+        ],
+      },
+      error: null,
+    });
+    const { result } = renderHook(
+      () => useMerchants({ lat: 30.2672, lng: -97.7431 }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.merchants).toHaveLength(2));
+    expect(result.current.merchants.map((m) => m.id)).toEqual(["fresh", "chain"]);
+  });
+
+  it("keeps server distance order as the tiebreak when scores are equal", async () => {
+    // Both have the same review count → equal opportunity score → the stable
+    // sort preserves the server's nearest-first order.
+    invokeMock.mockResolvedValue({
+      data: {
+        prospects: [
+          makeRow({ id: "near", rating_count: 20, distance_m: 100 }),
+          makeRow({ id: "far", rating_count: 20, distance_m: 900 }),
+        ],
+      },
+      error: null,
+    });
+    const { result } = renderHook(
+      () => useMerchants({ lat: 30.2672, lng: -97.7431 }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.merchants).toHaveLength(2));
+    expect(result.current.merchants.map((m) => m.id)).toEqual(["near", "far"]);
   });
 
   it("returns an empty list when the function returns no prospects", async () => {

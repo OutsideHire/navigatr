@@ -53,8 +53,12 @@ export interface Merchant {
   /** Business website, when Places returns one. Shown on the detail sheet. */
   website?: string;
   /** Google rating count — a rough size/foot-traffic proxy for discovered
-   *  prospects (Places gives no employee count). */
+   *  prospects (Places gives no employee count). Also the saturation signal the
+   *  opportunity sort ranks on: low count = under-pitched/newly-opened. */
   ratingCount?: number;
+  /** Google average rating (stars, 1.0–5.0), when Places returns one. A
+   *  secondary quality read shown on the detail sheet. */
+  rating?: number;
 }
 
 const TODAY = new Date("2026-05-16T12:00:00Z");
