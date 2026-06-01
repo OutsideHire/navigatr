@@ -36,6 +36,8 @@ import { Button, Card } from "@/components/navigatr";
 import { formatDistance, haversineMeters, type LatLng } from "@/lib/distance";
 import { CATEGORY_LABEL, type Merchant } from "../mockData";
 import { usePathQueue, type StopStatus } from "../hooks/usePathQueue";
+import { PathSummary } from "./PathSummary";
+import { useNavigate } from "react-router-dom";
 
 export interface PathPlanSheetProps {
   open: boolean;
@@ -62,6 +64,7 @@ export function PathPlanSheet({
   const remove = usePathQueue((s) => s.remove);
   const clear = usePathQueue((s) => s.clear);
   const isComplete = usePathQueue((s) => s.isComplete());
+  const navigate = useNavigate();
 
   // Compute leg distances against the visit order. First leg = origin →
   // first stop. Subsequent legs = previous stop → next stop.
@@ -145,24 +148,20 @@ export function PathPlanSheet({
             ) : (
               <>
                 {isComplete && (
-                  <Card padding="md" className="bg-status-success-bg">
-                    <p className="text-body-strong text-text-default">Path complete</p>
-                    <p className="mt-1 text-caption text-text-muted">
-                      {visitedCount} visited · {skippedCount} skipped ·{" "}
-                      <span className="tabular-nums">{formatDistance(totalMeters)}</span> walked
-                    </p>
-                    <Button
-                      variant="tertiary"
-                      size="sm"
-                      onClick={() => {
-                        clear();
-                        toast.success("Path cleared. Ready for the next route.");
-                      }}
-                      className="mt-2"
-                    >
-                      Start a new path
-                    </Button>
-                  </Card>
+                  <PathSummary
+                    visitedCount={visitedCount}
+                    skippedCount={skippedCount}
+                    totalStops={stops.length}
+                    routeMeters={totalMeters}
+                    onViewPipeline={() => {
+                      onOpenChange(false);
+                      navigate("/pipeline");
+                    }}
+                    onNewPath={() => {
+                      clear();
+                      onOpenChange(false);
+                    }}
+                  />
                 )}
 
                 {orderedStops.map((m, i) => {
