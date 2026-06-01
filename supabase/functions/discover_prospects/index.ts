@@ -68,11 +68,15 @@ const TTL_MS = CELL_TTL_DAYS * 24 * 60 * 60 * 1000;
 // and is shared across every rep — cost scales with NEW cold cells, not reps.
 //
 // MAX_CELLS is the hard cost guardrail: each cell is up to 7 Google calls
-// (one per category bucket), so 25 cells × 7 × ~$0.035 ≈ $6.13 worst-case for a
-// fully-cold territory. CELL_CONCURRENCY bounds how many cells we fetch at once
+// (one per category bucket), so 100 cells × 7 × ~$0.035 ≈ $24.5 worst-case for a fully-cold 15mi territory. CELL_CONCURRENCY bounds how many cells we fetch at once
 // so we don't open hundreds of sockets from one Edge invocation.
-const MAX_CELLS = 25;
-const CELL_CONCURRENCY = 4;
+// A 15mi radius (24,140m) covers ~700 sq mi ≈ ~88 precision-5 geohash cells, so
+// MAX_CELLS must clear that or a 15mi pull truncates to a partial area. 100 ×
+// 7 buckets × ~$0.035 ≈ ~$24 worst-case to cold-fill a fresh 15mi territory,
+// then warm/shared for 30 days across every rep.
+const MAX_CELLS = 100;
+const CELL_CONCURRENCY = 6;
+
 // Read-path cap (prospects_nearby maxes at 100 server-side). A wide radius can
 // legitimately surface far more than the old single-cell 30.
 const READ_LIMIT = 100;
@@ -179,6 +183,7 @@ async function searchNearbyForTypes(
         "places.websiteUri",
         "places.userRatingCount",
         "places.rating",
+        "places.primaryType",
       ].join(","),
     },
     body: JSON.stringify({
@@ -448,6 +453,9 @@ Deno.serve(async (req) => {
         website: p.websiteUri ?? null,
         rating_count: p.userRatingCount ?? null,
         rating: p.rating ?? null,
+        // primaryType is the best-guess category; fall back to the first raw
+        // type so a lead never loses its category (CSV: primary_type fallback).
+        primary_type: p.primaryType ?? p.types?.[0] ?? null,
         is_chain: verdict.isChain,
         chain_reason: verdict.chainReason,
         in_profile: verdict.inProfile,
