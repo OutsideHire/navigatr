@@ -10,7 +10,7 @@ function makeMerchant(over: Partial<Row>): Row {
   return {
     id: "x",
     name: "Biz",
-    category: "restaurant",
+    category: "food_beverage",
     address: "1 St",
     lat: 30,
     lng: -97,
@@ -40,7 +40,7 @@ describe("proposeRoute", () => {
   it("filters by industry when not 'all'", () => {
     const out = proposeRoute(
       [
-        makeMerchant({ id: "rest", category: "restaurant", lat: 30.01, lng: -97.01 }),
+        makeMerchant({ id: "rest", category: "food_beverage", lat: 30.01, lng: -97.01 }),
         makeMerchant({ id: "retail", category: "retail", lat: 30.02, lng: -97.02 }),
       ],
       { origin, industries: ["retail"], sortMode: "distance", stopCap: 10 },
@@ -51,11 +51,11 @@ describe("proposeRoute", () => {
   it("includes every selected industry when multiple are chosen", () => {
     const out = proposeRoute(
       [
-        makeMerchant({ id: "rest", category: "restaurant", lat: 30.01, lng: -97.01 }),
+        makeMerchant({ id: "rest", category: "food_beverage", lat: 30.01, lng: -97.01 }),
         makeMerchant({ id: "retail", category: "retail", lat: 30.02, lng: -97.02 }),
         makeMerchant({ id: "auto", category: "automotive", lat: 30.03, lng: -97.03 }),
       ],
-      { origin, industries: ["restaurant", "automotive"], sortMode: "distance", stopCap: 10 },
+      { origin, industries: ["food_beverage", "automotive"], sortMode: "distance", stopCap: 10 },
     );
     expect([...out.map((m) => m.id)].sort()).toEqual(["auto", "rest"]);
   });

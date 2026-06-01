@@ -22,13 +22,18 @@
 export type MerchantStatus = "untouched" | "prospect" | "active" | "won" | "cooled";
 
 export type MerchantCategory =
-  | "restaurant"
-  | "retail"
+  | "manufacturing"
+  | "construction_trades"
   | "healthcare"
-  | "personal_services"
-  | "automotive"
   | "professional_services"
+  | "automotive"
+  | "retail"
+  | "food_beverage"
   | "hospitality"
+  | "education"
+  | "finance_banking"
+  | "fitness_wellness"
+  | "non_profit"
   | "other";
 
 export interface Merchant {
@@ -74,13 +79,13 @@ export const AUSTIN_DOWNTOWN = { lat: 30.2672, lng: -97.7431 } as const;
 
 export const MOCK_MERCHANTS: Merchant[] = [
   // ─── Restaurants ────────────────────────────────────────────────
-  { id: "m-001", name: "Iron Oak Restaurant",   category: "restaurant", address: "1100 Congress Ave",      lat: 30.2706, lng: -97.7428, phone: "+15125550101", email: "manager@ironoak.com",     employeeCountRange: "11-50",   status: "prospect",  lastActivity: daysAgo(3),   note: "Chef Romano runs the front of house. Lunch rush 11:30-1:30." },
-  { id: "m-002", name: "Sunrise Cafe",          category: "restaurant", address: "401 W 2nd St",            lat: 30.2655, lng: -97.7475, phone: "+15125550102", email: "hello@sunrisecafe.com",   employeeCountRange: "1-10",    status: "active",    lastActivity: daysAgo(1),   note: "Owner Carlos asked for a proposal Tuesday." },
-  { id: "m-003", name: "Joe's Pizza",           category: "restaurant", address: "612 E 6th St",            lat: 30.2667, lng: -97.7363, phone: "+15125550103",                                  employeeCountRange: "1-10",    status: "prospect",  lastActivity: daysAgo(5) },
-  { id: "m-004", name: "Maple Bakery",          category: "restaurant", address: "208 W Mary St",           lat: 30.2483, lng: -97.7530, phone: "+15125550104", email: "eli@maplebakery.com",     employeeCountRange: "1-10",    status: "prospect",  lastActivity: daysAgo(4) },
-  { id: "m-005", name: "Hilltop Pizzeria",      category: "restaurant", address: "2715 Manor Rd",           lat: 30.2900, lng: -97.7140, phone: "+15125550105",                                  employeeCountRange: "1-10",    status: "won",       lastActivity: daysAgo(12),  note: "Closed last quarter. Ask about a partner intro." },
-  { id: "m-006", name: "Downtown Diner",        category: "restaurant", address: "318 Colorado St",         lat: 30.2667, lng: -97.7457, phone: "+15125550106",                                  employeeCountRange: "1-10",    status: "untouched", lastActivity: null },
-  { id: "m-007", name: "Harbor Coffee",         category: "restaurant", address: "1810 W 6th St",           lat: 30.2724, lng: -97.7600, phone: "+15125550107",                                  employeeCountRange: "1-10",    status: "prospect",  lastActivity: daysAgo(2) },
+  { id: "m-001", name: "Iron Oak Restaurant",   category: "food_beverage", address: "1100 Congress Ave",      lat: 30.2706, lng: -97.7428, phone: "+15125550101", email: "manager@ironoak.com",     employeeCountRange: "11-50",   status: "prospect",  lastActivity: daysAgo(3),   note: "Chef Romano runs the front of house. Lunch rush 11:30-1:30." },
+  { id: "m-002", name: "Sunrise Cafe",          category: "food_beverage", address: "401 W 2nd St",            lat: 30.2655, lng: -97.7475, phone: "+15125550102", email: "hello@sunrisecafe.com",   employeeCountRange: "1-10",    status: "active",    lastActivity: daysAgo(1),   note: "Owner Carlos asked for a proposal Tuesday." },
+  { id: "m-003", name: "Joe's Pizza",           category: "food_beverage", address: "612 E 6th St",            lat: 30.2667, lng: -97.7363, phone: "+15125550103",                                  employeeCountRange: "1-10",    status: "prospect",  lastActivity: daysAgo(5) },
+  { id: "m-004", name: "Maple Bakery",          category: "food_beverage", address: "208 W Mary St",           lat: 30.2483, lng: -97.7530, phone: "+15125550104", email: "eli@maplebakery.com",     employeeCountRange: "1-10",    status: "prospect",  lastActivity: daysAgo(4) },
+  { id: "m-005", name: "Hilltop Pizzeria",      category: "food_beverage", address: "2715 Manor Rd",           lat: 30.2900, lng: -97.7140, phone: "+15125550105",                                  employeeCountRange: "1-10",    status: "won",       lastActivity: daysAgo(12),  note: "Closed last quarter. Ask about a partner intro." },
+  { id: "m-006", name: "Downtown Diner",        category: "food_beverage", address: "318 Colorado St",         lat: 30.2667, lng: -97.7457, phone: "+15125550106",                                  employeeCountRange: "1-10",    status: "untouched", lastActivity: null },
+  { id: "m-007", name: "Harbor Coffee",         category: "food_beverage", address: "1810 W 6th St",           lat: 30.2724, lng: -97.7600, phone: "+15125550107",                                  employeeCountRange: "1-10",    status: "prospect",  lastActivity: daysAgo(2) },
 
   // ─── Retail ─────────────────────────────────────────────────────
   { id: "m-008", name: "Linda's Boutique",      category: "retail",     address: "1006 S Lamar Blvd",       lat: 30.2613, lng: -97.7560, phone: "+15125550108",                                  employeeCountRange: "1-10",    status: "untouched", lastActivity: null },
@@ -95,10 +100,10 @@ export const MOCK_MERCHANTS: Merchant[] = [
   { id: "m-015", name: "Cypress Veterinary",    category: "healthcare", address: "5400 Burnet Rd",          lat: 30.3210, lng: -97.7390, phone: "+15125550115",                                  employeeCountRange: "11-50",   status: "active",    lastActivity: daysAgo(3) },
 
   // ─── Personal services ──────────────────────────────────────────
-  { id: "m-016", name: "Karma Yoga Studio",     category: "personal_services", address: "1700 S 1st St",    lat: 30.2480, lng: -97.7510, phone: "+15125550116",                                  employeeCountRange: "1-10",    status: "prospect",  lastActivity: daysAgo(2) },
-  { id: "m-017", name: "Westfield Salon",       category: "personal_services", address: "11066 Pecan Park Blvd", lat: 30.4810, lng: -97.7950, phone: "+15125550117",                            employeeCountRange: "1-10",    status: "active",    lastActivity: daysAgo(4) },
-  { id: "m-018", name: "Ocean Breeze Spa",      category: "personal_services", address: "1010 W 38th St",   lat: 30.3030, lng: -97.7510, phone: "+15125550118",                                  employeeCountRange: "11-50",   status: "prospect",  lastActivity: daysAgo(3) },
-  { id: "m-019", name: "Island Massage",        category: "personal_services", address: "1716 S Congress Ave", lat: 30.2491, lng: -97.7430, phone: "+15125550119",                              employeeCountRange: "1-10",    status: "won",       lastActivity: daysAgo(8),   note: "Closed last month. Friendly intro source." },
+  { id: "m-016", name: "Karma Yoga Studio",     category: "fitness_wellness", address: "1700 S 1st St",    lat: 30.2480, lng: -97.7510, phone: "+15125550116",                                  employeeCountRange: "1-10",    status: "prospect",  lastActivity: daysAgo(2) },
+  { id: "m-017", name: "Westfield Salon",       category: "other", address: "11066 Pecan Park Blvd", lat: 30.4810, lng: -97.7950, phone: "+15125550117",                            employeeCountRange: "1-10",    status: "active",    lastActivity: daysAgo(4) },
+  { id: "m-018", name: "Ocean Breeze Spa",      category: "fitness_wellness", address: "1010 W 38th St",   lat: 30.3030, lng: -97.7510, phone: "+15125550118",                                  employeeCountRange: "11-50",   status: "prospect",  lastActivity: daysAgo(3) },
+  { id: "m-019", name: "Island Massage",        category: "fitness_wellness", address: "1716 S Congress Ave", lat: 30.2491, lng: -97.7430, phone: "+15125550119",                              employeeCountRange: "1-10",    status: "won",       lastActivity: daysAgo(8),   note: "Closed last month. Friendly intro source." },
 
   // ─── Automotive ─────────────────────────────────────────────────
   { id: "m-020", name: "Eastside Auto Repair",  category: "automotive", address: "2200 E 7th St",           lat: 30.2615, lng: -97.7220, phone: "+15125550120",                                  employeeCountRange: "11-50",   status: "untouched", lastActivity: null },
@@ -106,7 +111,7 @@ export const MOCK_MERCHANTS: Merchant[] = [
 
   // ─── Professional / hospitality / other ─────────────────────────
   { id: "m-022", name: "Tropical Travel Agency",category: "professional_services", address: "601 Brazos St", lat: 30.2700, lng: -97.7420, phone: "+15125550122",                                 employeeCountRange: "1-10",    status: "active",    lastActivity: daysAgo(2) },
-  { id: "m-023", name: "XYZ Plumbing",          category: "professional_services", address: "910 W Anderson Ln", lat: 30.3460, lng: -97.7385, phone: "+15125550123",                            employeeCountRange: "11-50",   status: "active",    lastActivity: daysAgo(6) },
+  { id: "m-023", name: "XYZ Plumbing",          category: "construction_trades", address: "910 W Anderson Ln", lat: 30.3460, lng: -97.7385, phone: "+15125550123",                            employeeCountRange: "11-50",   status: "active",    lastActivity: daysAgo(6) },
   { id: "m-024", name: "PineCrest Hotel",       category: "hospitality",  address: "303 W 15th St",         lat: 30.2790, lng: -97.7430, phone: "+15125550124",                                  employeeCountRange: "51-200",  status: "active",    lastActivity: daysAgo(2),   note: "Big logo, multi-property opportunity." },
   { id: "m-025", name: "Family Pharmacy",       category: "other",        address: "5601 Brodie Ln",        lat: 30.2240, lng: -97.8230, phone: "+15125550125",                                  employeeCountRange: "11-50",   status: "cooled",    lastActivity: daysAgo(45) },
 ];
@@ -141,12 +146,17 @@ export const STATUS_MAP_COLOR: Record<MerchantStatus, string> = {
 };
 
 export const CATEGORY_LABEL: Record<MerchantCategory, string> = {
-  restaurant:            "Restaurant",
-  retail:                "Retail",
+  manufacturing:         "Manufacturing",
+  construction_trades:   "Construction & Trades",
   healthcare:            "Healthcare",
-  personal_services:     "Personal services",
+  professional_services: "Professional Services",
   automotive:            "Automotive",
-  professional_services: "Professional services",
+  retail:                "Retail",
+  food_beverage:         "Food & Beverage",
   hospitality:           "Hospitality",
+  education:             "Education",
+  finance_banking:       "Finance & Banking",
+  fitness_wellness:      "Fitness & Wellness",
+  non_profit:            "Non-Profit",
   other:                 "Other",
 };

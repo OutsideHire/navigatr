@@ -47,10 +47,10 @@ const RADIUS_CHOICES: SelectOption[] = [
 
 /** Every industry bucket, for the multi-select chip row (empty = all). */
 const CATEGORIES: MerchantCategory[] = [
-  "restaurant",
+  "food_beverage",
   "retail",
   "healthcare",
-  "personal_services",
+  "fitness_wellness",
   "automotive",
   "professional_services",
   "hospitality",

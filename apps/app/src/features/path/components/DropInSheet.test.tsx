@@ -57,7 +57,7 @@ import type { Merchant } from "../mockData";
 const merchant: Merchant = {
   id: "m-1",
   name: "Joe's Diner",
-  category: "restaurant",
+  category: "food_beverage",
   address: "123 Main St",
   lat: 40,
   lng: -74,
