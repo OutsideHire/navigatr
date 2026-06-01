@@ -43,6 +43,7 @@ import { MerchantMap } from "../components/MerchantMap";
 import { MerchantList, type MerchantWithDistance } from "../components/MerchantList";
 import { MerchantDetailSheet } from "../components/MerchantDetailSheet";
 import { PathPlanSheet } from "../components/PathPlanSheet";
+import { CreatePathWizard } from "../components/CreatePathWizard";
 import { usePathQueue } from "../hooks/usePathQueue";
 import { useMerchants } from "../hooks/useMerchants";
 import { sortMerchants, type PathSortMode } from "../lib/sortMerchants";
@@ -92,11 +93,14 @@ export function PathPage() {
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [view, setView] = React.useState<ViewMode>("list"); // default to list until merchants are geocoded
   const [planOpen, setPlanOpen] = React.useState(false);
+  const [createOpen, setCreateOpen] = React.useState(false);
 
   // Path queue selectors. queueStops is the persisted list of stops;
   // we resolve those IDs to Merchant records below and compute the
   // visit order via nearestNeighborOrder against the rep's position.
   const queueStops = usePathQueue((s) => s.stops);
+  const addStop = usePathQueue((s) => s.add);
+  const clearQueue = usePathQueue((s) => s.clear);
 
   // Are any merchants geocoded? If none have coords, the map degrades
   // to a "no map yet" state and we suppress distance math (Infinity
@@ -231,6 +235,19 @@ export function PathPage() {
     ];
   }, [orderedQueue, geo.lat, geo.lng]);
 
+  // Start a fresh path from the wizard: clear any existing queue, enqueue the
+  // chosen stops (usePathQueue.add is idempotent + order-preserving), close the
+  // wizard, and open the plan sheet so the rep sees their route immediately.
+  const handleStartPath = React.useCallback(
+    (orderedIds: string[]) => {
+      clearQueue();
+      for (const id of orderedIds) addStop(id);
+      setCreateOpen(false);
+      setPlanOpen(true);
+    },
+    [clearQueue, addStop],
+  );
+
   return (
     <div className="mx-auto flex h-[calc(100dvh-4rem)] w-full flex-col px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
       {/* Header */}
@@ -245,6 +262,15 @@ export function PathPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon={RouteIcon}
+            onClick={() => setCreateOpen(true)}
+            disabled={!anyGeocoded}
+          >
+            Create path
+          </Button>
           <Button
             variant="secondary"
             size="sm"
@@ -482,6 +508,16 @@ export function PathPage() {
         origin={{ lat: geo.lat, lng: geo.lng }}
         allMerchants={liveMerchants}
         orderedStops={orderedQueue}
+      />
+
+      <CreatePathWizard
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        origin={{ lat: geo.lat, lng: geo.lng }}
+        merchants={withinRadius}
+        radiusM={displayRadiusM}
+        onRadiusChange={setDisplayRadiusM}
+        onStart={handleStartPath}
       />
     </div>
   );
