@@ -22,7 +22,9 @@ export function proposeRoute<T extends Merchant & { distanceMeters?: number }>(
   merchants: T[],
   opts: ProposeRouteOpts,
 ): T[] {
-  const geocoded = merchants.filter((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng));
+  const geocoded = merchants.filter(
+    (m) => Number.isFinite(m.lat) && Number.isFinite(m.lng) && !m.isChain,
+  );
   const byIndustry =
     opts.industries.length === 0
       ? geocoded

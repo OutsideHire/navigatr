@@ -16,7 +16,7 @@ import { Calendar, Check, Mail, MapPin, PhoneIcon, Plus, X } from "lucide-react"
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
-import { Button, PhoneWithClickToCall } from "@/components/navigatr";
+import { Badge, Button, PhoneWithClickToCall } from "@/components/navigatr";
 import {
   CATEGORY_LABEL,
   STATUS_LABEL,
@@ -93,6 +93,9 @@ export function MerchantDetailSheet({
                   {STATUS_LABEL[merchant.status]}
                 </span>
                 <span className="text-caption text-text-muted">{CATEGORY_LABEL[merchant.category]}</span>
+                {merchant.isChain && (
+                  <Badge kind="priority-low">{merchant.chainBrandName ? `Chain · ${merchant.chainBrandName}` : "Chain"}</Badge>
+                )}
               </div>
             </div>
             <Dialog.Close asChild>

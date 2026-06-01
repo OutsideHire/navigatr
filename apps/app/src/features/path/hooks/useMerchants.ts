@@ -60,6 +60,9 @@ export interface ProspectRow {
   /** Places primaryType (or types[0] fallback), set at ingest. Returned by
    *  prospects_nearby for more reliable downstream categorization. */
   primary_type: string | null;
+  is_chain: boolean;
+  chain_confidence: string | null;
+  chain_brand_name: string | null;
   distance_m: number;
 }
 
@@ -126,6 +129,9 @@ export function prospectToMerchant(p: ProspectRow): Merchant {
     website: p.website ?? undefined,
     ratingCount: p.rating_count ?? undefined,
     rating: p.rating ?? undefined,
+    isChain: p.is_chain,
+    chainConfidence: (p.chain_confidence as Merchant["chainConfidence"]) ?? null,
+    chainBrandName: p.chain_brand_name ?? undefined,
   };
 }
 
@@ -161,6 +167,9 @@ export interface UseMerchantsOptions {
   radiusM?: number;
   /** Industry buckets to ingest. Defaults to Tier 1 when omitted. */
   industries?: IndustryKey[];
+  /** When true, the read includes chains (flagged via isChain) so browse can
+   *  show + badge them. Create stays chain-free via proposeRoute. Default off. */
+  includeChains?: boolean;
 }
 
 /** Round to ~110m so GPS jitter doesn't refire the query (and Google) on
@@ -181,6 +190,7 @@ export function useMerchants(
 ): UseMerchantsResult {
   const radiusM = opts.radiusM ?? DEFAULT_RADIUS_M;
   const industries = opts.industries && opts.industries.length > 0 ? opts.industries : TIER_1_KEYS;
+  const includeChains = opts.includeChains ?? false;
   const user = useAuth((s) => s.user);
   const profession = getProfession(user);
 
@@ -188,13 +198,13 @@ export function useMerchants(
   const lng = origin ? roundCoord(origin.lng) : null;
 
   const query = useQuery({
-    queryKey: ["path", "prospects", lat, lng, radiusM, profession, industries],
+    queryKey: ["path", "prospects", lat, lng, radiusM, profession, industries, includeChains],
     enabled: origin != null,
     staleTime: 5 * 60_000, // 5 min — the server-side cache is the real TTL
     queryFn: async (): Promise<Merchant[]> => {
       const { data, error } = await supabase.functions.invoke<DiscoverResponse>(
         "discover_prospects",
-        { body: { lat: origin!.lat, lng: origin!.lng, radius_m: radiusM, profession, industries } },
+        { body: { lat: origin!.lat, lng: origin!.lng, radius_m: radiusM, profession, industries, include_chains: includeChains } },
       );
       if (error) throw error;
       // Returns the server's nearest-first order. Ordering for display lives in

@@ -37,6 +37,17 @@ describe("proposeRoute", () => {
     expect(out.map((m) => m.id)).toEqual(["geo"]);
   });
 
+  it("excludes chains from the proposed route", () => {
+    const out = proposeRoute(
+      [
+        makeMerchant({ id: "indie", lat: 30.01, lng: -97.01 }),
+        makeMerchant({ id: "chain", lat: 30.02, lng: -97.02, isChain: true }),
+      ],
+      { origin, industries: [], sortMode: "distance", stopCap: 10 },
+    );
+    expect(out.map((m) => m.id)).toEqual(["indie"]);
+  });
+
   it("filters by industry when not 'all'", () => {
     const out = proposeRoute(
       [

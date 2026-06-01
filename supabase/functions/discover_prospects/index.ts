@@ -136,6 +136,7 @@ interface RequestBody {
   profession?: string | null;
   industries?: string[];
   force_refresh?: boolean;
+  include_chains?: boolean;
 }
 
 /** One bucket's Places pull, kept paired with its bucket for per-bucket cache
@@ -273,6 +274,9 @@ Deno.serve(async (req) => {
   const radiusM = typeof body?.radius_m === "number" && body.radius_m > 0 ? body.radius_m : 3000;
   const profession = body?.profession ?? null;
   const forceRefresh = body?.force_refresh === true;
+  // Find Near Me opts in to see chains (flagged in the UI); Create stays
+  // chain-free client-side. Default false → prospects_nearby excludes chains.
+  const includeChains = body?.include_chains === true;
 
   // Industries to cold-fill. Validate against the known fetchable set; unknown
   // values are dropped. Empty/absent → Tier 1 default (the highest-fit B2B core).
@@ -407,10 +411,11 @@ Deno.serve(async (req) => {
     // Active exclusion seed patterns (curated chain list).
     const { data: seedRows } = await admin
       .from("exclusion_seed")
-      .select("name_pattern, brand")
+      .select("name_pattern, brand, brand_id")
       .eq("active", true);
     const seedPatterns = (seedRows ?? []).map((r) => ({
       pattern: r.name_pattern as string,
+      brandId: (r.brand_id as string | null) ?? "",
       brand: r.brand as string,
     }));
 
@@ -443,6 +448,7 @@ Deno.serve(async (req) => {
         name: p.displayName?.text ?? "",
         types: p.types ?? [],
         employeeCount: null, // Places returns none; vendor-gated (PATH_DESIGN §6)
+        primaryType: p.primaryType ?? null, // place-type tiebreak (Slice 5)
       };
       const nameKey = candidate.name.toLowerCase();
       // Exclude self from the density count (the row's own contribution).
@@ -469,6 +475,9 @@ Deno.serve(async (req) => {
         primary_type: p.primaryType ?? p.types?.[0] ?? null,
         is_chain: verdict.isChain,
         chain_reason: verdict.chainReason,
+        chain_confidence: verdict.chainConfidence,
+        chain_brand_id: verdict.chainBrandId,
+        chain_brand_name: verdict.chainBrandName,
         in_profile: verdict.inProfile,
         source: "google_places",
         last_refreshed_at: new Date().toISOString(),
@@ -528,6 +537,7 @@ Deno.serve(async (req) => {
     p_radius_m: radiusM,
     p_profession: profession,
     p_limit: READ_LIMIT,
+    p_include_chains: includeChains,
   });
   if (rpcErr) {
     return json({ error: "nearby_query_failed", detail: rpcErr.message }, 500);

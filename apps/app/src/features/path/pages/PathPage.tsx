@@ -88,9 +88,10 @@ export function PathPage() {
     merchants: liveMerchants,
     isLoading: merchantsLoading,
     isError: merchantsError,
-  } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries });
+  } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, includeChains: true });
   const [categoryFilter, setCategoryFilter] = React.useState<CategoryFilter>("all");
   const [sortMode, setSortMode] = React.useState<PathSortMode>(DEFAULT_SORT_MODE);
+  const [hideChains, setHideChains] = React.useState(false);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [view, setView] = React.useState<ViewMode>("list"); // default to list until merchants are geocoded
@@ -161,10 +162,10 @@ export function PathPage() {
 
   // Final display order: category-filtered set ordered by the chosen sort mode.
   // merchantsWithDistance is already distance-sorted, so it's the stable tiebreak.
-  const sorted = React.useMemo(
-    () => sortMerchants(filtered, sortMode),
-    [filtered, sortMode],
-  );
+  const sorted = React.useMemo(() => {
+    const base = hideChains ? filtered.filter((m) => !m.isChain) : filtered;
+    return sortMerchants(base, sortMode);
+  }, [filtered, sortMode, hideChains]);
 
   // Per-category counts over the radius-filtered set. Only categories actually
   // present within the chosen radius get a chip — no empty "Healthcare (0)"
@@ -376,6 +377,18 @@ export function PathPage() {
             ))}
           </div>
         </div>
+      )}
+
+      {anyGeocoded && (
+        <label className="mt-2 flex items-center gap-2 self-start text-caption text-text-muted">
+          <input
+            type="checkbox"
+            checked={hideChains}
+            onChange={(e) => setHideChains(e.target.checked)}
+            className="h-4 w-4 rounded border-border-default"
+          />
+          Hide chains
+        </label>
       )}
 
       {/* Mobile view toggle — only shown when the map has something to render */}

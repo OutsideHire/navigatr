@@ -64,6 +64,11 @@ export interface Merchant {
   /** Google average rating (stars, 1.0–5.0), when Places returns one. A
    *  secondary quality read shown on the detail sheet. */
   rating?: number;
+  /** Chain detection (Path Slice 5). isChain drives the read-path filter +
+   *  the lead-card badge; confidence/brand come from ingest. */
+  isChain?: boolean;
+  chainConfidence?: "high" | "medium" | "low" | null;
+  chainBrandName?: string;
 }
 
 const TODAY = new Date("2026-05-16T12:00:00Z");

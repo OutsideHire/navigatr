@@ -11,7 +11,7 @@
 
 import { ChevronRight, MapPin, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button, Card, ListRow } from "@/components/navigatr";
+import { Badge, Button, Card, ListRow } from "@/components/navigatr";
 import {
   CATEGORY_LABEL,
   STATUS_LABEL,
@@ -99,6 +99,11 @@ export function MerchantList({ merchants, selectedId, onSelect, onResetFilters }
                   <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="text-body-strong text-text-default">{m.name}</span>
                     <StatusPill status={m.status} />
+                    {m.isChain && (
+                      <Badge kind="priority-low">
+                        {m.chainBrandName ? `Chain · ${m.chainBrandName}` : "Chain"}
+                      </Badge>
+                    )}
                   </span>
                 }
                 subtitle={
