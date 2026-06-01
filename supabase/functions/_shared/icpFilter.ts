@@ -36,8 +36,17 @@ export interface IcpConfig {
   enterpriseBrands: string[];
 }
 
+/** Primary types that skew heavily chain/franchise — used as a borderline-density
+ *  tiebreak (workbook Chain Handling §2.4). Signal only: never sets is_chain alone. */
+export const CHAIN_PRONE_TYPES = new Set<string>([
+  "fast_food_restaurant", "gas_station", "convenience_store", "drugstore", "hypermarket", "discount_store",
+]);
+/** A chain-prone primary type with same-name density in [BORDERLINE_MIN, threshold)
+ *  is treated as a medium-confidence chain. */
+const BORDERLINE_MIN = 12;
+
 export const DEFAULT_ICP_CONFIG: IcpConfig = {
-  sameNameChainThreshold: 10, // ">10 same-name within radius" → 11th+ is a chain
+  sameNameChainThreshold: 25, // ">=25 same-name within radius" → a chain
   maxEmployeeCount: null, // vendor-gated; no employee data from Places
   consumerOnlyTypes: [
     // residential — NOT lodging. Hotels/motels/RV parks process large card
@@ -134,6 +143,9 @@ export interface ProspectCandidate {
    *  is fine but we lowercase defensively here too. */
   types: string[];
   employeeCount?: number | null;
+  /** Google Places primaryType (best-guess category). Drives the place-type
+   *  borderline-density tiebreak; falls back to types[0] when absent. */
+  primaryType?: string | null;
 }
 
 export interface IcpVerdict {
@@ -143,6 +155,9 @@ export interface IcpVerdict {
   inProfile: boolean;
   isChain: boolean;
   chainReason: ChainReason | null;
+  chainConfidence: "high" | "medium" | "low" | null;
+  chainBrandId: string | null;
+  chainBrandName: string | null;
 }
 
 /** Lowercase + trim a list of types, dropping empties. */
@@ -179,18 +194,18 @@ export function isInstitutional(types: string[], config: IcpConfig = DEFAULT_ICP
 
 /**
  * FR-PATH-12: does the business name match a curated chain seed pattern?
- * Case-insensitive substring match. Returns the matched brand or null.
- * `seedPatterns` is [{ pattern, brand }] from the active exclusion_seed rows.
+ * Case-insensitive substring match. Returns { brandId, brand } or null.
+ * `seedPatterns` is [{ pattern, brandId, brand }] from the active exclusion_seed rows.
  */
 export function matchesSeed(
   name: string,
-  seedPatterns: Array<{ pattern: string; brand: string }>,
-): string | null {
+  seedPatterns: Array<{ pattern: string; brandId: string; brand: string }>,
+): { brandId: string; brand: string } | null {
   const n = (name ?? "").toLowerCase();
   if (!n) return null;
-  for (const { pattern, brand } of seedPatterns) {
+  for (const { pattern, brandId, brand } of seedPatterns) {
     const p = (pattern ?? "").toLowerCase().trim();
-    if (p && n.includes(p)) return brand;
+    if (p && n.includes(p)) return { brandId, brand };
   }
   return null;
 }
@@ -223,52 +238,72 @@ export function matchesEnterprise(name: string, config: IcpConfig = DEFAULT_ICP_
  */
 export function classifyProspect(
   candidate: ProspectCandidate,
-  seedPatterns: Array<{ pattern: string; brand: string }>,
+  seedPatterns: Array<{ pattern: string; brandId: string; brand: string }>,
   sameNameNearby: number,
   config: IcpConfig = DEFAULT_ICP_CONFIG,
 ): IcpVerdict {
   const category = normalizeCategory(candidate.types);
+  // Chain extras for verdicts that aren't a brand/density chain (gov, employee,
+  // consumer, clean SMB): no confidence/brand attribution.
+  const noChain = { chainConfidence: null, chainBrandId: null, chainBrandName: null } as const;
 
   // 1. Category gate (FR-PATH-15). Consumer-only → not in profile at all.
   if (isConsumerOnly(candidate.types, config)) {
-    return { category, inProfile: false, isChain: false, chainReason: null };
+    return { category, inProfile: false, isChain: false, chainReason: null, ...noChain };
   }
 
   // 2. Institutional gate (FR-PATH-14). Gov/military/utility/hospital → chain-flagged
   //    so it's filtered out of the servable set, with a clear reason code.
   if (isInstitutional(candidate.types, config)) {
-    return { category, inProfile: true, isChain: true, chainReason: "gov" };
+    return { category, inProfile: true, isChain: true, chainReason: "gov", ...noChain };
   }
 
-  // 3. Curated seed list (FR-PATH-12). Known national/regional chain.
-  if (matchesSeed(candidate.name, seedPatterns)) {
-    return { category, inProfile: true, isChain: true, chainReason: "seed_list" };
+  // 3. Curated seed list (FR-PATH-12). Known national/regional chain → HIGH
+  //    confidence with brand attribution.
+  const seedHit = matchesSeed(candidate.name, seedPatterns);
+  if (seedHit) {
+    return {
+      category, inProfile: true, isChain: true, chainReason: "seed_list",
+      chainConfidence: "high", chainBrandId: seedHit.brandId, chainBrandName: seedHit.brand,
+    };
   }
 
   // 4. National-enterprise brand (FR-PATH-14). Big-4 / global consulting /
   //    listing portals that POPULARITY ranking floats to the top of
   //    professional_services. Not an independent SMB → filtered, reason
   //    "enterprise" (distinct from a restaurant/retail chain seed match).
-  if (matchesEnterprise(candidate.name, config)) {
-    return { category, inProfile: true, isChain: true, chainReason: "enterprise" };
+  const ent = matchesEnterprise(candidate.name, config);
+  if (ent) {
+    return {
+      category, inProfile: true, isChain: true, chainReason: "enterprise",
+      chainConfidence: "high", chainBrandId: null, chainBrandName: ent,
+    };
   }
 
   // 5. Same-name density heuristic (FR-PATH-14). Catches UNKNOWN chains the
-  //    seed list misses. ">10 same-name within radius" → the 11th is a chain.
-  if (sameNameNearby > config.sameNameChainThreshold) {
-    return { category, inProfile: true, isChain: true, chainReason: "same_name_density" };
+  //    seed list misses. ">=25 same-name within radius" → MEDIUM-confidence chain.
+  if (sameNameNearby >= config.sameNameChainThreshold) {
+    return { category, inProfile: true, isChain: true, chainReason: "same_name_density", chainConfidence: "medium", chainBrandId: null, chainBrandName: null };
   }
 
-  // 6. Employee count (FR-PATH-14). Vendor-gated: only fires if we both have a
+  // 6. Place-type tiebreak (workbook §2.4): a chain-prone primary type with
+  //    borderline density [BORDERLINE_MIN, threshold) → MEDIUM-confidence chain.
+  //    Place type alone (below BORDERLINE_MIN) never sets is_chain.
+  const primary = (candidate.primaryType ?? candidate.types?.[0] ?? "").toString().trim().toLowerCase();
+  if (CHAIN_PRONE_TYPES.has(primary) && sameNameNearby >= BORDERLINE_MIN && sameNameNearby < config.sameNameChainThreshold) {
+    return { category, inProfile: true, isChain: true, chainReason: "same_name_density", chainConfidence: "medium", chainBrandId: null, chainBrandName: null };
+  }
+
+  // 7. Employee count (FR-PATH-14). Vendor-gated: only fires if we both have a
   //    count AND a configured cutoff. Off by default (Places has no count).
   if (
     config.maxEmployeeCount != null &&
     candidate.employeeCount != null &&
     candidate.employeeCount > config.maxEmployeeCount
   ) {
-    return { category, inProfile: true, isChain: true, chainReason: "employee_count" };
+    return { category, inProfile: true, isChain: true, chainReason: "employee_count", ...noChain };
   }
 
   // Survives all gates → a servable SMB/B2B prospect.
-  return { category, inProfile: true, isChain: false, chainReason: null };
+  return { category, inProfile: true, isChain: false, chainReason: null, ...noChain };
 }

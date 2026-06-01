@@ -16,9 +16,9 @@ import {
 } from "./icpFilter";
 
 const SEED = [
-  { pattern: "subway", brand: "Subway" },
-  { pattern: "jersey mike", brand: "Jersey Mike's" },
-  { pattern: "chase", brand: "Chase Bank" },
+  { pattern: "subway", brandId: "subway", brand: "Subway" },
+  { pattern: "jersey mike", brandId: "jersey_mikes", brand: "Jersey Mike's" },
+  { pattern: "chase", brandId: "chase", brand: "Chase Bank" },
 ];
 
 describe("normalizeCategory", () => {
@@ -78,10 +78,10 @@ describe("isInstitutional", () => {
 
 describe("matchesSeed", () => {
   it("matches a known chain by case-insensitive substring", () => {
-    expect(matchesSeed("Subway #4471", SEED)).toBe("Subway");
+    expect(matchesSeed("Subway #4471", SEED)).toEqual({ brandId: "subway", brand: "Subway" });
   });
   it("matches a disguised-ish franchise name containing the pattern", () => {
-    expect(matchesSeed("JERSEY MIKE'S SUBS", SEED)).toBe("Jersey Mike's");
+    expect(matchesSeed("JERSEY MIKE'S SUBS", SEED)).toEqual({ brandId: "jersey_mikes", brand: "Jersey Mike's" });
   });
   it("returns null for an independent business", () => {
     expect(matchesSeed("Pat's Family Diner", SEED)).toBeNull();
@@ -90,7 +90,7 @@ describe("matchesSeed", () => {
     expect(matchesSeed("", SEED)).toBeNull();
   });
   it("ignores empty patterns defensively", () => {
-    expect(matchesSeed("anything", [{ pattern: "", brand: "X" }])).toBeNull();
+    expect(matchesSeed("anything", [{ pattern: "", brandId: "x", brand: "X" }])).toBeNull();
   });
 });
 
@@ -125,7 +125,7 @@ describe("classifyProspect — gate ordering and outcomes", () => {
 
   it("a clean independent SMB is servable (in profile, not chain)", () => {
     const v = classifyProspect(candidate(), SEED, 0);
-    expect(v).toEqual({ category: "restaurant", inProfile: true, isChain: false, chainReason: null });
+    expect(v).toEqual({ category: "restaurant", inProfile: true, isChain: false, chainReason: null, chainConfidence: null, chainBrandId: null, chainBrandName: null });
   });
 
   it("category gate wins first: a consumer-only place is out of profile even if it also looks like a seed match", () => {
@@ -139,12 +139,12 @@ describe("classifyProspect — gate ordering and outcomes", () => {
 
   it("a hotel is servable (lodging is in profile after the §6.1 decision)", () => {
     const v = classifyProspect(candidate({ name: "Downtown Boutique Hotel", types: ["lodging"] }), SEED, 0);
-    expect(v).toEqual({ category: "lodging", inProfile: true, isChain: false, chainReason: null });
+    expect(v).toEqual({ category: "lodging", inProfile: true, isChain: false, chainReason: null, chainConfidence: null, chainBrandId: null, chainBrandName: null });
   });
 
   it("institutional gate flags gov before seed/density", () => {
     const v = classifyProspect(candidate({ name: "City Hospital", types: ["hospital"] }), SEED, 50);
-    expect(v).toEqual({ category: "hospital", inProfile: true, isChain: true, chainReason: "gov" });
+    expect(v).toEqual({ category: "hospital", inProfile: true, isChain: true, chainReason: "gov", chainConfidence: null, chainBrandId: null, chainBrandName: null });
   });
 
   it("seed-list chain is flagged with reason seed_list", () => {
@@ -165,7 +165,7 @@ describe("classifyProspect — gate ordering and outcomes", () => {
   it("a locally-owned franchise office survives (not flagged enterprise)", () => {
     // Keller Williams office: real-estate franchise, runs its own books = ICP.
     const v = classifyProspect(candidate({ name: "Keller Williams Realty Lake Travis", types: ["real_estate_agency"] }), SEED, 0);
-    expect(v).toEqual({ category: "real_estate_agency", inProfile: true, isChain: false, chainReason: null });
+    expect(v).toEqual({ category: "real_estate_agency", inProfile: true, isChain: false, chainReason: null, chainConfidence: null, chainBrandId: null, chainBrandName: null });
   });
 
   it("seed list wins over the enterprise gate when a name matches both", () => {
@@ -183,14 +183,15 @@ describe("classifyProspect — gate ordering and outcomes", () => {
   });
 
   it("unknown chain trips the same-name-density heuristic", () => {
-    // Not in SEED, but 11 same-name locations already cached nearby (>10).
-    const v = classifyProspect(candidate({ name: "Taco Cabana Regional", types: ["restaurant"] }), SEED, 11);
+    // Not in SEED, but 25 same-name locations already cached nearby (>=25).
+    const v = classifyProspect(candidate({ name: "Taco Cabana Regional", types: ["restaurant"] }), SEED, 25);
     expect(v.isChain).toBe(true);
     expect(v.chainReason).toBe("same_name_density");
   });
 
-  it("exactly at the threshold is NOT a chain (strictly greater-than)", () => {
-    const v = classifyProspect(candidate({ name: "Edge Co", types: ["store"] }), SEED, DEFAULT_ICP_CONFIG.sameNameChainThreshold);
+  it("just below the threshold on a non-chain-prone type is NOT a chain", () => {
+    // 24 same-name (< 25) and types ["store"] is not chain-prone → no tiebreak.
+    const v = classifyProspect(candidate({ name: "Edge Co", types: ["store"] }), SEED, DEFAULT_ICP_CONFIG.sameNameChainThreshold - 1);
     expect(v.isChain).toBe(false);
   });
 
@@ -211,5 +212,64 @@ describe("classifyProspect — gate ordering and outcomes", () => {
     const config: IcpConfig = { ...DEFAULT_ICP_CONFIG, maxEmployeeCount: 250 };
     const v = classifyProspect(candidate({ name: "SmallCo", types: ["office"], employeeCount: 40 }), SEED, 0, config);
     expect(v.isChain).toBe(false);
+  });
+});
+
+describe("Slice 5 chain confidence + brand", () => {
+  const seed = [{ pattern: "subway", brandId: "subway", brand: "Subway" }];
+
+  it("allowlist match → high confidence + brand attribution", () => {
+    const v = classifyProspect({ placeId: "x", name: "Subway #4471", types: ["sandwich_shop"] }, seed, 0);
+    expect(v.isChain).toBe(true);
+    expect(v.chainConfidence).toBe("high");
+    expect(v.chainBrandId).toBe("subway");
+    expect(v.chainBrandName).toBe("Subway");
+  });
+
+  it("name-frequency >= 25 → medium chain", () => {
+    const v = classifyProspect({ placeId: "x", name: "Joe Coffee", types: ["coffee_shop"] }, [], 25);
+    expect(v.isChain).toBe(true);
+    expect(v.chainConfidence).toBe("medium");
+    expect(v.chainBrandId).toBeNull();
+  });
+
+  it("name-frequency 24 (below 25) on a NON-chain-prone type → not a chain", () => {
+    const v = classifyProspect({ placeId: "x", name: "Joe Coffee", types: ["coffee_shop"] }, [], 24);
+    expect(v.isChain).toBe(false);
+    expect(v.chainConfidence).toBeNull();
+  });
+
+  it("place-type tiebreak: chain-prone primary type + borderline density [12,25) → medium", () => {
+    const v = classifyProspect(
+      { placeId: "x", name: "QuickGas", types: ["gas_station"], primaryType: "gas_station" },
+      [], 15,
+    );
+    expect(v.isChain).toBe(true);
+    expect(v.chainConfidence).toBe("medium");
+  });
+
+  it("place-type alone (low density) never sets is_chain", () => {
+    const v = classifyProspect(
+      { placeId: "x", name: "QuickGas", types: ["gas_station"], primaryType: "gas_station" },
+      [], 3,
+    );
+    expect(v.isChain).toBe(false);
+  });
+
+  it("clean SMB → no chain fields", () => {
+    const v = classifyProspect({ placeId: "x", name: "Pat's Diner", types: ["diner"] }, [], 0);
+    expect(v.isChain).toBe(false);
+    expect(v.chainConfidence).toBeNull();
+    expect(v.chainBrandId).toBeNull();
+    expect(v.chainBrandName).toBeNull();
+  });
+
+  it("matchesSeed returns brandId + brand", () => {
+    expect(matchesSeed("Subway #1", seed)).toEqual({ brandId: "subway", brand: "Subway" });
+    expect(matchesSeed("Pat's Diner", seed)).toBeNull();
+  });
+
+  it("default same-name threshold is 25", () => {
+    expect(DEFAULT_ICP_CONFIG.sameNameChainThreshold).toBe(25);
   });
 });
