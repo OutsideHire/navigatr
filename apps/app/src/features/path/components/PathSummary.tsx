@@ -7,9 +7,12 @@
  * on drop-in logging, which lands in Slice 3 — until then they show a zero-state
  * rather than fabricated numbers. No $ pipeline total (value is unknown in MVP).
  */
+import * as React from "react";
 import { Trophy, Route as RouteIcon, LayoutGrid } from "lucide-react";
 
 import { Button } from "@/components/navigatr";
+import { DISPOSITIONS, type Disposition } from "@/lib/followUpScheduling";
+import { isEngagedDisposition } from "../lib/pathDispositions";
 
 export interface PathSummaryProps {
   visitedCount: number;
@@ -17,6 +20,8 @@ export interface PathSummaryProps {
   totalStops: number;
   /** Straight-line route length actually walked/driven, meters. */
   routeMeters: number;
+  /** Dispositions recorded on visited stops, for the breakdown + deals count. */
+  dispositions: Disposition[];
   /** Navigate to the pipeline (deals) view. */
   onViewPipeline: () => void;
   /** Clear the queue + start a new path. */
@@ -28,10 +33,17 @@ export function PathSummary({
   skippedCount,
   totalStops,
   routeMeters,
+  dispositions,
   onViewPipeline,
   onNewPath,
 }: PathSummaryProps) {
   const completionPct = totalStops === 0 ? 0 : Math.round((visitedCount / totalStops) * 100);
+  const dealsCreated = dispositions.filter(isEngagedDisposition).length;
+  const breakdown = React.useMemo(() => {
+    const counts = new Map<Disposition, number>();
+    for (const d of dispositions) counts.set(d, (counts.get(d) ?? 0) + 1);
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }, [dispositions]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -53,12 +65,24 @@ export function PathSummary({
         <Metric label="Miles" value={(routeMeters / 1609.344).toFixed(1)} />
       </div>
 
-      <div className="rounded-radius-md border border-dashed border-border-default p-4 text-center">
-        <p className="text-caption text-text-muted">
-          Deal and disposition tracking turns on with drop-in logging (coming next). For now,
-          log visits as you work the route.
-        </p>
+      <div>
+        <p className="mb-2 text-caption font-medium text-text-muted">Deals created</p>
+        <p className="text-heading-sm tabular-nums text-text-default">{dealsCreated}</p>
       </div>
+
+      {breakdown.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          <p className="text-caption font-medium text-text-muted">Disposition breakdown</p>
+          {breakdown.map(([d, n]) => (
+            <div key={d} className="flex items-center justify-between rounded-radius-md bg-surface-sunken px-3 py-2">
+              <span className="text-body-sm text-text-default">{DISPOSITIONS[d].label}</span>
+              <span className="text-body-sm font-semibold tabular-nums text-text-default">{n}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-caption text-text-muted">No drop-ins logged on this path.</p>
+      )}
 
       <div className="flex gap-2">
         <Button variant="secondary" leadingIcon={LayoutGrid} onClick={onViewPipeline} className="flex-1">
