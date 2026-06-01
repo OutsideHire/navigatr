@@ -29,6 +29,10 @@ import {
   type Merchant,
   type MerchantCategory,
 } from "../mockData";
+import {
+  TIER_1_KEYS,
+  type IndustryKey,
+} from "../../../../../../supabase/functions/_shared/industryTaxonomy";
 
 /** INGEST radius (meters) used when the caller doesn't pass one. The Path radius
  *  chip (5/10/15mi) passes an explicit radiusM, so the selected radius drives the
@@ -66,11 +70,11 @@ interface DiscoverResponse {
 /**
  * Validate the stored `category` against our MerchantCategory enum.
  *
- * As of Phase 2.5 the Edge Function buckets every prospect into one of the 7
- * coarse buckets at ingest (via the shared `categoryTaxonomy` that also drives
- * the per-category Google pulls — PATH_DESIGN.md §11), so the `category` we get
- * back is ALREADY a MerchantCategory string. This is now just a guard: known
- * value → pass through, anything else → "other".
+ * As of Slice 4 the Edge Function buckets every prospect into one of the 13
+ * industries at ingest (via the shared `industryTaxonomy` that also drives the
+ * per-industry Google pulls), so the `category` we get back is ALREADY a
+ * MerchantCategory string. This is now just a guard: known value → pass
+ * through, anything else → "other".
  *
  * The old brittle substring rules lived here (and mis-bucketed `barber_shop`
  * → restaurant because "bar" is a substring); bucketing is one place now, on
@@ -80,13 +84,18 @@ interface DiscoverResponse {
  * self-healing, no migration needed.
  */
 const MERCHANT_CATEGORIES = new Set<string>([
-  "restaurant",
-  "retail",
+  "manufacturing",
+  "construction_trades",
   "healthcare",
-  "personal_services",
-  "automotive",
   "professional_services",
+  "automotive",
+  "retail",
+  "food_beverage",
   "hospitality",
+  "education",
+  "finance_banking",
+  "fitness_wellness",
+  "non_profit",
   "other",
 ]);
 
@@ -150,6 +159,8 @@ export interface UseMerchantsResult {
 
 export interface UseMerchantsOptions {
   radiusM?: number;
+  /** Industry buckets to ingest. Defaults to Tier 1 when omitted. */
+  industries?: IndustryKey[];
 }
 
 /** Round to ~110m so GPS jitter doesn't refire the query (and Google) on
@@ -169,6 +180,7 @@ export function useMerchants(
   opts: UseMerchantsOptions = {},
 ): UseMerchantsResult {
   const radiusM = opts.radiusM ?? DEFAULT_RADIUS_M;
+  const industries = opts.industries && opts.industries.length > 0 ? opts.industries : TIER_1_KEYS;
   const user = useAuth((s) => s.user);
   const profession = getProfession(user);
 
@@ -176,13 +188,13 @@ export function useMerchants(
   const lng = origin ? roundCoord(origin.lng) : null;
 
   const query = useQuery({
-    queryKey: ["path", "prospects", lat, lng, radiusM, profession],
+    queryKey: ["path", "prospects", lat, lng, radiusM, profession, industries],
     enabled: origin != null,
     staleTime: 5 * 60_000, // 5 min — the server-side cache is the real TTL
     queryFn: async (): Promise<Merchant[]> => {
       const { data, error } = await supabase.functions.invoke<DiscoverResponse>(
         "discover_prospects",
-        { body: { lat: origin!.lat, lng: origin!.lng, radius_m: radiusM, profession } },
+        { body: { lat: origin!.lat, lng: origin!.lng, radius_m: radiusM, profession, industries } },
       );
       if (error) throw error;
       // Returns the server's nearest-first order. Ordering for display lives in

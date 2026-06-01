@@ -8,7 +8,7 @@ function m(over: Partial<Row>): Row {
   return {
     id: "x",
     name: "Biz",
-    category: "restaurant",
+    category: "food_beverage",
     address: "1 St",
     lat: 30,
     lng: -97,

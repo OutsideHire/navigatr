@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { Button, Chip, Input, Select, type SelectOption } from "@/components/navigatr";
 import { formatDistance } from "@/lib/distance";
 import { CATEGORY_LABEL, type MerchantCategory } from "../mockData";
+import { TIER_1_KEYS, TIER_2_KEYS } from "../../../../../../supabase/functions/_shared/industryTaxonomy";
 import type { MerchantWithDistance } from "./MerchantList";
 import { type PathSortMode } from "../lib/sortMerchants";
 import { proposeRoute } from "../lib/proposeRoute";
@@ -35,6 +36,8 @@ export interface CreatePathWizardProps {
   /** Current ingest radius (meters); the radius Select reflects + drives it. */
   radiusM: number;
   onRadiusChange: (meters: number) => void;
+  /** Push the rep's industry scope up so PathPage re-ingests (like radius). */
+  onIndustriesChange: (industries: MerchantCategory[]) => void;
   /** Called with the ordered merchant IDs when the rep starts the path. */
   onStart: (orderedIds: string[]) => void;
 }
@@ -45,16 +48,11 @@ const RADIUS_CHOICES: SelectOption[] = [
   { value: "24140", label: "15 miles" },
 ];
 
-/** Every industry bucket, for the multi-select chip row (empty = all). */
+/** The 12 fetchable industries (Tier 1 + 2), for the multi-select chip row.
+ *  Empty selection = the hook's Tier-1 default; "All" = exactly these 12. */
 const CATEGORIES: MerchantCategory[] = [
-  "restaurant",
-  "retail",
-  "healthcare",
-  "personal_services",
-  "automotive",
-  "professional_services",
-  "hospitality",
-  "other",
+  "manufacturing", "construction_trades", "healthcare", "professional_services", "automotive",
+  "retail", "food_beverage", "hospitality", "education", "finance_banking", "fitness_wellness", "non_profit",
 ];
 
 /** Default + bounds for the free-entry "Max stops" field. The server read path
@@ -71,6 +69,7 @@ export function CreatePathWizard({
   merchants,
   radiusM,
   onRadiusChange,
+  onIndustriesChange,
   onStart,
 }: CreatePathWizardProps) {
   const [step, setStep] = React.useState<Step>("filters");
@@ -83,12 +82,25 @@ export function CreatePathWizard({
   // cleared while typing without snapping the cursor.
   const stopCap = Math.min(MAX_STOP_CAP, Math.max(1, parseInt(stopCapText, 10) || DEFAULT_STOP_CAP));
 
+  // Every industry mutation lifts state to the parent (PathPage) so it
+  // re-ingests at the new scope, the same way onRadiusChange drives radius.
+  const applyIndustries = (next: MerchantCategory[]) => {
+    setIndustries(next);
+    onIndustriesChange(next);
+  };
   const toggleIndustry = (c: MerchantCategory) =>
-    setIndustries((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
+    applyIndustries(industries.includes(c) ? industries.filter((x) => x !== c) : [...industries, c]);
+  const selectAll = () => applyIndustries([...TIER_1_KEYS, ...TIER_2_KEYS] as MerchantCategory[]);
+  const clearIndustries = () => applyIndustries([]);
 
-  // Reset to step 1 whenever the wizard is (re)opened.
+  // Reset to step 1 + Default (Tier 1) industries whenever the wizard (re)opens.
   React.useEffect(() => {
-    if (open) setStep("filters");
+    if (open) {
+      setStep("filters");
+      setIndustries([]);
+      onIndustriesChange([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // Geocoded + industry-filtered (empty = all) + top-N selected + nearest-
@@ -140,9 +152,17 @@ export function CreatePathWizard({
                 <span className="text-caption font-medium text-text-muted">
                   Industries{" "}
                   <span className="font-normal">
-                    ({industries.length === 0 ? "all" : `${industries.length} selected`})
+                    ({industries.length === 0 ? "Default (Tier 1)" : `${industries.length} selected`})
                   </span>
                 </span>
+                <div className="flex flex-wrap gap-1.5">
+                  <Chip active={industries.length === 0} onClick={clearIndustries}>
+                    Default (Tier 1)
+                  </Chip>
+                  <Chip active={industries.length === CATEGORIES.length} onClick={selectAll}>
+                    All industries
+                  </Chip>
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {CATEGORIES.map((c) => (
                     <Chip
@@ -155,7 +175,7 @@ export function CreatePathWizard({
                   ))}
                 </div>
                 <span className="text-caption text-text-muted">
-                  Pick one or more, or leave empty for all industries.
+                  Leave on Default for the Tier-1 core, or pick industries / All.
                 </span>
               </div>
               <label className="flex flex-col gap-1.5">

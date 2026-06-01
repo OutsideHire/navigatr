@@ -82,11 +82,13 @@ export function PathPage() {
   // location first, then re-pull when GPS resolves.
   const origin = geo.loading ? null : { lat: geo.lat, lng: geo.lng };
   const [displayRadiusM, setDisplayRadiusM] = React.useState<number>(DEFAULT_DISPLAY_RADIUS_M);
+  // Industry scope the wizard drives. Empty → useMerchants defaults to Tier 1.
+  const [ingestIndustries, setIngestIndustries] = React.useState<MerchantCategory[]>([]);
   const {
     merchants: liveMerchants,
     isLoading: merchantsLoading,
     isError: merchantsError,
-  } = useMerchants(origin, { radiusM: displayRadiusM });
+  } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries });
   const [categoryFilter, setCategoryFilter] = React.useState<CategoryFilter>("all");
   const [sortMode, setSortMode] = React.useState<PathSortMode>(DEFAULT_SORT_MODE);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
@@ -517,6 +519,7 @@ export function PathPage() {
         merchants={withinRadius}
         radiusM={displayRadiusM}
         onRadiusChange={setDisplayRadiusM}
+        onIndustriesChange={setIngestIndustries}
         onStart={handleStartPath}
       />
     </div>
