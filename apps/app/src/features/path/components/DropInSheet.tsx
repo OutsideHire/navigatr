@@ -29,6 +29,7 @@ export interface DropInSheetProps {
 
 export function DropInSheet({ merchant, open, onOpenChange }: DropInSheetProps) {
   const logVisit = usePathQueue((s) => s.logVisit);
+  const markDealCreated = usePathQueue((s) => s.markDealCreated);
   const createDeal = useCreateDeal();
   const logActivity = useLogActivity();
 
@@ -36,6 +37,10 @@ export function DropInSheet({ merchant, open, onOpenChange }: DropInSheetProps) 
   const [notes, setNotes] = React.useState("");
   const [contactName, setContactName] = React.useState("");
   const [saving, setSaving] = React.useState(false);
+  // Synchronous guard against double-submit: `saving` state is a stale closure
+  // within a single tick, so a fast double-tap can fire handleSave twice and
+  // create two deals before React re-renders. The ref flips immediately.
+  const savingRef = React.useRef(false);
 
   // Reset the form each time the sheet opens for a (possibly new) merchant.
   React.useEffect(() => {
@@ -44,13 +49,15 @@ export function DropInSheet({ merchant, open, onOpenChange }: DropInSheetProps) 
       setNotes("");
       setContactName("");
       setSaving(false);
+      savingRef.current = false;
     }
   }, [open, merchant?.id]);
 
   if (!merchant) return null;
 
   const handleSave = async () => {
-    if (!selected || saving) return;
+    if (!selected || savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     // Always record the disposition on the queue stop.
     logVisit(merchant.id, selected);
@@ -76,14 +83,21 @@ export function DropInSheet({ merchant, open, onOpenChange }: DropInSheetProps) 
           outcomeNotes: notes.trim(),
           followUpDate,
         });
+        // Both mutations succeeded — only now is a deal truly created.
+        markDealCreated(merchant.id);
         toast.success(`Deal created for ${merchant.name}`);
+        // Known accepted edge for this slice: if createDeal succeeds but
+        // logActivity throws, an orphan deal exists with no drop-in activity /
+        // follow-up. We don't roll back the deal here; the visit is recorded
+        // and dealCreated stays false, so the summary won't over-count.
       } catch {
-        toast.error("Couldn't save the deal — the visit was still logged.");
+        toast.error("Couldn't finish logging — the visit was saved but the deal/follow-up may not have been.");
       }
     } else {
       toast.success(`Visit logged: ${DISPOSITIONS[selected].label}`);
     }
     setSaving(false);
+    savingRef.current = false;
     onOpenChange(false);
   };
 

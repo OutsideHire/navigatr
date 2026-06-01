@@ -157,6 +157,7 @@ export function PathPlanSheet({
                     dispositions={stops
                       .map((s) => s.disposition)
                       .filter((d): d is Disposition => d != null)}
+                    dealsCreated={stops.filter((s) => s.dealCreated).length}
                     onViewPipeline={() => {
                       onOpenChange(false);
                       navigate("/pipeline");

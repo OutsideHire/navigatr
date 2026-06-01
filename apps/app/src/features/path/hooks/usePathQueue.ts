@@ -32,6 +32,10 @@ export interface PathStop {
   resolvedAt: string | null;
   /** Disposition logged at the stop, once the rep records a drop-in. */
   disposition: Disposition | null;
+  /** True once a Pipeline deal was actually created for this stop (both the
+   *  createDeal AND logActivity mutations succeeded). Distinct from an engaged
+   *  disposition: a failed save records the disposition but leaves this false. */
+  dealCreated: boolean;
 }
 
 interface PathQueueState {
@@ -42,6 +46,8 @@ interface PathQueueState {
   setStatus: (merchantId: string, status: StopStatus) => void;
   /** Mark a stop visited AND record its drop-in disposition in one step. */
   logVisit: (merchantId: string, disposition: Disposition) => void;
+  /** Mark that a Pipeline deal was actually created for this stop. */
+  markDealCreated: (merchantId: string) => void;
   clear: () => void;
 
   // Selectors (cheap, can be called from render)
@@ -69,6 +75,7 @@ export const usePathQueue = create<PathQueueState>()(
                 addedAt: new Date().toISOString(),
                 resolvedAt: null,
                 disposition: null,
+                dealCreated: false,
               },
             ],
           };
@@ -99,6 +106,13 @@ export const usePathQueue = create<PathQueueState>()(
           ),
         })),
 
+      markDealCreated: (merchantId) =>
+        set((s) => ({
+          stops: s.stops.map((x) =>
+            x.merchantId === merchantId ? { ...x, dealCreated: true } : x,
+          ),
+        })),
+
       clear: () => set({ stops: [] }),
 
       has: (merchantId) => get().stops.some((x) => x.merchantId === merchantId),
@@ -115,10 +129,11 @@ export const usePathQueue = create<PathQueueState>()(
       migrate: (state, fromVersion) => {
         const s = (state as PathQueueState) ?? { stops: [] };
         if (fromVersion < 2) {
-          // v1 stops predate the `disposition` field — backfill null.
+          // v1 stops predate the `disposition` / `dealCreated` fields — backfill.
           s.stops = (s.stops ?? []).map((stop) => ({
             ...stop,
             disposition: (stop as PathStop).disposition ?? null,
+            dealCreated: (stop as PathStop).dealCreated ?? false,
           }));
         }
         return s;

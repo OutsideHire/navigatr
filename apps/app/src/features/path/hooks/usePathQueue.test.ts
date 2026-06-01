@@ -38,9 +38,22 @@ describe("usePathQueue.logVisit", () => {
     expect(stop.resolvedAt).not.toBeNull();
   });
 
-  it("new stops start with a null disposition", () => {
+  it("new stops start with a null disposition and dealCreated false", () => {
     usePathQueue.getState().add("m-2");
     const stop = usePathQueue.getState().stops.find((s) => s.merchantId === "m-2")!;
     expect(stop.disposition).toBeNull();
+    expect(stop.dealCreated).toBe(false);
+  });
+
+  it("markDealCreated flips dealCreated to true", () => {
+    const q = usePathQueue.getState();
+    q.add("m-3");
+    expect(usePathQueue.getState().stops.find((s) => s.merchantId === "m-3")!.dealCreated).toBe(
+      false,
+    );
+    q.markDealCreated("m-3");
+    expect(usePathQueue.getState().stops.find((s) => s.merchantId === "m-3")!.dealCreated).toBe(
+      true,
+    );
   });
 });

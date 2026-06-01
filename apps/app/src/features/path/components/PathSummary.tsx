@@ -12,7 +12,6 @@ import { Trophy, Route as RouteIcon, LayoutGrid } from "lucide-react";
 
 import { Button } from "@/components/navigatr";
 import { DISPOSITIONS, type Disposition } from "@/lib/followUpScheduling";
-import { isEngagedDisposition } from "../lib/pathDispositions";
 
 export interface PathSummaryProps {
   visitedCount: number;
@@ -20,8 +19,10 @@ export interface PathSummaryProps {
   totalStops: number;
   /** Straight-line route length actually walked/driven, meters. */
   routeMeters: number;
-  /** Dispositions recorded on visited stops, for the breakdown + deals count. */
+  /** Dispositions recorded on visited stops, for the breakdown. */
   dispositions: Disposition[];
+  /** Deals actually created on this path (stops where createDeal succeeded). */
+  dealsCreated: number;
   /** Navigate to the pipeline (deals) view. */
   onViewPipeline: () => void;
   /** Clear the queue + start a new path. */
@@ -34,11 +35,11 @@ export function PathSummary({
   totalStops,
   routeMeters,
   dispositions,
+  dealsCreated,
   onViewPipeline,
   onNewPath,
 }: PathSummaryProps) {
   const completionPct = totalStops === 0 ? 0 : Math.round((visitedCount / totalStops) * 100);
-  const dealsCreated = dispositions.filter(isEngagedDisposition).length;
   const breakdown = React.useMemo(() => {
     const counts = new Map<Disposition, number>();
     for (const d of dispositions) counts.set(d, (counts.get(d) ?? 0) + 1);
