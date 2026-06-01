@@ -18,6 +18,7 @@ import {
   opportunityScore,
   type ProspectRow,
 } from "./useMerchants";
+import { TIER_1_KEYS } from "../../../../../../supabase/functions/_shared/industryTaxonomy";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 const invokeMock = vi.fn();
@@ -43,7 +44,7 @@ function makeRow(overrides: Partial<ProspectRow> = {}): ProspectRow {
     id: "p-1",
     place_id: "ChIJ_test",
     name: "Pat's Family Diner",
-    category: "restaurant",
+    category: "food_beverage",
     address: "123 Congress Ave",
     lat: 30.2672,
     lng: -97.7431,
@@ -63,19 +64,24 @@ beforeEach(() => {
 });
 
 // ── categoryFromPlaces ─────────────────────────────────────────────
-// Phase 2.5: the Edge stores a coarse MerchantCategory bucket at ingest
-// (bucketing lives in supabase/functions/_shared/categoryTaxonomy.ts now),
+// Slice 4: the Edge stores an industry MerchantCategory bucket at ingest
+// (bucketing lives in supabase/functions/_shared/industryTaxonomy.ts now),
 // so this is purely an enum guard — pass known values through, else "other".
 describe("categoryFromPlaces", () => {
   it("passes every known MerchantCategory bucket through unchanged", () => {
     for (const c of [
-      "restaurant",
-      "retail",
+      "manufacturing",
+      "construction_trades",
       "healthcare",
-      "personal_services",
-      "automotive",
       "professional_services",
+      "automotive",
+      "retail",
+      "food_beverage",
       "hospitality",
+      "education",
+      "finance_banking",
+      "fitness_wellness",
+      "non_profit",
       "other",
     ] as const) {
       expect(categoryFromPlaces(c)).toBe(c);
@@ -94,7 +100,7 @@ describe("categoryFromPlaces", () => {
     expect(categoryFromPlaces(undefined)).toBe("other");
   });
   it("is case-insensitive and trims", () => {
-    expect(categoryFromPlaces("  Personal_Services  ")).toBe("personal_services");
+    expect(categoryFromPlaces("  Food_Beverage  ")).toBe("food_beverage");
   });
 });
 
@@ -166,7 +172,7 @@ describe("useMerchants", () => {
     );
     await waitFor(() => expect(result.current.merchants).toHaveLength(2));
     expect(invokeMock).toHaveBeenCalledWith("discover_prospects", {
-      body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services" },
+      body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: TIER_1_KEYS },
     });
     expect(result.current.merchants.map((m) => m.id)).toEqual(["a", "b"]);
     expect(result.current.merchants[0]!.status).toBe("untouched");
@@ -200,7 +206,7 @@ describe("useMerchants", () => {
     });
     await waitFor(() => expect(invokeMock).toHaveBeenCalled());
     expect(invokeMock).toHaveBeenCalledWith("discover_prospects", {
-      body: { lat: 30.2672, lng: -97.7431, radius_m: 1500, profession: "merchant_services" },
+      body: { lat: 30.2672, lng: -97.7431, radius_m: 1500, profession: "merchant_services", industries: TIER_1_KEYS },
     });
   });
 });
