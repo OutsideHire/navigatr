@@ -86,6 +86,33 @@ describe("useCreateDeal", () => {
     });
   });
 
+  it("inserts null contact_email/value_cents when omitted (field-sourced deal)", async () => {
+    singleMock.mockResolvedValueOnce({ data: { id: "deal-field" }, error: null });
+
+    const { result } = renderHook(() => useCreateDeal(), { wrapper });
+    await result.current.mutateAsync({
+      companyName: "Curbside Coffee",
+      contactName: "Curbside Coffee",
+      contactPhone: "+12025550100",
+      stage: "new",
+      probability: 20,
+      leadSource: "path_dropin",
+    });
+
+    expect(insertMock).toHaveBeenCalledTimes(1);
+    const calls = insertMock.mock.calls as unknown as Array<[Record<string, unknown>]>;
+    const payload = calls[0]?.[0];
+    expect(payload).toMatchObject({
+      company_name: "Curbside Coffee",
+      contact_name: "Curbside Coffee",
+      contact_phone: "+12025550100",
+      lead_source: "path_dropin",
+      // Omitted email + value coalesce to null for Places-only drop-in deals.
+      contact_email: null,
+      value_cents: null,
+    });
+  });
+
   it("packs profession-specific fields into profession_data JSONB", async () => {
     singleMock.mockResolvedValueOnce({ data: { id: "deal-prof" }, error: null });
     const { result } = renderHook(() => useCreateDeal(), { wrapper });

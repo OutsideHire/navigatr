@@ -26,9 +26,9 @@ export interface CreateDealInput {
   employeeCountRange?: string;
   contactName: string;
   contactTitle?: string;
-  contactEmail: string;
+  contactEmail?: string;
   contactPhone: string;
-  valueCents: number;
+  valueCents?: number;
   stage: DealStage;
   probability: number;
   expectedClose?: string | null;     // ISO date
@@ -59,9 +59,9 @@ export function useCreateDeal() {
           employee_count_range: input.employeeCountRange ?? null,
           contact_name:        input.contactName,
           contact_title:       input.contactTitle ?? null,
-          contact_email:       input.contactEmail,
+          contact_email:       input.contactEmail ?? null,
           contact_phone:       input.contactPhone,
-          value_cents:         input.valueCents,
+          value_cents:         input.valueCents ?? null,
           stage:               input.stage,
           probability:         input.probability,
           expected_close:      input.expectedClose ?? null,
