@@ -19,6 +19,7 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import type { Disposition } from "@/lib/followUpScheduling";
 
 export type StopStatus = "pending" | "visited" | "skipped";
 
@@ -29,6 +30,8 @@ export interface PathStop {
   addedAt: string;
   /** ISO timestamp when status flipped from pending. null while pending. */
   resolvedAt: string | null;
+  /** Disposition logged at the stop, once the rep records a drop-in. */
+  disposition: Disposition | null;
 }
 
 interface PathQueueState {
@@ -37,6 +40,8 @@ interface PathQueueState {
   add: (merchantId: string) => void;
   remove: (merchantId: string) => void;
   setStatus: (merchantId: string, status: StopStatus) => void;
+  /** Mark a stop visited AND record its drop-in disposition in one step. */
+  logVisit: (merchantId: string, disposition: Disposition) => void;
   clear: () => void;
 
   // Selectors (cheap, can be called from render)
@@ -63,6 +68,7 @@ export const usePathQueue = create<PathQueueState>()(
                 status: "pending",
                 addedAt: new Date().toISOString(),
                 resolvedAt: null,
+                disposition: null,
               },
             ],
           };
@@ -84,6 +90,15 @@ export const usePathQueue = create<PathQueueState>()(
           ),
         })),
 
+      logVisit: (merchantId, disposition) =>
+        set((s) => ({
+          stops: s.stops.map((x) =>
+            x.merchantId === merchantId
+              ? { ...x, status: "visited", disposition, resolvedAt: new Date().toISOString() }
+              : x,
+          ),
+        })),
+
       clear: () => set({ stops: [] }),
 
       has: (merchantId) => get().stops.some((x) => x.merchantId === merchantId),
@@ -96,13 +111,17 @@ export const usePathQueue = create<PathQueueState>()(
     {
       name: STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
-      version: 1,
-      // No-op for v1 (no prior version exists), but registering the function
-      // now means future bumps (v2+) can write a real upgrader without
-      // touching this file's structure. If we returned undefined / threw,
-      // Zustand would discard state silently — bad UX.
-      migrate: (state, _fromVersion) => {
-        return (state as PathQueueState) ?? { stops: [] };
+      version: 2,
+      migrate: (state, fromVersion) => {
+        const s = (state as PathQueueState) ?? { stops: [] };
+        if (fromVersion < 2) {
+          // v1 stops predate the `disposition` field — backfill null.
+          s.stops = (s.stops ?? []).map((stop) => ({
+            ...stop,
+            disposition: (stop as PathStop).disposition ?? null,
+          }));
+        }
+        return s;
       },
       // If localStorage JSON is corrupted (quota eviction, browser bug,
       // dev-tools tampering), JSON.parse throws inside Zustand. Without
