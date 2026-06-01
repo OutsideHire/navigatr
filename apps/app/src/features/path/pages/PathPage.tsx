@@ -133,13 +133,13 @@ export function PathPage() {
     return enriched.sort((a, b) => a.distanceMeters - b.distanceMeters);
   }, [liveMerchants, anyGeocoded, geo.lat, geo.lng]);
 
-  // Radius gate. The rep picks a display radius (1/2/3 mi); we hide anything
-  // beyond it. Only applies when we actually have coordinates to measure —
-  // when nothing is geocoded, distances are Infinity and a radius gate would
-  // wipe the whole list, so we pass everything through and let the
-  // activity-sorted view stand. This is the layer the category chips,
-  // counts, and the list all read from, so narrowing the radius narrows
-  // everything consistently.
+  // Radius gate. The chosen radius (5/10/15 mi) already drives the ingest, so
+  // the server returned only rows within it — this client gate is now a
+  // SECONDARY trim: it catches the haversine-vs-ST_DWithin boundary fuzz and is
+  // the layer the category chips + counts + list all read from. Only applies
+  // when we have coordinates to measure — when nothing is geocoded, distances
+  // are Infinity and a radius gate would wipe the whole list, so we pass
+  // everything through and let the activity-sorted view stand.
   const withinRadius = React.useMemo<MerchantWithDistance[]>(() => {
     if (!anyGeocoded) return merchantsWithDistance;
     return merchantsWithDistance.filter((m) => m.distanceMeters <= displayRadiusM);
@@ -321,7 +321,11 @@ export function PathPage() {
       {anyGeocoded && (
         <div className="mt-2 flex items-center gap-2 self-start">
           <span className="text-caption font-medium text-text-muted">Sort</span>
-          <div className="flex gap-1 rounded-radius-md bg-surface-sunken p-0.5">
+          <div
+            role="group"
+            aria-label="Sort merchants"
+            className="flex gap-1 rounded-radius-md bg-surface-sunken p-0.5"
+          >
             {([
               { label: "Popular", mode: "popularity" },
               { label: "Nearest", mode: "distance" },

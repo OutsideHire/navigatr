@@ -67,14 +67,16 @@ const TTL_MS = CELL_TTL_DAYS * 24 * 60 * 60 * 1000;
 // Each cell is independently cached (geo_cell, category), so a metro warms once
 // and is shared across every rep — cost scales with NEW cold cells, not reps.
 //
-// MAX_CELLS is the hard cost guardrail: each cell is up to 7 Google calls
-// (one per category bucket), so 100 cells × 7 × ~$0.035 ≈ $24.5 worst-case for a fully-cold 15mi territory. CELL_CONCURRENCY bounds how many cells we fetch at once
-// so we don't open hundreds of sockets from one Edge invocation.
-// A 15mi radius (24,140m) covers ~700 sq mi ≈ ~88 precision-5 geohash cells, so
-// MAX_CELLS must clear that or a 15mi pull truncates to a partial area. 100 ×
-// 7 buckets × ~$0.035 ≈ ~$24 worst-case to cold-fill a fresh 15mi territory,
-// then warm/shared for 30 days across every rep.
-const MAX_CELLS = 100;
+// MAX_CELLS is the hard cost guardrail + the coverage floor. A 15mi radius
+// (24,140m) covers ~700 sq mi, which is ~88 precision-5 cells at ~30°N but more
+// toward the poles: cell ground-width scales with cos(lat), so the same radius
+// needs ~107 cells at 35°N (Oklahoma City) and ~115 near 49°N. We set the cap
+// at 130 so a 15mi pull isn't silently truncated to a partial area anywhere in
+// the continental US. Worst-case cold-fill = 130 cells × 7 buckets × ~$0.035 ≈
+// ~$32 one-time per fresh 15mi territory, then warm/shared for 30 days across
+// every rep. CELL_CONCURRENCY bounds how many cells we fetch at once so one
+// Edge invocation doesn't open hundreds of sockets.
+const MAX_CELLS = 130;
 const CELL_CONCURRENCY = 6;
 
 // Read-path cap (prospects_nearby maxes at 100 server-side). A wide radius can
