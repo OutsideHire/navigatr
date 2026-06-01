@@ -32,7 +32,7 @@ describe("proposeRoute", () => {
         makeMerchant({ id: "nan", lat: Number.NaN, lng: -97.02 }),
         makeMerchant({ id: "inf", lat: 30.03, lng: Number.POSITIVE_INFINITY }),
       ],
-      { origin, industry: "all", sortMode: "distance", stopCap: 10 },
+      { origin, industries: [], sortMode: "distance", stopCap: 10 },
     );
     expect(out.map((m) => m.id)).toEqual(["geo"]);
   });
@@ -43,9 +43,21 @@ describe("proposeRoute", () => {
         makeMerchant({ id: "rest", category: "restaurant", lat: 30.01, lng: -97.01 }),
         makeMerchant({ id: "retail", category: "retail", lat: 30.02, lng: -97.02 }),
       ],
-      { origin, industry: "retail", sortMode: "distance", stopCap: 10 },
+      { origin, industries: ["retail"], sortMode: "distance", stopCap: 10 },
     );
     expect(out.map((m) => m.id)).toEqual(["retail"]);
+  });
+
+  it("includes every selected industry when multiple are chosen", () => {
+    const out = proposeRoute(
+      [
+        makeMerchant({ id: "rest", category: "restaurant", lat: 30.01, lng: -97.01 }),
+        makeMerchant({ id: "retail", category: "retail", lat: 30.02, lng: -97.02 }),
+        makeMerchant({ id: "auto", category: "automotive", lat: 30.03, lng: -97.03 }),
+      ],
+      { origin, industries: ["restaurant", "automotive"], sortMode: "distance", stopCap: 10 },
+    );
+    expect([...out.map((m) => m.id)].sort()).toEqual(["auto", "rest"]);
   });
 
   it("caps at stopCap", () => {
@@ -55,13 +67,13 @@ describe("proposeRoute", () => {
         makeMerchant({ id: "b", lat: 30.02, lng: -97.02, ratingCount: 2 }),
         makeMerchant({ id: "c", lat: 30.03, lng: -97.03, ratingCount: 3 }),
       ],
-      { origin, industry: "all", sortMode: "opportunity", stopCap: 2 },
+      { origin, industries: [], sortMode: "opportunity", stopCap: 2 },
     );
     expect(out).toHaveLength(2);
   });
 
   it("returns [] when nothing matches", () => {
-    const out = proposeRoute([], { origin, industry: "all", sortMode: "distance", stopCap: 5 });
+    const out = proposeRoute([], { origin, industries: [], sortMode: "distance", stopCap: 5 });
     expect(out).toEqual([]);
   });
 
@@ -75,7 +87,7 @@ describe("proposeRoute", () => {
       makeMerchant({ id: "d", lat: 30.01, lng: -97.00, ratingCount: 1 }),
       makeMerchant({ id: "e", lat: 30.20, lng: -97.00, ratingCount: 9000 }),
     ];
-    const opts = { origin, industry: "all", sortMode: "opportunity" as const, stopCap: 3 };
+    const opts = { origin, industries: [], sortMode: "opportunity" as const, stopCap: 3 };
 
     const out = proposeRoute(merchants, opts);
 

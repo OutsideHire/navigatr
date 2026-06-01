@@ -17,7 +17,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { X, Route as RouteIcon, MapPin, Navigation } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { Button, Select, type SelectOption } from "@/components/navigatr";
+import { Button, Chip, Input, Select, type SelectOption } from "@/components/navigatr";
 import { formatDistance } from "@/lib/distance";
 import { CATEGORY_LABEL, type MerchantCategory } from "../mockData";
 import type { MerchantWithDistance } from "./MerchantList";
@@ -44,18 +44,23 @@ const RADIUS_CHOICES: SelectOption[] = [
   { value: "16093", label: "10 miles" },
   { value: "24140", label: "15 miles" },
 ];
-const STOP_CAP_CHOICES: SelectOption[] = [
-  { value: "25", label: "25 stops" },
-  { value: "28", label: "28 stops" },
-  { value: "30", label: "30 stops" },
+
+/** Every industry bucket, for the multi-select chip row (empty = all). */
+const CATEGORIES: MerchantCategory[] = [
+  "restaurant",
+  "retail",
+  "healthcare",
+  "personal_services",
+  "automotive",
+  "professional_services",
+  "hospitality",
+  "other",
 ];
 
-const CATEGORY_CHOICES: SelectOption[] = [
-  { value: "all", label: "All industries" },
-  ...(
-    ["restaurant", "retail", "healthcare", "personal_services", "automotive", "professional_services", "hospitality", "other"] as MerchantCategory[]
-  ).map((c) => ({ value: c, label: CATEGORY_LABEL[c] })),
-];
+/** Default + bounds for the free-entry "Max stops" field. The server read path
+ *  caps a pull at 100, so there's no point letting a rep ask for more. */
+const DEFAULT_STOP_CAP = 25;
+const MAX_STOP_CAP = 100;
 
 type Step = "filters" | "preview";
 
@@ -69,21 +74,29 @@ export function CreatePathWizard({
   onStart,
 }: CreatePathWizardProps) {
   const [step, setStep] = React.useState<Step>("filters");
-  const [industry, setIndustry] = React.useState<string>("all");
-  const [stopCap, setStopCap] = React.useState<number>(28);
+  const [industries, setIndustries] = React.useState<MerchantCategory[]>([]);
+  const [stopCapText, setStopCapText] = React.useState<string>(String(DEFAULT_STOP_CAP));
   const [sortMode, setSortMode] = React.useState<PathSortMode>("opportunity");
+
+  // Free-entry stop cap → a clamped number. Blank/garbage falls back to the
+  // default; over the server cap clamps down. Kept as text so the field can be
+  // cleared while typing without snapping the cursor.
+  const stopCap = Math.min(MAX_STOP_CAP, Math.max(1, parseInt(stopCapText, 10) || DEFAULT_STOP_CAP));
+
+  const toggleIndustry = (c: MerchantCategory) =>
+    setIndustries((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
 
   // Reset to step 1 whenever the wizard is (re)opened.
   React.useEffect(() => {
     if (open) setStep("filters");
   }, [open]);
 
-  // Geocoded + industry-filtered + top-N selected + nearest-neighbor ordered →
-  // the proposed route. Shared with PathPage's queue via proposeRoute so the
-  // rep-approved order/ETA matches what gets enqueued.
+  // Geocoded + industry-filtered (empty = all) + top-N selected + nearest-
+  // neighbor ordered → the proposed route. Shared with PathPage's queue via
+  // proposeRoute so the rep-approved order/ETA matches what gets enqueued.
   const proposed = React.useMemo(
-    () => proposeRoute(merchants, { origin, industry, sortMode, stopCap }),
-    [merchants, origin, industry, sortMode, stopCap],
+    () => proposeRoute(merchants, { origin, industries, sortMode, stopCap }),
+    [merchants, origin, industries, sortMode, stopCap],
   );
 
   const stats = React.useMemo(
@@ -123,20 +136,38 @@ export function CreatePathWizard({
                   onValueChange={(v) => onRadiusChange(Number(v))}
                 />
               </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-caption font-medium text-text-muted">Industry</span>
-                <Select
-                  options={CATEGORY_CHOICES}
-                  value={industry}
-                  onValueChange={setIndustry}
-                />
-              </label>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-caption font-medium text-text-muted">
+                  Industries{" "}
+                  <span className="font-normal">
+                    ({industries.length === 0 ? "all" : `${industries.length} selected`})
+                  </span>
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {CATEGORIES.map((c) => (
+                    <Chip
+                      key={c}
+                      active={industries.includes(c)}
+                      onClick={() => toggleIndustry(c)}
+                    >
+                      {CATEGORY_LABEL[c]}
+                    </Chip>
+                  ))}
+                </div>
+                <span className="text-caption text-text-muted">
+                  Pick one or more, or leave empty for all industries.
+                </span>
+              </div>
               <label className="flex flex-col gap-1.5">
                 <span className="text-caption font-medium text-text-muted">Max stops</span>
-                <Select
-                  options={STOP_CAP_CHOICES}
-                  value={String(stopCap)}
-                  onValueChange={(v) => setStopCap(Number(v))}
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={MAX_STOP_CAP}
+                  value={stopCapText}
+                  onChange={(e) => setStopCapText(e.target.value)}
+                  placeholder={String(DEFAULT_STOP_CAP)}
                 />
               </label>
               <Button variant="primary" leadingIcon={RouteIcon} onClick={() => setStep("preview")}>

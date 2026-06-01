@@ -8,12 +8,12 @@
  */
 import { nearestNeighborOrder, type LatLng } from "@/lib/distance";
 import { sortMerchants, type PathSortMode } from "./sortMerchants";
-import type { Merchant } from "../mockData";
+import type { Merchant, MerchantCategory } from "../mockData";
 
 export interface ProposeRouteOpts {
   origin: LatLng;
-  /** "all" or a MerchantCategory value. */
-  industry: string;
+  /** Category buckets to include. EMPTY = all industries (no filter). */
+  industries: MerchantCategory[];
   sortMode: PathSortMode;
   stopCap: number;
 }
@@ -24,7 +24,9 @@ export function proposeRoute<T extends Merchant & { distanceMeters?: number }>(
 ): T[] {
   const geocoded = merchants.filter((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng));
   const byIndustry =
-    opts.industry === "all" ? geocoded : geocoded.filter((m) => m.category === opts.industry);
+    opts.industries.length === 0
+      ? geocoded
+      : geocoded.filter((m) => opts.industries.includes(m.category));
   const topN = sortMerchants(byIndustry, opts.sortMode).slice(0, opts.stopCap);
   if (topN.length === 0) return [];
   const order = nearestNeighborOrder(opts.origin, topN.map((m) => ({ lat: m.lat, lng: m.lng })));
