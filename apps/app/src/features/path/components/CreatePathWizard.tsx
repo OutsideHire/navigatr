@@ -21,7 +21,8 @@ import { Button, Select, type SelectOption } from "@/components/navigatr";
 import { formatDistance } from "@/lib/distance";
 import { CATEGORY_LABEL, type MerchantCategory } from "../mockData";
 import type { MerchantWithDistance } from "./MerchantList";
-import { sortMerchants, type PathSortMode } from "../lib/sortMerchants";
+import { type PathSortMode } from "../lib/sortMerchants";
+import { proposeRoute } from "../lib/proposeRoute";
 import { routeStats, formatEta } from "../lib/routeStats";
 
 export interface CreatePathWizardProps {
@@ -77,15 +78,13 @@ export function CreatePathWizard({
     if (open) setStep("filters");
   }, [open]);
 
-  // Geocoded + industry-filtered + sorted + capped → the proposed route.
-  const proposed = React.useMemo(() => {
-    const geocoded = merchants.filter(
-      (m) => Number.isFinite(m.lat) && Number.isFinite(m.lng),
-    );
-    const byIndustry =
-      industry === "all" ? geocoded : geocoded.filter((m) => m.category === industry);
-    return sortMerchants(byIndustry, sortMode).slice(0, stopCap);
-  }, [merchants, industry, sortMode, stopCap]);
+  // Geocoded + industry-filtered + top-N selected + nearest-neighbor ordered →
+  // the proposed route. Shared with PathPage's queue via proposeRoute so the
+  // rep-approved order/ETA matches what gets enqueued.
+  const proposed = React.useMemo(
+    () => proposeRoute(merchants, { origin, industry, sortMode, stopCap }),
+    [merchants, origin, industry, sortMode, stopCap],
+  );
 
   const stats = React.useMemo(
     () => routeStats(origin, proposed.map((m) => ({ lat: m.lat, lng: m.lng }))),
@@ -96,7 +95,10 @@ export function CreatePathWizard({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 data-[state=open]:animate-in data-[state=open]:fade-in" />
-        <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[88dvh] w-full max-w-lg flex-col rounded-t-radius-lg bg-surface-default p-5 shadow-lg md:inset-0 md:bottom-auto md:top-1/2 md:max-h-[80dvh] md:-translate-y-1/2 md:rounded-radius-lg">
+        <Dialog.Content
+          aria-describedby={undefined}
+          className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[88dvh] w-full max-w-lg flex-col rounded-t-radius-lg bg-surface-default p-5 shadow-lg md:inset-0 md:bottom-auto md:top-1/2 md:max-h-[80dvh] md:-translate-y-1/2 md:rounded-radius-lg"
+        >
           <div className="flex items-center justify-between pb-3">
             <Dialog.Title className="text-heading-sm text-text-default">
               {step === "filters" ? "Create path" : "Route preview"}

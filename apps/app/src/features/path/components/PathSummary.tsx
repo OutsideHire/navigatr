@@ -10,7 +10,6 @@
 import { Trophy, Route as RouteIcon, LayoutGrid } from "lucide-react";
 
 import { Button } from "@/components/navigatr";
-import { formatDistance } from "@/lib/distance";
 
 export interface PathSummaryProps {
   visitedCount: number;
@@ -51,7 +50,7 @@ export function PathSummary({
       <div className="grid grid-cols-3 gap-2 text-center">
         <Metric label="Visited" value={String(visitedCount)} />
         <Metric label="Skipped" value={String(skippedCount)} />
-        <Metric label="Miles" value={formatDistance(routeMeters).replace(" mi", "")} />
+        <Metric label="Miles" value={(routeMeters / 1609.344).toFixed(1)} />
       </div>
 
       <div className="rounded-radius-md border border-dashed border-border-default p-4 text-center">
