@@ -52,3 +52,23 @@ describe("formatFollowUpDate", () => {
     expect(out).toMatch(/^[A-Z][a-z]{2}, [A-Z][a-z]{2} \d+$/);
   });
 });
+
+describe("field dispositions (Path Slice 3)", () => {
+  it("registers all 9 new dispositions with a tier", () => {
+    for (const key of [
+      "met_dm", "gatekeeper", "left_collateral", "scheduled_callback",
+      "not_in_office", "closed_locked", "do_not_contact", "out_of_business", "other",
+    ] as const) {
+      expect(DISPOSITIONS[key]).toBeDefined();
+      expect(DISPOSITIONS[key].tier).toBeTruthy();
+    }
+  });
+
+  it("engaged outcomes schedule a follow-up; terminal ones do not", () => {
+    const from = new Date("2026-06-01T12:00:00Z"); // a Monday
+    expect(calculateFollowUpDate("met_dm", from)).not.toBeNull();
+    expect(calculateFollowUpDate("scheduled_callback", from)).not.toBeNull();
+    expect(calculateFollowUpDate("out_of_business", from)).toBeNull();
+    expect(calculateFollowUpDate("do_not_contact", from)).toBeNull();
+  });
+});

@@ -74,6 +74,18 @@ const editSchema = z.object({
     "not_interested",
     "wrong_number",
     "closed_lost",
+    // Path field drop-in outcomes (Slice 3) — accepted so an activity that
+    // already carries a field disposition can be loaded into this editor.
+    // The editable tile lists below stay call-scoped (Sprint 1 behavior).
+    "met_dm",
+    "gatekeeper",
+    "left_collateral",
+    "scheduled_callback",
+    "not_in_office",
+    "closed_locked",
+    "do_not_contact",
+    "out_of_business",
+    "other",
   ]),
   outcomeNotes: z.string().optional(),
   followUpDate: z.string().optional(),
