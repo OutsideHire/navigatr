@@ -25,6 +25,7 @@ import {
 } from "../mockData";
 import { formatDistance } from "@/lib/distance";
 import { usePathQueue } from "../hooks/usePathQueue";
+import { DropInSheet } from "./DropInSheet";
 
 export interface MerchantDetailSheetProps {
   merchant: Merchant | null;
@@ -43,6 +44,7 @@ export function MerchantDetailSheet({
   const inQueue = usePathQueue((s) => (merchant ? s.has(merchant.id) : false));
   const addToQueue = usePathQueue((s) => s.add);
   const removeFromQueue = usePathQueue((s) => s.remove);
+  const [dropInOpen, setDropInOpen] = React.useState(false);
 
   const lastActivityLabel = merchant?.lastActivity
     ? new Date(merchant.lastActivity).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
@@ -54,6 +56,7 @@ export function MerchantDetailSheet({
   // unmount (e.g. user changes the filter while the sheet is closing).
   // The content inside Portal is the only thing gated on `merchant`.
   return (
+    <>
     <Dialog.Root open={open && merchant !== null} onOpenChange={onOpenChange}>
       {merchant && (
       <Dialog.Portal>
@@ -128,7 +131,7 @@ export function MerchantDetailSheet({
             <Button
               variant="tertiary"
               size="md"
-              onClick={() => toast("Log drop-in lands in sprint 2")}
+              onClick={() => setDropInOpen(true)}
             >
               Log drop-in
             </Button>
@@ -162,6 +165,8 @@ export function MerchantDetailSheet({
       </Dialog.Portal>
       )}
     </Dialog.Root>
+    <DropInSheet merchant={merchant} open={dropInOpen} onOpenChange={setDropInOpen} />
+    </>
   );
 }
 

@@ -38,6 +38,7 @@ import { CATEGORY_LABEL, type Merchant } from "../mockData";
 import { usePathQueue, type StopStatus } from "../hooks/usePathQueue";
 import { PathSummary } from "./PathSummary";
 import { useNavigate } from "react-router-dom";
+import type { Disposition } from "@/lib/followUpScheduling";
 
 export interface PathPlanSheetProps {
   open: boolean;
@@ -153,6 +154,10 @@ export function PathPlanSheet({
                     skippedCount={skippedCount}
                     totalStops={stops.length}
                     routeMeters={totalMeters}
+                    dispositions={stops
+                      .map((s) => s.disposition)
+                      .filter((d): d is Disposition => d != null)}
+                    dealsCreated={stops.filter((s) => s.dealCreated).length}
                     onViewPipeline={() => {
                       onOpenChange(false);
                       navigate("/pipeline");

@@ -25,7 +25,17 @@ export type Disposition =
   | "low_probability"
   | "not_interested"
   | "wrong_number"
-  | "closed_lost";
+  | "closed_lost"
+  // Path field drop-in outcomes (Slice 3)
+  | "met_dm"
+  | "gatekeeper"
+  | "left_collateral"
+  | "scheduled_callback"
+  | "not_in_office"
+  | "closed_locked"
+  | "do_not_contact"
+  | "out_of_business"
+  | "other";
 
 export interface DispositionSpec {
   /** Canonical disposition slug — used as the schema enum value. */
@@ -114,6 +124,69 @@ export const DISPOSITIONS: Record<Disposition, DispositionSpec> = {
     label: "Closed Lost",
     rationale: "Deal lost · no follow-up",
     tier: "negative",
+    businessDays: null,
+  },
+  met_dm: {
+    key: "met_dm",
+    label: "Met with decision maker",
+    rationale: "Strong field signal · 3 day follow-up",
+    tier: "positive",
+    businessDays: 3,
+  },
+  gatekeeper: {
+    key: "gatekeeper",
+    label: "Spoke with gatekeeper",
+    rationale: "Made contact · 3 day follow-up",
+    tier: "neutral",
+    businessDays: 3,
+  },
+  left_collateral: {
+    key: "left_collateral",
+    label: "Left collateral",
+    rationale: "Dropped materials · 5 day follow-up",
+    tier: "neutral",
+    businessDays: 5,
+  },
+  scheduled_callback: {
+    key: "scheduled_callback",
+    label: "Scheduled callback",
+    rationale: "Booked a time · 2 day follow-up",
+    tier: "positive",
+    businessDays: 2,
+  },
+  not_in_office: {
+    key: "not_in_office",
+    label: "Not in office",
+    rationale: "No one available · no follow-up",
+    tier: "neutral",
+    businessDays: null,
+  },
+  closed_locked: {
+    key: "closed_locked",
+    label: "Closed / locked",
+    rationale: "Location closed · no follow-up",
+    tier: "neutral",
+    businessDays: null,
+  },
+  do_not_contact: {
+    key: "do_not_contact",
+    label: "Do not contact",
+    rationale: "Opted out · no follow-up",
+    tier: "negative",
+    businessDays: null,
+  },
+  out_of_business: {
+    key: "out_of_business",
+    label: "Out of business",
+    rationale: "Permanently closed · no follow-up",
+    tier: "negative",
+    businessDays: null,
+  },
+  other: {
+    key: "other",
+    label: "Other",
+    rationale: "Misc outcome · no follow-up",
+    tier: "neutral",
     businessDays: null,
   },
 };
