@@ -54,6 +54,9 @@ function makeRow(overrides: Partial<ProspectRow> = {}): ProspectRow {
     rating_count: 84,
     rating: 4.6,
     primary_type: "restaurant",
+    is_chain: false,
+    chain_confidence: null,
+    chain_brand_name: null,
     distance_m: 120,
     ...overrides,
   };
@@ -131,6 +134,20 @@ describe("prospectToMerchant", () => {
     expect(m.ratingCount).toBeUndefined();
     expect(m.rating).toBeUndefined();
   });
+  it("maps chain fields (isChain/confidence/brand) through", () => {
+    const m = prospectToMerchant(
+      makeRow({ is_chain: true, chain_confidence: "high", chain_brand_name: "Subway" }),
+    );
+    expect(m.isChain).toBe(true);
+    expect(m.chainConfidence).toBe("high");
+    expect(m.chainBrandName).toBe("Subway");
+  });
+  it("leaves chain fields clean for a non-chain row", () => {
+    const m = prospectToMerchant(makeRow());
+    expect(m.isChain).toBe(false);
+    expect(m.chainConfidence).toBeNull();
+    expect(m.chainBrandName).toBeUndefined();
+  });
 });
 
 // ── opportunityScore ───────────────────────────────────────────────
@@ -172,7 +189,7 @@ describe("useMerchants", () => {
     );
     await waitFor(() => expect(result.current.merchants).toHaveLength(2));
     expect(invokeMock).toHaveBeenCalledWith("discover_prospects", {
-      body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: TIER_1_KEYS },
+      body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: TIER_1_KEYS, include_chains: false },
     });
     expect(result.current.merchants.map((m) => m.id)).toEqual(["a", "b"]);
     expect(result.current.merchants[0]!.status).toBe("untouched");
@@ -206,7 +223,7 @@ describe("useMerchants", () => {
     });
     await waitFor(() => expect(invokeMock).toHaveBeenCalled());
     expect(invokeMock).toHaveBeenCalledWith("discover_prospects", {
-      body: { lat: 30.2672, lng: -97.7431, radius_m: 1500, profession: "merchant_services", industries: TIER_1_KEYS },
+      body: { lat: 30.2672, lng: -97.7431, radius_m: 1500, profession: "merchant_services", industries: TIER_1_KEYS, include_chains: false },
     });
   });
 });
