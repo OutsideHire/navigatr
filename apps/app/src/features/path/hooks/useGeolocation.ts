@@ -72,6 +72,8 @@ export function useGeolocation(): GeolocationResult {
           error: err.message,
         });
       },
+      // maximumAge: accept a cached fix up to 60 s old — cuts latency on
+      // re-opens without a meaningfully stale position for a moving rep.
       { enableHighAccuracy: false, timeout: DEFAULT_TIMEOUT_MS, maximumAge: 60_000 },
     );
   }, []);

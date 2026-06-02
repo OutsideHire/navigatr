@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useGeolocation } from "./useGeolocation";
 
@@ -14,7 +14,6 @@ function mockGeolocation(impl: Partial<Geolocation>) {
 describe("useGeolocation", () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    // @ts-expect-error allow teardown of the stubbed API
     delete (globalThis.navigator as unknown as { geolocation?: unknown }).geolocation;
   });
 
