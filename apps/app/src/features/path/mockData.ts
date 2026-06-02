@@ -78,10 +78,6 @@ const daysAgo = (n: number): string => {
   return d.toISOString();
 };
 
-/** Downtown Austin reference point — used as the default rep position
- *  when geolocation isn't available, and as the visual map center. */
-export const AUSTIN_DOWNTOWN = { lat: 30.2672, lng: -97.7431 } as const;
-
 export const MOCK_MERCHANTS: Merchant[] = [
   // ─── Restaurants ────────────────────────────────────────────────
   { id: "m-001", name: "Iron Oak Restaurant",   category: "food_beverage", address: "1100 Congress Ave",      lat: 30.2706, lng: -97.7428, phone: "+15125550101", email: "manager@ironoak.com",     employeeCountRange: "11-50",   status: "prospect",  lastActivity: daysAgo(3),   note: "Chef Romano runs the front of house. Lunch rush 11:30-1:30." },
