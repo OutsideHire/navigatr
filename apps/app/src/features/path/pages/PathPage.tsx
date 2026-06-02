@@ -463,17 +463,18 @@ export function PathPage() {
               <div className="flex flex-col gap-1">
                 <p className="text-heading-sm text-text-default">Location is blocked for this site</p>
                 <p className="text-body-md text-text-muted">
-                  Search a city or ZIP above to find prospects — or re-enable location in your
-                  browser and it&apos;ll pick up automatically.
+                  Find prospects by searching a city or ZIP above, or turn your location back on:
                 </p>
               </div>
-              <details className="text-caption text-text-muted">
-                <summary className="cursor-pointer select-none">How to re-enable location</summary>
-                <ol className="mt-2 list-decimal space-y-1 pl-5 text-left">
+              {/* Steps shown inline (not collapsed) — a blocked rep who needs their
+                  real location must see the fix without hunting for a disclosure. */}
+              <div className="mt-1 w-full max-w-md rounded-radius-md border border-border-default bg-surface-sunken/50 p-4 text-left">
+                <p className="text-body-strong text-text-default">Re-enable location</p>
+                <ol className="mt-2 list-decimal space-y-2 pl-5 text-body-sm text-text-muted">
                   <li>Click the site-info icon (a lock or sliders) in your browser&apos;s address bar.</li>
                   <li>Set Location to &ldquo;Allow.&rdquo; This page updates on its own in most browsers — otherwise reload.</li>
                 </ol>
-              </details>
+              </div>
             </>
           ) : (
             // Any non-denied null-origin state (unavailable / timeout): a retry can

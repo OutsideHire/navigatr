@@ -50,11 +50,13 @@ describe("PathPage location states", () => {
     expect(screen.getByText(/finding your location/i)).toBeInTheDocument();
   });
 
-  it("shows the blocked state (search-first + how-to) when GPS is denied", () => {
+  it("shows the blocked state with inline re-enable steps when GPS is denied", () => {
     originState.current = { ...base, geoStatus: "denied" };
     render(<PathPage />, { wrapper });
     expect(screen.getByText(/location is blocked/i)).toBeInTheDocument();
-    expect(screen.getByText(/how to re-enable location/i)).toBeInTheDocument();
+    // Steps are shown inline (not behind a disclosure) so a blocked rep sees the fix.
+    expect(screen.getByText(/re-enable location/i)).toBeInTheDocument();
+    expect(screen.getByText(/set location to/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/search by city or zip/i)).toBeInTheDocument();
   });
 
@@ -63,7 +65,7 @@ describe("PathPage location states", () => {
     render(<PathPage />, { wrapper });
     expect(screen.getByText(/couldn't get your location/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
-    expect(screen.queryByText(/how to re-enable location/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/re-enable location/i)).not.toBeInTheDocument();
   });
 
   it("renders the page (no empty state) once an origin is set", () => {
