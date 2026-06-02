@@ -89,4 +89,16 @@ describe("usePathOrigin", () => {
     await act(async () => { await result.current.searchLocation("   "); });
     expect(invokeMock).not.toHaveBeenCalled();
   });
+
+  it("sets a generic error when the geocode call itself errors", async () => {
+    geoState.current = {
+      coords: { lat: 40, lng: -105 }, status: "ready", error: null, retry: retryMock,
+    };
+    invokeMock.mockResolvedValue({ data: null, error: new Error("network") });
+    const { result } = renderHook(() => usePathOrigin());
+    await act(async () => { await result.current.searchLocation("Austin, TX"); });
+    expect(result.current.searchError).toMatch(/couldn't search/i);
+    expect(result.current.origin).toEqual({ lat: 40, lng: -105 });
+    expect(result.current.originSource).toBe("gps");
+  });
 });

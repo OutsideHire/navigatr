@@ -33,6 +33,7 @@ export interface PathOrigin {
 
 export function usePathOrigin(): PathOrigin {
   const geo = useGeolocation();
+  const { retry } = geo;
   const [manual, setManual] = React.useState<
     { coords: { lat: number; lng: number }; label: string } | null
   >(null);
@@ -58,7 +59,8 @@ export function usePathOrigin(): PathOrigin {
         coords: { lat: data.result.lat, lng: data.result.lng },
         label: data.result.label,
       });
-    } catch {
+    } catch (err) {
+      if (import.meta.env.DEV) console.error("[usePathOrigin] geocode failed", err);
       setSearchError("Couldn't search that location. Try again.");
     } finally {
       setSearching(false);
@@ -68,9 +70,10 @@ export function usePathOrigin(): PathOrigin {
   const useMyLocation = React.useCallback(() => {
     setManual(null);
     setSearchError(null);
-    geo.retry();
-  }, [geo]);
+    retry();
+  }, [retry]);
 
+  // coords is guaranteed non-null by useGeolocation when status === "ready".
   const gpsReady = geo.status === "ready" && geo.coords !== null;
   const origin = manual?.coords ?? (gpsReady ? geo.coords : null);
   const originSource: "gps" | "manual" | null = manual ? "manual" : gpsReady ? "gps" : null;
