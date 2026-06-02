@@ -3,23 +3,53 @@
 Single resume doc for the Path prospect-discovery feature. Read this first, then
 the per-slice specs/plans in `docs/superpowers/specs/` + `docs/superpowers/plans/`.
 
-## TL;DR — the one thing pending
+## TL;DR — Slice 5 DEPLOYED (2026-06-02)
 
-**Slice 5 is merged but NOT yet deployed.** To finish it:
-1. Apply `supabase/migrations/20260601000003_chain_handling.sql` in the Supabase
-   SQL editor (run as one block). Prior Path migrations were applied by hand in
-   the editor (not via the CLI), so the CLI migration history is out of sync —
-   **do NOT `supabase db push`** (it'd try to re-run earlier migrations and
-   conflict). Apply this single file.
-2. Then deploy: `supabase functions deploy discover_prospects --project-ref ogvcveimjjeywfdkkinb`
-   (migration MUST go first — the old 5-arg `prospects_nearby` is dropped and the
-   Edge now sends `p_include_chains`).
-3. Smoke test: clear `geo_cell_cache`, reload `/path`, confirm fresh rows get
-   `is_chain` / `chain_confidence` / `chain_brand_name`; browse shows chains
-   badged; Create excludes them.
+**Slice 5 is now live.** Migration + Edge deployed and verified at the contract
+level on `ogvcveimjjeywfdkkinb`:
+- Migration applied via `supabase db query --linked -f supabase/migrations/20260601000003_chain_handling.sql`
+  (NOT `db push` — migration history left out of sync on purpose, as before).
+- `discover_prospects` Edge redeployed (migration-first, so the old 5-arg
+  `prospects_nearby` was already gone before the Edge began sending
+  `p_include_chains`).
+- Verified: `prospects.chain_confidence/chain_brand_id/chain_brand_name` +
+  `exclusion_seed.brand_id/primary_type` present; allowlist = 300 branded
+  patterns; `prospects_nearby` 6-arg signature live. RPC at a live Austin cluster
+  returns 0 chains with `p_include_chains=false` (Create) and includes chains
+  with `=true` (browse).
+
+**Only remaining check (low priority):** confirm *fresh ingest* populates
+`chain_confidence`/`chain_brand_name` — happens naturally on TTL re-pull as reps
+browse `/path` (existing rows show `chain_confidence=null` until their cell
+re-fills). No cache wipe needed; left to natural UI usage to avoid Google Places
+cold-fill spend.
+
+The reusable apply pattern for future hand-migrations (no `db push`):
+`supabase db query --linked -f <migration.sql>`.
+
+## Location handling — MERGED to main, geocode Edge NOT yet deployed (2026-06-02)
+
+Replaced the Path map's downtown-Austin default with honest location handling
+(spec/plan: `docs/superpowers/{specs,plans}/2026-06-02-path-location-handling.*`).
+Merged to `main` (FF). What changed:
+- `useGeolocation` now returns `coords | null` + `status` (loading/ready/denied/
+  unavailable) — never fabricates Austin (`AUSTIN_DOWNTOWN` deleted).
+- New `usePathOrigin` hook resolves origin = manual (session-only city/ZIP
+  search) > GPS-when-ready > null. New `LocationSearch` component (submit-based,
+  not autocomplete). `PathPage` renders by origin state: GPS spinner → empty
+  state (with search + "Use my location") → page.
+- New server-side `geocode` Edge fn (`supabase/functions/geocode/`) reuses
+  `GOOGLE_PLACES_API_KEY`; client calls it via `supabase.functions.invoke`.
+
+**Two pending ops steps before manual search works in prod:**
+1. **Enable the Geocoding API** on the Google Cloud project (same key as Places)
+   — one-time toggle. Until then `geocode` returns 502 / UI shows "Couldn't
+   search…"; GPS path is unaffected.
+2. Deploy: `supabase functions deploy geocode --project-ref ogvcveimjjeywfdkkinb`.
+GPS + empty-state already work without these; only manual search needs them.
 
 Prod project ref: `ogvcveimjjeywfdkkinb` (Navigatr). `main` tip at handoff:
-`6485a8c` (Slice 5 PR #58).
+`6485a8c` (Slice 5 PR #58); location feature merged on top.
 
 ## What shipped (all merged to main)
 
@@ -30,7 +60,7 @@ Prod project ref: `ogvcveimjjeywfdkkinb` (Navigatr). `main` tip at handoff:
 | 3 — drop-in logging | #55 | field disposition tiles → engaged outcomes create a Pipeline deal + follow-up; completion-summary breakdown | ✅ migration live |
 | wizard fixes | #56 | multi-select industries + free-entry max-stops | frontend only |
 | 4 — taxonomy | #57 | 13-industry taxonomy + B2B tiers replace the 8 buckets; industry-scoped ingest (default Tier 1, All=Tier1+2) | ✅ migration + Edge live |
-| 5 — chain handling | #58 | chain confidence + brand attribution, 300-pattern allowlist, show+flag chains in browse, Create stays chain-free | ⏳ **PENDING deploy (see TL;DR)** |
+| 5 — chain handling | #58 | chain confidence + brand attribution, 300-pattern allowlist, show+flag chains in browse, Create stays chain-free | ✅ migration + Edge live (2026-06-02) |
 
 Earlier foundation (pre-this-session, also on main): Phase 1 prospect store +
 `discover_prospects` Edge + ICP filter; Phase 2/2.5 categorized ingest; MapLibre
