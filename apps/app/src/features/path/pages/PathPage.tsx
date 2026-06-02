@@ -37,7 +37,8 @@ import {
   type Merchant,
   type MerchantCategory,
 } from "../mockData";
-import { useGeolocation } from "../hooks/useGeolocation";
+import { usePathOrigin } from "../hooks/usePathOrigin";
+import { LocationSearch } from "../components/LocationSearch";
 import { haversineMeters, nearestNeighborOrder } from "@/lib/distance";
 import { MerchantMap } from "../components/MerchantMap";
 import { MerchantList, type MerchantWithDistance } from "../components/MerchantList";
@@ -76,11 +77,16 @@ const MAX_DISPLAY_RADIUS_M = RADIUS_OPTIONS[RADIUS_OPTIONS.length - 1]!.meters; 
 const DEFAULT_SORT_MODE: PathSortMode = "popularity";
 
 export function PathPage() {
-  const geo = useGeolocation();
-  // Don't fire the discovery call (and a possible Google pull) until
-  // geolocation has settled — otherwise we'd pull against the default
-  // location first, then re-pull when GPS resolves.
-  const origin = geo.loading ? null : { lat: geo.lat, lng: geo.lng };
+  const {
+    origin,
+    originSource,
+    originLabel,
+    geoStatus,
+    searching,
+    searchError,
+    searchLocation,
+    useMyLocation,
+  } = usePathOrigin();
   const [displayRadiusM, setDisplayRadiusM] = React.useState<number>(DEFAULT_DISPLAY_RADIUS_M);
   // Industry scope the wizard drives. Empty → useMerchants defaults to Tier 1.
   const [ingestIndustries, setIngestIndustries] = React.useState<MerchantCategory[]>([]);
@@ -133,12 +139,12 @@ export function PathPage() {
     const enriched = liveMerchants.map((m) => ({
       ...m,
       distanceMeters:
-        Number.isFinite(m.lat) && Number.isFinite(m.lng)
-          ? haversineMeters({ lat: geo.lat, lng: geo.lng }, { lat: m.lat, lng: m.lng })
+        origin && Number.isFinite(m.lat) && Number.isFinite(m.lng)
+          ? haversineMeters(origin, { lat: m.lat, lng: m.lng })
           : Number.POSITIVE_INFINITY,
     }));
     return enriched.sort((a, b) => a.distanceMeters - b.distanceMeters);
-  }, [liveMerchants, anyGeocoded, geo.lat, geo.lng]);
+  }, [liveMerchants, anyGeocoded, origin]);
 
   // Radius gate. The chosen radius (5/10/15 mi) already drives the ingest, so
   // the server returned only rows within it — this client gate is now a
@@ -219,24 +225,24 @@ export function PathPage() {
     // coords we preserve insertion order so the rep sees what they
     // added in the order they added it.
     const geocoded = queuedMerchants.filter((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng));
-    if (geocoded.length === 0) return queuedMerchants;
+    if (geocoded.length === 0 || !origin) return queuedMerchants;
     const idxOrder = nearestNeighborOrder(
-      { lat: geo.lat, lng: geo.lng },
+      origin,
       geocoded.map((m) => ({ lat: m.lat, lng: m.lng })),
     );
     return idxOrder.map((i) => geocoded[i]!);
-  }, [queuedMerchants, geo.lat, geo.lng]);
+  }, [queuedMerchants, origin]);
 
   // Route path = origin → each stop in order. Used by the map polyline.
   // Only drawn if every stop is geocoded — partial routes are confusing.
   const routePath = React.useMemo(() => {
-    if (orderedQueue.length === 0) return undefined;
+    if (orderedQueue.length === 0 || !origin) return undefined;
     if (!orderedQueue.every((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng))) return undefined;
     return [
-      { lat: geo.lat, lng: geo.lng },
+      origin,
       ...orderedQueue.map((m) => ({ lat: m.lat, lng: m.lng })),
     ];
-  }, [orderedQueue, geo.lat, geo.lng]);
+  }, [orderedQueue, origin]);
 
   // Start a fresh path from the wizard: clear any existing queue, enqueue the
   // chosen stops (usePathQueue.add is idempotent + order-preserving), close the
@@ -260,7 +266,7 @@ export function PathPage() {
           <p className="text-body-md text-text-muted">
             {sorted.length} {sorted.length === 1 ? "merchant" : "merchants"}
             {anyGeocoded
-              ? ` nearby · ${geo.source === "gps" ? "from your location" : "using default location"}`
+              ? ` nearby · ${originSource === "manual" ? originLabel : "from your location"}`
               : " · sorted by recent activity"}
           </p>
         </div>
@@ -277,11 +283,11 @@ export function PathPage() {
           <Button
             variant="secondary"
             size="sm"
-            leadingIcon={geo.loading ? Loader2 : LocateFixed}
-            onClick={geo.retry}
-            loading={geo.loading}
+            leadingIcon={geoStatus === "loading" ? Loader2 : LocateFixed}
+            onClick={useMyLocation}
+            loading={geoStatus === "loading"}
           >
-            {geo.source === "gps" ? "Re-center" : "Use my location"}
+            {originSource === "gps" ? "Re-center" : "Use my location"}
           </Button>
           {/* Path queue CTA — always visible. Shows count badge when
               there are queued stops. Empty state opens the sheet too
@@ -301,6 +307,22 @@ export function PathPage() {
           </Button>
         </div>
       </header>
+
+      {/* Location bar — always available so a traveling rep can re-center on a
+          city even with a valid GPS fix. */}
+      <div className="mt-3 flex flex-wrap items-center gap-3 self-start">
+        {originLabel && (
+          <span className="text-caption text-text-muted">
+            Showing: <span className="font-medium text-text-default">{originLabel}</span>
+          </span>
+        )}
+        <LocationSearch onSearch={searchLocation} searching={searching} error={searchError} />
+        {originSource === "manual" && (
+          <Button variant="tertiary" size="sm" leadingIcon={LocateFixed} onClick={useMyLocation}>
+            Use my location
+          </Button>
+        )}
+      </div>
 
       {/* Filter chips */}
       <div
@@ -421,12 +443,32 @@ export function PathPage() {
           geocoded yet, drop to a list-only single column with a banner
           explaining the missing map. When the rep has zero deals at
           all, the merchant list itself renders its empty state. */}
-      {geo.loading || merchantsLoading ? (
+      {!origin && geoStatus === "loading" ? (
         <div className="mt-6 flex flex-col items-center justify-center gap-2">
           <Loader2 className="h-6 w-6 animate-spin text-text-subtle" aria-hidden />
-          <p className="text-caption text-text-muted">
-            {geo.loading ? "Finding your location…" : "Discovering businesses nearby…"}
-          </p>
+          <p className="text-caption text-text-muted">Finding your location…</p>
+        </div>
+      ) : !origin ? (
+        <Card padding="lg" className="mt-6 flex flex-col items-center gap-3 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-surface-sunken text-text-muted">
+            <MapPinOff className="h-6 w-6" aria-hidden />
+          </span>
+          <div className="flex flex-col gap-1">
+            <p className="text-heading-sm text-text-default">We don&apos;t have your location yet</p>
+            <p className="text-body-md text-text-muted">
+              {geoStatus === "denied"
+                ? "Location access is off. Enable it in your browser, or search a city or ZIP above to find prospects."
+                : "We couldn't get your location. Use the button below, or search a city or ZIP above."}
+            </p>
+          </div>
+          <Button variant="secondary" size="sm" leadingIcon={LocateFixed} onClick={useMyLocation}>
+            Use my location
+          </Button>
+        </Card>
+      ) : merchantsLoading ? (
+        <div className="mt-6 flex flex-col items-center justify-center gap-2">
+          <Loader2 className="h-6 w-6 animate-spin text-text-subtle" aria-hidden />
+          <p className="text-caption text-text-muted">Discovering businesses nearby…</p>
         </div>
       ) : merchantsError ? (
         <Card padding="lg" className="mt-6 flex flex-col items-center gap-3 text-center">
@@ -439,7 +481,7 @@ export function PathPage() {
               Something went wrong reaching the discovery service. Try again in a moment.
             </p>
           </div>
-          <Button variant="secondary" size="sm" leadingIcon={LocateFixed} onClick={geo.retry}>
+          <Button variant="secondary" size="sm" leadingIcon={LocateFixed} onClick={useMyLocation}>
             Retry
           </Button>
         </Card>
@@ -452,12 +494,12 @@ export function PathPage() {
             <p className="text-heading-sm text-text-default">No prospects nearby</p>
             <p className="text-body-md text-text-muted">
               We didn&apos;t find any in-profile businesses within range of{" "}
-              {geo.source === "gps" ? "your location" : "the default location"}. Try re-centering
-              on your real position, or move to a denser area.
+              {originSource === "manual" ? originLabel : "your location"}. Try a wider radius,
+              a different area, or search another city above.
             </p>
           </div>
-          <Button variant="secondary" size="sm" leadingIcon={LocateFixed} onClick={geo.retry}>
-            {geo.source === "gps" ? "Re-center" : "Use my location"}
+          <Button variant="secondary" size="sm" leadingIcon={LocateFixed} onClick={useMyLocation}>
+            {originSource === "gps" ? "Re-center" : "Use my location"}
           </Button>
         </Card>
       ) : (
@@ -469,7 +511,7 @@ export function PathPage() {
         {anyGeocoded ? (
           <div className={cn("min-h-[320px]", view === "list" && "hidden md:block")}>
             <MerchantMap
-              position={{ lat: geo.lat, lng: geo.lng }}
+              position={origin}
               merchants={sorted.filter((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng))}
               focusedMerchantId={selectedId}
               onMerchantClick={handleSelect}
@@ -520,7 +562,7 @@ export function PathPage() {
       <PathPlanSheet
         open={planOpen}
         onOpenChange={setPlanOpen}
-        origin={{ lat: geo.lat, lng: geo.lng }}
+        origin={origin ?? { lat: 0, lng: 0 }}
         allMerchants={liveMerchants}
         orderedStops={orderedQueue}
       />
@@ -528,7 +570,7 @@ export function PathPage() {
       <CreatePathWizard
         open={createOpen}
         onOpenChange={setCreateOpen}
-        origin={{ lat: geo.lat, lng: geo.lng }}
+        origin={origin ?? { lat: 0, lng: 0 }}
         merchants={withinRadius}
         radiusM={displayRadiusM}
         onRadiusChange={setDisplayRadiusM}
