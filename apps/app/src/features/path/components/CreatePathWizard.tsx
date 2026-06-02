@@ -64,8 +64,9 @@ const RECOMMENDED_LABELS = ([...TIER_1_KEYS] as MerchantCategory[])
   .map((k) => CATEGORY_LABEL[k])
   .join(" · ");
 
-/** Default + bounds for the free-entry "Max stops" field. The server read path
- *  caps a pull at 100, so there's no point letting a rep ask for more. */
+/** Default + bounds for the free-entry "Max stops" field. 100 is a practical
+ *  ceiling on a single drop-in day's route — independent of the larger
+ *  read-path cap (prospects_nearby returns up to 500). */
 const DEFAULT_STOP_CAP = 25;
 const MAX_STOP_CAP = 100;
 

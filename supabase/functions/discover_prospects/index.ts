@@ -80,9 +80,10 @@ const TTL_MS = CELL_TTL_DAYS * 24 * 60 * 60 * 1000;
 const MAX_CELLS = 130;
 const CELL_CONCURRENCY = 6;
 
-// Read-path cap (prospects_nearby maxes at 100 server-side). A wide radius can
-// legitimately surface far more than the old single-cell 30.
-const READ_LIMIT = 100;
+// Read-path cap (prospects_nearby maxes at 500 server-side; see migration
+// 20260602000001). Merchant-services reps work dense territories where the
+// nearest 100 within radius wasn't enough coverage.
+const READ_LIMIT = 500;
 // Margin on a cell's half-diagonal so the per-cell search circle fully covers
 // the square cell (corners included) with a little slack.
 const CELL_COVER_MARGIN = 1.1;
@@ -529,7 +530,7 @@ Deno.serve(async (req) => {
 
   // ---- Read path: servable prospects, nearest first -----------------------
   // Goes through the user's JWT so the SECURITY DEFINER grant + RLS apply.
-  // p_limit READ_LIMIT (100): a wide radius across many tiles can legitimately
+  // p_limit READ_LIMIT (500): a wide radius across many tiles can legitimately
   // surface far more than the old single-cell 30.
   const { data: nearby, error: rpcErr } = await userClient.rpc("prospects_nearby", {
     p_lat: lat,
