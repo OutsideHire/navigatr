@@ -319,6 +319,8 @@ export function PathPage() {
             Showing: <span className="font-medium text-text-default">{originLabel}</span>
           </span>
         )}
+        {/* autoFocus only fires on mount (LocationSearch's effect dep is [autoFocus],
+            which stays true while origin is null) — it never steals focus mid-typing. */}
         <LocationSearch onSearch={searchLocation} searching={searching} error={searchError} autoFocus={!origin} />
         {originSource === "manual" && (
           <Button variant="tertiary" size="sm" leadingIcon={LocateFixed} onClick={useMyLocation}>
@@ -474,6 +476,8 @@ export function PathPage() {
               </details>
             </>
           ) : (
+            // Any non-denied null-origin state (unavailable / timeout): a retry can
+            // genuinely help, so offer "Try again" alongside the search.
             <>
               <div className="flex flex-col gap-1">
                 <p className="text-heading-sm text-text-default">We couldn&apos;t get your location</p>

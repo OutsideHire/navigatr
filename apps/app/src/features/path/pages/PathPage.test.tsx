@@ -63,6 +63,7 @@ describe("PathPage location states", () => {
     render(<PathPage />, { wrapper });
     expect(screen.getByText(/couldn't get your location/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+    expect(screen.queryByText(/how to re-enable location/i)).not.toBeInTheDocument();
   });
 
   it("renders the page (no empty state) once an origin is set", () => {
