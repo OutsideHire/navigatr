@@ -319,8 +319,8 @@ export function PathPage() {
             Showing: <span className="font-medium text-text-default">{originLabel}</span>
           </span>
         )}
-        {/* autoFocus only fires on mount (LocationSearch's effect dep is [autoFocus],
-            which stays true while origin is null) — it never steals focus mid-typing. */}
+        {/* LocationSearch focuses once, the first time autoFocus is true (one-shot),
+            so landing on the empty state focuses the search but it never re-steals focus. */}
         <LocationSearch onSearch={searchLocation} searching={searching} error={searchError} autoFocus={!origin} />
         {originSource === "manual" && (
           <Button variant="tertiary" size="sm" leadingIcon={LocateFixed} onClick={useMyLocation}>
@@ -471,7 +471,7 @@ export function PathPage() {
                 <summary className="cursor-pointer select-none">How to re-enable location</summary>
                 <ol className="mt-2 list-decimal space-y-1 pl-5 text-left">
                   <li>Click the site-info icon (a lock or sliders) in your browser&apos;s address bar.</li>
-                  <li>Set Location to &ldquo;Allow.&rdquo; This page updates on its own — no reload needed.</li>
+                  <li>Set Location to &ldquo;Allow.&rdquo; This page updates on its own in most browsers — otherwise reload.</li>
                 </ol>
               </details>
             </>

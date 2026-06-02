@@ -17,9 +17,15 @@ interface LocationSearchProps {
 export function LocationSearch({ onSearch, searching, error, autoFocus = false }: LocationSearchProps) {
   const [query, setQuery] = React.useState("");
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const didAutoFocus = React.useRef(false);
 
   React.useEffect(() => {
-    if (autoFocus) inputRef.current?.focus();
+    // One-shot: focus the first time autoFocus is true (e.g. landing on the
+    // blocked/empty state). Never re-steal focus if autoFocus toggles true again.
+    if (autoFocus && !didAutoFocus.current) {
+      didAutoFocus.current = true;
+      inputRef.current?.focus();
+    }
   }, [autoFocus]);
   const errorId = React.useId();
 

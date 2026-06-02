@@ -85,8 +85,8 @@ export function useGeolocation(): GeolocationResult {
   // Auto-recover when the user re-enables location in browser settings: watch the
   // geolocation permission and re-request on any change (granted → silent fix;
   // reset-to-ask → re-prompt; blocked → brief loading flash, then re-enters
-  // denied). Best-effort — browsers
-  // without the geolocation Permissions API (older Safari) skip this silently.
+  // denied). Best-effort — browsers without the geolocation Permissions API
+  // (older Safari) skip this silently.
   React.useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.permissions?.query) return;
     let status: PermissionStatus | null = null;
