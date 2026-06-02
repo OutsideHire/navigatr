@@ -28,7 +28,7 @@
  */
 
 import * as React from "react";
-import { List, Loader2, LocateFixed, Map as MapIcon, MapPinOff, Route as RouteIcon } from "lucide-react";
+import { List, Loader2, LocateFixed, Lock, Map as MapIcon, MapPinOff, Route as RouteIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button, Card, Chip } from "@/components/navigatr";
@@ -469,7 +469,10 @@ export function PathPage() {
               {/* Steps shown inline (not collapsed) — a blocked rep who needs their
                   real location must see the fix without hunting for a disclosure. */}
               <div className="mt-1 w-full max-w-md rounded-radius-md border border-border-default bg-surface-sunken/50 p-4 text-left">
-                <p className="text-body-strong text-text-default">Re-enable location</p>
+                <p className="flex items-center gap-2 text-body-strong text-text-default">
+                  <Lock className="h-4 w-4 shrink-0 text-text-muted" aria-hidden />
+                  Re-enable location
+                </p>
                 <ol className="mt-2 list-decimal space-y-2 pl-5 text-body-sm text-text-muted">
                   <li>Click the site-info icon (a lock or sliders) in your browser&apos;s address bar.</li>
                   <li>Set Location to &ldquo;Allow.&rdquo; This page updates on its own in most browsers — otherwise reload.</li>
