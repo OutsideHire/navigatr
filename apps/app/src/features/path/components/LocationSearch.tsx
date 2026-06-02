@@ -6,14 +6,21 @@ interface LocationSearchProps {
   onSearch: (query: string) => void;
   searching: boolean;
   error: string | null;
+  /** Focus the input on mount / when this becomes true (used by the blocked state). */
+  autoFocus?: boolean;
 }
 
 /**
  * Submit-based city/ZIP search for the Path page. Deliberately NOT live
  * autocomplete — one geocode call per submit keeps API cost and complexity low.
  */
-export function LocationSearch({ onSearch, searching, error }: LocationSearchProps) {
+export function LocationSearch({ onSearch, searching, error, autoFocus = false }: LocationSearchProps) {
   const [query, setQuery] = React.useState("");
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (autoFocus) inputRef.current?.focus();
+  }, [autoFocus]);
   const errorId = React.useId();
 
   const submit = (e: React.FormEvent) => {
@@ -28,6 +35,7 @@ export function LocationSearch({ onSearch, searching, error }: LocationSearchPro
       <div className="flex items-center gap-2">
         <div className="w-44">
           <Input
+            ref={inputRef}
             size="sm"
             leadingIcon={MapPin}
             value={query}

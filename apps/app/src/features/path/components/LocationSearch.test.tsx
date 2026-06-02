@@ -29,4 +29,14 @@ describe("LocationSearch", () => {
     render(<LocationSearch onSearch={vi.fn()} searching={false} error="No match — try a city or ZIP" />);
     expect(screen.getByText(/no match/i)).toBeInTheDocument();
   });
+
+  it("focuses the input on mount when autoFocus is set", () => {
+    render(<LocationSearch onSearch={vi.fn()} searching={false} error={null} autoFocus />);
+    expect(screen.getByLabelText(/search by city or zip/i)).toHaveFocus();
+  });
+
+  it("does not focus the input when autoFocus is not set", () => {
+    render(<LocationSearch onSearch={vi.fn()} searching={false} error={null} />);
+    expect(screen.getByLabelText(/search by city or zip/i)).not.toHaveFocus();
+  });
 });
