@@ -17,7 +17,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { X, Route as RouteIcon, MapPin, Navigation } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { Button, Chip, Input, Select, type SelectOption } from "@/components/navigatr";
+import { Button, Chip, Input } from "@/components/navigatr";
 import { formatDistance } from "@/lib/distance";
 import { CATEGORY_LABEL, type MerchantCategory } from "../mockData";
 import { TIER_1_KEYS, TIER_2_KEYS } from "../../../../../../supabase/functions/_shared/industryTaxonomy";
@@ -42,10 +42,13 @@ export interface CreatePathWizardProps {
   onStart: (orderedIds: string[]) => void;
 }
 
-const RADIUS_CHOICES: SelectOption[] = [
-  { value: "8047", label: "5 miles" },
-  { value: "16093", label: "10 miles" },
-  { value: "24140", label: "15 miles" },
+/** Same options + segmented style as PathPage's "Within" control — the wizard
+ *  shares that radius state, so it must look like the same control, not a
+ *  separate setting. */
+const RADIUS_OPTIONS: Array<{ label: string; meters: number }> = [
+  { label: "5 mi", meters: 8047 },
+  { label: "10 mi", meters: 16093 },
+  { label: "15 mi", meters: 24140 },
 ];
 
 /** The 12 fetchable industries (Tier 1 + 2), for the multi-select chip row.
@@ -146,14 +149,27 @@ export function CreatePathWizard({
               <p className="text-body-md text-text-muted">
                 Auto-build an optimized drop-in route from businesses near you.
               </p>
-              <label className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5">
                 <span className="text-caption font-medium text-text-muted">Search radius</span>
-                <Select
-                  options={RADIUS_CHOICES}
-                  value={String(radiusM)}
-                  onValueChange={(v) => onRadiusChange(Number(v))}
-                />
-              </label>
+                <div className="flex gap-1 self-start rounded-radius-md bg-surface-sunken p-0.5">
+                  {RADIUS_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.meters}
+                      type="button"
+                      onClick={() => onRadiusChange(opt.meters)}
+                      aria-pressed={radiusM === opt.meters}
+                      className={cn(
+                        "inline-flex items-center rounded-radius-sm px-3 py-1.5 text-caption font-medium tabular-nums transition-colors",
+                        radiusM === opt.meters
+                          ? "bg-surface-default text-text-default shadow-sm"
+                          : "text-text-muted hover:text-text-default",
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="flex flex-col gap-1.5">
                 <span className="text-caption font-medium text-text-muted">
                   Industries
