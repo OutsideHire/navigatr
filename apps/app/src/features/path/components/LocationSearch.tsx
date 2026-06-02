@@ -14,6 +14,7 @@ interface LocationSearchProps {
  */
 export function LocationSearch({ onSearch, searching, error }: LocationSearchProps) {
   const [query, setQuery] = React.useState("");
+  const errorId = React.useId();
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,13 +34,14 @@ export function LocationSearch({ onSearch, searching, error }: LocationSearchPro
             onChange={(e) => setQuery(e.target.value)}
             placeholder="City or ZIP"
             aria-label="Search by city or ZIP"
+            aria-describedby={error ? errorId : undefined}
           />
         </div>
         <Button type="submit" variant="secondary" size="sm" leadingIcon={Search} loading={searching} disabled={searching}>
           Search
         </Button>
       </div>
-      {error && <p className="text-caption text-status-warning">{error}</p>}
+      {error && <p id={errorId} className="text-caption text-status-warning">{error}</p>}
     </form>
   );
 }
