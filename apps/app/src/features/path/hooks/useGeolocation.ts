@@ -82,5 +82,30 @@ export function useGeolocation(): GeolocationResult {
     request();
   }, [request]);
 
+  // Auto-recover when the user re-enables location in browser settings: watch the
+  // geolocation permission and re-request on any change (granted → silent fix;
+  // reset-to-ask → re-prompt; blocked → harmless no-op). Best-effort — browsers
+  // without the geolocation Permissions API (older Safari) skip this silently.
+  React.useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.permissions?.query) return;
+    let status: PermissionStatus | null = null;
+    let cancelled = false;
+    const onChange = () => request();
+    navigator.permissions
+      .query({ name: "geolocation" })
+      .then((s) => {
+        if (cancelled) return;
+        status = s;
+        status.addEventListener("change", onChange);
+      })
+      .catch(() => {
+        /* permission name unsupported — skip auto-recovery */
+      });
+    return () => {
+      cancelled = true;
+      status?.removeEventListener("change", onChange);
+    };
+  }, [request]);
+
   return { ...state, retry: request };
 }
