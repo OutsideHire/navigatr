@@ -51,13 +51,14 @@ export function usePathOrigin(): PathOrigin {
         { body: { query: q } },
       );
       if (error) throw error;
-      if (!data?.result) {
+      const result = data?.result;
+      if (!result) {
         setSearchError("No match — try a city or ZIP");
         return;
       }
       setManual({
-        coords: { lat: data.result.lat, lng: data.result.lng },
-        label: data.result.label,
+        coords: { lat: result.lat, lng: result.lng },
+        label: result.label,
       });
     } catch (err) {
       if (import.meta.env.DEV) console.error("[usePathOrigin] geocode failed", err);
