@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { PathPage } from "./PathPage";
@@ -18,9 +18,14 @@ vi.mock("../components/PathPlanSheet", () => ({ PathPlanSheet: () => null }));
 vi.mock("../components/CreatePathWizard", () => ({ CreatePathWizard: () => null }));
 
 // No prospects unless origin is set; keep the discovery hook quiet.
+const merchantsState = {
+  current: { merchants: [], isLoading: false, isError: false, refetch: vi.fn() } as ReturnType<
+    typeof import("../hooks/useMerchants")["useMerchants"]
+  >,
+};
 vi.mock("../hooks/useMerchants", async (orig) => {
   const actual = await orig<typeof import("../hooks/useMerchants")>();
-  return { ...actual, useMerchants: () => ({ merchants: [], isLoading: false, isError: false, refetch: vi.fn() }) };
+  return { ...actual, useMerchants: () => merchantsState.current };
 });
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -33,7 +38,10 @@ const base: PathOrigin = {
   searching: false, searchError: null, searchLocation: vi.fn(), useMyLocation: vi.fn(),
 };
 
-beforeEach(() => { originState.current = base; });
+beforeEach(() => {
+  originState.current = base;
+  merchantsState.current = { merchants: [], isLoading: false, isError: false, refetch: vi.fn() } as typeof merchantsState.current;
+});
 
 describe("PathPage location states", () => {
   it("shows a finding-location spinner while geolocation is loading", () => {
@@ -56,5 +64,27 @@ describe("PathPage location states", () => {
     };
     render(<PathPage />, { wrapper });
     expect(screen.queryByText(/don't have your location/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the discovering spinner when origin is set but merchants are loading", () => {
+    originState.current = {
+      ...base, origin: { lat: 40, lng: -105 }, originSource: "gps",
+      originLabel: "Current location", geoStatus: "ready",
+    };
+    merchantsState.current = { ...merchantsState.current, isLoading: true };
+    render(<PathPage />, { wrapper });
+    expect(screen.getByText(/discovering businesses/i)).toBeInTheDocument();
+  });
+
+  it("Retry in the merchants-error card refetches the discovery query", () => {
+    const refetch = vi.fn();
+    originState.current = {
+      ...base, origin: { lat: 40, lng: -105 }, originSource: "gps",
+      originLabel: "Current location", geoStatus: "ready",
+    };
+    merchantsState.current = { ...merchantsState.current, isError: true, refetch };
+    render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect(refetch).toHaveBeenCalledTimes(1);
   });
 });

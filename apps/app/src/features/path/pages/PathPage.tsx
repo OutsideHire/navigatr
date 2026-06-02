@@ -18,8 +18,9 @@
  * map to that pin and opens the detail sheet — works from both list
  * and map sides.
  *
- * Geolocation: useGeolocation falls back to downtown Austin if the
- * user denies or it times out, so the map always renders.
+ * Location: usePathOrigin resolves the working location — a GPS fix, a manual
+ * city/ZIP search (session-only), or none. With no origin the page shows a
+ * loading spinner or an empty state; manual search is available in all states.
  *
  * Sprint 2: replace MOCK_MERCHANTS with Places.searchNearby calls
  * passing the ICP filter + radius. Replace the "Add to today's path"
@@ -94,6 +95,7 @@ export function PathPage() {
     merchants: liveMerchants,
     isLoading: merchantsLoading,
     isError: merchantsError,
+    refetch: refetchMerchants,
   } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, includeChains: true });
   const [categoryFilter, setCategoryFilter] = React.useState<CategoryFilter>("all");
   const [sortMode, setSortMode] = React.useState<PathSortMode>(DEFAULT_SORT_MODE);
@@ -297,6 +299,7 @@ export function PathPage() {
             size="sm"
             leadingIcon={RouteIcon}
             onClick={() => setPlanOpen(true)}
+            disabled={!origin}
           >
             Today&apos;s path
             {queueStops.length > 0 && (
@@ -481,7 +484,7 @@ export function PathPage() {
               Something went wrong reaching the discovery service. Try again in a moment.
             </p>
           </div>
-          <Button variant="secondary" size="sm" leadingIcon={LocateFixed} onClick={useMyLocation}>
+          <Button variant="secondary" size="sm" leadingIcon={LocateFixed} onClick={refetchMerchants}>
             Retry
           </Button>
         </Card>
