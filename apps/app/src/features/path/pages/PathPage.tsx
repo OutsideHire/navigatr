@@ -319,7 +319,7 @@ export function PathPage() {
             Showing: <span className="font-medium text-text-default">{originLabel}</span>
           </span>
         )}
-        <LocationSearch onSearch={searchLocation} searching={searching} error={searchError} />
+        <LocationSearch onSearch={searchLocation} searching={searching} error={searchError} autoFocus={!origin} />
         {originSource === "manual" && (
           <Button variant="tertiary" size="sm" leadingIcon={LocateFixed} onClick={useMyLocation}>
             Use my location
@@ -456,17 +456,36 @@ export function PathPage() {
           <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-surface-sunken text-text-muted">
             <MapPinOff className="h-6 w-6" aria-hidden />
           </span>
-          <div className="flex flex-col gap-1">
-            <p className="text-heading-sm text-text-default">We don&apos;t have your location yet</p>
-            <p className="text-body-md text-text-muted">
-              {geoStatus === "denied"
-                ? "Location access is off. Enable it in your browser, or search a city or ZIP above to find prospects."
-                : "We couldn't get your location. Use the button below, or search a city or ZIP above."}
-            </p>
-          </div>
-          <Button variant="secondary" size="sm" leadingIcon={LocateFixed} onClick={useMyLocation}>
-            Use my location
-          </Button>
+          {geoStatus === "denied" ? (
+            <>
+              <div className="flex flex-col gap-1">
+                <p className="text-heading-sm text-text-default">Location is blocked for this site</p>
+                <p className="text-body-md text-text-muted">
+                  Search a city or ZIP above to find prospects — or re-enable location in your
+                  browser and it&apos;ll pick up automatically.
+                </p>
+              </div>
+              <details className="text-caption text-text-muted">
+                <summary className="cursor-pointer select-none">How to re-enable location</summary>
+                <ol className="mt-2 list-decimal space-y-1 pl-5 text-left">
+                  <li>Click the site-info icon (a lock or sliders) in your browser&apos;s address bar.</li>
+                  <li>Set Location to &ldquo;Allow.&rdquo; This page updates on its own — no reload needed.</li>
+                </ol>
+              </details>
+            </>
+          ) : (
+            <>
+              <div className="flex flex-col gap-1">
+                <p className="text-heading-sm text-text-default">We couldn&apos;t get your location</p>
+                <p className="text-body-md text-text-muted">
+                  Try again, or search a city or ZIP above to find prospects.
+                </p>
+              </div>
+              <Button variant="secondary" size="sm" leadingIcon={LocateFixed} onClick={useMyLocation}>
+                Try again
+              </Button>
+            </>
+          )}
         </Card>
       ) : merchantsLoading ? (
         <div className="mt-6 flex flex-col items-center justify-center gap-2">

@@ -50,11 +50,19 @@ describe("PathPage location states", () => {
     expect(screen.getByText(/finding your location/i)).toBeInTheDocument();
   });
 
-  it("shows an empty state with search when GPS is denied and no manual location", () => {
+  it("shows the blocked state (search-first + how-to) when GPS is denied", () => {
     originState.current = { ...base, geoStatus: "denied" };
     render(<PathPage />, { wrapper });
-    expect(screen.getByText(/don't have your location/i)).toBeInTheDocument();
+    expect(screen.getByText(/location is blocked/i)).toBeInTheDocument();
+    expect(screen.getByText(/how to re-enable location/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/search by city or zip/i)).toBeInTheDocument();
+  });
+
+  it("shows a Try again button when location is unavailable", () => {
+    originState.current = { ...base, geoStatus: "unavailable" };
+    render(<PathPage />, { wrapper });
+    expect(screen.getByText(/couldn't get your location/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
   });
 
   it("renders the page (no empty state) once an origin is set", () => {
@@ -63,7 +71,7 @@ describe("PathPage location states", () => {
       originLabel: "Current location", geoStatus: "ready",
     };
     render(<PathPage />, { wrapper });
-    expect(screen.queryByText(/don't have your location/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/location is blocked/i)).not.toBeInTheDocument();
   });
 
   it("shows the discovering spinner when origin is set but merchants are loading", () => {
