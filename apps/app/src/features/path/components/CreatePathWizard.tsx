@@ -214,6 +214,9 @@ export function CreatePathWizard({
                   onChange={(e) => setStopCapText(e.target.value)}
                   placeholder={String(DEFAULT_STOP_CAP)}
                 />
+                <span className="text-caption text-text-muted">
+                  How many businesses to include in the route.
+                </span>
               </label>
               <Button variant="primary" leadingIcon={RouteIcon} onClick={() => setStep("preview")}>
                 Preview route
