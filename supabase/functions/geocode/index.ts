@@ -53,8 +53,9 @@ async function geocodeQuery(query: string): Promise<GeocodeResult | null> {
       geometry: { location: { lat: number; lng: number } };
     }>;
   };
-  if (data.status === "ZERO_RESULTS" || !data.results?.length) return null;
+  if (data.status === "ZERO_RESULTS") return null;
   if (data.status !== "OK") throw new Error(`geocode status ${data.status}`);
+  if (!data.results?.length) return null; // OK but empty array — defensive guard
 
   const top = data.results[0];
   return {
@@ -81,6 +82,9 @@ Deno.serve(async (req) => {
   const query = typeof body?.query === "string" ? body.query.trim() : "";
   if (!query) {
     return json({ error: "invalid_body", detail: "query is required" }, 400);
+  }
+  if (query.length > 200) {
+    return json({ error: "invalid_body", detail: "query too long" }, 400);
   }
 
   // Authenticated users only — same gate as discover_prospects.
