@@ -55,6 +55,12 @@ const CATEGORIES: MerchantCategory[] = [
   "retail", "food_beverage", "hospitality", "education", "finance_banking", "fitness_wellness", "non_profit",
 ];
 
+/** Human labels for the Recommended set (the Tier-1 default), shown so the rep
+ *  sees exactly what "Recommended" covers instead of guessing at jargon. */
+const RECOMMENDED_LABELS = ([...TIER_1_KEYS] as MerchantCategory[])
+  .map((k) => CATEGORY_LABEL[k])
+  .join(" · ");
+
 /** Default + bounds for the free-entry "Max stops" field. The server read path
  *  caps a pull at 100, so there's no point letting a rep ask for more. */
 const DEFAULT_STOP_CAP = 25;
@@ -93,7 +99,7 @@ export function CreatePathWizard({
   const selectAll = () => applyIndustries([...TIER_1_KEYS, ...TIER_2_KEYS] as MerchantCategory[]);
   const clearIndustries = () => applyIndustries([]);
 
-  // Reset to step 1 + Default (Tier 1) industries whenever the wizard (re)opens.
+  // Reset to step 1 + the Recommended set (empty = the Tier-1 default) on (re)open.
   React.useEffect(() => {
     if (open) {
       setStep("filters");
@@ -150,19 +156,25 @@ export function CreatePathWizard({
               </label>
               <div className="flex flex-col gap-1.5">
                 <span className="text-caption font-medium text-text-muted">
-                  Industries{" "}
-                  <span className="font-normal">
-                    ({industries.length === 0 ? "Default (Tier 1)" : `${industries.length} selected`})
-                  </span>
+                  Industries
+                  {industries.length > 0 && industries.length < CATEGORIES.length && (
+                    <span className="font-normal"> ({industries.length} selected)</span>
+                  )}
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   <Chip active={industries.length === 0} onClick={clearIndustries}>
-                    Default (Tier 1)
+                    Recommended
                   </Chip>
                   <Chip active={industries.length === CATEGORIES.length} onClick={selectAll}>
                     All industries
                   </Chip>
                 </div>
+                <span className="text-caption text-text-muted">
+                  Recommended covers {RECOMMENDED_LABELS}.
+                </span>
+                <span className="mt-1 text-caption font-medium text-text-muted">
+                  Or pick specific industries
+                </span>
                 <div className="flex flex-wrap gap-1.5">
                   {CATEGORIES.map((c) => (
                     <Chip
@@ -174,9 +186,6 @@ export function CreatePathWizard({
                     </Chip>
                   ))}
                 </div>
-                <span className="text-caption text-text-muted">
-                  Leave on Default for the Tier-1 core, or pick industries / All.
-                </span>
               </div>
               <label className="flex flex-col gap-1.5">
                 <span className="text-caption font-medium text-text-muted">Max stops</span>
