@@ -27,29 +27,41 @@ cold-fill spend.
 The reusable apply pattern for future hand-migrations (no `db push`):
 `supabase db query --linked -f <migration.sql>`.
 
-## Location handling — MERGED to main, geocode Edge NOT yet deployed (2026-06-02)
+## Location handling — SHIPPED (2026-06-02)
 
 Replaced the Path map's downtown-Austin default with honest location handling
-(spec/plan: `docs/superpowers/{specs,plans}/2026-06-02-path-location-handling.*`).
-Merged to `main` (FF). What changed:
-- `useGeolocation` now returns `coords | null` + `status` (loading/ready/denied/
-  unavailable) — never fabricates Austin (`AUSTIN_DOWNTOWN` deleted).
-- New `usePathOrigin` hook resolves origin = manual (session-only city/ZIP
-  search) > GPS-when-ready > null. New `LocationSearch` component (submit-based,
-  not autocomplete). `PathPage` renders by origin state: GPS spinner → empty
-  state (with search + "Use my location") → page.
-- New server-side `geocode` Edge fn (`supabase/functions/geocode/`) reuses
+(specs/plans: `docs/superpowers/{specs,plans}/2026-06-02-path-location-handling.*`
+and `...-path-blocked-location-recovery.*`). All merged to `main` and deployed.
+What changed:
+- `useGeolocation` returns `coords | null` + `status` (loading/ready/denied/
+  unavailable) — never fabricates Austin (`AUSTIN_DOWNTOWN` deleted). Watches the
+  Permissions API and auto-re-requests GPS when the user re-enables location
+  (no click/reload; best-effort, degrades on older Safari).
+- `usePathOrigin` resolves origin = manual (session-only city/ZIP search) >
+  GPS-when-ready > null. `LocationSearch` (submit-based, autoFocus). `PathPage`
+  renders by origin state; the no-origin empty state splits into a search-first
+  **blocked** card (denied — `<details>` how-to, no dead button) and a **Try
+  again** card (unavailable).
+- Server-side `geocode` Edge fn (`supabase/functions/geocode/`) reuses
   `GOOGLE_PLACES_API_KEY`; client calls it via `supabase.functions.invoke`.
 
-**Two pending ops steps before manual search works in prod:**
-1. **Enable the Geocoding API** on the Google Cloud project (same key as Places)
-   — one-time toggle. Until then `geocode` returns 502 / UI shows "Couldn't
-   search…"; GPS path is unaffected.
-2. Deploy: `supabase functions deploy geocode --project-ref ogvcveimjjeywfdkkinb`.
-GPS + empty-state already work without these; only manual search needs them.
+**All deploy steps DONE:**
+- ✅ Geocoding API enabled on the Google Cloud project (owner, 2026-06-02).
+- ✅ `geocode` Edge deployed: `supabase functions deploy geocode --project-ref ogvcveimjjeywfdkkinb`.
+- ✅ Frontend on Vercel (deploys on push to `main`).
+- ✅ **Permissions-Policy fix** in `apps/app/vercel.json`: `geolocation=()` →
+  `geolocation=(self)`. The blanket `()` had disabled the Geolocation API
+  site-wide — that was the original cause of the Austin fallback AND would have
+  forced everyone onto manual-search-only. If GPS ever silently stops working on
+  the deployed site, check this header first.
 
-Prod project ref: `ogvcveimjjeywfdkkinb` (Navigatr). `main` tip at handoff:
-`6485a8c` (Slice 5 PR #58); location feature merged on top.
+Known browser gotchas when testing on the deployed site: it's a PWA (service
+worker caches the bundle — hard-refresh / incognito after a deploy), and a
+previously-blocked location permission stays sticky (the blocked-state UI now
+steers to search + auto-recovers when the user re-enables).
+
+Prod project ref: `ogvcveimjjeywfdkkinb` (Navigatr). Deployed at
+`https://navigatr-app.vercel.app`.
 
 ## What shipped (all merged to main)
 
