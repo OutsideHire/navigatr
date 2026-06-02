@@ -76,7 +76,7 @@ describe("useGeolocation", () => {
     let changeHandler: (() => void) | null = null;
     const permStatus = {
       state: "denied" as PermissionState,
-      addEventListener: (_evt: string, h: () => void) => { changeHandler = h; },
+      addEventListener: (evt: string, h: () => void) => { expect(evt).toBe("change"); changeHandler = h; },
       removeEventListener: vi.fn(),
     };
     Object.defineProperty(globalThis.navigator, "permissions", {
@@ -92,6 +92,27 @@ describe("useGeolocation", () => {
     await waitFor(() => expect(changeHandler).not.toBeNull());
     await act(async () => { changeHandler!(); });
     await waitFor(() => expect(getCurrentPosition).toHaveBeenCalledTimes(2));
+  });
+
+  it("removes the permission change listener on unmount", async () => {
+    mockGeolocation({
+      getCurrentPosition: (_ok, err) => err?.({ code: 1, message: "denied" } as GeolocationPositionError),
+    });
+    const removeEventListener = vi.fn();
+    let changeHandler: (() => void) | null = null;
+    const permStatus = {
+      state: "denied" as PermissionState,
+      addEventListener: (_evt: string, h: () => void) => { changeHandler = h; },
+      removeEventListener,
+    };
+    Object.defineProperty(globalThis.navigator, "permissions", {
+      value: { query: vi.fn().mockResolvedValue(permStatus) },
+      configurable: true,
+    });
+    const { unmount } = renderHook(() => useGeolocation());
+    await waitFor(() => expect(changeHandler).not.toBeNull());
+    unmount();
+    expect(removeEventListener).toHaveBeenCalledWith("change", expect.any(Function));
   });
 
   it("retry re-requests geolocation", async () => {
