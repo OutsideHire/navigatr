@@ -112,5 +112,13 @@ export function usePathMutations() {
     onSuccess: invalidate,
   });
 
-  return { createPath, addStops, removeStop, reorderStops, setStopStatus, setStopDisposition, markDealCreated };
+  const deletePath = useMutation({
+    mutationFn: async (pathId: string): Promise<void> => {
+      const { error } = await supabase.from("paths").delete().eq("id", pathId);
+      if (error) throw error;
+    },
+    onSuccess: invalidate,
+  });
+
+  return { createPath, addStops, removeStop, reorderStops, setStopStatus, setStopDisposition, markDealCreated, deletePath };
 }

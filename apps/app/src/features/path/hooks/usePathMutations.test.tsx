@@ -9,8 +9,10 @@ const result = { current: { data: null as unknown, error: null as unknown } };
 const pathsUpsertMock = vi.fn(() => ({ select: () => ({ single: () => Promise.resolve(result.current) }) }));
 // path_stops.upsert(rows, opts) — awaited directly
 const stopsUpsertMock = vi.fn(() => Promise.resolve(result.current));
+const deleteEqMock = vi.fn(() => Promise.resolve(result.current));
+const deleteMock = vi.fn(() => ({ eq: deleteEqMock }));
 const fromMock = vi.fn((table: string) =>
-  table === "paths" ? { upsert: pathsUpsertMock } : { upsert: stopsUpsertMock },
+  table === "paths" ? { upsert: pathsUpsertMock, delete: deleteMock } : { upsert: stopsUpsertMock },
 );
 vi.mock("@/lib/supabase", () => ({ supabase: { from: (t: string) => fromMock(t) } }));
 vi.mock("@/stores/auth", () => ({
@@ -26,6 +28,7 @@ function wrap(client: QueryClient) {
 
 beforeEach(() => {
   fromMock.mockClear(); pathsUpsertMock.mockClear(); stopsUpsertMock.mockClear();
+  deleteMock.mockClear(); deleteEqMock.mockReset();
   result.current = { data: null, error: null };
 });
 
@@ -75,5 +78,15 @@ describe("usePathMutations.addStops", () => {
       stops: [{ prospectId: "pr1", name: "A", address: null, lat: 1, lng: 2, category: "automotive", primaryType: null }],
     });
     expect(stopsUpsertMock).toHaveBeenCalledWith(expect.any(Array), { onConflict: "path_id,prospect_id", ignoreDuplicates: true });
+  });
+});
+
+describe("usePathMutations.deletePath", () => {
+  it("deletes the path by id (cascade removes its stops)", async () => {
+    const { result: hook } = renderHook(() => usePathMutations(), { wrapper: wrap(makeClient()) });
+    await hook.current.deletePath.mutateAsync("p1");
+    expect(fromMock).toHaveBeenCalledWith("paths");
+    expect(deleteMock).toHaveBeenCalled();
+    expect(deleteEqMock).toHaveBeenCalledWith("id", "p1");
   });
 });
