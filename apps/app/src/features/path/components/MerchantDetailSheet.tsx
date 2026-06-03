@@ -24,7 +24,7 @@ import {
   type Merchant,
 } from "../mockData";
 import { formatDistance } from "@/lib/distance";
-import { usePathQueue } from "../hooks/usePathQueue";
+import { useTodayPath } from "../hooks/useTodayPath";
 import { DropInSheet } from "./DropInSheet";
 
 export interface MerchantDetailSheetProps {
@@ -41,9 +41,8 @@ export function MerchantDetailSheet({
   onOpenChange,
 }: MerchantDetailSheetProps) {
   // Hooks must come before any early return.
-  const inQueue = usePathQueue((s) => (merchant ? s.has(merchant.id) : false));
-  const addToQueue = usePathQueue((s) => s.add);
-  const removeFromQueue = usePathQueue((s) => s.remove);
+  const todayPath = useTodayPath();
+  const inQueue = merchant ? todayPath.has(merchant.id) : false;
   const [dropInOpen, setDropInOpen] = React.useState(false);
 
   const lastActivityLabel = merchant?.lastActivity
@@ -144,7 +143,7 @@ export function MerchantDetailSheet({
                 size="md"
                 leadingIcon={Check}
                 onClick={() => {
-                  removeFromQueue(merchant.id);
+                  todayPath.remove(merchant.id);
                   toast(`Removed ${merchant.name} from path`);
                 }}
               >
@@ -156,7 +155,15 @@ export function MerchantDetailSheet({
                 size="md"
                 leadingIcon={Plus}
                 onClick={() => {
-                  addToQueue(merchant.id);
+                  void todayPath.add({
+                    prospectId: merchant.id,
+                    name: merchant.name,
+                    address: merchant.address ?? null,
+                    lat: merchant.lat,
+                    lng: merchant.lng,
+                    category: merchant.category,
+                    primaryType: null,
+                  });
                   toast.success(`Added ${merchant.name} to today's path`);
                 }}
               >
