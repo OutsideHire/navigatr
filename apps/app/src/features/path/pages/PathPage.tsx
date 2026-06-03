@@ -25,6 +25,9 @@
  * Sprint 2: replace MOCK_MERCHANTS with Places.searchNearby calls
  * passing the ICP filter + radius. Replace the "Add to today's path"
  * stub with a real Path queue (Session 17).
+ *
+ * Path v3: view state machine — entry (no path) / active (path exists) /
+ * discover (add stops). No-origin states render above the switch.
  */
 
 import * as React from "react";
@@ -46,6 +49,8 @@ import { MerchantList, type MerchantWithDistance } from "../components/MerchantL
 import { MerchantDetailSheet } from "../components/MerchantDetailSheet";
 import { PathPlanSheet } from "../components/PathPlanSheet";
 import { CreatePathWizard } from "../components/CreatePathWizard";
+import { PathEntry } from "../components/PathEntry";
+import { ActivePathView } from "../components/ActivePathView";
 import { usePathQueue } from "../hooks/usePathQueue";
 import { useTodayPath } from "../hooks/useTodayPath";
 import { planQueueMigration } from "../lib/migrateLocalQueue";
@@ -108,10 +113,30 @@ export function PathPage() {
   const [planOpen, setPlanOpen] = React.useState(false);
   const [createOpen, setCreateOpen] = React.useState(false);
 
+  // Path-first view state machine:
+  //   "entry"    — no active path, show two-card prompt (create / plan)
+  //   "active"   — path has stops, show ActivePathView as main content
+  //   "discover" — add-stops mode: map+list discovery, demoted from default
+  const [pathView, setPathView] = React.useState<"entry" | "active" | "discover">("entry");
+
   // Server-backed today's path. queueStops keeps the same name so all
   // downstream route math, badge counts, etc. keep working unchanged.
   const todayPath = useTodayPath();
   const queueStops = todayPath.stops;
+
+  // Sync default view from stops. Never override an explicit "discover" — the
+  // rep is in the middle of adding stops and we shouldn't yank them back.
+  React.useEffect(() => {
+    setPathView((v) => (v === "discover" ? v : queueStops.length > 0 ? "active" : "entry"));
+  }, [queueStops.length]);
+
+  // Handlers for transitioning between views.
+  const handlePlan = React.useCallback(() => setPathView("discover"), []);
+  const handleAddStops = React.useCallback(() => setPathView("discover"), []);
+  const handleDoneDiscovering = React.useCallback(
+    () => setPathView(queueStops.length > 0 ? "active" : "entry"),
+    [queueStops.length],
+  );
 
   // One-time migration: an existing local queue -> today's server path. Runs once
   // per device when merchants are loaded (snapshots need their display fields).
@@ -353,125 +378,16 @@ export function PathPage() {
         )}
       </div>
 
-      {/* Filter chips */}
-      <div
-        className={cn(
-          "mt-4 flex gap-2 overflow-x-auto pb-1 snap-x snap-mandatory",
-          "md:flex-wrap md:overflow-x-visible md:pb-0",
-          "[&::-webkit-scrollbar]:hidden",
-          "[-ms-overflow-style:none] [scrollbar-width:none]",
-        )}
-      >
-        {categoryFilters.map((f) => (
-          <div key={f} className="snap-start">
-            <Chip active={categoryFilter === f} count={chipCount(f)} onClick={() => setCategoryFilter(f)}>
-              {chipLabel(f)}
-            </Chip>
-          </div>
-        ))}
-      </div>
+      {/* Body — structured as:
+          1. No-origin states (loading / blocked / unavailable): always shown regardless
+             of pathView so a rep without a location still sees the right empty state.
+          2. Origin set → switch on pathView:
+             - "entry":    two-card prompt (create / plan a path)
+             - "active":   ActivePathView as the main content
+             - "discover": filter controls + map+list discovery ladder
+          Filter chips, radius/sort/hideChains controls are discovery-only and live
+          exclusively inside the "discover" branch. Header + location bar are always above. */}
 
-      {/* Radius control — filters the loaded list by distance. Only useful
-          once we have coordinates to measure against, so it mirrors the map's
-          geocoded gate. Labels in miles to match the list's distance display. */}
-      {anyGeocoded && (
-        <div className="mt-3 flex items-center gap-2 self-start">
-          <span className="text-caption font-medium text-text-muted">Within</span>
-          <div className="flex gap-1 rounded-radius-md bg-surface-sunken p-0.5">
-            {RADIUS_OPTIONS.map((opt) => (
-              <button
-                key={opt.meters}
-                type="button"
-                onClick={() => setDisplayRadiusM(opt.meters)}
-                aria-pressed={displayRadiusM === opt.meters}
-                className={cn(
-                  "inline-flex items-center rounded-radius-sm px-3 py-1.5 text-caption font-medium tabular-nums transition-colors",
-                  displayRadiusM === opt.meters
-                    ? "bg-surface-default text-text-default shadow-sm"
-                    : "text-text-muted hover:text-text-default",
-                )}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {anyGeocoded && (
-        <div className="mt-2 flex items-center gap-2 self-start">
-          <span className="text-caption font-medium text-text-muted">Sort</span>
-          <div
-            role="group"
-            aria-label="Sort merchants"
-            className="flex gap-1 rounded-radius-md bg-surface-sunken p-0.5"
-          >
-            {([
-              { label: "Popular", mode: "popularity" },
-              { label: "Nearest", mode: "distance" },
-              { label: "Opportunity", mode: "opportunity" },
-            ] as Array<{ label: string; mode: PathSortMode }>).map((opt) => (
-              <button
-                key={opt.mode}
-                type="button"
-                onClick={() => setSortMode(opt.mode)}
-                aria-pressed={sortMode === opt.mode}
-                className={cn(
-                  "inline-flex items-center rounded-radius-sm px-3 py-1.5 text-caption font-medium transition-colors",
-                  sortMode === opt.mode
-                    ? "bg-surface-default text-text-default shadow-sm"
-                    : "text-text-muted hover:text-text-default",
-                )}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {anyGeocoded && (
-        <label className="mt-2 flex items-center gap-2 self-start text-caption text-text-muted">
-          <input
-            type="checkbox"
-            checked={hideChains}
-            onChange={(e) => setHideChains(e.target.checked)}
-            className="h-4 w-4 rounded border-border-default"
-          />
-          Hide chains
-        </label>
-      )}
-
-      {/* Mobile view toggle — only shown when the map has something to render */}
-      {anyGeocoded && (
-      <div className="mt-3 flex gap-1 self-start rounded-radius-md bg-surface-sunken p-0.5 md:hidden">
-        <button
-          type="button"
-          onClick={() => setView("map")}
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-radius-sm px-3 py-1.5 text-caption font-medium transition-colors",
-            view === "map" ? "bg-surface-default text-text-default shadow-sm" : "text-text-muted hover:text-text-default",
-          )}
-        >
-          <MapIcon className="h-3.5 w-3.5" aria-hidden /> Map
-        </button>
-        <button
-          type="button"
-          onClick={() => setView("list")}
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-radius-sm px-3 py-1.5 text-caption font-medium transition-colors",
-            view === "list" ? "bg-surface-default text-text-default shadow-sm" : "text-text-muted hover:text-text-default",
-          )}
-        >
-          <List className="h-3.5 w-3.5" aria-hidden /> List ({sorted.length})
-        </button>
-      </div>
-      )}
-
-      {/* Body — mobile single pane, desktop split. When nothing is
-          geocoded yet, drop to a list-only single column with a banner
-          explaining the missing map. When the rep has zero deals at
-          all, the merchant list itself renders its empty state. */}
       {!origin && geoStatus === "loading" ? (
         <div className="mt-6 flex flex-col items-center justify-center gap-2">
           <Loader2 className="h-6 w-6 animate-spin text-text-subtle" aria-hidden />
@@ -519,91 +435,228 @@ export function PathPage() {
             </>
           )}
         </Card>
-      ) : merchantsLoading ? (
-        <div className="mt-6 flex flex-col items-center justify-center gap-2">
-          <Loader2 className="h-6 w-6 animate-spin text-text-subtle" aria-hidden />
-          <p className="text-caption text-text-muted">Discovering businesses nearby…</p>
-        </div>
-      ) : merchantsError ? (
-        <Card padding="lg" className="mt-6 flex flex-col items-center gap-3 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-status-warning-bg text-status-warning">
-            <MapPinOff className="h-6 w-6" aria-hidden />
-          </span>
-          <div className="flex flex-col gap-1">
-            <p className="text-heading-sm text-text-default">Couldn&apos;t load prospects</p>
-            <p className="text-body-md text-text-muted">
-              Something went wrong reaching the discovery service. Try again in a moment.
-            </p>
-          </div>
-          <Button variant="secondary" size="sm" leadingIcon={LocateFixed} onClick={refetchMerchants}>
-            Retry
-          </Button>
-        </Card>
-      ) : liveMerchants.length === 0 ? (
-        <Card padding="lg" className="mt-6 flex flex-col items-center gap-3 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-surface-sunken text-text-muted">
-            <RouteIcon className="h-6 w-6" aria-hidden />
-          </span>
-          <div className="flex flex-col gap-1">
-            <p className="text-heading-sm text-text-default">No prospects nearby</p>
-            <p className="text-body-md text-text-muted">
-              We didn&apos;t find any in-profile businesses within range of{" "}
-              {originSource === "manual" ? originLabel : "your location"}. Try a wider radius,
-              a different area, or search another city above.
-            </p>
-          </div>
-          <Button variant="secondary" size="sm" leadingIcon={LocateFixed} onClick={useMyLocation}>
-            {originSource === "gps" ? "Re-center" : "Use my location"}
-          </Button>
-        </Card>
+      ) : pathView === "entry" ? (
+        <PathEntry onCreate={() => setCreateOpen(true)} onPlan={handlePlan} />
+      ) : pathView === "active" ? (
+        <ActivePathView origin={origin} onAddStops={handleAddStops} />
       ) : (
-      <div className={cn(
-        "mt-3 grid min-h-0 flex-1 gap-4",
-        anyGeocoded && "md:grid-cols-[1.4fr_1fr]",
-      )}>
-        {/* Map — only when at least one merchant is geocoded. */}
-        {anyGeocoded ? (
-          <div className={cn("min-h-[320px]", view === "list" && "hidden md:block")}>
-            <MerchantMap
-              position={origin}
-              merchants={sorted.filter((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng))}
-              focusedMerchantId={selectedId}
-              onMerchantClick={handleSelect}
-              routePath={routePath}
-            />
+        /* pathView === "discover": filter controls + map+list discovery ladder */
+        <>
+          <Button
+            variant="tertiary"
+            size="sm"
+            onClick={handleDoneDiscovering}
+            className="mt-3 self-start"
+          >
+            {queueStops.length > 0 ? "Back to path" : "Done"}
+          </Button>
+
+          {/* Filter chips */}
+          <div
+            className={cn(
+              "mt-4 flex gap-2 overflow-x-auto pb-1 snap-x snap-mandatory",
+              "md:flex-wrap md:overflow-x-visible md:pb-0",
+              "[&::-webkit-scrollbar]:hidden",
+              "[-ms-overflow-style:none] [scrollbar-width:none]",
+            )}
+          >
+            {categoryFilters.map((f) => (
+              <div key={f} className="snap-start">
+                <Chip active={categoryFilter === f} count={chipCount(f)} onClick={() => setCategoryFilter(f)}>
+                  {chipLabel(f)}
+                </Chip>
+              </div>
+            ))}
           </div>
-        ) : (
-          <div className="flex items-center gap-3 rounded-radius-md border border-dashed border-border-default bg-surface-sunken/40 p-3 md:hidden">
-            <MapPinOff className="h-4 w-4 shrink-0 text-text-muted" aria-hidden />
-            <p className="text-caption text-text-muted">
-              Map view appears once prospects with map coordinates load.
-            </p>
+
+          {/* Radius control — filters the loaded list by distance. Only useful
+              once we have coordinates to measure against, so it mirrors the map's
+              geocoded gate. Labels in miles to match the list's distance display. */}
+          {anyGeocoded && (
+            <div className="mt-3 flex items-center gap-2 self-start">
+              <span className="text-caption font-medium text-text-muted">Within</span>
+              <div className="flex gap-1 rounded-radius-md bg-surface-sunken p-0.5">
+                {RADIUS_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.meters}
+                    type="button"
+                    onClick={() => setDisplayRadiusM(opt.meters)}
+                    aria-pressed={displayRadiusM === opt.meters}
+                    className={cn(
+                      "inline-flex items-center rounded-radius-sm px-3 py-1.5 text-caption font-medium tabular-nums transition-colors",
+                      displayRadiusM === opt.meters
+                        ? "bg-surface-default text-text-default shadow-sm"
+                        : "text-text-muted hover:text-text-default",
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {anyGeocoded && (
+            <div className="mt-2 flex items-center gap-2 self-start">
+              <span className="text-caption font-medium text-text-muted">Sort</span>
+              <div
+                role="group"
+                aria-label="Sort merchants"
+                className="flex gap-1 rounded-radius-md bg-surface-sunken p-0.5"
+              >
+                {([
+                  { label: "Popular", mode: "popularity" },
+                  { label: "Nearest", mode: "distance" },
+                  { label: "Opportunity", mode: "opportunity" },
+                ] as Array<{ label: string; mode: PathSortMode }>).map((opt) => (
+                  <button
+                    key={opt.mode}
+                    type="button"
+                    onClick={() => setSortMode(opt.mode)}
+                    aria-pressed={sortMode === opt.mode}
+                    className={cn(
+                      "inline-flex items-center rounded-radius-sm px-3 py-1.5 text-caption font-medium transition-colors",
+                      sortMode === opt.mode
+                        ? "bg-surface-default text-text-default shadow-sm"
+                        : "text-text-muted hover:text-text-default",
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {anyGeocoded && (
+            <label className="mt-2 flex items-center gap-2 self-start text-caption text-text-muted">
+              <input
+                type="checkbox"
+                checked={hideChains}
+                onChange={(e) => setHideChains(e.target.checked)}
+                className="h-4 w-4 rounded border-border-default"
+              />
+              Hide chains
+            </label>
+          )}
+
+          {/* Mobile view toggle — only shown when the map has something to render */}
+          {anyGeocoded && (
+          <div className="mt-3 flex gap-1 self-start rounded-radius-md bg-surface-sunken p-0.5 md:hidden">
+            <button
+              type="button"
+              onClick={() => setView("map")}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-radius-sm px-3 py-1.5 text-caption font-medium transition-colors",
+                view === "map" ? "bg-surface-default text-text-default shadow-sm" : "text-text-muted hover:text-text-default",
+              )}
+            >
+              <MapIcon className="h-3.5 w-3.5" aria-hidden /> Map
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("list")}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-radius-sm px-3 py-1.5 text-caption font-medium transition-colors",
+                view === "list" ? "bg-surface-default text-text-default shadow-sm" : "text-text-muted hover:text-text-default",
+              )}
+            >
+              <List className="h-3.5 w-3.5" aria-hidden /> List ({sorted.length})
+            </button>
           </div>
-        )}
-        {/* List */}
-        <div className={cn(
-          "min-h-0 overflow-y-auto",
-          anyGeocoded && view === "map" && "hidden md:block",
-        )}>
-          <MerchantList
-            merchants={sorted}
-            selectedId={selectedId}
-            onSelect={handleSelect}
-            // Show the empty-state CTA when a category OR a tighter-than-max
-            // radius is hiding rows — resetting both is what un-hides them.
-            // (When the whole discovery came back empty, PathPage renders the
-            // "No prospects nearby" card above instead, so we never get here.)
-            onResetFilters={
-              categoryFilter !== "all" || displayRadiusM < MAX_DISPLAY_RADIUS_M
-                ? () => {
-                    setCategoryFilter("all");
-                    setDisplayRadiusM(MAX_DISPLAY_RADIUS_M);
-                  }
-                : undefined
-            }
-          />
-        </div>
-      </div>
+          )}
+
+          {/* Discovery body — mobile single pane, desktop split. When nothing is
+              geocoded yet, drop to a list-only single column with a banner
+              explaining the missing map. When the rep has zero deals at
+              all, the merchant list itself renders its empty state. */}
+          {merchantsLoading ? (
+            <div className="mt-6 flex flex-col items-center justify-center gap-2">
+              <Loader2 className="h-6 w-6 animate-spin text-text-subtle" aria-hidden />
+              <p className="text-caption text-text-muted">Discovering businesses nearby…</p>
+            </div>
+          ) : merchantsError ? (
+            <Card padding="lg" className="mt-6 flex flex-col items-center gap-3 text-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-status-warning-bg text-status-warning">
+                <MapPinOff className="h-6 w-6" aria-hidden />
+              </span>
+              <div className="flex flex-col gap-1">
+                <p className="text-heading-sm text-text-default">Couldn&apos;t load prospects</p>
+                <p className="text-body-md text-text-muted">
+                  Something went wrong reaching the discovery service. Try again in a moment.
+                </p>
+              </div>
+              <Button variant="secondary" size="sm" leadingIcon={LocateFixed} onClick={refetchMerchants}>
+                Retry
+              </Button>
+            </Card>
+          ) : liveMerchants.length === 0 ? (
+            <Card padding="lg" className="mt-6 flex flex-col items-center gap-3 text-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-surface-sunken text-text-muted">
+                <RouteIcon className="h-6 w-6" aria-hidden />
+              </span>
+              <div className="flex flex-col gap-1">
+                <p className="text-heading-sm text-text-default">No prospects nearby</p>
+                <p className="text-body-md text-text-muted">
+                  We didn&apos;t find any in-profile businesses within range of{" "}
+                  {originSource === "manual" ? originLabel : "your location"}. Try a wider radius,
+                  a different area, or search another city above.
+                </p>
+              </div>
+              <Button variant="secondary" size="sm" leadingIcon={LocateFixed} onClick={useMyLocation}>
+                {originSource === "gps" ? "Re-center" : "Use my location"}
+              </Button>
+            </Card>
+          ) : (
+          <div className={cn(
+            "mt-3 grid min-h-0 flex-1 gap-4",
+            anyGeocoded && "md:grid-cols-[1.4fr_1fr]",
+          )}>
+            {/* Map — only when at least one merchant is geocoded. */}
+            {anyGeocoded ? (
+              <div className={cn("min-h-[320px]", view === "list" && "hidden md:block")}>
+                <MerchantMap
+                  position={origin}
+                  merchants={sorted.filter((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng))}
+                  focusedMerchantId={selectedId}
+                  onMerchantClick={handleSelect}
+                  routePath={routePath}
+                />
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 rounded-radius-md border border-dashed border-border-default bg-surface-sunken/40 p-3 md:hidden">
+                <MapPinOff className="h-4 w-4 shrink-0 text-text-muted" aria-hidden />
+                <p className="text-caption text-text-muted">
+                  Map view appears once prospects with map coordinates load.
+                </p>
+              </div>
+            )}
+            {/* List */}
+            <div className={cn(
+              "min-h-0 overflow-y-auto",
+              anyGeocoded && view === "map" && "hidden md:block",
+            )}>
+              <MerchantList
+                merchants={sorted}
+                selectedId={selectedId}
+                onSelect={handleSelect}
+                // Show the empty-state CTA when a category OR a tighter-than-max
+                // radius is hiding rows — resetting both is what un-hides them.
+                // (When the whole discovery came back empty, PathPage renders the
+                // "No prospects nearby" card above instead, so we never get here.)
+                onResetFilters={
+                  categoryFilter !== "all" || displayRadiusM < MAX_DISPLAY_RADIUS_M
+                    ? () => {
+                        setCategoryFilter("all");
+                        setDisplayRadiusM(MAX_DISPLAY_RADIUS_M);
+                      }
+                    : undefined
+                }
+              />
+            </div>
+          </div>
+          )}
+        </>
       )}
 
       <MerchantDetailSheet
