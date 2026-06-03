@@ -131,12 +131,11 @@ export function PathPage() {
   }, [queueStops.length]);
 
   // Handlers for transitioning between views.
-  const handlePlan = React.useCallback(() => setPathView("discover"), []);
-  const handleAddStops = React.useCallback(() => setPathView("discover"), []);
-  const handleDoneDiscovering = React.useCallback(
-    () => setPathView(queueStops.length > 0 ? "active" : "entry"),
-    [queueStops.length],
-  );
+  const enterDiscover = React.useCallback(() => setPathView("discover"), []);
+  // Leave discover → "entry"; the queueStops sync effect immediately upgrades to
+  // "active" when stops exist. Avoids a stale queueStops.length read right after
+  // an async add.
+  const handleDoneDiscovering = React.useCallback(() => setPathView("entry"), []);
 
   // One-time migration: an existing local queue -> today's server path. Runs once
   // per device when merchants are loaded (snapshots need their display fields).
@@ -436,9 +435,9 @@ export function PathPage() {
           )}
         </Card>
       ) : pathView === "entry" ? (
-        <PathEntry onCreate={() => setCreateOpen(true)} onPlan={handlePlan} />
+        <PathEntry onCreate={() => setCreateOpen(true)} onPlan={enterDiscover} />
       ) : pathView === "active" ? (
-        <ActivePathView origin={origin} onAddStops={handleAddStops} />
+        <ActivePathView origin={origin} onAddStops={enterDiscover} />
       ) : (
         /* pathView === "discover": filter controls + map+list discovery ladder */
         <>
