@@ -1,7 +1,37 @@
-# Path feature — session handoff (2026-06-02)
+# Path feature — session handoff (2026-06-03)
 
 Single resume doc for the Path prospect-discovery feature. Read this first, then
 the per-slice specs/plans in `docs/superpowers/specs/` + `docs/superpowers/plans/`.
+
+## Path v3 — path-first redesign (IN PROGRESS, 2026-06-03)
+
+Reworking the Path page from discovery-first to **path-first**: a two-card entry
+(Create a Path / Plan a Path), the active path as the home view, and durable
+multi-day planning. Spec: `docs/superpowers/specs/2026-06-03-path-v3-path-first-redesign-design.md`.
+Locked decisions live there (server-backed paths, one-per-day, Create=GPS auto-build→today,
+Plan=hand-pick→a chosen day, list-first home, discovery demoted to "Add stops").
+
+Build phases: **1a data foundation (DONE)** → 1b path-first UI (NEXT) → 2 multi-day → 3 running mode.
+
+**Phase 1a — SHIPPED to main (2026-06-03).** Plan:
+`docs/superpowers/plans/2026-06-03-path-v3-phase-1a-data-foundation.md`.
+- New tables `paths` + `path_stops` (owner RLS, 8 policies) — **migration
+  `20260603000001` applied to prod by hand** (`supabase db query --linked -f`, not push).
+  `path_stops` snapshots display fields (name/address/lat/lng/category/primary_type) so a
+  path renders without joining the volatile `prospects` cache.
+- New hooks in `apps/app/src/features/path/`: `lib/pathTypes.ts`, `hooks/usePaths.ts`,
+  `hooks/useActivePath.ts`, `hooks/usePathMutations.ts` (create/add/remove/reorder/
+  status/disposition/deal). `addStops` dedupes via `upsert(ignoreDuplicates)`.
+- **Dormant** — nothing imports these yet; `usePathQueue` still drives the live UI.
+
+**Phase 1b — NEXT (not built).** Path-first UI: `PathEntry` (two cards),
+`ActivePathView` (list-first home), discovery demoted to an "Add stops" view,
+Create/Plan wired to write into a path, and the **one-time local-queue →
+today's-path migration** (needs loaded merchant details for the snapshot, which
+is why it's in 1b not 1a). Carry-forwards: live-smoke the `usePaths`
+`path_stops(count)` embedded-count shape on first real call; add tests for the
+remove/reorder/status/disposition mutations. Build with `frontend-design`, verify
+with `/design-review`.
 
 ## TL;DR — Slice 5 DEPLOYED (2026-06-02)
 
