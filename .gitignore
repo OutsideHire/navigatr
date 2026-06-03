@@ -57,3 +57,6 @@ figma-whoami.sh
 .gstack/
 .claude/worktrees/
 .playwright-mcp/
+
+# Brainstorming visual companion artifacts
+.superpowers/
