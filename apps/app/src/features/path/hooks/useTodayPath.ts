@@ -33,7 +33,7 @@ export interface TodayStop {
 
 export function useTodayPath() {
   const date = todayISO();
-  const { data } = useActivePath(date);
+  const { data, isLoading } = useActivePath(date);
   const m = usePathMutations();
 
   const path = data?.path ?? null;
@@ -55,6 +55,9 @@ export function useTodayPath() {
 
   const add = async (snapshot: StopSnapshot): Promise<void> => {
     const pathId = await ensurePathId();
+    // basePosition from the rendered stop count. Under concurrent adds two stops
+    // can land on the same position (both still persist; order is then advisory).
+    // Acceptable for a field tool; revisit with server-side position assignment.
     await m.addStops.mutateAsync({ pathId, basePosition: rawStops.length, stops: [snapshot] });
   };
   const remove = async (merchantId: string): Promise<void> => {
@@ -83,5 +86,5 @@ export function useTodayPath() {
   const isComplete = (): boolean => rawStops.length > 0 && rawStops.every((s) => s.status !== "pending");
   const pendingCount = (): number => rawStops.filter((s) => s.status === "pending").length;
 
-  return { pathId: path?.id ?? null, stops, add, remove, setStatus, logVisit, markDealCreated, clear, has, isComplete, pendingCount };
+  return { pathId: path?.id ?? null, isLoading, stops, add, remove, setStatus, logVisit, markDealCreated, clear, has, isComplete, pendingCount };
 }
