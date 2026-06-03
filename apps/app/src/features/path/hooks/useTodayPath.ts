@@ -25,6 +25,12 @@ export function todayISO(): string {
 /** Queue-compatible stop shape the existing components read. */
 export interface TodayStop {
   merchantId: string;
+  name: string;
+  address: string | null;
+  lat: number;
+  lng: number;
+  category: string;
+  primaryType: string | null;
   status: StopStatus;
   disposition: string | null;
   dealCreated: boolean;
@@ -41,8 +47,9 @@ export function useTodayPath() {
 
   const stops: TodayStop[] = React.useMemo(
     () => rawStops.map((s) => ({
-      merchantId: s.prospectId, status: s.status, disposition: s.disposition,
-      dealCreated: s.dealCreated, addedAt: s.addedAt,
+      merchantId: s.prospectId, name: s.name, address: s.address, lat: s.lat, lng: s.lng,
+      category: s.category, primaryType: s.primaryType, status: s.status,
+      disposition: s.disposition, dealCreated: s.dealCreated, addedAt: s.addedAt,
     })),
     [rawStops],
   );

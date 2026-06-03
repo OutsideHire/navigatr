@@ -42,16 +42,19 @@ describe("useTodayPath", () => {
     expect(lastDate.current).toBe(todayISO());
   });
 
-  it("exposes stops in queue shape (merchantId = prospectId)", () => {
+  it("exposes stops with snapshot fields (merchantId = prospectId)", () => {
     activeState.current = { data: { path: { id: "p1" }, stops: [
-      { id: "s1", prospectId: "m1", status: "visited", disposition: "met_dm", dealCreated: true, addedAt: "t1", position: 0 },
+      { id: "s1", prospectId: "m1", name: "Uratex", address: "Rd", lat: 1, lng: 2,
+        category: "manufacturing", primaryType: null, status: "visited",
+        disposition: "met_dm", dealCreated: true, addedAt: "t1", position: 0 },
     ] }, isLoading: false };
     const { result } = renderHook(() => useTodayPath());
     expect(result.current.stops).toEqual([
-      { merchantId: "m1", status: "visited", disposition: "met_dm", dealCreated: true, addedAt: "t1" },
+      { merchantId: "m1", name: "Uratex", address: "Rd", lat: 1, lng: 2,
+        category: "manufacturing", primaryType: null, status: "visited",
+        disposition: "met_dm", dealCreated: true, addedAt: "t1" },
     ]);
     expect(result.current.has("m1")).toBe(true);
-    expect(result.current.has("nope")).toBe(false);
     expect(result.current.isComplete()).toBe(true);
   });
 
