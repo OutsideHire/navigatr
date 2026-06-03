@@ -21,6 +21,13 @@ create table paths (
 create table path_stops (
   id            uuid primary key default gen_random_uuid(),
   path_id       uuid not null references paths(id) on delete cascade,
+  -- prospect_id: NOT NULL + default RESTRICT is safe because `prospects` is
+  -- upsert-only (on conflict place_id) — nothing hard-deletes prospect rows, so
+  -- RESTRICT never fires. The snapshot columns below already decouple display
+  -- from the prospects row (no join/RLS at render, survives field updates, and
+  -- carries stops not in the current browse window). If a prospect-purge job is
+  -- ever added, switch this FK to `on delete set null` and make the column
+  -- nullable in a follow-up migration.
   prospect_id   uuid not null references prospects(id),
   name          text not null,
   address       text,
@@ -37,6 +44,9 @@ create table path_stops (
 );
 
 create index paths_user_date_idx     on paths (user_id, path_date desc);
+-- Non-unique on purpose: reorderStops rewrites positions one row at a time, so
+-- positions are transiently duplicated mid-reorder. Order is advisory; the index
+-- serves the per-path ordered fetch. (A unique constraint would need DEFERRABLE.)
 create index path_stops_path_pos_idx on path_stops (path_id, position);
 
 alter table paths enable row level security;
