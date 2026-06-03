@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import { Button, Input, NotesFieldWithMic, DispositionTile } from "@/components/navigatr";
 import { DISPOSITIONS, calculateFollowUpDate, type Disposition } from "@/lib/followUpScheduling";
 import type { Merchant } from "../mockData";
-import { usePathQueue } from "../hooks/usePathQueue";
+import { useTodayPath } from "../hooks/useTodayPath";
 import { PATH_DISPOSITION_KEYS, isEngagedDisposition } from "../lib/pathDispositions";
 import { useCreateDeal } from "@/features/pipeline/hooks/useCreateDeal";
 import { useLogActivity } from "@/features/activities/hooks/useLogActivity";
@@ -28,8 +28,9 @@ export interface DropInSheetProps {
 }
 
 export function DropInSheet({ merchant, open, onOpenChange }: DropInSheetProps) {
-  const logVisit = usePathQueue((s) => s.logVisit);
-  const markDealCreated = usePathQueue((s) => s.markDealCreated);
+  const todayPath = useTodayPath();
+  const logVisit = todayPath.logVisit;
+  const markDealCreated = todayPath.markDealCreated;
   const createDeal = useCreateDeal();
   const logActivity = useLogActivity();
 
@@ -60,7 +61,7 @@ export function DropInSheet({ merchant, open, onOpenChange }: DropInSheetProps) 
     savingRef.current = true;
     setSaving(true);
     // Always record the disposition on the queue stop.
-    logVisit(merchant.id, selected);
+    await logVisit(merchant.id, selected);
 
     if (isEngagedDisposition(selected)) {
       try {
@@ -84,7 +85,7 @@ export function DropInSheet({ merchant, open, onOpenChange }: DropInSheetProps) 
           followUpDate,
         });
         // Both mutations succeeded — only now is a deal truly created.
-        markDealCreated(merchant.id);
+        await markDealCreated(merchant.id);
         toast.success(`Deal created for ${merchant.name}`);
         // Known accepted edge for this slice: if createDeal succeeds but
         // logActivity throws, an orphan deal exists with no drop-in activity /
