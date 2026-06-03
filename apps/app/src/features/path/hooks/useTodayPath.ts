@@ -50,6 +50,12 @@ export function useTodayPath() {
   const stopIdFor = (merchantId: string): string | undefined =>
     rawStops.find((s) => s.prospectId === merchantId)?.id;
 
+  // Always upsert (idempotent on user_id,path_date) rather than short-circuiting
+  // on the cached `path?.id`. This is deliberate: handleStartPath does clear()
+  // (deletePath) THEN add() in a loop, and the cached `path` stays stale (the
+  // just-deleted row) until invalidation refetches — short-circuiting there would
+  // addStops onto a deleted path_id and FK-fail. The extra upsert per add is the
+  // accepted cost of that safety. Do NOT "optimize" this to `path?.id ?? ...`.
   const ensurePathId = async (): Promise<string> =>
     await m.createPath.mutateAsync({ date, originLabel: null, originLat: null, originLng: null });
 

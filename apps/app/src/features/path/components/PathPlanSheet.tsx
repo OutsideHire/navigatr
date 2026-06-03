@@ -165,7 +165,7 @@ export function PathPlanSheet({
                       navigate("/pipeline");
                     }}
                     onNewPath={() => {
-                      clear();
+                      void clear(); // fire-and-forget; UI refreshes on invalidation
                       onOpenChange(false);
                     }}
                   />
@@ -209,7 +209,7 @@ export function PathPlanSheet({
                 size="sm"
                 leadingIcon={Trash2}
                 onClick={() => {
-                  if (confirm("Clear the whole path?")) clear();
+                  if (confirm("Clear the whole path?")) void clear();
                 }}
               >
                 Clear path
