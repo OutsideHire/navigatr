@@ -5,10 +5,14 @@ import type { ReactNode } from "react";
 import { usePathMutations } from "./usePathMutations";
 
 const result = { current: { data: null as unknown, error: null as unknown } };
-const upsertMock = vi.fn(() => ({ select: () => ({ single: () => Promise.resolve(result.current) }) }));
-const insertMock = vi.fn(() => Promise.resolve(result.current));
-const fromMock = vi.fn(() => ({ upsert: upsertMock, insert: insertMock }));
-vi.mock("@/lib/supabase", () => ({ supabase: { from: (...a: unknown[]) => fromMock(...(a as [])) } }));
+// paths.upsert(...).select("id").single() — chainable
+const pathsUpsertMock = vi.fn(() => ({ select: () => ({ single: () => Promise.resolve(result.current) }) }));
+// path_stops.upsert(rows, opts) — awaited directly
+const stopsUpsertMock = vi.fn(() => Promise.resolve(result.current));
+const fromMock = vi.fn((table: string) =>
+  table === "paths" ? { upsert: pathsUpsertMock } : { upsert: stopsUpsertMock },
+);
+vi.mock("@/lib/supabase", () => ({ supabase: { from: (t: string) => fromMock(t) } }));
 vi.mock("@/stores/auth", () => ({
   useAuth: (sel: (s: { user: { id: string } | null }) => unknown) => sel({ user: { id: "user-1" } }),
 }));
@@ -21,7 +25,7 @@ function wrap(client: QueryClient) {
 }
 
 beforeEach(() => {
-  fromMock.mockClear(); upsertMock.mockClear(); insertMock.mockClear();
+  fromMock.mockClear(); pathsUpsertMock.mockClear(); stopsUpsertMock.mockClear();
   result.current = { data: null, error: null };
 });
 
@@ -33,7 +37,7 @@ describe("usePathMutations.createPath", () => {
       date: "2026-06-03", originLabel: "Current location", originLat: 30.27, originLng: -97.74,
     });
     expect(fromMock).toHaveBeenCalledWith("paths");
-    expect(upsertMock).toHaveBeenCalledWith(
+    expect(pathsUpsertMock).toHaveBeenCalledWith(
       { user_id: "user-1", path_date: "2026-06-03", origin_label: "Current location", origin_lat: 30.27, origin_lng: -97.74 },
       { onConflict: "user_id,path_date" },
     );
@@ -50,10 +54,11 @@ describe("usePathMutations.addStops", () => {
       stops: [{ prospectId: "pr1", name: "A", address: null, lat: 1, lng: 2, category: "automotive", primaryType: "car_repair" }],
     });
     expect(fromMock).toHaveBeenCalledWith("path_stops");
-    expect(insertMock).toHaveBeenCalledWith([
-      { path_id: "p1", prospect_id: "pr1", name: "A", address: null, lat: 1, lng: 2,
-        category: "automotive", primary_type: "car_repair", position: 2 },
-    ]);
+    expect(stopsUpsertMock).toHaveBeenCalledWith(
+      [{ path_id: "p1", prospect_id: "pr1", name: "A", address: null, lat: 1, lng: 2,
+         category: "automotive", primary_type: "car_repair", position: 2 }],
+      { onConflict: "path_id,prospect_id", ignoreDuplicates: true },
+    );
   });
 
   it("surfaces an insert error", async () => {
@@ -61,5 +66,14 @@ describe("usePathMutations.addStops", () => {
     const { result: hook } = renderHook(() => usePathMutations(), { wrapper: wrap(makeClient()) });
     await expect(hook.current.addStops.mutateAsync({ pathId: "p1", basePosition: 0, stops: [] }))
       .rejects.toMatchObject({ message: expect.stringMatching(/permission denied/) });
+  });
+
+  it("uses ignoreDuplicates so re-adding a prospect already on the path is a no-op (no 23505)", async () => {
+    const { result: hook } = renderHook(() => usePathMutations(), { wrapper: wrap(makeClient()) });
+    await hook.current.addStops.mutateAsync({
+      pathId: "p1", basePosition: 0,
+      stops: [{ prospectId: "pr1", name: "A", address: null, lat: 1, lng: 2, category: "automotive", primaryType: null }],
+    });
+    expect(stopsUpsertMock).toHaveBeenCalledWith(expect.any(Array), { onConflict: "path_id,prospect_id", ignoreDuplicates: true });
   });
 });

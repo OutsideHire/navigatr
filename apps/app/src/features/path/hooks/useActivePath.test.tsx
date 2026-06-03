@@ -50,4 +50,11 @@ describe("useActivePath", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual({ path: null, stops: [] });
   });
+
+  it("surfaces an RLS / query error", async () => {
+    maybeSingleMock.mockResolvedValueOnce({ data: null, error: { message: "permission denied" } });
+    const { result } = renderHook(() => useActivePath("2026-06-03"), { wrapper });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toMatchObject({ message: expect.stringMatching(/permission denied/) });
+  });
 });

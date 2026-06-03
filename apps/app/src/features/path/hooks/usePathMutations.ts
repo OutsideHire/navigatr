@@ -62,7 +62,9 @@ export function usePathMutations() {
         lat: s.lat, lng: s.lng, category: s.category, primary_type: s.primaryType,
         position: input.basePosition + i,
       }));
-      const { error } = await supabase.from("path_stops").insert(rows);
+      const { error } = await supabase
+        .from("path_stops")
+        .upsert(rows, { onConflict: "path_id,prospect_id", ignoreDuplicates: true });
       if (error) throw error;
     },
     onSuccess: invalidate,
