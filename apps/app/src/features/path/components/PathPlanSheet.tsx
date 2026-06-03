@@ -35,7 +35,8 @@ import { cn } from "@/lib/utils";
 import { Button, Card } from "@/components/navigatr";
 import { formatDistance, haversineMeters, type LatLng } from "@/lib/distance";
 import { CATEGORY_LABEL, type Merchant } from "../mockData";
-import { usePathQueue, type StopStatus } from "../hooks/usePathQueue";
+import { useTodayPath } from "../hooks/useTodayPath";
+import type { StopStatus } from "../lib/pathTypes";
 import { PathSummary } from "./PathSummary";
 import { useNavigate } from "react-router-dom";
 import type { Disposition } from "@/lib/followUpScheduling";
@@ -60,11 +61,12 @@ export function PathPlanSheet({
   allMerchants: _allMerchants,
   orderedStops,
 }: PathPlanSheetProps) {
-  const stops = usePathQueue((s) => s.stops);
-  const setStatus = usePathQueue((s) => s.setStatus);
-  const remove = usePathQueue((s) => s.remove);
-  const clear = usePathQueue((s) => s.clear);
-  const isComplete = usePathQueue((s) => s.isComplete());
+  const todayPath = useTodayPath();
+  const stops = todayPath.stops;
+  const setStatus = todayPath.setStatus;
+  const remove = todayPath.remove;
+  const clear = todayPath.clear;
+  const isComplete = todayPath.isComplete();
   const navigate = useNavigate();
 
   // Compute leg distances against the visit order. First leg = origin →
