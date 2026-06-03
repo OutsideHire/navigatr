@@ -11,7 +11,7 @@ multi-day planning. Spec: `docs/superpowers/specs/2026-06-03-path-v3-path-first-
 Locked decisions live there (server-backed paths, one-per-day, Create=GPS auto-build→today,
 Plan=hand-pick→a chosen day, list-first home, discovery demoted to "Add stops").
 
-Build phases: **1a data foundation (DONE)** → 1b path-first UI (NEXT) → 2 multi-day → 3 running mode.
+Build phases: **1a data foundation (DONE)** → **1b-i storage swap (DONE)** → 1b-ii path-first UI (NEXT) → 2 multi-day → 3 running mode.
 
 **Phase 1a — SHIPPED to main (2026-06-03).** Plan:
 `docs/superpowers/plans/2026-06-03-path-v3-phase-1a-data-foundation.md`.
@@ -22,16 +22,30 @@ Build phases: **1a data foundation (DONE)** → 1b path-first UI (NEXT) → 2 mu
 - New hooks in `apps/app/src/features/path/`: `lib/pathTypes.ts`, `hooks/usePaths.ts`,
   `hooks/useActivePath.ts`, `hooks/usePathMutations.ts` (create/add/remove/reorder/
   status/disposition/deal). `addStops` dedupes via `upsert(ignoreDuplicates)`.
-- **Dormant** — nothing imports these yet; `usePathQueue` still drives the live UI.
+**Phase 1b-i — SHIPPED to main (2026-06-03).** Plan:
+`docs/superpowers/plans/2026-06-03-path-v3-phase-1b-i-storage-swap.md`. Frontend-only,
+no migration. The local `usePathQueue` is replaced by a server-backed today's path
+behind the CURRENT UI (no visible redesign):
+- `hooks/useTodayPath.ts` — adapter with a `usePathQueue`-shaped API (`stops` keyed
+  by `merchantId`=prospectId; `add(snapshot)`/`remove`/`setStatus`/`logVisit`/
+  `markDealCreated`/`clear`/`has`/`isComplete`/`isLoading`/`todayISO()`), backed by
+  `useActivePath(today)` + `usePathMutations`. `add` always upserts today's path
+  (idempotent) — deliberately NOT short-circuited (see the comment; clear-then-add
+  would FK-fail otherwise). `deletePath` mutation added for `clear`.
+- `lib/migrateLocalQueue.ts` — pure planner; PathPage runs a one-time effect copying
+  any local queue into today's server path (snapshots resolved from `liveMerchants`).
+- Rewired: MerchantDetailSheet / DropInSheet / PathPlanSheet / PathPage off
+  `usePathQueue` → `useTodayPath`. `usePathQueue.ts` kept only as the migration source.
+- Known limitations (deferred to 1b-ii): writes refresh via query invalidation (not
+  optimistic — brief lag); ad-hoc add creates the path with null origin;
+  `path_stops.primary_type` stays null until `Merchant` carries the granular type.
 
-**Phase 1b — NEXT (not built).** Path-first UI: `PathEntry` (two cards),
-`ActivePathView` (list-first home), discovery demoted to an "Add stops" view,
-Create/Plan wired to write into a path, and the **one-time local-queue →
-today's-path migration** (needs loaded merchant details for the snapshot, which
-is why it's in 1b not 1a). Carry-forwards: live-smoke the `usePaths`
+**Phase 1b-ii — NEXT (not built).** The visible path-first UI: `PathEntry` (two
+cards), `ActivePathView` (list-first home), discovery demoted to an "Add stops"
+view, Create/Plan landing on the path. Carry-forwards: live-smoke the `usePaths`
 `path_stops(count)` embedded-count shape on first real call; add tests for the
-remove/reorder/status/disposition mutations. Build with `frontend-design`, verify
-with `/design-review`.
+remove/reorder/status/disposition mutations; consider optimistic updates + surfacing
+`useTodayPath.isLoading`. Build with `frontend-design`, verify with `/design-review`.
 
 ## TL;DR — Slice 5 DEPLOYED (2026-06-02)
 
