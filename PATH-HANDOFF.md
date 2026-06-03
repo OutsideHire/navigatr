@@ -11,7 +11,7 @@ multi-day planning. Spec: `docs/superpowers/specs/2026-06-03-path-v3-path-first-
 Locked decisions live there (server-backed paths, one-per-day, Create=GPS auto-build→today,
 Plan=hand-pick→a chosen day, list-first home, discovery demoted to "Add stops").
 
-Build phases: **1a data foundation (DONE)** → **1b-i storage swap (DONE)** → 1b-ii path-first UI (NEXT) → 2 multi-day → 3 running mode.
+Build phases: **1a data foundation (DONE)** → **1b-i storage swap (DONE)** → **1b-ii path-first UI (DONE — pending frontend-design polish + /design-review)** → 2 multi-day → 3 running mode.
 
 **Phase 1a — SHIPPED to main (2026-06-03).** Plan:
 `docs/superpowers/plans/2026-06-03-path-v3-phase-1a-data-foundation.md`.
@@ -40,12 +40,29 @@ behind the CURRENT UI (no visible redesign):
   optimistic — brief lag); ad-hoc add creates the path with null origin;
   `path_stops.primary_type` stays null until `Merchant` carries the granular type.
 
-**Phase 1b-ii — NEXT (not built).** The visible path-first UI: `PathEntry` (two
-cards), `ActivePathView` (list-first home), discovery demoted to an "Add stops"
-view, Create/Plan landing on the path. Carry-forwards: live-smoke the `usePaths`
-`path_stops(count)` embedded-count shape on first real call; add tests for the
-remove/reorder/status/disposition mutations; consider optimistic updates + surfacing
-`useTodayPath.isLoading`. Build with `frontend-design`, verify with `/design-review`.
+**Phase 1b-ii — SHIPPED to main (2026-06-03, frontend code).** Plan:
+`docs/superpowers/plans/2026-06-03-path-v3-phase-1b-ii-path-first-ui.md`. The visible
+path-first UI:
+- `components/PathEntry.tsx` — two entry cards (Create a Path / Plan a Path).
+- `components/ActivePathView.tsx` — list-first home; renders the current day's path
+  from `TodayStop` snapshots (stats header, ordered stops w/ mark-visited + remove,
+  route map, "Add stops"). `useTodayPath` `TodayStop` extended with snapshot fields.
+- `pages/PathPage.tsx` — `pathView: entry|active|discover` state machine. No-origin
+  location states render first; entry → PathEntry, active → ActivePathView, discover
+  → the prior discovery UI (filters + map/list) with a Back-to-path/Done button.
+  Default syncs from stop count (never overrides discover). Create → wizard; Plan +
+  Add-stops → `enterDiscover`. Header "Create path" hidden in active view (it clears
+  the path). `queuedMerchants`/PathPlanSheet now build from snapshots, not a
+  `liveMerchants` join.
+- **STILL PENDING for 1b-ii:** the **`frontend-design` visual polish** pass on
+  PathEntry/ActivePathView (components are functional design-system baselines, not
+  yet polished) and a **`/design-review`** pass on the deployed page (entry/active/
+  discover states). Run /design-review logged in against the Vercel site.
+- Deferred (Phase 1b-iii/2/3): drop-in disposition logged FROM a path stop (today
+  it's from the discovery detail sheet); dedicated map-forward "Start route" running
+  mode; drag-reorder; optimistic updates (surfacing `useTodayPath.isLoading`).
+  Carry-forward from 1a/1b-i: live-smoke the `usePaths` `path_stops(count)` shape;
+  add tests for the remove/reorder/status/disposition mutations.
 
 ## TL;DR — Slice 5 DEPLOYED (2026-06-02)
 
