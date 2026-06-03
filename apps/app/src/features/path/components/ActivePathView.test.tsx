@@ -35,4 +35,10 @@ describe("ActivePathView", () => {
     fireEvent.click(screen.getByRole("button", { name: /add stops/i }));
     expect(onAddStops).toHaveBeenCalledTimes(1);
   });
+
+  it("removes a stop via the remove button", () => {
+    render(<ActivePathView origin={{ lat: 30, lng: -97 }} onAddStops={vi.fn()} />);
+    fireEvent.click(screen.getAllByRole("button", { name: /remove from path/i })[0]);
+    expect(remove).toHaveBeenCalledWith("m1");
+  });
 });

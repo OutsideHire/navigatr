@@ -43,6 +43,7 @@ const todayState = {
     markDealCreated: vi.fn(),
     pathId: null,
     isLoading: false,
+    pendingCount: () => 0,
   },
 };
 vi.mock("../hooks/useTodayPath", () => ({ useTodayPath: () => todayState.current }));

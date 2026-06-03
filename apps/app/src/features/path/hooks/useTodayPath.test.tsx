@@ -55,6 +55,7 @@ describe("useTodayPath", () => {
         disposition: "met_dm", dealCreated: true, addedAt: "t1" },
     ]);
     expect(result.current.has("m1")).toBe(true);
+    expect(result.current.has("nope")).toBe(false);
     expect(result.current.isComplete()).toBe(true);
   });
 

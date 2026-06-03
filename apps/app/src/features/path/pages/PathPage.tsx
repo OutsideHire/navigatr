@@ -249,17 +249,18 @@ export function PathPage() {
     setSheetOpen(true);
   };
 
-  // Resolve the queued IDs to full Merchant records, then run
-  // nearest-neighbor against the rep's position to get the optimal
-  // visit order. This is the same order that drives the map polyline
-  // and PathPlanSheet's stop list — they stay in sync via this single
-  // computation.
-  const queuedMerchants: Merchant[] = React.useMemo(() => {
-    const byId = new Map(liveMerchants.map((m) => [m.id, m]));
-    return queueStops
-      .map((s) => byId.get(s.merchantId))
-      .filter((m): m is Merchant => Boolean(m));
-  }, [queueStops, liveMerchants]);
+  // Build straight from the path's own stop snapshots — never join liveMerchants
+  // (a path's stops may not be in the current browse window). Downstream consumers
+  // (nearestNeighborOrder, routePath, PathPlanSheet) use lat/lng/name/category; the
+  // other Merchant fields aren't read for a queued stop, so a snapshot-shaped object
+  // cast to Merchant is sufficient here.
+  const queuedMerchants: Merchant[] = React.useMemo(
+    () => queueStops.map((s) => ({
+      id: s.merchantId, name: s.name, address: s.address ?? "", lat: s.lat, lng: s.lng,
+      category: s.category as MerchantCategory,
+    }) as Merchant),
+    [queueStops],
+  );
 
   const orderedQueue: Merchant[] = React.useMemo(() => {
     if (queuedMerchants.length === 0) return [];
@@ -321,15 +322,17 @@ export function PathPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            leadingIcon={RouteIcon}
-            onClick={() => setCreateOpen(true)}
-            disabled={!anyGeocoded}
-          >
-            Create path
-          </Button>
+          {pathView !== "active" && (
+            <Button
+              variant="secondary"
+              size="sm"
+              leadingIcon={RouteIcon}
+              onClick={() => setCreateOpen(true)}
+              disabled={!anyGeocoded}
+            >
+              Create path
+            </Button>
+          )}
           <Button
             variant="secondary"
             size="sm"
