@@ -47,6 +47,8 @@ import { MerchantDetailSheet } from "../components/MerchantDetailSheet";
 import { PathPlanSheet } from "../components/PathPlanSheet";
 import { CreatePathWizard } from "../components/CreatePathWizard";
 import { usePathQueue } from "../hooks/usePathQueue";
+import { useTodayPath } from "../hooks/useTodayPath";
+import { planQueueMigration } from "../lib/migrateLocalQueue";
 import { useMerchants } from "../hooks/useMerchants";
 import { sortMerchants, type PathSortMode } from "../lib/sortMerchants";
 
@@ -106,12 +108,26 @@ export function PathPage() {
   const [planOpen, setPlanOpen] = React.useState(false);
   const [createOpen, setCreateOpen] = React.useState(false);
 
-  // Path queue selectors. queueStops is the persisted list of stops;
-  // we resolve those IDs to Merchant records below and compute the
-  // visit order via nearestNeighborOrder against the rep's position.
-  const queueStops = usePathQueue((s) => s.stops);
-  const addStop = usePathQueue((s) => s.add);
-  const clearQueue = usePathQueue((s) => s.clear);
+  // Server-backed today's path. queueStops keeps the same name so all
+  // downstream route math, badge counts, etc. keep working unchanged.
+  const todayPath = useTodayPath();
+  const queueStops = todayPath.stops;
+
+  // One-time migration: an existing local queue -> today's server path. Runs once
+  // per device when merchants are loaded (snapshots need their display fields).
+  const migratedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (migratedRef.current) return;
+    const local = usePathQueue.getState().stops;
+    if (local.length === 0 || liveMerchants.length === 0) return;
+    migratedRef.current = true;
+    const byId = new Map(liveMerchants.map((m) => [m.id, m]));
+    const { snapshots } = planQueueMigration(local, byId);
+    void (async () => {
+      for (const snap of snapshots) await todayPath.add(snap);
+      usePathQueue.getState().clear();
+    })();
+  }, [liveMerchants, todayPath]);
 
   // Are any merchants geocoded? If none have coords, the map degrades
   // to a "no map yet" state and we suppress distance math (Infinity
@@ -246,17 +262,25 @@ export function PathPage() {
     ];
   }, [orderedQueue, origin]);
 
-  // Start a fresh path from the wizard: clear any existing queue, enqueue the
-  // chosen stops (usePathQueue.add is idempotent + order-preserving), close the
-  // wizard, and open the plan sheet so the rep sees their route immediately.
+  // Start a fresh path from the wizard: clear the existing server path, build
+  // snapshots from the merchant records, write them, close the wizard, and open
+  // the plan sheet so the rep sees their route immediately.
   const handleStartPath = React.useCallback(
-    (orderedIds: string[]) => {
-      clearQueue();
-      for (const id of orderedIds) addStop(id);
+    async (orderedIds: string[]) => {
+      const byId = new Map(liveMerchants.map((m) => [m.id, m]));
+      const snapshots = orderedIds
+        .map((id) => byId.get(id))
+        .filter((m): m is NonNullable<typeof m> => Boolean(m))
+        .map((m) => ({
+          prospectId: m.id, name: m.name, address: m.address ?? null,
+          lat: m.lat, lng: m.lng, category: m.category, primaryType: null,
+        }));
+      await todayPath.clear();
+      for (const snap of snapshots) await todayPath.add(snap);
       setCreateOpen(false);
       setPlanOpen(true);
     },
-    [clearQueue, addStop],
+    [liveMerchants, todayPath],
   );
 
   return (
