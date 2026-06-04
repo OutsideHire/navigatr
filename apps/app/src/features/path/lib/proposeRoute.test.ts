@@ -89,6 +89,16 @@ describe("candidatePool", () => {
     );
     expect(pool.map((x) => x.id)).toEqual(["keep"]);
   });
+
+  it("orders by opportunity (fewest reviews first) vs distance (nearest first)", () => {
+    // popular+near vs underseen+far
+    const popularNear = m({ id: "popularNear", ratingCount: 500, distanceMeters: 100 });
+    const underseenFar = m({ id: "underseenFar", ratingCount: 1, distanceMeters: 9000 });
+    const byOpp = candidatePool([popularNear, underseenFar], { industries: [], sortMode: "opportunity" });
+    expect(byOpp.map((x) => x.id)).toEqual(["underseenFar", "popularNear"]);
+    const byDist = candidatePool([popularNear, underseenFar], { industries: [], sortMode: "distance" });
+    expect(byDist.map((x) => x.id)).toEqual(["popularNear", "underseenFar"]);
+  });
 });
 
 describe("orderStops", () => {

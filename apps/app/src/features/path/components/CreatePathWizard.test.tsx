@@ -9,6 +9,7 @@ import {
   RECOMMENDED_SELECTION,
   type IndustrySelection,
 } from "../lib/industrySelection";
+import type { MerchantWithDistance } from "./MerchantList";
 
 // The "Create path" wizard is default-industries-first: step 1 seeds the rep's
 // saved default industry selection, shows a "Your industries" summary with an
@@ -147,4 +148,43 @@ describe("CreatePathWizard radius + max stops + select stops", () => {
     expect(screen.getByRole("button", { name: /opportunity/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /distance/i })).toBeInTheDocument();
   });
+
+  it("pre-checks the optimized top-N (= max stops) when entering Select stops", () => {
+    mockPrefs = { automotive: allSubtypes("automotive") };
+    // 5 matching merchants, Max stops default is 25 → all 5 pre-checked
+    const merchants = ["a", "b", "c", "d", "e"].map((id, i) => mkAutoMerchant(id, i));
+    renderWizard({ merchants });
+    fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
+    expect(screen.getByText(/5 stops/i)).toBeInTheDocument(); // SelectStops live header
+  });
+
+  it("Back returns from Select stops to the filters step", () => {
+    mockPrefs = { automotive: allSubtypes("automotive") };
+    renderWizard({ merchants: [mkAutoMerchant("a", 0)] });
+    fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^back$/i }));
+    // filters step is back: the "Your industries" hero + the Select stops advance button
+    expect(screen.getByRole("button", { name: /select stops/i })).toBeInTheDocument();
+  });
+
+  it("re-seeds the auto-selection when Max stops changes", () => {
+    mockPrefs = { automotive: allSubtypes("automotive") };
+    const merchants = ["a", "b", "c", "d", "e"].map((id, i) => mkAutoMerchant(id, i));
+    renderWizard({ merchants });
+    // lower Max stops to 2 → seed re-runs (stopCap dep) → 2 pre-checked
+    fireEvent.change(screen.getByLabelText(/max stops/i), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
+    expect(screen.getByText(/2 stops/i)).toBeInTheDocument();
+  });
 });
+
+// A geocoded, non-chain automotive merchant whose category + primaryType satisfy
+// a full "automotive" selection (allSubtypes includes "car_repair"). Deterministic
+// distinct lat per index keeps nearest-neighbor ordering stable.
+function mkAutoMerchant(id: string, i = 0) {
+  return {
+    id, name: id, category: "automotive", address: "a", lat: 35 + i * 0.01, lng: -97,
+    phone: "", employeeCountRange: "", status: "untouched", lastActivity: null,
+    isChain: false, distanceMeters: 100, rating: 4.2, primaryType: "car_repair",
+  } as MerchantWithDistance;
+}
