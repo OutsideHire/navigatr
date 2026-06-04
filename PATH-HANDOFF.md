@@ -64,6 +64,69 @@ path-first UI:
   Carry-forward from 1a/1b-i: live-smoke the `usePaths` `path_stops(count)` shape;
   add tests for the remove/reorder/status/disposition mutations.
 
+## Create-path filters + default industries — SHIPPED (2026-06-04)
+
+Default-industries-first redesign of the Create-path step-1 ("confirm location &
+filters"), plus a per-rep saved default-industry set and category→sub-type
+granularity. Spec:
+`docs/superpowers/specs/2026-06-04-create-path-filters-default-industries-design.md`.
+Two plans (Phase A/B) in `docs/superpowers/plans/2026-06-04-create-path-phase-*.md`.
+All merged to `main`; **test gate now 595** (`cd apps/app && pnpm typecheck && pnpm test`).
+
+**Phase A — preference system + editor + settings (SHIPPED, merge `4c8cec4`).**
+- **Migration `20260604000001_path_preferences.sql`** applied to prod by hand
+  (`supabase db query --linked -f`, not push): `path_preferences(user_id uuid pk →
+  profiles(id) cascade, default_industries jsonb default '{}', updated_at)`, owner
+  RLS (4 policies, `user_id = auth.uid()`). One row per rep; extensible (future
+  default_radius_m / default_max_stops).
+- `lib/industrySelection.ts` (+test) — the shared `IndustrySelection =
+  Partial<Record<MerchantCategory, string[]>>` (category→selected primary_type
+  keys) + helpers: `RECOMMENDED_SELECTION` (Tier-1 cats, fully selected),
+  `selectedCategories`, `subtypeCount`, `isFullySelected`, `allSubtypes`,
+  `humanizeSubtype`, and `matchesSelection(primaryType, category, sel)` — the
+  client-side filter predicate (null primary_type → kept for a selected category).
+- `hooks/usePathPreferences.ts` (+test) — `usePathPreferences()` (Recommended
+  fallback on empty/missing) + `useUpdateDefaultIndustries()` (upsert on
+  `user_id`). Owner-scoped via RLS.
+- `components/IndustryEditor.tsx` (+test) — picks-first (approach A): shows only
+  the rep's selected categories (expandable to sub-types), "Add industries" picker
+  for the rest. Scope `"path"` → Use-for-path + Save-as-default; scope `"default"`
+  → single Save. Empty → "Use Recommended".
+- `components/PathSettings.tsx` (+test) + a gear in `PathPage` header → manage
+  defaults (IndustryEditor in default scope). Awaits the save (sonner toast on
+  error), guards against an empty-seed overwrite while prefs load.
+
+**Phase B — step-1 redesign + sub-type filtering (SHIPPED, merge `342531d`). No
+DB/Edge changes** (the `prospects` table + `prospects_nearby` RPC + `discover_prospects`
+already store/return `primary_type` — only the FE mapping dropped it).
+- `Merchant.primaryType?: string | null` added (`mockData.ts`), mapped in
+  `prospectToMerchant` (`useMerchants.ts`), and carried into `handleStartPath`
+  stop snapshots (`PathPage.tsx`, was hard-coded null).
+- `proposeRoute` gains optional `selection?: IndustrySelection` (sub-type filter
+  via `matchesSelection`; supersedes the `industries` bucket when present) and
+  `minRating?: number` (drops below-bar AND unrated). Backward compatible.
+- `CreatePathWizard` step 1 redesigned default-industries-first: seeds an
+  `IndustrySelection` from `usePathPreferences` (Recommended fallback) once per
+  open (`seededRef` guard), "Your industries" summary + Edit → `IndustryEditor`
+  (path scope; Use-for-path overrides locally, Save-as-default also persists),
+  a **Min rating** Select, **no Min employees** (never available from Places).
+  `onIndustriesChange` lifts `selectedCategories(sel)` so PathPage re-ingests whole
+  categories; sub-types narrow the route client-side via `proposeRoute`.
+
+**Polish pass — design-system fidelity (SHIPPED, merge `e238e05`).**
+- Min-rating native `<select>` → navigatr `Select`; IndustryEditor sub-type
+  checkboxes → navigatr `Checkbox`; "Your industries" promoted to the hero control
+  (accent border, body-strong label, real Edit button) with radius/rating/stops
+  regrouped as secondary filters.
+- **Verification limitation:** the authed Create wizard can't be visually verified
+  headless (dev server serves `main` not worktrees; needs the rep's live session +
+  Google Places data). Gated on typecheck + tests; verify on the Vercel deploy.
+
+**Still owed (non-blocking):** a `/design-review` + deeper `frontend-design` pass
+on the deployed step-1 / IndustryEditor / PathSettings (built to a functional
+design-system baseline, then polished to token fidelity — not yet design-reviewed
+live). Same outstanding polish is owed for Path v3 PathEntry/ActivePathView (1b-ii).
+
 ## TL;DR — Slice 5 DEPLOYED (2026-06-02)
 
 **Slice 5 is now live.** Migration + Edge deployed and verified at the contract
