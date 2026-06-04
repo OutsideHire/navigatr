@@ -75,4 +75,14 @@ describe("SelectStops", () => {
     const ids = onStart.mock.calls[0][0] as string[];
     expect(ids.sort()).toEqual(["Acme", "Charlie"]);
   });
+  it("omits the rating from a row's meta when rating is absent", () => {
+    setup(new Set(), { pool: [row("NoRating", { rating: undefined })] });
+    expect(screen.getByText(/automotive/i)).toBeInTheDocument();
+    expect(screen.queryByText(/★/)).not.toBeInTheDocument();
+  });
+  it("shows the empty state when no businesses match", () => {
+    setup(new Set(), { pool: [] });
+    expect(screen.getByText(/no businesses match/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /start path/i })).toBeDisabled();
+  });
 });

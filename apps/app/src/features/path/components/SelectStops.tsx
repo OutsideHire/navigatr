@@ -38,6 +38,8 @@ export interface SelectStopsProps {
 export function SelectStops({
   pool, origin, sortMode, onSortChange, selectedIds, onToggle, onBack, onStart,
 }: SelectStopsProps) {
+  // search + collapse state are local; going Back unmounts this panel, so both
+  // reset when the rep re-enters Select stops (intended — a fresh curation pass).
   const [search, setSearch] = React.useState("");
   const [selectedOpen, setSelectedOpen] = React.useState(false);
 
@@ -76,7 +78,7 @@ export function SelectStops({
             ))}
           </div>
         </div>
-        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search businesses…" />
+        <Input aria-label="Search businesses" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search businesses…" />
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-3">
@@ -119,7 +121,7 @@ export function SelectStops({
         )}
       </div>
 
-      <div className="flex shrink-0 gap-2 border-t border-border-default px-5 py-3">
+      <div className="flex shrink-0 gap-2 border-t border-border-default px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <Button variant="secondary" onClick={onBack}>Back</Button>
         <Button
           variant="primary" leadingIcon={Navigation} className="flex-1"
