@@ -31,7 +31,7 @@
  */
 
 import * as React from "react";
-import { List, Loader2, LocateFixed, Lock, Map as MapIcon, MapPinOff, Route as RouteIcon } from "lucide-react";
+import { List, Loader2, LocateFixed, Lock, Map as MapIcon, MapPinOff, Route as RouteIcon, Settings } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button, Card, Chip } from "@/components/navigatr";
@@ -50,6 +50,7 @@ import { MerchantDetailSheet } from "../components/MerchantDetailSheet";
 import { PathPlanSheet } from "../components/PathPlanSheet";
 import { CreatePathWizard } from "../components/CreatePathWizard";
 import { PathEntry } from "../components/PathEntry";
+import { PathSettings } from "../components/PathSettings";
 import { ActivePathView } from "../components/ActivePathView";
 import { usePathQueue } from "../hooks/usePathQueue";
 import { useTodayPath } from "../hooks/useTodayPath";
@@ -112,6 +113,7 @@ export function PathPage() {
   const [view, setView] = React.useState<ViewMode>("list"); // default to list until merchants are geocoded
   const [planOpen, setPlanOpen] = React.useState(false);
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
 
   // Path-first view state machine:
   //   "entry"    — no active path, show two-card prompt (create / plan)
@@ -359,6 +361,17 @@ export function PathPage() {
               </span>
             )}
           </Button>
+          {/* Path settings — manage default industries. Visible in every
+              pathView (entry / active / discover) since it lives in the
+              always-rendered header action group. */}
+          <Button
+            variant="tertiary"
+            size="sm"
+            iconOnly
+            leadingIcon={Settings}
+            aria-label="Path settings"
+            onClick={() => setSettingsOpen(true)}
+          />
         </div>
       </header>
 
@@ -686,6 +699,8 @@ export function PathPage() {
         onIndustriesChange={setIngestIndustries}
         onStart={handleStartPath}
       />
+
+      <PathSettings open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );
 }
