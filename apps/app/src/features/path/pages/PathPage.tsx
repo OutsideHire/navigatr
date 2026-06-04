@@ -54,6 +54,7 @@ import { PathSettings } from "../components/PathSettings";
 import { ActivePathView } from "../components/ActivePathView";
 import { usePathQueue } from "../hooks/usePathQueue";
 import { useTodayPath } from "../hooks/useTodayPath";
+import { toast } from "sonner";
 import { planQueueMigration } from "../lib/migrateLocalQueue";
 import { useMerchants } from "../hooks/useMerchants";
 import { sortMerchants, type PathSortMode } from "../lib/sortMerchants";
@@ -302,10 +303,19 @@ export function PathPage() {
           prospectId: m.id, name: m.name, address: m.address ?? null,
           lat: m.lat, lng: m.lng, category: m.category, primaryType: m.primaryType ?? null,
         }));
-      await todayPath.clear();
-      for (const snap of snapshots) await todayPath.add(snap);
-      setCreateOpen(false);
-      setPlanOpen(true);
+      // Persist the whole route in two round-trips (clear + one batched addMany),
+      // not a per-stop loop — otherwise the wizard close below is gated behind ~2N
+      // sequential writes and the slide-out lingers for many seconds on a full
+      // route. Close only on success; surface a toast (don't silently trap the
+      // panel) if the write fails.
+      try {
+        await todayPath.clear();
+        await todayPath.addMany(snapshots);
+        setCreateOpen(false);
+        setPlanOpen(true);
+      } catch {
+        toast.error("Couldn't start the path. Please try again.");
+      }
     },
     [liveMerchants, todayPath],
   );
