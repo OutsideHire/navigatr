@@ -73,6 +73,15 @@ export function useTodayPath() {
     // Acceptable for a field tool; revisit with server-side position assignment.
     await m.addStops.mutateAsync({ pathId, basePosition: rawStops.length, stops: [snapshot] });
   };
+  // Batched add for building a whole route at once (handleStartPath). One path
+  // upsert + one addStops insert for ALL stops — NOT a per-stop loop, which would
+  // be ~2N sequential round-trips and gate the caller's UI (e.g. the wizard close)
+  // behind every write. addStops assigns position = basePosition + index.
+  const addMany = async (snapshots: StopSnapshot[]): Promise<void> => {
+    if (snapshots.length === 0) return;
+    const pathId = await ensurePathId();
+    await m.addStops.mutateAsync({ pathId, basePosition: rawStops.length, stops: snapshots });
+  };
   const remove = async (merchantId: string): Promise<void> => {
     const id = stopIdFor(merchantId);
     if (id) await m.removeStop.mutateAsync(id);
@@ -99,5 +108,5 @@ export function useTodayPath() {
   const isComplete = (): boolean => rawStops.length > 0 && rawStops.every((s) => s.status !== "pending");
   const pendingCount = (): number => rawStops.filter((s) => s.status === "pending").length;
 
-  return { pathId: path?.id ?? null, isLoading, stops, add, remove, setStatus, logVisit, markDealCreated, clear, has, isComplete, pendingCount };
+  return { pathId: path?.id ?? null, isLoading, stops, add, addMany, remove, setStatus, logVisit, markDealCreated, clear, has, isComplete, pendingCount };
 }

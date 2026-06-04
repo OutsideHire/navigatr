@@ -91,4 +91,28 @@ describe("useTodayPath", () => {
     await act(async () => { await result.current.clear(); });
     expect(deletePath).toHaveBeenCalledWith("p1");
   });
+
+  it("addMany: creates the path ONCE and appends all snapshots in a SINGLE addStops call", async () => {
+    // Regression: handleStartPath used a per-stop loop (N createPath + N addStops),
+    // gating the wizard close behind ~2N sequential round-trips so a full route left
+    // the slide-out open for many seconds. addMany batches it to one create + one add.
+    activeState.current = { data: { path: { id: "p1" }, stops: [] }, isLoading: false };
+    const { result } = renderHook(() => useTodayPath());
+    const snaps: StopSnapshot[] = [
+      SNAP,
+      { ...SNAP, prospectId: "m2", name: "B" },
+      { ...SNAP, prospectId: "m3", name: "C" },
+    ];
+    await act(async () => { await result.current.addMany(snaps); });
+    expect(createPath).toHaveBeenCalledTimes(1);
+    expect(addStops).toHaveBeenCalledTimes(1);
+    expect(addStops).toHaveBeenCalledWith({ pathId: "p1", basePosition: 0, stops: snaps });
+  });
+
+  it("addMany: no-ops on an empty selection", async () => {
+    const { result } = renderHook(() => useTodayPath());
+    await act(async () => { await result.current.addMany([]); });
+    expect(createPath).not.toHaveBeenCalled();
+    expect(addStops).not.toHaveBeenCalled();
+  });
 });
