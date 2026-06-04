@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Plus, X, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/navigatr";
+import { Button, Checkbox } from "@/components/navigatr";
 import { CATEGORY_LABEL, type MerchantCategory } from "../mockData";
 import {
   RECOMMENDED_SELECTION, allSubtypes, selectedCategories, subtypeCount,
@@ -78,13 +78,14 @@ export function IndustryEditor({ value, scope, onUseForPath, onSaveDefault }: In
                   </button>
                 </div>
                 {isOpen && (
-                  <div id={`subtype-panel-${c}`} className="flex flex-col gap-1 border-t border-border-default px-3 py-2">
+                  <div id={`subtype-panel-${c}`} className="flex flex-col gap-2 border-t border-border-default px-3 py-3">
                     {allSubtypes(c).map((t) => (
-                      <label key={t} className="flex items-center gap-2 text-body-md text-text-default">
-                        <input type="checkbox" className="h-4 w-4 rounded border-border-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
-                          checked={(sel[c] ?? []).includes(t)} onChange={() => toggleSubtype(c, t)} />
-                        {humanizeSubtype(t)}
-                      </label>
+                      <Checkbox
+                        key={t}
+                        label={humanizeSubtype(t)}
+                        checked={(sel[c] ?? []).includes(t)}
+                        onCheckedChange={() => toggleSubtype(c, t)}
+                      />
                     ))}
                   </div>
                 )}
