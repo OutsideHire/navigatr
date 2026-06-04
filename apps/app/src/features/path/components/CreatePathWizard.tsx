@@ -98,7 +98,7 @@ export function CreatePathWizard({
   // cleared while typing without snapping the cursor.
   const stopCap = Math.min(MAX_STOP_CAP, Math.max(1, parseInt(stopCapText, 10) || DEFAULT_STOP_CAP));
 
-  const chosen = selectedCategories(selection);
+  const chosen = React.useMemo(() => selectedCategories(selection), [selection]);
 
   // Apply a working selection: store it + lift the category list so PathPage
   // re-ingests at the new scope (Edge ingests whole categories; sub-types narrow
@@ -117,6 +117,9 @@ export function CreatePathWizard({
       setStep("filters");
       setEditing(false);
       setMinRating(0);
+      setSelection({});
+      setStopCapText(String(DEFAULT_STOP_CAP));
+      setSortMode("opportunity");
     }
   }, [open]);
 
@@ -132,6 +135,9 @@ export function CreatePathWizard({
       seededRef.current = true;
       applySelection(prefs);
     }
+    // applySelection is intentionally excluded: it closes over onIndustriesChange,
+    // which PathPage may recreate each render; seededRef already guarantees we
+    // seed exactly once per open (and not again when the prefs query refetches).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, prefs]);
 
@@ -194,9 +200,10 @@ export function CreatePathWizard({
                 </div>
               </div>
               {/* Min rating */}
-              <label className="flex flex-col gap-1.5">
-                <span className="text-caption font-medium text-text-muted">Min rating</span>
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="min-rating" className="text-caption font-medium text-text-muted">Min rating</label>
                 <select
+                  id="min-rating"
                   value={minRating}
                   onChange={(e) => setMinRating(Number(e.target.value))}
                   className="self-start rounded-radius-md border border-border-default bg-surface-default px-3 py-2 text-body-md text-text-default"
@@ -205,7 +212,7 @@ export function CreatePathWizard({
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
-              </label>
+              </div>
 
               {/* Your industries — seeded from the rep's saved default; Edit overrides
                   this path (and can persist as the new default). */}
@@ -216,6 +223,8 @@ export function CreatePathWizard({
                   onUseForPath={(sel) => { applySelection(sel); setEditing(false); }}
                   onSaveDefault={(sel) => {
                     applySelection(sel);
+                    // Optimistic: the selection already applies to this path via
+                    // applySelection; we only surface a toast if the persist fails.
                     updateDefaults.mutate(sel, {
                       onError: () => toast.error("Couldn't save as default — it still applies to this path."),
                     });

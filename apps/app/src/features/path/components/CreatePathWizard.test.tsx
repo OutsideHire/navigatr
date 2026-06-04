@@ -1,6 +1,7 @@
 import * as React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { toast } from "sonner";
 import { CreatePathWizard } from "./CreatePathWizard";
 import {
   allSubtypes,
@@ -91,6 +92,17 @@ describe("CreatePathWizard step 1 — default-industries-first", () => {
     fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
     fireEvent.click(screen.getByRole("button", { name: /save as default/i }));
     expect(mockMutate).toHaveBeenCalled();
+  });
+
+  it("shows a toast if saving the default fails", () => {
+    mockPrefs = { retail: allSubtypes("retail") };
+    renderWizard();
+    fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save as default/i }));
+    // invoke the onError passed to mutate(sel, { onError })
+    const opts = mockMutate.mock.calls[0][1];
+    opts.onError(new Error("network"));
+    expect(toast.error).toHaveBeenCalled();
   });
 });
 
