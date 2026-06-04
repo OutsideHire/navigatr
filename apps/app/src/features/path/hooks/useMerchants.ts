@@ -169,7 +169,7 @@ export interface UseMerchantsOptions {
   /** Industry buckets to ingest. Defaults to Tier 1 when omitted. */
   industries?: IndustryKey[];
   /** When true, the read includes chains (flagged via isChain) so browse can
-   *  show + badge them. Create stays chain-free via proposeRoute. Default off. */
+   *  show + badge them. Create stays chain-free via candidatePool. Default off. */
   includeChains?: boolean;
 }
 

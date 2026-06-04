@@ -120,6 +120,7 @@ export function CreatePathWizard({
       setSelection({});
       setStopCapText(String(DEFAULT_STOP_CAP));
       setSortMode("opportunity");
+      setSelectedIds(new Set());
     }
   }, [open]);
 
@@ -159,6 +160,10 @@ export function CreatePathWizard({
   );
   React.useEffect(() => {
     setSelectedIds(new Set(pool.slice(0, stopCap).map((m) => m.id)));
+    // membershipKey is a stable proxy for pool membership; pool is intentionally
+    // omitted — the effect always runs against the render that changed
+    // membershipKey, so there is no stale-pool risk. Re-seed only on membership or
+    // stop-cap change (not on sort or per-item toggle).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [membershipKey, stopCap]);
 

@@ -81,7 +81,7 @@ describe("candidatePool", () => {
     );
     expect(pool.map((x) => x.id)).toEqual(["ok"]);
   });
-  it("applies a sub-type selection like proposeRoute does", () => {
+  it("applies a sub-type selection", () => {
     const sel: IndustrySelection = { automotive: ["car_repair"] };
     const pool = candidatePool(
       [m({ id: "keep", primaryType: "car_repair" }), m({ id: "drop", primaryType: "tire_shop" })],

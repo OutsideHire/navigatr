@@ -122,9 +122,9 @@ function StopRow({
   m, checked, onToggle, accent,
 }: { m: MerchantWithDistance; checked: boolean; onToggle: (id: string) => void; accent?: boolean }) {
   return (
-    <label
+    <div
       className={cn(
-        "flex cursor-pointer items-center gap-3 rounded-radius-md border p-3",
+        "flex items-center gap-3 rounded-radius-md border p-3",
         accent ? "border-brand-primary" : "border-border-default",
       )}
     >
@@ -134,6 +134,6 @@ function StopRow({
         {CATEGORY_LABEL[m.category]}
         {typeof m.rating === "number" ? ` · ★${m.rating.toFixed(1)}` : ""}
       </div>
-    </label>
+    </div>
   );
 }
