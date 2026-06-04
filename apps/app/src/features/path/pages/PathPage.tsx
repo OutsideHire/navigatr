@@ -344,7 +344,7 @@ export function PathPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {pathView !== "active" && (
+          {pathView !== "active" && pathView !== "running" && (
             <Button
               variant="secondary"
               size="sm"
