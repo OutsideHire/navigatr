@@ -19,6 +19,9 @@
  *
  * Used in the Drop-In disposition picker (10 tiles, 2-column grid) and
  * Call disposition picker (4 tiles).
+ *
+ * Pass `dense` for the compact-row variant: a single-line pill with a tier dot
+ * and no description, used in the compact drop-in tile grid.
  */
 
 import * as React from "react";
@@ -36,15 +39,42 @@ const bandColor: Record<DispositionTier, string> = {
 export interface DispositionTileProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "title"> {
   tier: DispositionTier;
   title: string;
-  description: string;
+  description?: string;
   selected?: boolean;
+  dense?: boolean;
 }
 
 export const DispositionTile = React.forwardRef<HTMLButtonElement, DispositionTileProps>(
   function DispositionTile(
-    { tier, title, description, selected = false, disabled, className, type = "button", onClick, ...rest },
+    { tier, title, description, selected = false, dense = false, disabled, className, type = "button", onClick, ...rest },
     ref,
   ) {
+    if (dense) {
+      return (
+        <button
+          ref={ref}
+          type={type}
+          disabled={disabled}
+          onClick={onClick}
+          aria-pressed={selected}
+          className={cn(
+            "flex w-full items-center gap-2.5 rounded-radius-md px-3 py-2.5 text-left transition-all",
+            "bg-surface-elevated",
+            selected
+              ? "border-2 border-brand-primary bg-brand-primary-10"
+              : "border border-border-subtle hover:shadow-card-hover",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas",
+            "disabled:cursor-not-allowed disabled:opacity-50",
+            className,
+          )}
+          {...rest}
+        >
+          <span aria-hidden className={cn("h-2.5 w-2.5 shrink-0 rounded-radius-full", bandColor[tier])} />
+          <span className="truncate text-body-md text-text-default">{title}</span>
+        </button>
+      );
+    }
+
     return (
       <button
         ref={ref}
@@ -76,7 +106,7 @@ export const DispositionTile = React.forwardRef<HTMLButtonElement, DispositionTi
 
         <div className="flex flex-col gap-1 px-4 py-4 pl-5">
           <span className="text-body-strong text-text-default">{title}</span>
-          <span className="text-caption text-text-muted">{description}</span>
+          {description ? <span className="text-caption text-text-muted">{description}</span> : null}
         </div>
       </button>
     );

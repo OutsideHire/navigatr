@@ -134,9 +134,9 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
               {PATH_DISPOSITION_KEYS.map((key) => (
                 <DispositionTile
                   key={key}
+                  dense
                   tier={DISPOSITIONS[key].tier}
                   title={DISPOSITIONS[key].label}
-                  description=""
                   selected={selected === key}
                   onClick={() => setSelected(key)}
                 />
