@@ -14,13 +14,16 @@
  */
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, Route as RouteIcon, MapPin, Navigation } from "lucide-react";
+import { X, Route as RouteIcon, MapPin, Navigation, Pencil } from "lucide-react";
+import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { Button, Chip, Input } from "@/components/navigatr";
 import { formatDistance } from "@/lib/distance";
 import { CATEGORY_LABEL, type MerchantCategory } from "../mockData";
-import { TIER_1_KEYS, TIER_2_KEYS } from "../../../../../../supabase/functions/_shared/industryTaxonomy";
+import { IndustryEditor } from "./IndustryEditor";
+import { usePathPreferences, useUpdateDefaultIndustries } from "../hooks/usePathPreferences";
+import { selectedCategories, type IndustrySelection } from "../lib/industrySelection";
 import type { MerchantWithDistance } from "./MerchantList";
 import { type PathSortMode } from "../lib/sortMerchants";
 import { proposeRoute } from "../lib/proposeRoute";
@@ -51,18 +54,16 @@ const RADIUS_OPTIONS: Array<{ label: string; meters: number }> = [
   { label: "15 mi", meters: 24140 },
 ];
 
-/** The 12 fetchable industries (Tier 1 + 2), for the multi-select chip row.
- *  Empty selection = the hook's Tier-1 default; "All" = exactly these 12. */
-const CATEGORIES: MerchantCategory[] = [
-  "manufacturing", "construction_trades", "healthcare", "professional_services", "automotive",
-  "retail", "food_beverage", "hospitality", "education", "finance_banking", "fitness_wellness", "non_profit",
+/** Min-rating Select options. "Any" = no filter; the rest are inclusive floors
+ *  on the Google rating already loaded for each prospect. (No "Min employees" —
+ *  employee count isn't available from Places.) */
+const RATING_OPTIONS: Array<{ label: string; value: number }> = [
+  { label: "Any", value: 0 },
+  { label: "3.0+", value: 3 },
+  { label: "3.5+", value: 3.5 },
+  { label: "4.0+", value: 4 },
+  { label: "4.5+", value: 4.5 },
 ];
-
-/** Human labels for the Recommended set (the Tier-1 default), shown so the rep
- *  sees exactly what "Recommended" covers instead of guessing at jargon. */
-const RECOMMENDED_LABELS = ([...TIER_1_KEYS] as MerchantCategory[])
-  .map((k) => CATEGORY_LABEL[k])
-  .join(" · ");
 
 /** Default + bounds for the free-entry "Max stops" field. 100 is a practical
  *  ceiling on a single drop-in day's route — independent of the larger
@@ -82,8 +83,13 @@ export function CreatePathWizard({
   onIndustriesChange,
   onStart,
 }: CreatePathWizardProps) {
+  const { data: prefs } = usePathPreferences();
+  const updateDefaults = useUpdateDefaultIndustries();
+
   const [step, setStep] = React.useState<Step>("filters");
-  const [industries, setIndustries] = React.useState<MerchantCategory[]>([]);
+  const [selection, setSelection] = React.useState<IndustrySelection>({});
+  const [editing, setEditing] = React.useState(false);
+  const [minRating, setMinRating] = React.useState(0);
   const [stopCapText, setStopCapText] = React.useState<string>(String(DEFAULT_STOP_CAP));
   const [sortMode, setSortMode] = React.useState<PathSortMode>("opportunity");
 
@@ -92,33 +98,49 @@ export function CreatePathWizard({
   // cleared while typing without snapping the cursor.
   const stopCap = Math.min(MAX_STOP_CAP, Math.max(1, parseInt(stopCapText, 10) || DEFAULT_STOP_CAP));
 
-  // Every industry mutation lifts state to the parent (PathPage) so it
-  // re-ingests at the new scope, the same way onRadiusChange drives radius.
-  const applyIndustries = (next: MerchantCategory[]) => {
-    setIndustries(next);
-    onIndustriesChange(next);
-  };
-  const toggleIndustry = (c: MerchantCategory) =>
-    applyIndustries(industries.includes(c) ? industries.filter((x) => x !== c) : [...industries, c]);
-  const selectAll = () => applyIndustries([...TIER_1_KEYS, ...TIER_2_KEYS] as MerchantCategory[]);
-  const clearIndustries = () => applyIndustries([]);
+  const chosen = selectedCategories(selection);
 
-  // Reset to step 1 + the Recommended set (empty = the Tier-1 default) on (re)open.
+  // Apply a working selection: store it + lift the category list so PathPage
+  // re-ingests at the new scope (Edge ingests whole categories; sub-types narrow
+  // the route client-side via proposeRoute's `selection`).
+  const applySelection = React.useCallback(
+    (sel: IndustrySelection) => {
+      setSelection(sel);
+      onIndustriesChange(selectedCategories(sel));
+    },
+    [onIndustriesChange],
+  );
+
+  // Reset to step 1 on (re)open.
   React.useEffect(() => {
     if (open) {
       setStep("filters");
-      setIndustries([]);
-      onIndustriesChange([]);
+      setEditing(false);
+      setMinRating(0);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Geocoded + industry-filtered (empty = all) + top-N selected + nearest-
+  // Seed the working selection from saved defaults ONCE per open, as soon as the
+  // preference query has data. seededRef stops a later refetch (e.g. after
+  // "Save as default" invalidates the query) from clobbering an in-progress edit.
+  const seededRef = React.useRef(false);
+  React.useEffect(() => {
+    if (open) seededRef.current = false;
+  }, [open]);
+  React.useEffect(() => {
+    if (open && prefs && !seededRef.current) {
+      seededRef.current = true;
+      applySelection(prefs);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, prefs]);
+
+  // Geocoded + sub-type-filtered + rating-gated + top-N selected + nearest-
   // neighbor ordered → the proposed route. Shared with PathPage's queue via
   // proposeRoute so the rep-approved order/ETA matches what gets enqueued.
   const proposed = React.useMemo(
-    () => proposeRoute(merchants, { origin, industries, sortMode, stopCap }),
-    [merchants, origin, industries, sortMode, stopCap],
+    () => proposeRoute(merchants, { origin, industries: chosen, selection, sortMode, stopCap, minRating }),
+    [merchants, origin, chosen, selection, sortMode, stopCap, minRating],
   );
 
   const stats = React.useMemo(
@@ -171,39 +193,62 @@ export function CreatePathWizard({
                   ))}
                 </div>
               </div>
-              <div className="flex flex-col gap-1.5">
-                <span className="text-caption font-medium text-text-muted">
-                  Industries
-                  {industries.length > 0 && industries.length < CATEGORIES.length && (
-                    <span className="font-normal"> ({industries.length} selected)</span>
-                  )}
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  <Chip active={industries.length === 0} onClick={clearIndustries}>
-                    Recommended
-                  </Chip>
-                  <Chip active={industries.length === CATEGORIES.length} onClick={selectAll}>
-                    All industries
-                  </Chip>
-                </div>
-                <span className="text-caption text-text-muted">
-                  Recommended covers {RECOMMENDED_LABELS}.
-                </span>
-                <span className="mt-1 text-caption font-medium text-text-muted">
-                  Or pick specific industries
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {CATEGORIES.map((c) => (
-                    <Chip
-                      key={c}
-                      active={industries.includes(c)}
-                      onClick={() => toggleIndustry(c)}
-                    >
-                      {CATEGORY_LABEL[c]}
-                    </Chip>
+              {/* Min rating */}
+              <label className="flex flex-col gap-1.5">
+                <span className="text-caption font-medium text-text-muted">Min rating</span>
+                <select
+                  value={minRating}
+                  onChange={(e) => setMinRating(Number(e.target.value))}
+                  className="self-start rounded-radius-md border border-border-default bg-surface-default px-3 py-2 text-body-md text-text-default"
+                >
+                  {RATING_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
+                </select>
+              </label>
+
+              {/* Your industries — seeded from the rep's saved default; Edit overrides
+                  this path (and can persist as the new default). */}
+              {editing ? (
+                <IndustryEditor
+                  value={selection}
+                  scope="path"
+                  onUseForPath={(sel) => { applySelection(sel); setEditing(false); }}
+                  onSaveDefault={(sel) => {
+                    applySelection(sel);
+                    updateDefaults.mutate(sel, {
+                      onError: () => toast.error("Couldn't save as default — it still applies to this path."),
+                    });
+                    setEditing(false);
+                  }}
+                />
+              ) : (
+                <div className="flex flex-col gap-1.5 rounded-radius-md border border-border-default p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-caption font-medium text-text-muted">Your industries</span>
+                    <button
+                      type="button"
+                      onClick={() => setEditing(true)}
+                      className="inline-flex items-center gap-1 text-caption font-semibold text-brand-primary hover:underline"
+                    >
+                      <Pencil className="h-3.5 w-3.5" aria-hidden />
+                      Edit
+                    </button>
+                  </div>
+                  {chosen.length === 0 ? (
+                    <p className="text-caption text-text-muted">No industries selected — tap Edit to choose.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {chosen.map((c) => (
+                        <Chip key={c} active>{CATEGORY_LABEL[c]}</Chip>
+                      ))}
+                    </div>
+                  )}
+                  <span className="text-caption text-text-muted">
+                    Auto-applied from your default. Edit changes this path only.
+                  </span>
                 </div>
-              </div>
+              )}
               <label className="flex flex-col gap-1.5">
                 <span className="text-caption font-medium text-text-muted">Max stops</span>
                 <Input
