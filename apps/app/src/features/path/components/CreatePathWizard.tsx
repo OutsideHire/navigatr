@@ -18,7 +18,7 @@ import { X, Route as RouteIcon, MapPin, Navigation, Pencil } from "lucide-react"
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
-import { Button, Chip, Input, Select } from "@/components/navigatr";
+import { Button, Input, Select } from "@/components/navigatr";
 import { formatDistance } from "@/lib/distance";
 import { CATEGORY_LABEL, type MerchantCategory } from "../mockData";
 import { IndustryEditor } from "./IndustryEditor";
@@ -200,46 +200,52 @@ export function CreatePathWizard({
                 </div>
               </div>
               {/* Your industries — the hero control. The rep's saved default,
-                  auto-applied; Edit overrides this path (and can persist it). */}
-              {editing ? (
-                <IndustryEditor
-                  value={selection}
-                  scope="path"
-                  onUseForPath={(sel) => { applySelection(sel); setEditing(false); }}
-                  onSaveDefault={(sel) => {
-                    applySelection(sel);
-                    // Optimistic: the selection already applies to this path via
-                    // applySelection; we only surface a toast if the persist fails.
-                    updateDefaults.mutate(sel, {
-                      onError: () => toast.error("Couldn't save as default — it still applies to this path."),
-                    });
-                    setEditing(false);
-                  }}
-                />
-              ) : (
-                <div className="flex flex-col gap-2.5 rounded-radius-md border border-brand-primary bg-surface-default p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-body-strong text-text-default">Your industries</span>
-                      <span className="text-caption text-text-muted">
-                        Auto-applied from your default · Edit changes this path only.
-                      </span>
-                    </div>
+                  auto-applied; Edit overrides this path (and can persist it). The
+                  section header stays put across view/edit; only the body swaps. */}
+              <div className="flex flex-col gap-3 rounded-radius-md border border-brand-primary bg-surface-default p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-body-strong text-text-default">Your industries</span>
+                    <span className="text-caption text-text-muted">
+                      Auto-applied from your default · Edit changes this path only.
+                    </span>
+                  </div>
+                  {!editing && (
                     <Button variant="secondary" size="sm" leadingIcon={Pencil} onClick={() => setEditing(true)}>
                       Edit
                     </Button>
-                  </div>
-                  {chosen.length === 0 ? (
-                    <p className="text-caption text-text-muted">No industries selected — tap Edit to choose.</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {chosen.map((c) => (
-                        <Chip key={c} active>{CATEGORY_LABEL[c]}</Chip>
-                      ))}
-                    </div>
                   )}
                 </div>
-              )}
+                {editing ? (
+                  <IndustryEditor
+                    value={selection}
+                    scope="path"
+                    onUseForPath={(sel) => { applySelection(sel); setEditing(false); }}
+                    onSaveDefault={(sel) => {
+                      applySelection(sel);
+                      // Optimistic: the selection already applies to this path via
+                      // applySelection; we only surface a toast if the persist fails.
+                      updateDefaults.mutate(sel, {
+                        onError: () => toast.error("Couldn't save as default — it still applies to this path."),
+                      });
+                      setEditing(false);
+                    }}
+                  />
+                ) : chosen.length === 0 ? (
+                  <p className="text-caption text-text-muted">No industries selected — Edit to choose.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {chosen.map((c) => (
+                      <span
+                        key={c}
+                        className="inline-flex h-7 items-center rounded-radius-full bg-surface-sunken px-3 text-caption font-medium text-text-default"
+                      >
+                        {CATEGORY_LABEL[c]}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               {/* Secondary scope filters */}
               <div className="grid grid-cols-2 items-start gap-3">
@@ -261,6 +267,7 @@ export function CreatePathWizard({
                     max={MAX_STOP_CAP}
                     value={stopCapText}
                     onChange={(e) => setStopCapText(e.target.value)}
+                    onBlur={() => setStopCapText(String(stopCap))}
                     placeholder={String(DEFAULT_STOP_CAP)}
                   />
                 </label>

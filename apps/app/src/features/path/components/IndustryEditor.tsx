@@ -65,7 +65,7 @@ export function IndustryEditor({ value, scope, onUseForPath, onSaveDefault }: In
                     aria-expanded={isOpen}
                     aria-controls={`subtype-panel-${c}`}
                     aria-label={`Toggle ${CATEGORY_LABEL[c]} sub-types`}
-                    className="flex flex-1 items-center justify-between text-left">
+                    className="flex min-h-[44px] flex-1 items-center justify-between rounded-radius-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas">
                     <span className="text-body-md font-medium text-text-default">{CATEGORY_LABEL[c]}</span>
                     <span className="flex items-center gap-1 text-caption text-text-muted">
                       {selected} of {total}
@@ -73,7 +73,7 @@ export function IndustryEditor({ value, scope, onUseForPath, onSaveDefault }: In
                     </span>
                   </button>
                   <button type="button" aria-label={`Remove ${CATEGORY_LABEL[c]}`} onClick={() => removeCategory(c)}
-                    className="rounded-radius-sm p-1 text-text-muted hover:text-status-danger">
+                    className="-m-1 rounded-radius-sm p-3 text-text-muted hover:text-status-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas">
                     <X className="h-4 w-4" aria-hidden />
                   </button>
                 </div>
@@ -100,7 +100,7 @@ export function IndustryEditor({ value, scope, onUseForPath, onSaveDefault }: In
           <span className="px-1 text-caption font-medium text-text-muted">Add an industry</span>
           {addable.map((c) => (
             <button key={c} type="button" onClick={() => addCategory(c)}
-              className="rounded-radius-sm px-2 py-2 text-left text-body-md text-text-default hover:bg-surface-sunken">
+              className="flex min-h-[44px] items-center rounded-radius-sm px-2 py-2.5 text-left text-body-md text-text-default hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas">
               {CATEGORY_LABEL[c]}
             </button>
           ))}
