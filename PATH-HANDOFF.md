@@ -11,7 +11,40 @@ multi-day planning. Spec: `docs/superpowers/specs/2026-06-03-path-v3-path-first-
 Locked decisions live there (server-backed paths, one-per-day, Create=GPS auto-build→today,
 Plan=hand-pick→a chosen day, list-first home, discovery demoted to "Add stops").
 
-Build phases: **1a data foundation (DONE)** → **1b-i storage swap (DONE)** → **1b-ii path-first UI (DONE — pending frontend-design polish + /design-review)** → 2 multi-day → 3 running mode.
+Build phases: **1a data foundation (DONE)** → **1b-i storage swap (DONE)** → **1b-ii path-first UI (DONE — pending frontend-design polish + /design-review)** → 2 multi-day → **3 running mode (DONE 2026-06-04)**.
+
+## Path running mode — SHIPPED (2026-06-04, merge `21c97b0`)
+
+Phase 3 running mode: a focused, one-stop-at-a-time view the rep steps through while
+driving. Spec: `docs/superpowers/specs/2026-06-04-path-running-mode-design.md`; plan:
+`…/plans/2026-06-04-path-running-mode.md`. Test gate **626**.
+- **`components/RunningPath.tsx`** (new): entered via a **"Start route"** button on
+  `ActivePathView` (shown when ≥1 pending stop) → `pathView` gains a `"running"` state
+  in `PathPage`. Status bar (dot + `{visited}/{total}` + **Pause** → back to list, no
+  persisted paused state); current-stop card (`STOP n OF N`, name, `address · category`
+  — **real data only**, no email/employees/value/rating); **Call** (`tel:`, hidden when
+  no phone), **Directions** (`directionsUrl` maps deep link), **Log drop-in**. Nav:
+  Prev/Skip/Next (Skip → `setStatus skipped` + advance). Logging a drop-in opens the
+  existing `DropInSheet`; on its new `onLogged` callback RunningPath **auto-advances**
+  to the next pending stop + an **Undo** toast (Undo → `setStatus pending`; a created
+  deal stays in Pipeline). No pending left → renders `PathSummary`. Self-contained
+  (owns currentIndex + DropInSheet); snap-to-first-pending on load.
+- **`phone` on the `path_stops` snapshot** (migration `20260604120000_path_stops_phone.sql`,
+  applied to prod) so Call works without joining the volatile prospects cache —
+  threaded through `PathStop`/`PathStopRow`/`rowToStop`, the `useActivePath` select,
+  `StopSnapshot` + `addStops`, `TodayStop`, and **all** snapshot construction sites
+  (`handleStartPath`, `MerchantDetailSheet` add, `migrateLocalQueue`). LESSON: adding a
+  required field to `StopSnapshot` breaks every construction site — a scoped typecheck
+  grep missed two; always run the FULL `pnpm typecheck` gate.
+- **`DropInSheet` double-deal guard:** re-logging an already-`dealCreated` stop (now
+  reachable via Prev → Log again) skips the duplicate Pipeline deal (still records the
+  visit). Plus the optional `onLogged(disposition)` callback (discovery mount unaffected).
+- New helpers: `lib/directionsUrl.ts`, `lib/merchantFromStop.ts` (adapts a `TodayStop`
+  snapshot to the `Merchant` shape DropInSheet expects).
+- **Deferred (fast-follows):** voice speech-to-text (the mic is UI-only; hidden in this
+  flow); path naming ("NW OKC"); rating on the running card (not snapshotted);
+  map-forward turn-by-turn nav. Still owed: the live authed `/design-review` of the
+  deployed Path screens (running card + the rest), runnable only from the rep's session.
 
 **Phase 1a — SHIPPED to main (2026-06-03).** Plan:
 `docs/superpowers/plans/2026-06-03-path-v3-phase-1a-data-foundation.md`.
