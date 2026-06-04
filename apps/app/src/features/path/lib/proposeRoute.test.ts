@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { proposeRoute } from "./proposeRoute";
+import { proposeRoute, candidatePool, orderStops } from "./proposeRoute";
 import { sortMerchants } from "./sortMerchants";
 import { nearestNeighborOrder } from "@/lib/distance";
 import { allSubtypes, type IndustrySelection } from "./industrySelection";
@@ -177,5 +177,42 @@ describe("proposeRoute sub-type + rating filters", () => {
       { origin: ORIGIN, industries: ["automotive"], sortMode: "distance", stopCap: 10 },
     );
     expect(out.map((x) => x.id)).toEqual(["auto"]);
+  });
+});
+
+describe("candidatePool", () => {
+  it("returns the full filtered+sorted pool — no top-N slice", () => {
+    const pool = candidatePool(
+      [m({ id: "a" }), m({ id: "b" }), m({ id: "c" })],
+      { industries: [], sortMode: "distance" },
+    );
+    expect(pool.map((x) => x.id).sort()).toEqual(["a", "b", "c"]);
+  });
+  it("excludes chains and applies minRating", () => {
+    const pool = candidatePool(
+      [m({ id: "ok", rating: 4.5 }), m({ id: "low", rating: 2 }), m({ id: "chain", isChain: true })],
+      { industries: [], sortMode: "distance", minRating: 4 },
+    );
+    expect(pool.map((x) => x.id)).toEqual(["ok"]);
+  });
+  it("applies a sub-type selection like proposeRoute does", () => {
+    const sel: IndustrySelection = { automotive: ["car_repair"] };
+    const pool = candidatePool(
+      [m({ id: "keep", primaryType: "car_repair" }), m({ id: "drop", primaryType: "tire_shop" })],
+      { industries: ["automotive"], selection: sel, sortMode: "distance" },
+    );
+    expect(pool.map((x) => x.id)).toEqual(["keep"]);
+  });
+});
+
+describe("orderStops", () => {
+  it("nearest-neighbor-orders a chosen set from the origin", () => {
+    const near = m({ id: "near", lat: 35.0, lng: -97.0 });
+    const far = m({ id: "far", lat: 35.5, lng: -97.0 });
+    const out = orderStops({ lat: 35.0, lng: -97.0 }, [far, near]);
+    expect(out[0]!.id).toBe("near");
+  });
+  it("returns [] for an empty set", () => {
+    expect(orderStops({ lat: 35.0, lng: -97.0 }, [])).toEqual([]);
   });
 });
