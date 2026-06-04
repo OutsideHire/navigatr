@@ -3,10 +3,11 @@
  *
  * Two steps inside one Radix Dialog (same shell pattern as PathPlanSheet):
  *   1. Filters — radius (5/10/15mi), industry (category bucket), stop cap.
- *   2. Preview — route summary (stops / nearest / furthest / ~ETA) + the
- *      nearest-neighbor-ordered top-N stops, with Distance/Opportunity sort.
- * "Start path" hands the ordered merchant IDs to the caller, which writes them
- * into the queue. Places-only: no employee/value/email anywhere.
+ *   2. Select stops — the editable candidate pool (SelectStops): the optimized
+ *      top-N pre-selected, the rest of the nearby pool below, Distance/Opportunity
+ *      sort. The rep curates; "Start path" hands the nearest-neighbor-ordered
+ *      merchant IDs to the caller, which writes them into the queue. Places-only:
+ *      no employee/value/email anywhere.
  *
  * The wizard does NOT fetch — PathPage owns useMerchants and passes the loaded,
  * distance-annotated, radius-gated merchants in. Changing the radius here calls
@@ -14,20 +15,19 @@
  */
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, Route as RouteIcon, MapPin, Navigation, Pencil } from "lucide-react";
+import { X, Route as RouteIcon, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { Button, Input, Select } from "@/components/navigatr";
-import { formatDistance } from "@/lib/distance";
 import { CATEGORY_LABEL, type MerchantCategory } from "../mockData";
 import { IndustryEditor } from "./IndustryEditor";
+import { SelectStops } from "./SelectStops";
 import { usePathPreferences, useUpdateDefaultIndustries } from "../hooks/usePathPreferences";
 import { selectedCategories, type IndustrySelection } from "../lib/industrySelection";
 import type { MerchantWithDistance } from "./MerchantList";
 import { type PathSortMode } from "../lib/sortMerchants";
-import { proposeRoute } from "../lib/proposeRoute";
-import { routeStats, formatEta } from "../lib/routeStats";
+import { candidatePool } from "../lib/proposeRoute";
 
 export interface CreatePathWizardProps {
   open: boolean;
@@ -71,7 +71,7 @@ const RATING_OPTIONS: Array<{ label: string; value: number }> = [
 const DEFAULT_STOP_CAP = 25;
 const MAX_STOP_CAP = 100;
 
-type Step = "filters" | "preview";
+type Step = "filters" | "select";
 
 export function CreatePathWizard({
   open,
@@ -102,7 +102,7 @@ export function CreatePathWizard({
 
   // Apply a working selection: store it + lift the category list so PathPage
   // re-ingests at the new scope (Edge ingests whole categories; sub-types narrow
-  // the route client-side via proposeRoute's `selection`).
+  // the pool client-side via candidatePool's `selection`).
   const applySelection = React.useCallback(
     (sel: IndustrySelection) => {
       setSelection(sel);
@@ -141,18 +141,34 @@ export function CreatePathWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, prefs]);
 
-  // Geocoded + sub-type-filtered + rating-gated + top-N selected + nearest-
-  // neighbor ordered → the proposed route. Shared with PathPage's queue via
-  // proposeRoute so the rep-approved order/ETA matches what gets enqueued.
-  const proposed = React.useMemo(
-    () => proposeRoute(merchants, { origin, industries: chosen, selection, sortMode, stopCap, minRating }),
-    [merchants, origin, chosen, selection, sortMode, stopCap, minRating],
+  // Geocoded + sub-type-filtered + rating-gated, sorted candidate pool. The
+  // Select-stops step lets the rep curate from this; SelectStops orders the
+  // chosen set itself for Start + the live distance/ETA.
+  const pool = React.useMemo(
+    () => candidatePool(merchants, { industries: chosen, selection, minRating, sortMode }),
+    [merchants, chosen, selection, minRating, sortMode],
   );
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
 
-  const stats = React.useMemo(
-    () => routeStats(origin, proposed.map((m) => ({ lat: m.lat, lng: m.lng }))),
-    [origin, proposed],
+  // Auto-select the optimized top-N. Re-seed only when the pool MEMBERSHIP changes
+  // (filters changed) or the stop cap changes — NOT on sort (same businesses,
+  // reordered) and NOT on toggle, so the rep's curation survives those.
+  const membershipKey = React.useMemo(
+    () => [...pool.map((m) => m.id)].sort().join(","),
+    [pool],
   );
+  React.useEffect(() => {
+    setSelectedIds(new Set(pool.slice(0, stopCap).map((m) => m.id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [membershipKey, stopCap]);
+
+  const toggleStop = React.useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -164,7 +180,7 @@ export function CreatePathWizard({
         >
           <div className="flex items-center justify-between pb-3">
             <Dialog.Title className="text-heading-sm text-text-default">
-              {step === "filters" ? "Create path" : "Route preview"}
+              {step === "filters" ? "Create path" : "Select stops"}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button aria-label="Close" className="rounded-radius-sm p-1 text-text-muted hover:text-text-default">
@@ -272,95 +288,27 @@ export function CreatePathWizard({
                   />
                 </label>
               </div>
-              <Button variant="primary" leadingIcon={RouteIcon} onClick={() => setStep("preview")}>
-                Preview route
+              <Button variant="primary" leadingIcon={RouteIcon} onClick={() => setStep("select")}>
+                Select stops
               </Button>
             </div>
           )}
 
-          {step === "preview" && (
-            <div className="flex min-h-0 flex-col gap-3">
-              <div className="grid grid-cols-4 gap-2 rounded-radius-md bg-surface-sunken p-3 text-center">
-                <Stat label="Stops" value={String(stats.stopCount)} />
-                <Stat label="Nearest" value={stats.nearestMeters == null ? "—" : formatDistance(stats.nearestMeters)} />
-                <Stat label="Furthest" value={stats.furthestMeters == null ? "—" : formatDistance(stats.furthestMeters)} />
-                <Stat label="Est. time" value={formatEta(stats.etaMinutes)} />
-              </div>
-
-              <div className="flex gap-1 self-start rounded-radius-md bg-surface-sunken p-0.5">
-                {([
-                  { label: "Opportunity", mode: "opportunity" },
-                  { label: "Distance", mode: "distance" },
-                ] as Array<{ label: string; mode: PathSortMode }>).map((opt) => (
-                  <button
-                    key={opt.mode}
-                    type="button"
-                    onClick={() => setSortMode(opt.mode)}
-                    aria-pressed={sortMode === opt.mode}
-                    className={cn(
-                      "rounded-radius-sm px-3 py-1.5 text-caption font-medium transition-colors",
-                      sortMode === opt.mode
-                        ? "bg-surface-default text-text-default shadow-sm"
-                        : "text-text-muted hover:text-text-default",
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-
-              <ol className="flex min-h-0 flex-col gap-2 overflow-y-auto">
-                {proposed.length === 0 && (
-                  <li className="rounded-radius-md border border-dashed border-border-default p-4 text-center text-caption text-text-muted">
-                    No businesses match these filters within {formatDistance(radiusM)}. Widen the radius or industry.
-                  </li>
-                )}
-                {proposed.map((m, i) => (
-                  <li key={m.id} className="flex items-center gap-3 rounded-radius-md border border-border-default p-3">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-radius-full bg-surface-sunken text-caption font-semibold tabular-nums text-text-muted">
-                      {i + 1}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-body-md font-medium text-text-default">{m.name}</p>
-                      <p className="truncate text-caption text-text-muted">
-                        <MapPin className="mr-1 inline h-3 w-3 align-[-1px]" aria-hidden />
-                        {Number.isFinite(m.distanceMeters) ? `${formatDistance(m.distanceMeters)} away` : m.address}
-                        {" · "}
-                        {CATEGORY_LABEL[m.category]}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-
-              <div className="flex gap-2 pt-1">
-                <Button variant="secondary" onClick={() => setStep("filters")}>
-                  Back
-                </Button>
-                <Button
-                  variant="primary"
-                  leadingIcon={Navigation}
-                  disabled={proposed.length === 0}
-                  onClick={() => onStart(proposed.map((m) => m.id))}
-                  className="flex-1"
-                >
-                  Start path ({proposed.length})
-                </Button>
-              </div>
-            </div>
+          {step === "select" && (
+            <SelectStops
+              pool={pool}
+              origin={origin}
+              sortMode={sortMode}
+              onSortChange={setSortMode}
+              selectedIds={selectedIds}
+              onToggle={toggleStop}
+              onBack={() => setStep("filters")}
+              onStart={onStart}
+            />
           )}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-body-md font-semibold tabular-nums text-text-default">{value}</p>
-      <p className="text-caption text-text-muted">{label}</p>
-    </div>
   );
 }
 

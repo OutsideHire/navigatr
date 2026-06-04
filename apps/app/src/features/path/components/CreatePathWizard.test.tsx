@@ -106,7 +106,7 @@ describe("CreatePathWizard step 1 — default-industries-first", () => {
   });
 });
 
-describe("CreatePathWizard radius + max stops + preview", () => {
+describe("CreatePathWizard radius + max stops + select stops", () => {
   it("reflects the current radius and drives onRadiusChange", () => {
     const onRadiusChange = vi.fn();
     renderWizard({ radiusM: 16093, onRadiusChange });
@@ -121,23 +121,29 @@ describe("CreatePathWizard radius + max stops + preview", () => {
     expect(screen.getByLabelText(/max stops/i)).toHaveValue(25);
   });
 
-  it("advances to the preview step on Preview route", () => {
-    renderWizard();
-    fireEvent.click(screen.getByRole("button", { name: /preview route/i }));
-    expect(screen.getByText(/route preview/i)).toBeInTheDocument();
-    expect(screen.getByText(/stops/i)).toBeInTheDocument();
+  it("advances from filters to the Select stops step", () => {
+    mockPrefs = { retail: allSubtypes("retail") };
+    renderWizard({ merchants: [] });
+    fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
+    expect(screen.getByRole("button", { name: /start path/i })).toBeInTheDocument();
   });
 
-  it("shows the empty state in preview when no businesses match", () => {
+  it("renders the Select stops step with its dialog title", () => {
+    renderWizard();
+    fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
+    expect(screen.getByRole("heading", { name: /select stops/i })).toBeInTheDocument();
+  });
+
+  it("shows the empty state in Select stops when no businesses match", () => {
     renderWizard({ merchants: [] });
-    fireEvent.click(screen.getByRole("button", { name: /preview route/i }));
+    fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
     expect(screen.getByText(/no businesses match these filters/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /start path/i })).toBeDisabled();
   });
 
-  it("offers Opportunity and Distance sort in preview", () => {
+  it("offers Opportunity and Distance sort in Select stops", () => {
     renderWizard();
-    fireEvent.click(screen.getByRole("button", { name: /preview route/i }));
+    fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
     expect(screen.getByRole("button", { name: /opportunity/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /distance/i })).toBeInTheDocument();
   });

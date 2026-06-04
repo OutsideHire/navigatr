@@ -2,8 +2,7 @@
  * Create-path selection + ordering, as pure functions so the wizard's Select-stops
  * list and the started queue agree. candidatePool = the full filtered+sorted pool
  * (drives the list); orderStops = nearest-neighbor ordering of a chosen set (drives
- * Start + the live distance/ETA). proposeRoute composes them (top-N auto-route) and
- * is retained only while a caller needs it.
+ * Start + the live distance/ETA).
  */
 import { nearestNeighborOrder, type LatLng } from "@/lib/distance";
 import { sortMerchants, type PathSortMode } from "./sortMerchants";
@@ -48,17 +47,4 @@ export function orderStops<T extends Merchant & { distanceMeters?: number }>(
   if (chosen.length === 0) return [];
   const order = nearestNeighborOrder(origin, chosen.map((mch) => ({ lat: mch.lat, lng: mch.lng })));
   return order.map((i) => chosen[i]!);
-}
-
-export interface ProposeRouteOpts extends CandidatePoolOpts {
-  origin: LatLng;
-  stopCap: number;
-}
-
-/** The auto-built top-N route: pool → top-N → ordered. */
-export function proposeRoute<T extends Merchant & { distanceMeters?: number }>(
-  merchants: T[],
-  opts: ProposeRouteOpts,
-): T[] {
-  return orderStops(opts.origin, candidatePool(merchants, opts).slice(0, opts.stopCap));
 }
