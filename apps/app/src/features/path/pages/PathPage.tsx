@@ -300,7 +300,7 @@ export function PathPage() {
         .filter((m): m is NonNullable<typeof m> => Boolean(m))
         .map((m) => ({
           prospectId: m.id, name: m.name, address: m.address ?? null,
-          lat: m.lat, lng: m.lng, category: m.category, primaryType: null,
+          lat: m.lat, lng: m.lng, category: m.category, primaryType: m.primaryType ?? null,
         }));
       await todayPath.clear();
       for (const snap of snapshots) await todayPath.add(snap);

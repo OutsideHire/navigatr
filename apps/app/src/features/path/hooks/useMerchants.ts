@@ -132,6 +132,7 @@ export function prospectToMerchant(p: ProspectRow): Merchant {
     isChain: p.is_chain,
     chainConfidence: (p.chain_confidence as Merchant["chainConfidence"]) ?? null,
     chainBrandName: p.chain_brand_name ?? undefined,
+    primaryType: p.primary_type,
   };
 }
 
