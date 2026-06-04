@@ -122,10 +122,20 @@ already store/return `primary_type` — only the FE mapping dropped it).
   headless (dev server serves `main` not worktrees; needs the rep's live session +
   Google Places data). Gated on typecheck + tests; verify on the Vercel deploy.
 
-**Still owed (non-blocking):** a `/design-review` + deeper `frontend-design` pass
-on the deployed step-1 / IndustryEditor / PathSettings (built to a functional
-design-system baseline, then polished to token fidelity — not yet design-reviewed
-live). Same outstanding polish is owed for Path v3 PathEntry/ActivePathView (1b-ii).
+**Design review — SOURCE audit DONE (merge `30a7520`).** A `/design-review`
+source-code audit (single-model: Codex was unauthenticated, ran the Claude design
+subagent) of step-1 / IndustryEditor / PathSettings. Verdict: solid App-UI work
+(systematic tokens, real hero/secondary hierarchy, AI-slop clean). Fixed: selected-
+industry `Chip` toggle-buttons → static tag spans (a11y: `Chip` is a `<button
+aria-pressed>` — dead tab stops + SR toggle announcement; **don't use Chip for
+read-only tags**); IndustryEditor raw buttons got focus-visible rings + 44px tap
+targets; "Your industries" header persists across view↔edit; Max-stops snaps to the
+clamped value on blur; rhythm + copy polish.
+**Still owed (non-blocking):** a LIVE authed `/design-review` of the deployed Create
+flow — can't run headless (browse isn't logged in; the wizard needs the rep's session
++ geolocation + real prospects). Run it logged-in against the Vercel site, or via
+`/setup-browser-cookies`. Same live-audit + `frontend-design` polish is owed for Path
+v3 PathEntry/ActivePathView (1b-ii).
 
 ## TL;DR — Slice 5 DEPLOYED (2026-06-02)
 
