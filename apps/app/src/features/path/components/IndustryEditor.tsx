@@ -62,6 +62,9 @@ export function IndustryEditor({ value, scope, onUseForPath, onSaveDefault }: In
               <div key={c} className="rounded-radius-md border border-border-default">
                 <div className="flex items-center gap-2 px-3 py-2.5">
                   <button type="button" onClick={() => setExpanded(isOpen ? null : c)}
+                    aria-expanded={isOpen}
+                    aria-controls={`subtype-panel-${c}`}
+                    aria-label={`Toggle ${CATEGORY_LABEL[c]} sub-types`}
                     className="flex flex-1 items-center justify-between text-left">
                     <span className="text-body-md font-medium text-text-default">{CATEGORY_LABEL[c]}</span>
                     <span className="flex items-center gap-1 text-caption text-text-muted">
@@ -75,10 +78,10 @@ export function IndustryEditor({ value, scope, onUseForPath, onSaveDefault }: In
                   </button>
                 </div>
                 {isOpen && (
-                  <div className="flex flex-col gap-1 border-t border-border-default px-3 py-2">
+                  <div id={`subtype-panel-${c}`} className="flex flex-col gap-1 border-t border-border-default px-3 py-2">
                     {allSubtypes(c).map((t) => (
                       <label key={t} className="flex items-center gap-2 text-body-md text-text-default">
-                        <input type="checkbox" className="h-4 w-4 rounded border-border-default"
+                        <input type="checkbox" className="h-4 w-4 rounded border-border-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
                           checked={(sel[c] ?? []).includes(t)} onChange={() => toggleSubtype(c, t)} />
                         {humanizeSubtype(t)}
                       </label>
