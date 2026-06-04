@@ -137,6 +137,33 @@ flow — can't run headless (browse isn't logged in; the wizard needs the rep's 
 `/setup-browser-cookies`. Same live-audit + `frontend-design` polish is owed for Path
 v3 PathEntry/ActivePathView (1b-ii).
 
+## Create-path "Select stops" — SHIPPED (2026-06-04, merge `397008a`)
+
+Step 2 of the Create wizard changed from a read-only auto-route preview into an
+**editable selection step**. Spec: `docs/superpowers/specs/2026-06-04-create-path-select-stops-design.md`;
+plan: `docs/superpowers/plans/2026-06-04-create-path-select-stops.md`. Frontend-only,
+no DB/Edge. Test gate now **604**.
+- **`lib/proposeRoute.ts` split:** `proposeRoute` is **gone**; replaced by
+  `candidatePool(merchants, {industries, sortMode, selection?, minRating?})` (the full
+  filtered+sorted pool — geocoded + `!isChain` + minRating + selection/industry filter
+  + `sortMerchants`, no slice) and `orderStops(origin, chosen)` (NN-order any set).
+  `CandidatePoolOpts` is the shared opts type. (Filename kept as `proposeRoute.ts` —
+  rename was out of scope.)
+- **`components/SelectStops.tsx`** (new): one ranked checklist — **Selected ·
+  auto-optimized** (pre-checked top-N) + **More nearby** (rest of pool, searchable,
+  capped at `MORE_CAP=100`). Live summary header `N stops · ~X mi · ~ETA` (`routeStats`
+  + `orderStops` over the selected set). Start = NN-ordered selected ids → `onStart`,
+  disabled at 0. Rows are a plain `<div>` + navigatr `Checkbox` (NOT an outer `<label>`
+  — nested labels double-toggle; learned the hard way in review).
+- **`CreatePathWizard` step 2:** `Step` `"preview"`→`"select"`; pool from
+  `candidatePool`; `selectedIds: Set<string>` seeded to `pool.slice(0, stopCap)` and
+  **re-seeded only when pool membership or stop-cap changes** (a sorted-ids
+  `membershipKey` keeps sort + per-item toggles from wiping the rep's curation);
+  `selectedIds` reset on dialog open. Step-1 button "Preview route"→"Select stops".
+  `onStart` passthrough unchanged (PathPage snapshots the ordered ids, carrying
+  `primaryType`). Active-path home still renders the ordered route + map (no separate
+  review step — the locked 2-step flow).
+
 ## TL;DR — Slice 5 DEPLOYED (2026-06-02)
 
 **Slice 5 is now live.** Migration + Edge deployed and verified at the contract
