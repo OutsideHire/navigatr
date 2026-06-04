@@ -37,6 +37,19 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit }: Running
     if (index > total - 1) setIndex(Math.max(0, total - 1));
   }, [total, index]);
 
+  // When the stop list first populates (mount-before-load), jump to the first
+  // pending stop. Fires only on the 0 → N transition so it never fights manual
+  // Prev/Next or advance().
+  const prevTotalRef = React.useRef(0);
+  React.useEffect(() => {
+    if (prevTotalRef.current === 0 && total > 0) {
+      const fp = stops.findIndex((s) => s.status === "pending");
+      if (fp > 0) setIndex(fp);
+    }
+    prevTotalRef.current = total;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [total]);
+
   if (allDone) {
     const stats = routeStats(origin, stops.map((s) => ({ lat: s.lat, lng: s.lng })));
     return (

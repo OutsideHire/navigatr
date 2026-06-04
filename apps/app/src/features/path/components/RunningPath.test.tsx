@@ -72,4 +72,16 @@ describe("RunningPath", () => {
     fireEvent.click(screen.getByRole("button", { name: /pause/i }));
     expect(onPause).toHaveBeenCalled();
   });
+  it("shows summary after logging the last pending stop", () => {
+    stops = [stop("A")]; // only one pending
+    const { rerender } = render(
+      <RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /log drop-in/i }));
+    fireEvent.click(screen.getByText("save-log"));
+    // Simulate the query refetch flipping the logged stop to visited:
+    stops = [stop("A", { status: "visited" })];
+    rerender(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
+    expect(screen.getByTestId("summary")).toBeInTheDocument();
+  });
 });
