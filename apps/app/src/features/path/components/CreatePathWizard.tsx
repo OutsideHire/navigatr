@@ -18,7 +18,7 @@ import { X, Route as RouteIcon, MapPin, Navigation, Pencil } from "lucide-react"
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
-import { Button, Chip, Input } from "@/components/navigatr";
+import { Button, Chip, Input, Select } from "@/components/navigatr";
 import { formatDistance } from "@/lib/distance";
 import { CATEGORY_LABEL, type MerchantCategory } from "../mockData";
 import { IndustryEditor } from "./IndustryEditor";
@@ -199,23 +199,8 @@ export function CreatePathWizard({
                   ))}
                 </div>
               </div>
-              {/* Min rating */}
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="min-rating" className="text-caption font-medium text-text-muted">Min rating</label>
-                <select
-                  id="min-rating"
-                  value={minRating}
-                  onChange={(e) => setMinRating(Number(e.target.value))}
-                  className="self-start rounded-radius-md border border-border-default bg-surface-default px-3 py-2 text-body-md text-text-default"
-                >
-                  {RATING_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Your industries — seeded from the rep's saved default; Edit overrides
-                  this path (and can persist as the new default). */}
+              {/* Your industries — the hero control. The rep's saved default,
+                  auto-applied; Edit overrides this path (and can persist it). */}
               {editing ? (
                 <IndustryEditor
                   value={selection}
@@ -232,17 +217,17 @@ export function CreatePathWizard({
                   }}
                 />
               ) : (
-                <div className="flex flex-col gap-1.5 rounded-radius-md border border-border-default p-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-caption font-medium text-text-muted">Your industries</span>
-                    <button
-                      type="button"
-                      onClick={() => setEditing(true)}
-                      className="inline-flex items-center gap-1 text-caption font-semibold text-brand-primary hover:underline"
-                    >
-                      <Pencil className="h-3.5 w-3.5" aria-hidden />
+                <div className="flex flex-col gap-2.5 rounded-radius-md border border-brand-primary bg-surface-default p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-body-strong text-text-default">Your industries</span>
+                      <span className="text-caption text-text-muted">
+                        Auto-applied from your default · Edit changes this path only.
+                      </span>
+                    </div>
+                    <Button variant="secondary" size="sm" leadingIcon={Pencil} onClick={() => setEditing(true)}>
                       Edit
-                    </button>
+                    </Button>
                   </div>
                   {chosen.length === 0 ? (
                     <p className="text-caption text-text-muted">No industries selected — tap Edit to choose.</p>
@@ -253,26 +238,33 @@ export function CreatePathWizard({
                       ))}
                     </div>
                   )}
-                  <span className="text-caption text-text-muted">
-                    Auto-applied from your default. Edit changes this path only.
-                  </span>
                 </div>
               )}
-              <label className="flex flex-col gap-1.5">
-                <span className="text-caption font-medium text-text-muted">Max stops</span>
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  min={1}
-                  max={MAX_STOP_CAP}
-                  value={stopCapText}
-                  onChange={(e) => setStopCapText(e.target.value)}
-                  placeholder={String(DEFAULT_STOP_CAP)}
-                />
-                <span className="text-caption text-text-muted">
-                  How many businesses to include in the route.
-                </span>
-              </label>
+
+              {/* Secondary scope filters */}
+              <div className="grid grid-cols-2 items-start gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="min-rating" className="text-caption font-medium text-text-muted">Min rating</label>
+                  <Select
+                    id="min-rating"
+                    value={String(minRating)}
+                    onValueChange={(v) => setMinRating(Number(v))}
+                    options={RATING_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }))}
+                  />
+                </div>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-caption font-medium text-text-muted">Max stops</span>
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={MAX_STOP_CAP}
+                    value={stopCapText}
+                    onChange={(e) => setStopCapText(e.target.value)}
+                    placeholder={String(DEFAULT_STOP_CAP)}
+                  />
+                </label>
+              </div>
               <Button variant="primary" leadingIcon={RouteIcon} onClick={() => setStep("preview")}>
                 Preview route
               </Button>
