@@ -169,6 +169,16 @@ describe("opportunityScore", () => {
   });
 });
 
+// ── prospectToMerchant primaryType ────────────────────────────────
+describe("prospectToMerchant primaryType", () => {
+  it("maps primary_type onto the Merchant", () => {
+    expect(prospectToMerchant(makeRow({ primary_type: "tire_shop" })).primaryType).toBe("tire_shop");
+  });
+  it("passes through a null primary_type", () => {
+    expect(prospectToMerchant(makeRow({ primary_type: null })).primaryType).toBeNull();
+  });
+});
+
 // ── useMerchants ───────────────────────────────────────────────────
 describe("useMerchants", () => {
   it("does not fetch while origin is null (geolocation settling)", () => {

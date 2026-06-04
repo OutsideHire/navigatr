@@ -69,6 +69,9 @@ export interface Merchant {
   isChain?: boolean;
   chainConfidence?: "high" | "medium" | "low" | null;
   chainBrandName?: string;
+  /** Google Places primary_type (or types[0] fallback), set at ingest. Null on
+   *  legacy rows; used for category→sub-type filtering in the Create path flow. */
+  primaryType?: string | null;
 }
 
 const TODAY = new Date("2026-05-16T12:00:00Z");
