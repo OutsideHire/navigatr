@@ -34,8 +34,24 @@ describe("SelectStops", () => {
   });
   it("toggling a selected row calls onToggle with its id", () => {
     const { onToggle } = setup(new Set(["Acme"]));
+    fireEvent.click(screen.getByRole("button", { name: /in your route/i }));
     fireEvent.click(screen.getByLabelText("Acme"));
     expect(onToggle).toHaveBeenCalledWith("Acme");
+  });
+  it("collapses the Selected section by default and expands on click", () => {
+    setup(new Set(["Acme", "Bravo"]));
+    expect(screen.getByRole("button", { name: /in your route · 2/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Acme")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /in your route/i }));
+    expect(screen.getByLabelText("Acme")).toBeInTheDocument();
+  });
+  it("hides the In-your-route bar when nothing is selected", () => {
+    setup(new Set());
+    expect(screen.queryByRole("button", { name: /in your route/i })).not.toBeInTheDocument();
+  });
+  it("renders distance · category · rating in a row's meta", () => {
+    setup(new Set()); // Charlie etc. are unselected → in More nearby, always visible; row() rating 4.2, category automotive
+    expect(screen.getAllByText(/automotive · ★4\.2/i).length).toBeGreaterThanOrEqual(1);
   });
   it("toggling an unselected row calls onToggle with its id", () => {
     const { onToggle } = setup(new Set(["Acme"]));
@@ -58,5 +74,15 @@ describe("SelectStops", () => {
     expect(onStart).toHaveBeenCalledTimes(1);
     const ids = onStart.mock.calls[0][0] as string[];
     expect(ids.sort()).toEqual(["Acme", "Charlie"]);
+  });
+  it("omits the rating from a row's meta when rating is absent", () => {
+    setup(new Set(), { pool: [row("NoRating", { rating: undefined })] });
+    expect(screen.getByText(/automotive/i)).toBeInTheDocument();
+    expect(screen.queryByText(/★/)).not.toBeInTheDocument();
+  });
+  it("shows the empty state when no businesses match", () => {
+    setup(new Set(), { pool: [] });
+    expect(screen.getByText(/no businesses match/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /start path/i })).toBeDisabled();
   });
 });
