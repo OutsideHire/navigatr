@@ -34,8 +34,24 @@ describe("SelectStops", () => {
   });
   it("toggling a selected row calls onToggle with its id", () => {
     const { onToggle } = setup(new Set(["Acme"]));
+    fireEvent.click(screen.getByRole("button", { name: /in your route/i }));
     fireEvent.click(screen.getByLabelText("Acme"));
     expect(onToggle).toHaveBeenCalledWith("Acme");
+  });
+  it("collapses the Selected section by default and expands on click", () => {
+    setup(new Set(["Acme", "Bravo"]));
+    expect(screen.getByRole("button", { name: /in your route · 2/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Acme")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /in your route/i }));
+    expect(screen.getByLabelText("Acme")).toBeInTheDocument();
+  });
+  it("hides the In-your-route bar when nothing is selected", () => {
+    setup(new Set());
+    expect(screen.queryByRole("button", { name: /in your route/i })).not.toBeInTheDocument();
+  });
+  it("renders distance · category · rating in a row's meta", () => {
+    setup(new Set()); // Charlie etc. are unselected → in More nearby, always visible; row() rating 4.2, category automotive
+    expect(screen.getAllByText(/automotive · ★4\.2/i).length).toBeGreaterThanOrEqual(1);
   });
   it("toggling an unselected row calls onToggle with its id", () => {
     const { onToggle } = setup(new Set(["Acme"]));
