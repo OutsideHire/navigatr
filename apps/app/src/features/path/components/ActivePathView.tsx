@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Check, X, Plus } from "lucide-react";
+import { Check, X, Plus, Navigation } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/navigatr";
 import { MerchantMap } from "./MerchantMap";
@@ -13,6 +13,8 @@ interface ActivePathViewProps {
   origin: { lat: number; lng: number };
   /** Open the discovery / "add stops" view. */
   onAddStops: () => void;
+  /** Enter running mode (turn-by-turn route). */
+  onStartRoute: () => void;
 }
 
 /**
@@ -22,7 +24,7 @@ interface ActivePathViewProps {
  * works for a path whose stops aren't in the current discovery list. Actions stay
  * visible (mobile-first — no hover-to-discover).
  */
-export function ActivePathView({ origin, onAddStops }: ActivePathViewProps) {
+export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathViewProps) {
   const { stops, setStatus, remove } = useTodayPath();
   const orderedCoords = stops.map((s) => ({ lat: s.lat, lng: s.lng }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -43,6 +45,12 @@ export function ActivePathView({ origin, onAddStops }: ActivePathViewProps) {
           {stats.stopCount} stops
           {stats.furthestMeters != null ? ` · ${formatDistance(stats.furthestMeters)} to furthest` : ""}
         </p>
+
+        {stops.some((s) => s.status === "pending") && (
+          <Button variant="primary" size="sm" leadingIcon={Navigation} onClick={onStartRoute} className="self-start">
+            Start route
+          </Button>
+        )}
 
         <ol className="flex min-h-0 flex-col gap-1.5 overflow-y-auto">
           {stops.map((s, i) => (
