@@ -26,8 +26,8 @@ describe("planQueueMigration", () => {
     const { snapshots, unresolved } = planQueueMigration(local, byId);
     expect(unresolved).toEqual([]);
     expect(snapshots).toEqual([
-      { prospectId: "a", name: "A", address: "Addr", lat: 1, lng: 2, category: "manufacturing", primaryType: null },
-      { prospectId: "b", name: "B", address: "Addr", lat: 3, lng: 4, category: "manufacturing", primaryType: null },
+      { prospectId: "a", name: "A", address: "Addr", lat: 1, lng: 2, category: "manufacturing", primaryType: null, phone: "+10000000000" },
+      { prospectId: "b", name: "B", address: "Addr", lat: 3, lng: 4, category: "manufacturing", primaryType: null, phone: "+10000000000" },
     ]);
   });
 

@@ -24,6 +24,7 @@ export interface PathStop {
   prospectId: string;
   name: string;
   address: string | null;
+  phone: string | null;
   lat: number;
   lng: number;
   category: MerchantCategory;
@@ -50,6 +51,7 @@ export interface PathStopRow {
   prospect_id: string;
   name: string;
   address: string | null;
+  phone: string | null;
   lat: number;
   lng: number;
   category: string;
@@ -80,6 +82,7 @@ export function rowToStop(row: PathStopRow): PathStop {
     prospectId: row.prospect_id,
     name: row.name,
     address: row.address,
+    phone: row.phone,
     lat: row.lat,
     lng: row.lng,
     category: row.category as MerchantCategory,

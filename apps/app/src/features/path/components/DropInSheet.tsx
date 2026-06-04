@@ -25,12 +25,19 @@ export interface DropInSheetProps {
   merchant: Merchant | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Fired after a successful save, with the chosen disposition. Lets running
+   *  mode advance to the next stop once a visit is logged. */
+  onLogged?: (disposition: Disposition) => void;
 }
 
-export function DropInSheet({ merchant, open, onOpenChange }: DropInSheetProps) {
+export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSheetProps) {
   const todayPath = useTodayPath();
   const logVisit = todayPath.logVisit;
   const markDealCreated = todayPath.markDealCreated;
+  // Already-created deals must not be duplicated when a stop is re-logged.
+  const alreadyDealCreated = merchant
+    ? todayPath.stops.find((s) => s.merchantId === merchant.id)?.dealCreated ?? false
+    : false;
   const createDeal = useCreateDeal();
   const logActivity = useLogActivity();
 
@@ -63,7 +70,7 @@ export function DropInSheet({ merchant, open, onOpenChange }: DropInSheetProps) 
     // Always record the disposition on the queue stop.
     await logVisit(merchant.id, selected);
 
-    if (isEngagedDisposition(selected)) {
+    if (isEngagedDisposition(selected) && !alreadyDealCreated) {
       try {
         const followUpDate = calculateFollowUpDate(selected);
         const { id: dealId } = await createDeal.mutateAsync({
@@ -99,6 +106,7 @@ export function DropInSheet({ merchant, open, onOpenChange }: DropInSheetProps) 
     }
     setSaving(false);
     savingRef.current = false;
+    onLogged?.(selected);
     onOpenChange(false);
   };
 

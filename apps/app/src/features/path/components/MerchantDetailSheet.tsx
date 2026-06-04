@@ -163,6 +163,7 @@ export function MerchantDetailSheet({
                     lng: merchant.lng,
                     category: merchant.category,
                     primaryType: null,
+                    phone: merchant.phone ?? null,
                   });
                   toast.success(`Added ${merchant.name} to today's path`);
                 }}

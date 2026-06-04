@@ -31,6 +31,7 @@
  */
 
 import * as React from "react";
+import { useNavigate } from "react-router-dom";
 import { List, Loader2, LocateFixed, Lock, Map as MapIcon, MapPinOff, Route as RouteIcon, Settings } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -52,6 +53,7 @@ import { CreatePathWizard } from "../components/CreatePathWizard";
 import { PathEntry } from "../components/PathEntry";
 import { PathSettings } from "../components/PathSettings";
 import { ActivePathView } from "../components/ActivePathView";
+import { RunningPath } from "../components/RunningPath";
 import { usePathQueue } from "../hooks/usePathQueue";
 import { useTodayPath } from "../hooks/useTodayPath";
 import { toast } from "sonner";
@@ -87,6 +89,7 @@ const MAX_DISPLAY_RADIUS_M = RADIUS_OPTIONS[RADIUS_OPTIONS.length - 1]!.meters; 
 const DEFAULT_SORT_MODE: PathSortMode = "popularity";
 
 export function PathPage() {
+  const navigate = useNavigate();
   const {
     origin,
     originSource,
@@ -120,7 +123,8 @@ export function PathPage() {
   //   "entry"    — no active path, show two-card prompt (create / plan)
   //   "active"   — path has stops, show ActivePathView as main content
   //   "discover" — add-stops mode: map+list discovery, demoted from default
-  const [pathView, setPathView] = React.useState<"entry" | "active" | "discover">("entry");
+  //   "running"  — turn-by-turn route mode (RunningPath)
+  const [pathView, setPathView] = React.useState<"entry" | "active" | "discover" | "running">("entry");
 
   // Server-backed today's path. queueStops keeps the same name so all
   // downstream route math, badge counts, etc. keep working unchanged.
@@ -130,7 +134,13 @@ export function PathPage() {
   // Sync default view from stops. Never override an explicit "discover" — the
   // rep is in the middle of adding stops and we shouldn't yank them back.
   React.useEffect(() => {
-    setPathView((v) => (v === "discover" ? v : queueStops.length > 0 ? "active" : "entry"));
+    setPathView((v) =>
+      v === "discover" || (v === "running" && queueStops.length > 0)
+        ? v
+        : queueStops.length > 0
+          ? "active"
+          : "entry",
+    );
   }, [queueStops.length]);
 
   // Handlers for transitioning between views.
@@ -301,7 +311,7 @@ export function PathPage() {
         .filter((m): m is NonNullable<typeof m> => Boolean(m))
         .map((m) => ({
           prospectId: m.id, name: m.name, address: m.address ?? null,
-          lat: m.lat, lng: m.lng, category: m.category, primaryType: m.primaryType ?? null,
+          phone: m.phone ?? null, lat: m.lat, lng: m.lng, category: m.category, primaryType: m.primaryType ?? null,
         }));
       // Persist the whole route in two round-trips (clear + one batched addMany),
       // not a per-stop loop — otherwise the wizard close below is gated behind ~2N
@@ -334,7 +344,7 @@ export function PathPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {pathView !== "active" && (
+          {pathView !== "active" && pathView !== "running" && (
             <Button
               variant="secondary"
               size="sm"
@@ -463,7 +473,14 @@ export function PathPage() {
       ) : pathView === "entry" ? (
         <PathEntry onCreate={() => setCreateOpen(true)} onPlan={enterDiscover} />
       ) : pathView === "active" ? (
-        <ActivePathView origin={origin} onAddStops={enterDiscover} />
+        <ActivePathView origin={origin} onAddStops={enterDiscover} onStartRoute={() => setPathView("running")} />
+      ) : pathView === "running" ? (
+        <RunningPath
+          origin={origin}
+          onPause={() => setPathView("active")}
+          onViewPipeline={() => navigate("/pipeline")}
+          onExit={() => setPathView("entry")}
+        />
       ) : (
         /* pathView === "discover": filter controls + map+list discovery ladder */
         <>

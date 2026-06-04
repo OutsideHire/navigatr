@@ -22,6 +22,7 @@ export interface StopSnapshot {
   prospectId: string;
   name: string;
   address: string | null;
+  phone: string | null;
   lat: number;
   lng: number;
   category: MerchantCategory;
@@ -59,7 +60,7 @@ export function usePathMutations() {
     mutationFn: async (input: AddStopsInput): Promise<void> => {
       const rows = input.stops.map((s, i) => ({
         path_id: input.pathId, prospect_id: s.prospectId, name: s.name, address: s.address,
-        lat: s.lat, lng: s.lng, category: s.category, primary_type: s.primaryType,
+        phone: s.phone, lat: s.lat, lng: s.lng, category: s.category, primary_type: s.primaryType,
         position: input.basePosition + i,
       }));
       const { error } = await supabase
