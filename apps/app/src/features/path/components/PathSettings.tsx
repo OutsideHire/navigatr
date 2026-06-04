@@ -1,5 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
+import { toast } from "sonner";
 import { IndustryEditor } from "./IndustryEditor";
 import { usePathPreferences, useUpdateDefaultIndustries } from "../hooks/usePathPreferences";
 import type { IndustrySelection } from "../lib/industrySelection";
@@ -15,12 +16,16 @@ interface PathSettingsProps {
  * per-rep preference). Mirrors the CreatePathWizard/PathPlanSheet dialog shell.
  */
 export function PathSettings({ open, onOpenChange }: PathSettingsProps) {
-  const { data: defaults } = usePathPreferences();
+  const { data: defaults, isLoading } = usePathPreferences();
   const update = useUpdateDefaultIndustries();
 
-  const handleSave = (sel: IndustrySelection) => {
-    update.mutate(sel);
-    onOpenChange(false);
+  const handleSave = async (sel: IndustrySelection) => {
+    try {
+      await update.mutateAsync(sel);
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't save. Check your connection and try again.");
+    }
   };
 
   return (
@@ -44,12 +49,16 @@ export function PathSettings({ open, onOpenChange }: PathSettingsProps) {
               <h3 className="text-body-strong text-text-default">Default industries</h3>
               <p className="text-caption text-text-muted">Auto-applied to every new path. Edit any path without changing this.</p>
             </div>
-            <IndustryEditor
-              value={defaults ?? {}}
-              scope="default"
-              onUseForPath={() => {}}
-              onSaveDefault={handleSave}
-            />
+            {isLoading || defaults === undefined ? (
+              <p className="text-body-md text-text-muted">Loading…</p>
+            ) : (
+              <IndustryEditor
+                value={defaults}
+                scope="default"
+                onUseForPath={() => {}}
+                onSaveDefault={handleSave}
+              />
+            )}
           </div>
         </Dialog.Content>
       </Dialog.Portal>
