@@ -43,6 +43,7 @@ export function planQueueMigration(
       lng: m.lng,
       category: m.category,
       primaryType: null, // Merchant has no primaryType; populated by Places in Phase 2
+      phone: m.phone ?? null,
     });
   }
   return { snapshots, unresolved };
