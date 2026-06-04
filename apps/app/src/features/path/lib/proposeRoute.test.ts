@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { proposeRoute } from "./proposeRoute";
 import { sortMerchants } from "./sortMerchants";
 import { nearestNeighborOrder } from "@/lib/distance";
+import { allSubtypes, type IndustrySelection } from "./industrySelection";
 import type { Merchant } from "../mockData";
 
 type Row = Merchant & { distanceMeters?: number };
@@ -111,5 +112,70 @@ describe("proposeRoute", () => {
     expect(out.map((m) => m.id)).toEqual(expected);
     // And the cut is the fewest-reviews trio (d=1, a=5, b=10), NN-ordered.
     expect([...out.map((m) => m.id)].sort()).toEqual(["a", "b", "d"]);
+  });
+});
+
+type TestMerchant = Merchant & { distanceMeters?: number };
+function m(over: Partial<TestMerchant> = {}): TestMerchant {
+  return {
+    id: "m1", name: "M", category: "automotive", address: "a", lat: 35.0, lng: -97.0,
+    phone: "", employeeCountRange: "", status: "untouched", lastActivity: null,
+    isChain: false, primaryType: "car_repair", rating: 4.2,
+    ...over,
+  } as TestMerchant;
+}
+const ORIGIN = { lat: 35.0, lng: -97.0 };
+
+describe("proposeRoute sub-type + rating filters", () => {
+  it("with a partial selection, keeps only merchants whose primaryType is selected", () => {
+    const sel: IndustrySelection = { automotive: ["car_repair"] };
+    const out = proposeRoute(
+      [m({ id: "keep", primaryType: "car_repair" }), m({ id: "drop", primaryType: "tire_shop" })],
+      { origin: ORIGIN, industries: ["automotive"], selection: sel, sortMode: "distance", stopCap: 10 },
+    );
+    expect(out.map((x) => x.id)).toEqual(["keep"]);
+  });
+
+  it("with a full selection, keeps every sub-type of the category", () => {
+    const sel: IndustrySelection = { automotive: allSubtypes("automotive") };
+    const out = proposeRoute(
+      [m({ id: "a", primaryType: "car_repair" }), m({ id: "b", primaryType: "tire_shop" })],
+      { origin: ORIGIN, industries: ["automotive"], selection: sel, sortMode: "distance", stopCap: 10 },
+    );
+    expect(out.map((x) => x.id).sort()).toEqual(["a", "b"]);
+  });
+
+  it("keeps a merchant with null primaryType when its category is selected", () => {
+    const sel: IndustrySelection = { automotive: ["car_repair"] };
+    const out = proposeRoute(
+      [m({ id: "legacy", primaryType: null })],
+      { origin: ORIGIN, industries: ["automotive"], selection: sel, sortMode: "distance", stopCap: 10 },
+    );
+    expect(out.map((x) => x.id)).toEqual(["legacy"]);
+  });
+
+  it("drops a merchant whose category is not in the selection", () => {
+    const sel: IndustrySelection = { automotive: ["car_repair"] };
+    const out = proposeRoute(
+      [m({ id: "off", category: "retail", primaryType: "clothing_store" })],
+      { origin: ORIGIN, industries: ["automotive"], selection: sel, sortMode: "distance", stopCap: 10 },
+    );
+    expect(out).toEqual([]);
+  });
+
+  it("minRating drops merchants below the bar and unrated merchants", () => {
+    const out = proposeRoute(
+      [m({ id: "good", rating: 4.5 }), m({ id: "low", rating: 3.0 }), m({ id: "unrated", rating: undefined })],
+      { origin: ORIGIN, industries: [], sortMode: "distance", stopCap: 10, minRating: 4 },
+    );
+    expect(out.map((x) => x.id)).toEqual(["good"]);
+  });
+
+  it("without a selection, falls back to the category-bucket filter (backward compatible)", () => {
+    const out = proposeRoute(
+      [m({ id: "auto", category: "automotive" }), m({ id: "ret", category: "retail" })],
+      { origin: ORIGIN, industries: ["automotive"], sortMode: "distance", stopCap: 10 },
+    );
+    expect(out.map((x) => x.id)).toEqual(["auto"]);
   });
 });
