@@ -54,11 +54,11 @@ describe("usePathMutations.addStops", () => {
     await hook.current.addStops.mutateAsync({
       pathId: "p1",
       basePosition: 2,
-      stops: [{ prospectId: "pr1", name: "A", address: null, lat: 1, lng: 2, category: "automotive", primaryType: "car_repair" }],
+      stops: [{ prospectId: "pr1", name: "A", address: null, phone: null, lat: 1, lng: 2, category: "automotive", primaryType: "car_repair" }],
     });
     expect(fromMock).toHaveBeenCalledWith("path_stops");
     expect(stopsUpsertMock).toHaveBeenCalledWith(
-      [{ path_id: "p1", prospect_id: "pr1", name: "A", address: null, lat: 1, lng: 2,
+      [{ path_id: "p1", prospect_id: "pr1", name: "A", address: null, phone: null, lat: 1, lng: 2,
          category: "automotive", primary_type: "car_repair", position: 2 }],
       { onConflict: "path_id,prospect_id", ignoreDuplicates: true },
     );
@@ -75,7 +75,7 @@ describe("usePathMutations.addStops", () => {
     const { result: hook } = renderHook(() => usePathMutations(), { wrapper: wrap(makeClient()) });
     await hook.current.addStops.mutateAsync({
       pathId: "p1", basePosition: 0,
-      stops: [{ prospectId: "pr1", name: "A", address: null, lat: 1, lng: 2, category: "automotive", primaryType: null }],
+      stops: [{ prospectId: "pr1", name: "A", address: null, phone: null, lat: 1, lng: 2, category: "automotive", primaryType: null }],
     });
     expect(stopsUpsertMock).toHaveBeenCalledWith(expect.any(Array), { onConflict: "path_id,prospect_id", ignoreDuplicates: true });
   });

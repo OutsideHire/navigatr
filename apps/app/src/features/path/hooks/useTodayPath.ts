@@ -27,6 +27,7 @@ export interface TodayStop {
   merchantId: string;
   name: string;
   address: string | null;
+  phone: string | null;
   lat: number;
   lng: number;
   category: string;
@@ -47,7 +48,7 @@ export function useTodayPath() {
 
   const stops: TodayStop[] = React.useMemo(
     () => rawStops.map((s) => ({
-      merchantId: s.prospectId, name: s.name, address: s.address, lat: s.lat, lng: s.lng,
+      merchantId: s.prospectId, name: s.name, address: s.address, phone: s.phone, lat: s.lat, lng: s.lng,
       category: s.category, primaryType: s.primaryType, status: s.status,
       disposition: s.disposition, dealCreated: s.dealCreated, addedAt: s.addedAt,
     })),
