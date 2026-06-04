@@ -164,6 +164,26 @@ no DB/Edge. Test gate now **604**.
   `primaryType`). Active-path home still renders the ordered route + map (no separate
   review step — the locked 2-step flow).
 
+**Select stops — slide-out rework — SHIPPED (2026-06-04, merge `c189f51`).** The
+first cut was a cramped centered modal (colliding name/meta columns, ~6 rows). Spec:
+`docs/superpowers/specs/2026-06-04-select-stops-rework-design.md`; plan:
+`…/plans/2026-06-04-select-stops-rework.md`. Layout-only (no logic change). Test gate **609**.
+- **Whole Create wizard is now a full-height right slide-out** (`Dialog.Content`
+  `fixed inset-y-0 right-0 … slide-in-from-right`, `w-full md:max-w-[28rem]`,
+  full-screen on mobile). Sticky header; step 1 = scroll body + sticky "Select stops"
+  footer button; step 2 = `SelectStops` fills the panel.
+- **`SelectStops` restructured:** sticky top (route summary `N stops · dist · ETA` +
+  Opportunity/Distance sort + **search moved here**) / `flex-1 min-h-0 overflow-y-auto`
+  list / sticky footer (Back + Start). Footer has `env(safe-area-inset-bottom)`.
+- **Collapsible "In your route · N"** bar (collapsed by default, hidden at 0,
+  aria-expanded/controls) so "More nearby" stays reachable on long routes.
+- **Rows are stacked** name-over-meta via the navigatr `Checkbox` `label`+`helper`
+  (`label={name} helper="dist · category · ★rating"`) — no nested-`<label>`, no
+  colliding right column; `getByLabelText(name)` still resolves. Search input got an
+  `aria-label`.
+- Selection logic (`candidatePool`/`orderStops`/`selectedIds` seeding,
+  `SelectStopsProps`) is **byte-unchanged** — presentation only.
+
 ## TL;DR — Slice 5 DEPLOYED (2026-06-02)
 
 **Slice 5 is now live.** Migration + Edge deployed and verified at the contract
