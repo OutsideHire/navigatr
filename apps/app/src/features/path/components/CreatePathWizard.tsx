@@ -181,9 +181,9 @@ export function CreatePathWizard({
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 data-[state=open]:animate-in data-[state=open]:fade-in" />
         <Dialog.Content
           aria-describedby={undefined}
-          className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[88dvh] w-full max-w-lg flex-col rounded-t-radius-lg bg-surface-default p-5 shadow-lg md:inset-0 md:bottom-auto md:top-1/2 md:max-h-[80dvh] md:-translate-y-1/2 md:rounded-radius-lg"
+          className="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-md flex-col bg-surface-default shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right md:max-w-[28rem]"
         >
-          <div className="flex items-center justify-between pb-3">
+          <div className="flex shrink-0 items-center justify-between border-b border-border-default px-5 py-4">
             <Dialog.Title className="text-heading-sm text-text-default">
               {step === "filters" ? "Create path" : "Select stops"}
             </Dialog.Title>
@@ -195,108 +195,112 @@ export function CreatePathWizard({
           </div>
 
           {step === "filters" && (
-            <div className="flex flex-col gap-4 overflow-y-auto">
-              <p className="text-body-md text-text-muted">
-                Auto-build an optimized drop-in route from businesses near you.
-              </p>
-              <div className="flex flex-col gap-1.5">
-                <span className="text-caption font-medium text-text-muted">Search radius</span>
-                <div className="flex gap-1 self-start rounded-radius-md bg-surface-sunken p-0.5">
-                  {RADIUS_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.meters}
-                      type="button"
-                      onClick={() => onRadiusChange(opt.meters)}
-                      aria-pressed={radiusM === opt.meters}
-                      className={cn(
-                        "inline-flex items-center rounded-radius-sm px-3 py-1.5 text-caption font-medium tabular-nums transition-colors",
-                        radiusM === opt.meters
-                          ? "bg-surface-default text-text-default shadow-sm"
-                          : "text-text-muted hover:text-text-default",
-                      )}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {/* Your industries — the hero control. The rep's saved default,
-                  auto-applied; Edit overrides this path (and can persist it). The
-                  section header stays put across view/edit; only the body swaps. */}
-              <div className="flex flex-col gap-3 rounded-radius-md border border-brand-primary bg-surface-default p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-body-strong text-text-default">Your industries</span>
-                    <span className="text-caption text-text-muted">
-                      Auto-applied from your default · Edit changes this path only.
-                    </span>
-                  </div>
-                  {!editing && (
-                    <Button variant="secondary" size="sm" leadingIcon={Pencil} onClick={() => setEditing(true)}>
-                      Edit
-                    </Button>
-                  )}
-                </div>
-                {editing ? (
-                  <IndustryEditor
-                    value={selection}
-                    scope="path"
-                    onUseForPath={(sel) => { applySelection(sel); setEditing(false); }}
-                    onSaveDefault={(sel) => {
-                      applySelection(sel);
-                      // Optimistic: the selection already applies to this path via
-                      // applySelection; we only surface a toast if the persist fails.
-                      updateDefaults.mutate(sel, {
-                        onError: () => toast.error("Couldn't save as default — it still applies to this path."),
-                      });
-                      setEditing(false);
-                    }}
-                  />
-                ) : chosen.length === 0 ? (
-                  <p className="text-caption text-text-muted">No industries selected — Edit to choose.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {chosen.map((c) => (
-                      <span
-                        key={c}
-                        className="inline-flex h-7 items-center rounded-radius-full bg-surface-sunken px-3 text-caption font-medium text-text-default"
+            <>
+              <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
+                <p className="text-body-md text-text-muted">
+                  Auto-build an optimized drop-in route from businesses near you.
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-caption font-medium text-text-muted">Search radius</span>
+                  <div className="flex gap-1 self-start rounded-radius-md bg-surface-sunken p-0.5">
+                    {RADIUS_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.meters}
+                        type="button"
+                        onClick={() => onRadiusChange(opt.meters)}
+                        aria-pressed={radiusM === opt.meters}
+                        className={cn(
+                          "inline-flex items-center rounded-radius-sm px-3 py-1.5 text-caption font-medium tabular-nums transition-colors",
+                          radiusM === opt.meters
+                            ? "bg-surface-default text-text-default shadow-sm"
+                            : "text-text-muted hover:text-text-default",
+                        )}
                       >
-                        {CATEGORY_LABEL[c]}
-                      </span>
+                        {opt.label}
+                      </button>
                     ))}
                   </div>
-                )}
-              </div>
-
-              {/* Secondary scope filters */}
-              <div className="grid grid-cols-2 items-start gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="min-rating" className="text-caption font-medium text-text-muted">Min rating</label>
-                  <Select
-                    id="min-rating"
-                    value={String(minRating)}
-                    onValueChange={(v) => setMinRating(Number(v))}
-                    options={RATING_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }))}
-                  />
                 </div>
-                <label className="flex flex-col gap-1.5">
-                  <span className="text-caption font-medium text-text-muted">Max stops</span>
-                  <Input
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    max={MAX_STOP_CAP}
-                    value={stopCapText}
-                    onChange={(e) => setStopCapText(e.target.value)}
-                    onBlur={() => setStopCapText(String(stopCap))}
-                    placeholder={String(DEFAULT_STOP_CAP)}
-                  />
-                </label>
+                {/* Your industries — the hero control. The rep's saved default,
+                    auto-applied; Edit overrides this path (and can persist it). The
+                    section header stays put across view/edit; only the body swaps. */}
+                <div className="flex flex-col gap-3 rounded-radius-md border border-brand-primary bg-surface-default p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-body-strong text-text-default">Your industries</span>
+                      <span className="text-caption text-text-muted">
+                        Auto-applied from your default · Edit changes this path only.
+                      </span>
+                    </div>
+                    {!editing && (
+                      <Button variant="secondary" size="sm" leadingIcon={Pencil} onClick={() => setEditing(true)}>
+                        Edit
+                      </Button>
+                    )}
+                  </div>
+                  {editing ? (
+                    <IndustryEditor
+                      value={selection}
+                      scope="path"
+                      onUseForPath={(sel) => { applySelection(sel); setEditing(false); }}
+                      onSaveDefault={(sel) => {
+                        applySelection(sel);
+                        // Optimistic: the selection already applies to this path via
+                        // applySelection; we only surface a toast if the persist fails.
+                        updateDefaults.mutate(sel, {
+                          onError: () => toast.error("Couldn't save as default — it still applies to this path."),
+                        });
+                        setEditing(false);
+                      }}
+                    />
+                  ) : chosen.length === 0 ? (
+                    <p className="text-caption text-text-muted">No industries selected — Edit to choose.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {chosen.map((c) => (
+                        <span
+                          key={c}
+                          className="inline-flex h-7 items-center rounded-radius-full bg-surface-sunken px-3 text-caption font-medium text-text-default"
+                        >
+                          {CATEGORY_LABEL[c]}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Secondary scope filters */}
+                <div className="grid grid-cols-2 items-start gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <label htmlFor="min-rating" className="text-caption font-medium text-text-muted">Min rating</label>
+                    <Select
+                      id="min-rating"
+                      value={String(minRating)}
+                      onValueChange={(v) => setMinRating(Number(v))}
+                      options={RATING_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }))}
+                    />
+                  </div>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-caption font-medium text-text-muted">Max stops</span>
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      max={MAX_STOP_CAP}
+                      value={stopCapText}
+                      onChange={(e) => setStopCapText(e.target.value)}
+                      onBlur={() => setStopCapText(String(stopCap))}
+                      placeholder={String(DEFAULT_STOP_CAP)}
+                    />
+                  </label>
+                </div>
               </div>
-              <Button variant="primary" leadingIcon={RouteIcon} onClick={() => setStep("select")}>
-                Select stops
-              </Button>
-            </div>
+              <div className="shrink-0 border-t border-border-default px-5 py-4">
+                <Button variant="primary" leadingIcon={RouteIcon} className="w-full" onClick={() => setStep("select")}>
+                  Select stops
+                </Button>
+              </div>
+            </>
           )}
 
           {step === "select" && (
