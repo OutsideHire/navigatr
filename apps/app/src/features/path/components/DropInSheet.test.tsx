@@ -26,8 +26,10 @@ vi.mock("sonner", () => ({
 
 const logVisit = vi.fn();
 const markDealCreated = vi.fn();
+// Mutable so individual tests can seed the stop snapshot (e.g. dealCreated:true).
+let stops: Array<{ merchantId: string; dealCreated: boolean }> = [];
 vi.mock("../hooks/useTodayPath", () => ({
-  useTodayPath: () => ({ logVisit, markDealCreated }),
+  useTodayPath: () => ({ logVisit, markDealCreated, stops }),
 }));
 
 const { DropInSheet } = await import("./DropInSheet");
@@ -53,6 +55,7 @@ describe("DropInSheet", () => {
     logActivityMutateAsync.mockResolvedValue({ id: "act-1" });
     logVisit.mockClear();
     markDealCreated.mockClear();
+    stops = [];
   });
 
   it("engaged disposition creates a deal, logs the activity, records the visit, and marks the deal created", async () => {
@@ -95,5 +98,31 @@ describe("DropInSheet", () => {
     expect(logActivityMutateAsync).not.toHaveBeenCalled();
     expect(logVisit).toHaveBeenCalledWith("m-1", "not_in_office");
     expect(markDealCreated).not.toHaveBeenCalled();
+  });
+
+  it("skips deal creation when the stop already has a deal", async () => {
+    stops = [{ merchantId: "m-1", dealCreated: true }];
+    const user = userEvent.setup();
+    render(<DropInSheet merchant={merchant} open onOpenChange={() => {}} />);
+
+    await user.click(screen.getByRole("button", { name: /met with decision maker/i }));
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(logVisit).toHaveBeenCalledWith("m-1", "met_dm"));
+
+    expect(createDealMutateAsync).not.toHaveBeenCalled();
+    expect(logActivityMutateAsync).not.toHaveBeenCalled();
+    expect(markDealCreated).not.toHaveBeenCalled();
+  });
+
+  it("calls onLogged with the chosen disposition after save", async () => {
+    const onLogged = vi.fn();
+    const user = userEvent.setup();
+    render(<DropInSheet merchant={merchant} open onOpenChange={() => {}} onLogged={onLogged} />);
+
+    await user.click(screen.getByRole("button", { name: /not in office/i }));
+    await user.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(onLogged).toHaveBeenCalledWith("not_in_office"));
   });
 });
