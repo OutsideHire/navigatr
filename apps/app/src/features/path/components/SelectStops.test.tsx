@@ -30,70 +30,60 @@ function setup(selectedIds: Set<string>, props: Partial<React.ComponentProps<typ
   return { onToggle, onStart, onBack };
 }
 
-describe("SelectStops — Confirm route (default)", () => {
-  it("shows the map, summary, Start and Edit stops; not the stop list", () => {
+describe("SelectStops — map + accordions", () => {
+  it("default: map + both section bars + Start + Back; lists collapsed", () => {
     setup(new Set(["Acme", "Bravo"]));
     expect(screen.getByTestId("map")).toBeInTheDocument();
-    expect(screen.getByText(/in your route · 2/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /in your route · 2/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add nearby/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /start path/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /edit stops/i })).toBeInTheDocument();
-    expect(screen.queryByText("Acme")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^back$/i })).toBeInTheDocument();
+    expect(screen.queryByText("Acme")).not.toBeInTheDocument();        // route collapsed
+    expect(screen.queryByLabelText("Charlie")).not.toBeInTheDocument(); // add collapsed
   });
-  it("Start fires onStart with the NN-ordered selected ids", () => {
-    const { onStart } = setup(new Set(["Acme", "Charlie"]));
+
+  it("expanding 'In your route' shows the numbered stops; removing calls onToggle", () => {
+    const { onToggle } = setup(new Set(["Acme"]));
+    fireEvent.click(screen.getByRole("button", { name: /in your route/i }));
+    expect(screen.getByText("Acme")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /remove acme/i }));
+    expect(onToggle).toHaveBeenCalledWith("Acme");
+  });
+
+  it("opening 'Add nearby' collapses 'In your route' (accordion) and reveals candidates", () => {
+    const { onToggle } = setup(new Set(["Acme"]));
+    fireEvent.click(screen.getByRole("button", { name: /in your route/i }));   // open route
+    expect(screen.getByText("Acme")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /add nearby/i }));      // open add → route closes
+    expect(screen.queryByText("Acme")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Bravo")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Charlie"));
+    expect(onToggle).toHaveBeenCalledWith("Charlie");
+  });
+
+  it("0 selected: Add nearby auto-expanded, Start disabled", () => {
+    setup(new Set());
+    expect(screen.getByLabelText("Acme")).toBeInTheDocument(); // candidates visible (add auto-open)
+    expect(screen.getByRole("button", { name: /start path/i })).toBeDisabled();
+  });
+
+  it("Start fires onStart NN-ordered; Back calls onBack", () => {
+    const { onStart, onBack } = setup(new Set(["Acme", "Charlie"]));
     fireEvent.click(screen.getByRole("button", { name: /start path/i }));
     expect((onStart.mock.calls[0][0] as string[]).sort()).toEqual(["Acme", "Charlie"]);
-  });
-  it("Start disabled + hint when no stops", () => {
-    setup(new Set());
-    expect(screen.getByRole("button", { name: /start path/i })).toBeDisabled();
-    expect(screen.getByText(/no stops yet/i)).toBeInTheDocument();
-  });
-  it("Back calls onBack", () => {
-    const { onBack } = setup(new Set(["Acme"]));
     fireEvent.click(screen.getByRole("button", { name: /^back$/i }));
     expect(onBack).toHaveBeenCalled();
   });
+
   it("empty pool shows the no-businesses message", () => {
     setup(new Set(), { pool: [] });
     expect(screen.getByText(/no businesses match/i)).toBeInTheDocument();
   });
 });
 
-describe("SelectStops — Edit view", () => {
-  function openEdit(selectedIds: Set<string>, props = {}) {
-    const r = setup(selectedIds, props);
-    fireEvent.click(screen.getByRole("button", { name: /edit stops/i }));
-    return r;
-  }
-  it("Edit reveals the route list; Done returns to Confirm", () => {
-    openEdit(new Set(["Acme"]));
-    expect(screen.getByText("Acme")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /add nearby/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /^done$/i }));
-    expect(screen.getByTestId("map")).toBeInTheDocument();
-    expect(screen.queryByText("Acme")).not.toBeInTheDocument();
-  });
-  it("removing a route row calls onToggle", () => {
-    const { onToggle } = openEdit(new Set(["Acme"]));
-    fireEvent.click(screen.getByRole("button", { name: /remove acme/i }));
-    expect(onToggle).toHaveBeenCalledWith("Acme");
-  });
-  it("expanding Add nearby and checking a candidate calls onToggle", () => {
-    const { onToggle } = openEdit(new Set(["Acme"]));
-    fireEvent.click(screen.getByRole("button", { name: /add nearby/i }));
-    fireEvent.click(screen.getByLabelText("Charlie"));
-    expect(onToggle).toHaveBeenCalledWith("Charlie");
-  });
-});
-
 describe("routeDescriptor", () => {
-  it("names the top two categories", () => {
-    expect(routeDescriptor([
-      { category: "manufacturing" } as never, { category: "manufacturing" } as never, { category: "automotive" } as never,
-    ])).toMatch(/^Mostly /);
-  });
-  it("uses 'All' for one category and '' for empty", () => {
+  it("names top categories / All / empty", () => {
+    expect(routeDescriptor([{ category: "manufacturing" } as never, { category: "manufacturing" } as never, { category: "automotive" } as never])).toMatch(/^Mostly /);
     expect(routeDescriptor([{ category: "automotive" } as never])).toMatch(/^All /);
     expect(routeDescriptor([])).toBe("");
   });
