@@ -120,23 +120,36 @@ export function AppLayout({
           className="min-w-0 flex-1 overflow-x-hidden pb-20 md:pb-0"
         >
           {children}
-          {/* Powered-by footer. Desktop only — mobile already has BottomNav
-              taking the bottom edge, adding another row would feel cluttered.
-              Hidden when the admin turns it off. Discreet, low-contrast styling
-              so it doesn't compete with page content. */}
-          {showPoweredBy && (
-            <footer className="mt-12 hidden border-t border-border-subtle px-6 py-4 text-caption text-text-subtle md:block">
-              Powered by{" "}
-              <a
-                href="https://navigatr.app"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-text-muted underline-offset-4 hover:text-text-default hover:underline"
-              >
-                navigatr
-              </a>
-            </footer>
-          )}
+          {/* Footer. The "Map data © OpenStreetMap" credit is REQUIRED (the map
+              renders OpenStreetMap data under ODbL) and shows on EVERY breakpoint
+              regardless of the powered-by setting. "Powered by navigatr" stays
+              desktop-only (mobile has BottomNav) and gated on the org's setting.
+              Discreet, low-contrast so it doesn't compete with page content. */}
+          <footer className="mt-12 border-t border-border-subtle px-6 py-4 text-caption text-text-subtle">
+            {showPoweredBy && (
+              <span className="hidden md:inline">
+                Powered by{" "}
+                <a
+                  href="https://navigatr.app"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-text-muted underline-offset-4 hover:text-text-default hover:underline"
+                >
+                  navigatr
+                </a>
+                <span className="px-2" aria-hidden>·</span>
+              </span>
+            )}
+            Map data ©{" "}
+            <a
+              href="https://www.openstreetmap.org/copyright"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-text-muted underline-offset-4 hover:text-text-default hover:underline"
+            >
+              OpenStreetMap
+            </a>
+          </footer>
         </main>
       </div>
 
