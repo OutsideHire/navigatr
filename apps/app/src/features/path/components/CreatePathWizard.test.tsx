@@ -143,8 +143,10 @@ describe("CreatePathWizard radius + max stops + select stops", () => {
   });
 
   it("offers Opportunity and Distance sort in Select stops", () => {
-    renderWizard();
+    mockPrefs = { automotive: allSubtypes("automotive") };
+    renderWizard({ merchants: [mkAutoMerchant("a", 0)] });
     fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add nearby/i }));
     expect(screen.getByRole("button", { name: /opportunity/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /distance/i })).toBeInTheDocument();
   });
@@ -155,7 +157,7 @@ describe("CreatePathWizard radius + max stops + select stops", () => {
     const merchants = ["a", "b", "c", "d", "e"].map((id, i) => mkAutoMerchant(id, i));
     renderWizard({ merchants });
     fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
-    expect(screen.getByText(/5 stops/i)).toBeInTheDocument(); // SelectStops live header
+    expect(screen.getByText(/in your route · 5/i)).toBeInTheDocument(); // SelectStops live header
   });
 
   it("Back returns from Select stops to the filters step", () => {
@@ -174,7 +176,7 @@ describe("CreatePathWizard radius + max stops + select stops", () => {
     // lower Max stops to 2 → seed re-runs (stopCap dep) → 2 pre-checked
     fireEvent.change(screen.getByLabelText(/max stops/i), { target: { value: "2" } });
     fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
-    expect(screen.getByText(/2 stops/i)).toBeInTheDocument();
+    expect(screen.getByText(/in your route · 2/i)).toBeInTheDocument();
   });
 });
 
