@@ -320,6 +320,13 @@ export function PathPage() {
         await todayPath.clear();
         await todayPath.addMany(snapshots);
         setCreateOpen(false);
+        // A selected stop can fall out of liveMerchants if the rep tightened the
+        // radius/category filter mid-wizard. Those IDs are dropped above — tell
+        // the rep how many, rather than silently starting a shorter path.
+        const dropped = orderedIds.length - snapshots.length;
+        if (dropped > 0) {
+          toast(`${dropped} stop${dropped === 1 ? "" : "s"} couldn't be added — they may be outside your current radius.`);
+        }
       } catch {
         toast.error("Couldn't start the path. Please try again.");
       }

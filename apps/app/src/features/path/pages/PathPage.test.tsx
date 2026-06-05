@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import type { ReactNode } from "react";
@@ -12,10 +12,22 @@ vi.mock("../hooks/usePathOrigin", () => ({
   usePathOrigin: () => originState.current,
 }));
 
+// Sonner toasts — assert success/warning/error feedback without a real toaster.
+// vi.hoisted so the reference is initialized before the hoisted vi.mock factory runs.
+const toastMock = vi.hoisted(() => Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }));
+vi.mock("sonner", () => ({ toast: toastMock }));
+
 // Heavy/irrelevant children — keep the test in jsdom (MerchantMap is MapLibre).
 vi.mock("../components/MerchantMap", () => ({ MerchantMap: () => <div data-testid="map" /> }));
 vi.mock("../components/MerchantDetailSheet", () => ({ MerchantDetailSheet: () => null }));
-vi.mock("../components/CreatePathWizard", () => ({ CreatePathWizard: () => null }));
+// Capture the wizard's onStart so tests can drive handleStartPath directly.
+let capturedOnStart: ((ids: string[]) => void | Promise<void>) | null = null;
+vi.mock("../components/CreatePathWizard", () => ({
+  CreatePathWizard: (props: { onStart?: (ids: string[]) => void | Promise<void> }) => {
+    capturedOnStart = props.onStart ?? null;
+    return null;
+  },
+}));
 vi.mock("../components/ActivePathView", () => ({ ActivePathView: () => <div data-testid="active-path" /> }));
 
 // No prospects unless origin is set; keep the discovery hook quiet.
@@ -34,6 +46,7 @@ const todayState = {
   current: {
     stops: [] as unknown[],
     add: vi.fn(),
+    addMany: vi.fn(),
     clear: vi.fn(),
     has: () => false,
     isComplete: () => false,
@@ -65,7 +78,11 @@ const base: PathOrigin = {
 beforeEach(() => {
   originState.current = base;
   merchantsState.current = { merchants: [], isLoading: false, isError: false, refetch: vi.fn() } as typeof merchantsState.current;
-  todayState.current = { ...todayState.current, stops: [] };
+  todayState.current = { ...todayState.current, stops: [], addMany: vi.fn(), clear: vi.fn() };
+  toastMock.mockClear();
+  toastMock.success.mockClear();
+  toastMock.error.mockClear();
+  capturedOnStart = null;
 });
 
 describe("PathPage location states", () => {
@@ -152,5 +169,48 @@ describe("PathPage path-first view states", () => {
     originState.current = { ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready" };
     render(<PathPage />, { wrapper });
     expect(screen.getByTestId("active-path")).toBeInTheDocument();
+  });
+});
+
+describe("PathPage handleStartPath — dropped stops", () => {
+  const readyOrigin: PathOrigin = {
+    ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
+  };
+  // Minimal live merchants — only the fields handleStartPath snapshots.
+  const liveMerchants = [
+    { id: "a", name: "Alpha", address: "1 A St", phone: null, lat: 30.1, lng: -97.1, category: "retail", primaryType: null },
+    { id: "b", name: "Bravo", address: "2 B St", phone: null, lat: 30.2, lng: -97.2, category: "retail", primaryType: null },
+  ] as unknown as typeof merchantsState.current.merchants;
+
+  beforeEach(() => {
+    originState.current = readyOrigin;
+    merchantsState.current = { merchants: liveMerchants, isLoading: false, isError: false, refetch: vi.fn() } as typeof merchantsState.current;
+  });
+
+  it("warns via toast when some selected stops aren't in the live merchant set", async () => {
+    render(<PathPage />, { wrapper });
+    expect(capturedOnStart).toBeTypeOf("function");
+    // "c" is not in liveMerchants (e.g. radius tightened mid-wizard) → 1 dropped.
+    await act(async () => { await capturedOnStart!(["a", "c", "b"]); });
+
+    expect(todayState.current.addMany).toHaveBeenCalledTimes(1);
+    expect(todayState.current.addMany).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ prospectId: "a" }),
+        expect.objectContaining({ prospectId: "b" }),
+      ]),
+    );
+    expect((todayState.current.addMany as ReturnType<typeof vi.fn>).mock.calls[0][0]).toHaveLength(2);
+    expect(toastMock).toHaveBeenCalledWith(expect.stringMatching(/1 stop.*couldn't be added/i));
+    expect(toastMock.error).not.toHaveBeenCalled();
+  });
+
+  it("does NOT warn when every selected stop resolves", async () => {
+    render(<PathPage />, { wrapper });
+    await act(async () => { await capturedOnStart!(["a", "b"]); });
+
+    expect(todayState.current.addMany).toHaveBeenCalledTimes(1);
+    expect(toastMock).not.toHaveBeenCalled();
+    expect(toastMock.error).not.toHaveBeenCalled();
   });
 });
