@@ -254,9 +254,13 @@ The `view`/"Edit stops"/"Done" are gone. Spec/plan `…/2026-06-05-select-stops-
 (the SW's precache navigation route ignores query strings). Incognito / SW-unregister
 is the only client fix. To verify what's *actually deployed*, fetch server-side: get
 `/`'s `index-*.js`, then enumerate chunks from the SW precache manifest in `/sw.js` and
-grep the `PathPage-*.js` chunk for UI strings. **Owed fast-follow:** harden
-`src/pwa.ts` — show a "Refresh to update" toast (or force reload) on `onNeedRefresh`
-instead of the current `console.info`, so reps aren't stranded on stale bundles.
+grep the `PathPage-*.js` chunk for UI strings. **Fast-follow DONE (merge `887288e`):** PWA now prompts instead of silently
+auto-updating — `vite.config` `registerType: "prompt"` (+ `skipWaiting` removed so the
+new SW waits), `src/pwa.ts` shows a sonner "New version available · Refresh" toast on
+`onNeedRefresh` (→ `updateSW(true)`) + hourly `registration.update()`. Tests mock
+`virtual:pwa-register` via a test-only vitest alias→stub (prod build untouched).
+**One-time catch:** the prompt SW only takes over after the OLD stuck autoUpdate SW is
+cleared once (incognito/unregister); after that, every deploy shows the Refresh toast.
 
 ## TL;DR — Slice 5 DEPLOYED (2026-06-02)
 
