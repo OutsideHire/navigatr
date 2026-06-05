@@ -274,7 +274,11 @@ export function MerchantMap({
       style: buildPathMapStyle(),
       center: [position.lng, position.lat],
       zoom: 13,
-      attributionControl: { compact: true },
+      // No on-map attribution control. The OSM/ODbL credit is carried off-map
+      // (the source still declares `attribution: © OpenStreetMap` for compliance,
+      // but nothing is rendered over the map). Surface the credit in a legal/about
+      // surface if/when one exists.
+      attributionControl: false,
     });
     mapRef.current = map;
     popupRef.current = new maplibregl.Popup({
