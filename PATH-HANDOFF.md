@@ -13,6 +13,33 @@ Plan=hand-pick→a chosen day, list-first home, discovery demoted to "Add stops"
 
 Build phases: **1a data foundation (DONE)** → **1b-i storage swap (DONE)** → **1b-ii path-first UI (DONE — pending frontend-design polish + /design-review)** → 2 multi-day → **3 running mode (DONE 2026-06-04)**.
 
+## Today's-path home consolidation — SHIPPED (2026-06-05, merge `3aa391f`)
+
+Killed the "three Today's-path surfaces" confusion: after Create→Start the
+`PathPlanSheet` modal auto-popped on top of `ActivePathView`. Spec:
+`docs/superpowers/specs/2026-06-05-path-home-consolidation-design.md`; plan:
+`…/plans/2026-06-05-path-home-consolidation.md`. Test gate **635**.
+- **`ActivePathView` is now the single rich home** (list + map, no modal): folded in
+  `PathPlanSheet`'s content — status-badge rows (number/✓/skip) with name +
+  `category · address` + per-leg distance ("From start" / "From prev stop" via the
+  haversine cursor-loop over `stops`), per-stop **Mark visited / Skip / Remove**
+  (pending) + **Reopen** (resolved) with sonner toasts mirrored from the old modal, a
+  progress count, **Clear path** (window.confirm), **Start route** (when ≥1 pending) →
+  running mode, **Add stops** → discover. On `isComplete()` it renders `PathSummary`
+  (onViewPipeline → `/pipeline`, onNewPath → `clear()`); completion is self-contained
+  via `useNavigate` + `clear` (no new props — still `{ origin, onAddStops, onStartRoute }`).
+  One distance metric (dropped the old "to furthest" line; also fixed a carried-over
+  `~~eta` double-tilde).
+- **`PathPlanSheet` DELETED.** Removed every entry point in `PathPage`: the
+  after-create `setPlanOpen(true)` in `handleStartPath` (now just closes the wizard →
+  stops-sync effect lands on the active home), the header "Today's path" button, the
+  `<PathPlanSheet>` mount, the `planOpen` state, and the import. `RunningPath` unchanged.
+- **Known follow-ups (flagged, NOT done — pre-existing in PathPage, out of scope):**
+  (1) `queuedMerchants`/`orderedQueue`(O(n²) NN)/`routePath` memos run in all four
+  `pathView` states but only feed the *discover* map — guard on `pathView === "discover"`.
+  (2) `handleStartPath` silently drops wizard-selected IDs missing from `liveMerchants`
+  (e.g. radius tightened mid-wizard) — count + toast the drop.
+
 ## Path running mode — SHIPPED (2026-06-04, merge `21c97b0`)
 
 Phase 3 running mode: a focused, one-stop-at-a-time view the rep steps through while
@@ -390,7 +417,8 @@ near-white roads / gray labels via `_shared`-driven custom style).
 - Frontend (`apps/app/src/features/path/`): `useMerchants` (TanStack Query →
   Edge), `mockData.ts` (Merchant type + CATEGORY_LABEL), `pages/PathPage.tsx`,
   `components/` (MerchantMap [MapLibre], MerchantList, MerchantDetailSheet,
-  PathPlanSheet, CreatePathWizard, DropInSheet, PathSummary), `hooks/usePathQueue`
+  ActivePathView [rich Today's-path home], RunningPath, CreatePathWizard,
+  DropInSheet, PathSummary; PathPlanSheet retired 2026-06-05), `hooks/usePathQueue`
   (zustand persist), `lib/` (sortMerchants, routeStats, proposeRoute,
   pathDispositions).
 - Test gate: `cd apps/app && pnpm typecheck && pnpm test` (497 at handoff). The
