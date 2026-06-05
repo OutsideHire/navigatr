@@ -10,7 +10,7 @@
  * lives here, rendered straight from useTodayPath stop snapshots.
  */
 import * as React from "react";
-import { Check, CircleDashed, Navigation, Plus, SkipForward, Trash2 } from "lucide-react";
+import { ArrowRight, Check, CircleDashed, Navigation, Plus, SkipForward, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -88,16 +88,37 @@ export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathV
           />
         ) : (
           <>
+            {/* Hero CTA — the rep's single most important daily action. Full-width,
+                saturated brand fill, icon chip + forward arrow so it reads as
+                "launch", not just another button. The header already carries
+                distance/ETA, so the subline stays action-framed ("stops to go")
+                rather than repeating those metrics. */}
             {pending > 0 && (
-              <Button
-                variant="primary"
-                size="sm"
-                leadingIcon={Navigation}
+              <button
+                type="button"
                 onClick={onStartRoute}
-                className="self-start"
+                aria-label={`Start route — ${pending} stop${pending === 1 ? "" : "s"} to go`}
+                className={cn(
+                  "group flex w-full items-center gap-3 rounded-radius-lg px-4 py-3.5 text-left",
+                  "bg-brand-primary text-brand-primary-foreground shadow-sm",
+                  "transition-colors hover:bg-brand-primary-hover active:bg-brand-primary-pressed",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas",
+                )}
               >
-                Start route
-              </Button>
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-radius-full bg-brand-primary-foreground/20">
+                  <Navigation className="h-5 w-5" aria-hidden />
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-body-lg font-semibold leading-tight">Start route</span>
+                  <span className="text-caption text-brand-primary-foreground/75">
+                    {pending} stop{pending === 1 ? "" : "s"} to go
+                  </span>
+                </span>
+                <ArrowRight
+                  className="h-5 w-5 shrink-0 transition-transform group-hover:translate-x-0.5"
+                  aria-hidden
+                />
+              </button>
             )}
 
             <div className="flex min-h-0 flex-col gap-1.5 overflow-y-auto">
