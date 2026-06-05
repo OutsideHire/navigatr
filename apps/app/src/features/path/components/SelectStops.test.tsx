@@ -27,62 +27,65 @@ function setup(selectedIds: Set<string>, props: Partial<React.ComponentProps<typ
   return { onToggle, onStart };
 }
 
-describe("SelectStops", () => {
-  it("shows the selected count in the summary header", () => {
+describe("SelectStops (route-first)", () => {
+  it("shows the route count + distance/ETA in the summary", () => {
     setup(new Set(["Acme", "Bravo"]));
-    expect(screen.getByText(/2 stops/i)).toBeInTheDocument();
+    expect(screen.getByText(/in your route · 2/i)).toBeInTheDocument();
   });
-  it("toggling a selected row calls onToggle with its id", () => {
+
+  it("renders selected stops as numbered route rows (no expand needed)", () => {
+    setup(new Set(["Acme"]));
+    expect(screen.getByText("Acme")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /remove acme/i })).toBeInTheDocument();
+  });
+
+  it("removing a route row calls onToggle with its id", () => {
     const { onToggle } = setup(new Set(["Acme"]));
-    fireEvent.click(screen.getByRole("button", { name: /in your route/i }));
-    fireEvent.click(screen.getByLabelText("Acme"));
+    fireEvent.click(screen.getByRole("button", { name: /remove acme/i }));
     expect(onToggle).toHaveBeenCalledWith("Acme");
   });
-  it("collapses the Selected section by default and expands on click", () => {
-    setup(new Set(["Acme", "Bravo"]));
-    expect(screen.getByRole("button", { name: /in your route · 2/i })).toBeInTheDocument();
-    expect(screen.queryByLabelText("Acme")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /in your route/i }));
-    expect(screen.getByLabelText("Acme")).toBeInTheDocument();
+
+  it("Add nearby is collapsed by default; candidates hidden until expanded", () => {
+    setup(new Set(["Acme"]));
+    expect(screen.queryByLabelText("Bravo")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /add nearby/i }));
+    expect(screen.getByLabelText("Bravo")).toBeInTheDocument();
   });
-  it("hides the In-your-route bar when nothing is selected", () => {
-    setup(new Set());
-    expect(screen.queryByRole("button", { name: /in your route/i })).not.toBeInTheDocument();
-  });
-  it("renders distance · category · rating in a row's meta", () => {
-    setup(new Set()); // Charlie etc. are unselected → in More nearby, always visible; row() rating 4.2, category automotive
-    expect(screen.getAllByText(/automotive · ★4\.2/i).length).toBeGreaterThanOrEqual(1);
-  });
-  it("toggling an unselected row calls onToggle with its id", () => {
+
+  it("checking a candidate in Add nearby calls onToggle with its id", () => {
     const { onToggle } = setup(new Set(["Acme"]));
+    fireEvent.click(screen.getByRole("button", { name: /add nearby/i }));
     fireEvent.click(screen.getByLabelText("Charlie"));
     expect(onToggle).toHaveBeenCalledWith("Charlie");
   });
-  it("search narrows the More nearby list", () => {
+
+  it("empty route shows a hint and auto-expands Add nearby", () => {
+    setup(new Set());
+    expect(screen.getByText(/no stops in your route yet/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("Acme")).toBeInTheDocument();
+  });
+
+  it("search filters the candidate list", () => {
     setup(new Set());
     fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: "Brav" } });
     expect(screen.getByLabelText("Bravo")).toBeInTheDocument();
     expect(screen.queryByLabelText("Charlie")).not.toBeInTheDocument();
   });
-  it("Start is disabled at 0 selected", () => {
+
+  it("Start disabled at 0", () => {
     setup(new Set());
     expect(screen.getByRole("button", { name: /start path/i })).toBeDisabled();
   });
-  it("Start fires onStart with the nearest-neighbor-ordered selected ids", () => {
+
+  it("Start fires onStart with the NN-ordered selected ids", () => {
     const { onStart } = setup(new Set(["Acme", "Charlie"]));
     fireEvent.click(screen.getByRole("button", { name: /start path/i }));
     expect(onStart).toHaveBeenCalledTimes(1);
-    const ids = onStart.mock.calls[0][0] as string[];
-    expect(ids.sort()).toEqual(["Acme", "Charlie"]);
+    expect((onStart.mock.calls[0][0] as string[]).sort()).toEqual(["Acme", "Charlie"]);
   });
-  it("omits the rating from a row's meta when rating is absent", () => {
-    setup(new Set(), { pool: [row("NoRating", { rating: undefined })] });
-    expect(screen.getByText(/automotive/i)).toBeInTheDocument();
-    expect(screen.queryByText(/★/)).not.toBeInTheDocument();
-  });
-  it("shows the empty state when no businesses match", () => {
+
+  it("empty pool shows the no-businesses message", () => {
     setup(new Set(), { pool: [] });
     expect(screen.getByText(/no businesses match/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /start path/i })).toBeDisabled();
   });
 });
