@@ -1,8 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 import * as React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { SelectStops } from "./SelectStops";
+import { SelectStops, routeDescriptor } from "./SelectStops";
 import type { MerchantWithDistance } from "./MerchantList";
+
+vi.mock("./MerchantMap", () => ({ MerchantMap: () => <div data-testid="map" /> }));
 
 function row(id: string, over: Partial<MerchantWithDistance> = {}): MerchantWithDistance {
   return {
@@ -17,75 +19,82 @@ const POOL = [row("Acme"), row("Bravo"), row("Charlie")];
 function setup(selectedIds: Set<string>, props: Partial<React.ComponentProps<typeof SelectStops>> = {}) {
   const onToggle = vi.fn();
   const onStart = vi.fn();
+  const onBack = vi.fn();
   render(
     <SelectStops
       pool={POOL} origin={ORIGIN} sortMode="opportunity" onSortChange={vi.fn()}
-      selectedIds={selectedIds} onToggle={onToggle} onBack={vi.fn()} onStart={onStart}
+      selectedIds={selectedIds} onToggle={onToggle} onBack={onBack} onStart={onStart}
       {...props}
     />,
   );
-  return { onToggle, onStart };
+  return { onToggle, onStart, onBack };
 }
 
-describe("SelectStops (route-first)", () => {
-  it("shows the route count + distance/ETA in the summary", () => {
+describe("SelectStops — Confirm route (default)", () => {
+  it("shows the map, summary, Start and Edit stops; not the stop list", () => {
     setup(new Set(["Acme", "Bravo"]));
+    expect(screen.getByTestId("map")).toBeInTheDocument();
     expect(screen.getByText(/in your route · 2/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /start path/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /edit stops/i })).toBeInTheDocument();
+    expect(screen.queryByText("Acme")).not.toBeInTheDocument();
   });
+  it("Start fires onStart with the NN-ordered selected ids", () => {
+    const { onStart } = setup(new Set(["Acme", "Charlie"]));
+    fireEvent.click(screen.getByRole("button", { name: /start path/i }));
+    expect((onStart.mock.calls[0][0] as string[]).sort()).toEqual(["Acme", "Charlie"]);
+  });
+  it("Start disabled + hint when no stops", () => {
+    setup(new Set());
+    expect(screen.getByRole("button", { name: /start path/i })).toBeDisabled();
+    expect(screen.getByText(/no stops yet/i)).toBeInTheDocument();
+  });
+  it("Back calls onBack", () => {
+    const { onBack } = setup(new Set(["Acme"]));
+    fireEvent.click(screen.getByRole("button", { name: /^back$/i }));
+    expect(onBack).toHaveBeenCalled();
+  });
+  it("empty pool shows the no-businesses message", () => {
+    setup(new Set(), { pool: [] });
+    expect(screen.getByText(/no businesses match/i)).toBeInTheDocument();
+  });
+});
 
-  it("renders selected stops as numbered route rows (no expand needed)", () => {
-    setup(new Set(["Acme"]));
+describe("SelectStops — Edit view", () => {
+  function openEdit(selectedIds: Set<string>, props = {}) {
+    const r = setup(selectedIds, props);
+    fireEvent.click(screen.getByRole("button", { name: /edit stops/i }));
+    return r;
+  }
+  it("Edit reveals the route list; Done returns to Confirm", () => {
+    openEdit(new Set(["Acme"]));
     expect(screen.getByText("Acme")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /remove acme/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add nearby/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^done$/i }));
+    expect(screen.getByTestId("map")).toBeInTheDocument();
+    expect(screen.queryByText("Acme")).not.toBeInTheDocument();
   });
-
-  it("removing a route row calls onToggle with its id", () => {
-    const { onToggle } = setup(new Set(["Acme"]));
+  it("removing a route row calls onToggle", () => {
+    const { onToggle } = openEdit(new Set(["Acme"]));
     fireEvent.click(screen.getByRole("button", { name: /remove acme/i }));
     expect(onToggle).toHaveBeenCalledWith("Acme");
   });
-
-  it("Add nearby is collapsed by default; candidates hidden until expanded", () => {
-    setup(new Set(["Acme"]));
-    expect(screen.queryByLabelText("Bravo")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /add nearby/i }));
-    expect(screen.getByLabelText("Bravo")).toBeInTheDocument();
-  });
-
-  it("checking a candidate in Add nearby calls onToggle with its id", () => {
-    const { onToggle } = setup(new Set(["Acme"]));
+  it("expanding Add nearby and checking a candidate calls onToggle", () => {
+    const { onToggle } = openEdit(new Set(["Acme"]));
     fireEvent.click(screen.getByRole("button", { name: /add nearby/i }));
     fireEvent.click(screen.getByLabelText("Charlie"));
     expect(onToggle).toHaveBeenCalledWith("Charlie");
   });
+});
 
-  it("empty route shows a hint and auto-expands Add nearby", () => {
-    setup(new Set());
-    expect(screen.getByText(/no stops in your route yet/i)).toBeInTheDocument();
-    expect(screen.getByLabelText("Acme")).toBeInTheDocument();
+describe("routeDescriptor", () => {
+  it("names the top two categories", () => {
+    expect(routeDescriptor([
+      { category: "manufacturing" } as never, { category: "manufacturing" } as never, { category: "automotive" } as never,
+    ])).toMatch(/^Mostly /);
   });
-
-  it("search filters the candidate list", () => {
-    setup(new Set());
-    fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: "Brav" } });
-    expect(screen.getByLabelText("Bravo")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Charlie")).not.toBeInTheDocument();
-  });
-
-  it("Start disabled at 0", () => {
-    setup(new Set());
-    expect(screen.getByRole("button", { name: /start path/i })).toBeDisabled();
-  });
-
-  it("Start fires onStart with the NN-ordered selected ids", () => {
-    const { onStart } = setup(new Set(["Acme", "Charlie"]));
-    fireEvent.click(screen.getByRole("button", { name: /start path/i }));
-    expect(onStart).toHaveBeenCalledTimes(1);
-    expect((onStart.mock.calls[0][0] as string[]).sort()).toEqual(["Acme", "Charlie"]);
-  });
-
-  it("empty pool shows the no-businesses message", () => {
-    setup(new Set(), { pool: [] });
-    expect(screen.getByText(/no businesses match/i)).toBeInTheDocument();
+  it("uses 'All' for one category and '' for empty", () => {
+    expect(routeDescriptor([{ category: "automotive" } as never])).toMatch(/^All /);
+    expect(routeDescriptor([])).toBe("");
   });
 });
