@@ -125,7 +125,7 @@ describe("AppLayout", () => {
     expect(screen.getByText(/powered by/i)).toBeInTheDocument();
   });
 
-  it("hides the footer when showPoweredBy is false", () => {
+  it("hides 'Powered by' when showPoweredBy is false but still shows the OSM credit", () => {
     brandReturn = {
       data: {
         productName: "X",
@@ -141,6 +141,19 @@ describe("AppLayout", () => {
       { wrapper: makeWrapper() },
     );
     expect(screen.queryByText(/powered by/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/map data ©/i)).toBeInTheDocument();
+  });
+
+  it("always renders the required OpenStreetMap map-data credit (link to ODbL copyright)", () => {
+    brandReturn = { data: { productName: "X", primaryColor: null, logoUrl: null, showPoweredBy: false } };
+    render(
+      <AppLayout>
+        <div>page</div>
+      </AppLayout>,
+      { wrapper: makeWrapper() },
+    );
+    const osm = screen.getByRole("link", { name: /openstreetmap/i });
+    expect(osm).toHaveAttribute("href", "https://www.openstreetmap.org/copyright");
   });
 
   it("defaults to showing the footer when brand data hasn't loaded yet", () => {
