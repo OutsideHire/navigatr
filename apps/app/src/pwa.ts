@@ -1,61 +1,53 @@
 /**
- * Service-worker registration + update-detection wiring.
+ * Service-worker registration + update UX.
  *
- * vite-plugin-pwa exposes the `virtual:pwa-register` module that bundles the
- * registration code at build time. We pull it in here, hook the lifecycle
- * callbacks to console for now, and re-export `updateSW(reloadPage)` so the
- * eventual toast UI can call it on the user's "Refresh" click.
+ * vite-plugin-pwa is configured `registerType: "prompt"` (the new SW waits), so when
+ * a deploy is detected we show a sonner "Refresh" toast; tapping it calls
+ * updateSW(true), which skip-waits the new SW and reloads. We also poll for updates
+ * hourly so long-lived sessions still get prompted. Imported once from main.tsx.
  *
- * Boot order is important: this module is imported from `main.tsx` *after*
- * `index.css` and `stores/theme` so the page renders first and the SW
- * registers from idle. We don't `await` registration.
- *
- * Dev note: in `pnpm dev`, vite-plugin-pwa is configured with no
- * `devOptions.enabled`, so this module imports cleanly but the virtual
- * registration call is a no-op until you run `pnpm --filter app build` and
- * `pnpm --filter app preview`.
+ * Dev note: in `pnpm dev` (no devOptions.enabled) the virtual registration is a
+ * no-op until `pnpm --filter app build` + `preview`.
  */
-
 import { registerSW } from "virtual:pwa-register";
+import { toast } from "sonner";
+
+/** Poll interval for a newer deployed SW (long-lived sessions). */
+const UPDATE_CHECK_MS = 60 * 60 * 1000;
 
 let pendingUpdate = false;
 
-/**
- * Wraps the auto-generated `registerSW`. Reloads the page when called with
- * `true` after a new SW is waiting, otherwise just logs.
- */
-export const updateSW = registerSW({
+// `let` (not `const`) so onNeedRefresh — invoked later, once a waiting SW exists —
+// can call the assigned updateSW. registerSW only stores the callbacks at call time.
+let updateSW: (reloadPage?: boolean) => Promise<void>;
+
+updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
     pendingUpdate = true;
-    // TODO Session 4+: replace with toast UI ("Refresh to update").
-    console.info(
-      "%c[pwa]%c new content available — call updateSW(true) to apply",
-      "color:#2456E6;font-weight:600",
-      "color:inherit",
-    );
+    toast("New version available", {
+      description: "Refresh to get the latest.",
+      duration: Infinity,
+      action: { label: "Refresh", onClick: () => { void updateSW(true); } },
+    });
   },
   onOfflineReady() {
-    console.info(
-      "%c[pwa]%c ready to work offline",
-      "color:#10b981;font-weight:600",
-      "color:inherit",
-    );
+    console.info("%c[pwa]%c ready to work offline", "color:#10b981;font-weight:600", "color:inherit");
   },
-  onRegisteredSW(swUrl) {
-    console.info(
-      "%c[pwa]%c service worker registered",
-      "color:#2456E6;font-weight:600",
-      "color:inherit",
-      swUrl,
-    );
+  onRegisteredSW(swUrl, registration) {
+    console.info("%c[pwa]%c service worker registered", "color:#2456E6;font-weight:600", "color:inherit", swUrl);
+    if (registration) {
+      setInterval(() => { void registration.update(); }, UPDATE_CHECK_MS);
+    }
   },
   onRegisterError(error) {
     console.error("[pwa] service worker registration failed:", error);
   },
 });
 
-/** Whether an update is queued (a new SW is waiting). */
+export { updateSW };
+
+/** Whether a new SW is waiting (a Refresh toast is showing). */
 export function isUpdatePending(): boolean {
   return pendingUpdate;
 }

@@ -6,7 +6,17 @@ import path from "node:path";
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { "@": path.resolve(__dirname, "./src") },
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+      // vite-plugin-pwa's `virtual:pwa-register` only exists during a real
+      // build. Vitest resolves imports before `vi.mock` can intercept the
+      // virtual id, so point it at a resolvable stub; tests still vi.mock it
+      // to install spies.
+      "virtual:pwa-register": path.resolve(
+        __dirname,
+        "./src/test/virtual-pwa-register-stub.ts",
+      ),
+    },
   },
   test: {
     environment: "jsdom",

@@ -16,7 +16,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: "autoUpdate",
+      registerType: "prompt",
       injectRegister: false, // src/pwa.ts owns registration so we control update UX
       includeAssets: [
         "favicon.svg",
@@ -25,10 +25,10 @@ export default defineConfig({
         "apple-touch-icon.png",
       ],
       workbox: {
-        // Clean takeover on update — Session 3 keeps this aggressive because
-        // there's no persistent client state yet. Revisit before launch if
-        // we add in-flight workflows that should survive a SW swap.
-        skipWaiting: true,
+        // Prompt on update — the new SW waits; src/pwa.ts shows a Refresh toast
+        // that calls updateSW(true). We deliberately DON'T set skipWaiting so the
+        // new SW stays in "waiting" and onNeedRefresh fires; the toast's
+        // updateSW(true) skip-waits and reloads on the user's click.
         clientsClaim: true,
         cleanupOutdatedCaches: true,
         // Don't precache the giant maskable icon — only ship it when needed.
