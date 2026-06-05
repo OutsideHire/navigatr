@@ -228,6 +228,26 @@ INTO the add section (the route is NN-ordered, so a top sort toggle misled). Sum
 untouched). Spec/plan: `…/2026-06-05-select-stops-route-first-*`. Map at top considered
 + deferred (route map already on active/running screens).
 
+**Select stops — map-led "Confirm route" — SHIPPED (2026-06-05, merge `665acac`).**
+Even route-first was a 25-row scroll wall; reps won't vet stops one-by-one. Reframed to
+**glance → tweak → go**. `SelectStops` now has an internal `view: "confirm" | "edit"`
+(default confirm). **Confirm:** `MerchantMap` (reused, view-only) of the route +
+summary ("In your route · N · mi · ETA" + `routeDescriptor` = top 1-2 categories,
+"Mostly X & Y") + full-width **Start path** + a row [Back→filters, **Edit stops**].
+**Edit:** the route-first list (numbered RouteRow + remove, collapsible "Add nearby"
+with sort+search) behind "Edit stops"; **Done** → Confirm. Map pins view-only +
+outliers chip both deferred (v1 scope cuts). Spec/plan `…/2026-06-05-select-stops-confirm-route-*`.
+`SelectStopsProps` unchanged. NOTE: the wizard tests now mock `MerchantMap` (Confirm
+renders the real MapLibre map by default).
+**DEPLOY/PWA gotcha (learned the hard way):** prod served the new bundle but a stuck
+`autoUpdate` service worker kept showing the old UI through hard-refresh + `?nocache`
+(the SW's precache navigation route ignores query strings). Incognito / SW-unregister
+is the only client fix. To verify what's *actually deployed*, fetch server-side: get
+`/`'s `index-*.js`, then enumerate chunks from the SW precache manifest in `/sw.js` and
+grep the `PathPage-*.js` chunk for UI strings. **Owed fast-follow:** harden
+`src/pwa.ts` — show a "Refresh to update" toast (or force reload) on `onNeedRefresh`
+instead of the current `console.info`, so reps aren't stranded on stale bundles.
+
 ## TL;DR — Slice 5 DEPLOYED (2026-06-02)
 
 **Slice 5 is now live.** Migration + Edge deployed and verified at the contract
