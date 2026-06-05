@@ -1,12 +1,28 @@
+/**
+ * ActivePathView — THE single Today's-path home (no modal).
+ *
+ * This view is now the rich home surface for the rep's current day's path: a
+ * light progress header, the ordered stops with per-stop status badges, leg
+ * distances and inline actions (mark visited / skip / remove / reopen), a Start
+ * route action, an Add stops / Clear path footer, and a route map. When every
+ * stop is resolved it swaps the list for the end-of-path PathSummary. The old
+ * PathPlanSheet modal that used to carry this content is retired — everything
+ * lives here, rendered straight from useTodayPath stop snapshots.
+ */
 import * as React from "react";
-import { Check, X, Plus, Navigation } from "lucide-react";
+import { Check, CircleDashed, Navigation, Plus, SkipForward, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/navigatr";
-import { MerchantMap } from "./MerchantMap";
-import { useTodayPath } from "../hooks/useTodayPath";
-import { routeStats, formatEta } from "../lib/routeStats";
-import { formatDistance } from "@/lib/distance";
+import { formatDistance, haversineMeters } from "@/lib/distance";
+import type { Disposition } from "@/lib/followUpScheduling";
 import { CATEGORY_LABEL, type MerchantCategory } from "../mockData";
+import { useTodayPath } from "../hooks/useTodayPath";
+import type { TodayStop } from "../hooks/useTodayPath";
+import { routeStats, formatEta } from "../lib/routeStats";
+import { MerchantMap } from "./MerchantMap";
+import { PathSummary } from "./PathSummary";
 
 interface ActivePathViewProps {
   /** Rep position — route math + map center. */
@@ -17,20 +33,30 @@ interface ActivePathViewProps {
   onStartRoute: () => void;
 }
 
-/**
- * ActivePathView — the path-first home. The rep's current day's path IS the main
- * content: a light progress header, the ordered stops (status + remove), a route
- * map, and Add stops. Renders entirely from useTodayPath stop snapshots, so it
- * works for a path whose stops aren't in the current discovery list. Actions stay
- * visible (mobile-first — no hover-to-discover).
- */
 export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathViewProps) {
-  const { stops, setStatus, remove } = useTodayPath();
+  const { stops, setStatus, remove, clear, isComplete } = useTodayPath();
+  const navigate = useNavigate();
+
   const orderedCoords = stops.map((s) => ({ lat: s.lat, lng: s.lng }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const stats = React.useMemo(() => routeStats(origin, orderedCoords), [origin, stops]);
   const routePath = stops.length > 0 ? [origin, ...orderedCoords] : undefined;
+
   const visited = stops.filter((s) => s.status === "visited").length;
+  const skipped = stops.filter((s) => s.status === "skipped").length;
+  const pending = stops.filter((s) => s.status === "pending").length;
+  const complete = isComplete();
+
+  // Leg distances: cursor starts at origin; each stop's leg is the hop from the
+  // previous point, then the cursor advances to that stop.
+  const legs = React.useMemo(() => {
+    let cursor = origin;
+    return stops.map((s) => {
+      const d = haversineMeters(cursor, { lat: s.lat, lng: s.lng });
+      cursor = { lat: s.lat, lng: s.lng };
+      return d;
+    });
+  }, [stops, origin]);
 
   return (
     <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4 md:grid md:grid-cols-[1.4fr_1fr]">
@@ -38,75 +64,161 @@ export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathV
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-heading-md text-text-default">Today&apos;s path</h2>
           <span className="text-caption tabular-nums text-text-muted">
-            {visited}/{stats.stopCount} done · ~{formatEta(stats.etaMinutes)}
+            {visited}/{stats.stopCount} visited · {formatDistance(stats.totalRouteMeters)} · ~{formatEta(stats.etaMinutes)}
           </span>
         </div>
-        <p className="text-caption text-text-subtle">
-          {stats.stopCount} stops
-          {stats.furthestMeters != null ? ` · ${formatDistance(stats.furthestMeters)} to furthest` : ""}
-        </p>
 
-        {stops.some((s) => s.status === "pending") && (
-          <Button variant="primary" size="sm" leadingIcon={Navigation} onClick={onStartRoute} className="self-start">
-            Start route
-          </Button>
+        {complete ? (
+          <PathSummary
+            visitedCount={visited}
+            skippedCount={skipped}
+            totalStops={stops.length}
+            routeMeters={stats.totalRouteMeters}
+            dispositions={stops
+              .map((s) => s.disposition)
+              .filter((d): d is Disposition => d != null)}
+            dealsCreated={stops.filter((s) => s.dealCreated).length}
+            onViewPipeline={() => navigate("/pipeline")}
+            onNewPath={() => {
+              void clear();
+            }}
+          />
+        ) : (
+          <>
+            {pending > 0 && (
+              <Button
+                variant="primary"
+                size="sm"
+                leadingIcon={Navigation}
+                onClick={onStartRoute}
+                className="self-start"
+              >
+                Start route
+              </Button>
+            )}
+
+            <div className="flex min-h-0 flex-col gap-1.5 overflow-y-auto">
+              {stops.map((s, i) => (
+                <StopRow
+                  key={s.merchantId}
+                  stop={s}
+                  index={i}
+                  leg={legs[i] ?? Number.POSITIVE_INFINITY}
+                  onVisited={() => setStatus(s.merchantId, "visited")}
+                  onSkip={() => setStatus(s.merchantId, "skipped")}
+                  onRemove={() => remove(s.merchantId)}
+                  onReopen={() => setStatus(s.merchantId, "pending")}
+                />
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <Button variant="secondary" size="sm" leadingIcon={Plus} onClick={onAddStops}>
+                Add stops
+              </Button>
+              <Button
+                variant="tertiary"
+                size="sm"
+                leadingIcon={Trash2}
+                onClick={() => {
+                  if (window.confirm("Clear the whole path?")) void clear();
+                }}
+              >
+                Clear path
+              </Button>
+            </div>
+          </>
         )}
-
-        <ol className="flex min-h-0 flex-col gap-1.5 overflow-y-auto">
-          {stops.map((s, i) => (
-            <li
-              key={s.merchantId}
-              className="group flex items-center gap-3 rounded-radius-md border border-border-subtle px-3 py-2.5 transition-colors hover:border-border-default"
-            >
-              <span
-                className={cn(
-                  "w-5 shrink-0 text-center text-caption font-semibold tabular-nums",
-                  s.status === "visited" ? "text-status-success" : "text-text-subtle",
-                )}
-              >
-                {s.status === "visited" ? "✓" : i + 1}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p
-                  className={cn(
-                    "truncate text-body-md font-medium",
-                    s.status === "pending" ? "text-text-default" : "text-text-muted",
-                  )}
-                >
-                  {s.name}
-                </p>
-                <p className="truncate text-caption text-text-subtle">
-                  {CATEGORY_LABEL[s.category as MerchantCategory] ?? s.category}
-                  {s.status === "skipped" ? " · skipped" : ""}
-                </p>
-              </div>
-              <button
-                type="button"
-                aria-label="Mark visited"
-                onClick={() => setStatus(s.merchantId, "visited")}
-                className="rounded-radius-sm p-1.5 text-text-subtle transition-colors hover:text-status-success"
-              >
-                <Check className="h-4 w-4" aria-hidden />
-              </button>
-              <button
-                type="button"
-                aria-label="Remove from path"
-                onClick={() => remove(s.merchantId)}
-                className="rounded-radius-sm p-1.5 text-text-subtle transition-colors hover:text-status-danger"
-              >
-                <X className="h-4 w-4" aria-hidden />
-              </button>
-            </li>
-          ))}
-        </ol>
-
-        <Button variant="secondary" size="sm" leadingIcon={Plus} onClick={onAddStops} className="self-start">
-          Add stops
-        </Button>
       </div>
 
       <div className="min-h-[280px]">
         <MerchantMap position={origin} merchants={[]} routePath={routePath} />
+      </div>
+    </div>
+  );
+}
+
+// ─── StopRow ──────────────────────────────────────────────────────────
+
+function StopRow({
+  stop,
+  index,
+  leg,
+  onVisited,
+  onSkip,
+  onRemove,
+  onReopen,
+}: {
+  stop: TodayStop;
+  index: number;
+  leg: number;
+  onVisited: () => void;
+  onSkip: () => void;
+  onRemove: () => void;
+  onReopen: () => void;
+}) {
+  const status = stop.status;
+  const isResolved = status !== "pending";
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-2 rounded-radius-md border border-border-subtle bg-surface-default p-3",
+        status === "visited" && "opacity-75",
+        status === "skipped" && "opacity-60",
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <span
+          className={cn(
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-radius-full text-caption font-semibold tabular-nums",
+            status === "pending" && "bg-brand-primary text-brand-primary-foreground",
+            status === "visited" && "bg-status-success text-text-inverse",
+            status === "skipped" && "bg-surface-sunken text-text-muted",
+          )}
+          aria-label={`stop ${index + 1}, ${status}`}
+        >
+          {status === "visited" ? (
+            <Check className="h-3.5 w-3.5" aria-hidden />
+          ) : status === "skipped" ? (
+            <SkipForward className="h-3.5 w-3.5" aria-hidden />
+          ) : (
+            index + 1
+          )}
+        </span>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          <p className={cn("truncate text-body-strong text-text-default", isResolved && "line-through")}>
+            {stop.name}
+          </p>
+          <p className="text-caption text-text-muted">
+            {CATEGORY_LABEL[stop.category as MerchantCategory] ?? stop.category}
+            {stop.address ? ` · ${stop.address}` : ""}
+          </p>
+          <p className="mt-1 text-caption text-text-subtle tabular-nums">
+            {index === 0 ? "From start" : "From prev stop"}: {formatDistance(leg)}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5 pl-10">
+        {status === "pending" ? (
+          <>
+            <Button variant="primary" size="sm" leadingIcon={Check} onClick={onVisited}>
+              Mark visited
+            </Button>
+            <Button variant="tertiary" size="sm" leadingIcon={SkipForward} onClick={onSkip}>
+              Skip
+            </Button>
+            <Button variant="tertiary" size="sm" leadingIcon={Trash2} onClick={onRemove}>
+              Remove
+            </Button>
+          </>
+        ) : (
+          <Button variant="tertiary" size="sm" leadingIcon={CircleDashed} onClick={onReopen}>
+            Reopen
+          </Button>
+        )}
       </div>
     </div>
   );
