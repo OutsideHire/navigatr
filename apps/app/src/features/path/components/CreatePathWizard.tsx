@@ -1,7 +1,7 @@
 /**
  * CreatePathWizard — the guided "Create path" flow (Path v2, Slice 2).
  *
- * Two steps inside one Radix Dialog (same shell pattern as PathPlanSheet):
+ * Two steps inside one Radix Dialog (same shell pattern as the other Path dialogs):
  *   1. Filters — radius (5/10/15mi), industry (category bucket), stop cap.
  *   2. Select stops — the editable candidate pool (SelectStops): the optimized
  *      top-N pre-selected, the rest of the nearby pool below, Distance/Opportunity
