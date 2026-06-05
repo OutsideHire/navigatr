@@ -90,7 +90,14 @@ function buildPathMapStyle(): StyleSpecification {
     name: "navigatr-path",
     glyphs: GLYPHS_URL,
     sources: {
-      omt: { type: "vector", url: TILES_URL },
+      // Explicit attribution overrides the provider's TileJSON credit (which adds
+      // an "OpenFreeMap" label). We keep only the legally-required OpenStreetMap
+      // credit (ODbL); the compact attribution control renders it behind a small ⓘ.
+      omt: {
+        type: "vector",
+        url: TILES_URL,
+        attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a>',
+      },
     },
     layers: [
       { id: "bg", type: "background", paint: { "background-color": COLOR.land } },
