@@ -217,6 +217,17 @@ first cut was a cramped centered modal (colliding name/meta columns, ~6 rows). S
 - Selection logic (`candidatePool`/`orderStops`/`selectedIds` seeding,
   `SelectStopsProps`) is **byte-unchanged** — presentation only.
 
+**Select stops — route-first inversion — SHIPPED (2026-06-05, merge `fecb94d`).** The
+slide-out rework above left the hierarchy backwards (route hidden in a collapsed bar,
+"More nearby" filling the screen). Inverted it: the **route is the hero** — selected
+stops render in **NN drive order, numbered, each removable (X)**, always expanded;
+**"More nearby" → "Add nearby · N"** collapsed by default (expand → the sort toggle +
+search + candidate checkboxes; auto-opens when the route is empty). Sort + search moved
+INTO the add section (the route is NN-ordered, so a top sort toggle misled). Summary =
+"In your route · N · mi · ETA". `SelectStopsProps` + selection logic unchanged (wizard
+untouched). Spec/plan: `…/2026-06-05-select-stops-route-first-*`. Map at top considered
++ deferred (route map already on active/running screens).
+
 ## TL;DR — Slice 5 DEPLOYED (2026-06-02)
 
 **Slice 5 is now live.** Migration + Edge deployed and verified at the contract
