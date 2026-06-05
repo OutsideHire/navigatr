@@ -13,7 +13,7 @@ interface PathSettingsProps {
 /**
  * PathSettings — a sheet to manage Path preferences. v1 section: Default
  * industries (edited via IndustryEditor in "default" scope; Save upserts the
- * per-rep preference). Mirrors the CreatePathWizard/PathPlanSheet dialog shell.
+ * per-rep preference). Mirrors the CreatePathWizard dialog shell.
  */
 export function PathSettings({ open, onOpenChange }: PathSettingsProps) {
   const { data: defaults, isLoading } = usePathPreferences();

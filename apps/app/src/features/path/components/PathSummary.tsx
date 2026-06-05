@@ -1,6 +1,6 @@
 /**
  * PathSummary — end-of-path completion view (Path v2, Slice 2). Rendered inside
- * PathPlanSheet when the queue has no pending stops.
+ * ActivePathView (and RunningPath) when the queue has no pending stops.
  *
  * MVP / Places-only: "stops visited", "miles", and "completion" are real (from
  * the queue + route math). "Deals created" and the disposition breakdown depend
