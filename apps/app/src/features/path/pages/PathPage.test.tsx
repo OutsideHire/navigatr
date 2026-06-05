@@ -17,8 +17,28 @@ vi.mock("../hooks/usePathOrigin", () => ({
 const toastMock = vi.hoisted(() => Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }));
 vi.mock("sonner", () => ({ toast: toastMock }));
 
+// Spy on the O(n²) nearest-neighbor pass so we can assert it only runs in the
+// discover view (the route-memo guard). Wraps the real impl so routePath still
+// computes correctly. vi.hoisted so it's initialized before the mock factory.
+const nearestNeighborSpy = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/distance", async (orig) => {
+  const actual = await orig<typeof import("@/lib/distance")>();
+  return {
+    ...actual,
+    nearestNeighborOrder: (...args: Parameters<typeof actual.nearestNeighborOrder>) => {
+      nearestNeighborSpy();
+      return actual.nearestNeighborOrder(...args);
+    },
+  };
+});
+
 // Heavy/irrelevant children — keep the test in jsdom (MerchantMap is MapLibre).
-vi.mock("../components/MerchantMap", () => ({ MerchantMap: () => <div data-testid="map" /> }));
+// Expose whether a routePath polyline was handed in, for the discover-route test.
+vi.mock("../components/MerchantMap", () => ({
+  MerchantMap: (props: { routePath?: unknown }) => (
+    <div data-testid="map" data-has-route={props.routePath ? "yes" : "no"} />
+  ),
+}));
 vi.mock("../components/MerchantDetailSheet", () => ({ MerchantDetailSheet: () => null }));
 // Capture the wizard's onStart so tests can drive handleStartPath directly.
 let capturedOnStart: ((ids: string[]) => void | Promise<void>) | null = null;
@@ -83,6 +103,7 @@ beforeEach(() => {
   toastMock.success.mockClear();
   toastMock.error.mockClear();
   capturedOnStart = null;
+  nearestNeighborSpy.mockClear();
 });
 
 describe("PathPage location states", () => {
@@ -169,6 +190,43 @@ describe("PathPage path-first view states", () => {
     originState.current = { ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready" };
     render(<PathPage />, { wrapper });
     expect(screen.getByTestId("active-path")).toBeInTheDocument();
+  });
+});
+
+describe("PathPage route memos — discover-only", () => {
+  const readyOrigin: PathOrigin = {
+    ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
+  };
+  const geoStops = [
+    { merchantId: "a", name: "Alpha", address: "1 A St", lat: 30.05, lng: -97.05, category: "retail", status: "pending" },
+    { merchantId: "b", name: "Bravo", address: "2 B St", lat: 30.06, lng: -97.06, category: "retail", status: "pending" },
+  ];
+  const liveMerchant = [
+    { id: "x", name: "Xray", address: "9 X St", phone: null, lat: 30.04, lng: -97.04, category: "retail", primaryType: null },
+  ] as unknown as typeof merchantsState.current.merchants;
+
+  it("does NOT run nearest-neighbor ordering outside the discover view (active view with stops)", () => {
+    originState.current = readyOrigin;
+    todayState.current = { ...todayState.current, stops: geoStops as unknown as typeof todayState.current.stops };
+    render(<PathPage />, { wrapper });
+    // Stops present → lands on the active home, not discover.
+    expect(screen.getByTestId("active-path")).toBeInTheDocument();
+    // The route memo must short-circuit when pathView !== "discover".
+    expect(nearestNeighborSpy).not.toHaveBeenCalled();
+  });
+
+  it("still builds the route polyline for the discover map (no regression)", () => {
+    originState.current = readyOrigin;
+    merchantsState.current = { merchants: liveMerchant, isLoading: false, isError: false, refetch: vi.fn() } as typeof merchantsState.current;
+    todayState.current = { ...todayState.current, stops: [] };
+    const { rerender } = render(<PathPage />, { wrapper });
+    // Enter discover from the entry view, then stops arrive (sticky discover).
+    fireEvent.click(screen.getByRole("button", { name: /plan a path/i }));
+    todayState.current = { ...todayState.current, stops: geoStops as unknown as typeof todayState.current.stops };
+    rerender(<PathPage />);
+    const map = screen.getByTestId("map");
+    expect(map).toHaveAttribute("data-has-route", "yes");
+    expect(nearestNeighborSpy).toHaveBeenCalled();
   });
 });
 
