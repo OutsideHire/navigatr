@@ -15,7 +15,6 @@ vi.mock("../hooks/usePathOrigin", () => ({
 // Heavy/irrelevant children — keep the test in jsdom (MerchantMap is MapLibre).
 vi.mock("../components/MerchantMap", () => ({ MerchantMap: () => <div data-testid="map" /> }));
 vi.mock("../components/MerchantDetailSheet", () => ({ MerchantDetailSheet: () => null }));
-vi.mock("../components/PathPlanSheet", () => ({ PathPlanSheet: () => null }));
 vi.mock("../components/CreatePathWizard", () => ({ CreatePathWizard: () => null }));
 vi.mock("../components/ActivePathView", () => ({ ActivePathView: () => <div data-testid="active-path" /> }));
 

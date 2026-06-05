@@ -48,7 +48,6 @@ import { haversineMeters, nearestNeighborOrder } from "@/lib/distance";
 import { MerchantMap } from "../components/MerchantMap";
 import { MerchantList, type MerchantWithDistance } from "../components/MerchantList";
 import { MerchantDetailSheet } from "../components/MerchantDetailSheet";
-import { PathPlanSheet } from "../components/PathPlanSheet";
 import { CreatePathWizard } from "../components/CreatePathWizard";
 import { PathEntry } from "../components/PathEntry";
 import { PathSettings } from "../components/PathSettings";
@@ -115,7 +114,6 @@ export function PathPage() {
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [view, setView] = React.useState<ViewMode>("list"); // default to list until merchants are geocoded
-  const [planOpen, setPlanOpen] = React.useState(false);
   const [createOpen, setCreateOpen] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
 
@@ -264,7 +262,7 @@ export function PathPage() {
 
   // Build straight from the path's own stop snapshots — never join liveMerchants
   // (a path's stops may not be in the current browse window). Downstream consumers
-  // (nearestNeighborOrder, routePath, PathPlanSheet) use lat/lng/name/category; the
+  // (nearestNeighborOrder, routePath) use lat/lng/name/category; the
   // other Merchant fields aren't read for a queued stop, so a snapshot-shaped object
   // cast to Merchant is sufficient here.
   const queuedMerchants: Merchant[] = React.useMemo(
@@ -301,8 +299,8 @@ export function PathPage() {
   }, [orderedQueue, origin]);
 
   // Start a fresh path from the wizard: clear the existing server path, build
-  // snapshots from the merchant records, write them, close the wizard, and open
-  // the plan sheet so the rep sees their route immediately.
+  // snapshots from the merchant records, write them, and close the wizard. The
+  // stops-sync effect then moves the view to the active home on its own.
   const handleStartPath = React.useCallback(
     async (orderedIds: string[]) => {
       const byId = new Map(liveMerchants.map((m) => [m.id, m]));
@@ -322,7 +320,6 @@ export function PathPage() {
         await todayPath.clear();
         await todayPath.addMany(snapshots);
         setCreateOpen(false);
-        setPlanOpen(true);
       } catch {
         toast.error("Couldn't start the path. Please try again.");
       }
@@ -363,23 +360,6 @@ export function PathPage() {
             loading={geoStatus === "loading"}
           >
             {originSource === "gps" ? "Re-center" : "Use my location"}
-          </Button>
-          {/* Path queue CTA — always visible. Shows count badge when
-              there are queued stops. Empty state opens the sheet too
-              so the user can see the "no stops yet" explanation. */}
-          <Button
-            variant={queueStops.length > 0 ? "primary" : "tertiary"}
-            size="sm"
-            leadingIcon={RouteIcon}
-            onClick={() => setPlanOpen(true)}
-            disabled={!origin}
-          >
-            Today&apos;s path
-            {queueStops.length > 0 && (
-              <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-radius-full bg-text-inverse/20 px-1.5 text-caption font-semibold tabular-nums">
-                {queueStops.length}
-              </span>
-            )}
           </Button>
           {/* Path settings — manage default industries. Visible in every
               pathView (entry / active / discover) since it lives in the
@@ -706,14 +686,6 @@ export function PathPage() {
         distanceMeters={selectedDistance}
         open={sheetOpen}
         onOpenChange={setSheetOpen}
-      />
-
-      <PathPlanSheet
-        open={planOpen}
-        onOpenChange={setPlanOpen}
-        origin={origin ?? { lat: 0, lng: 0 }}
-        allMerchants={liveMerchants}
-        orderedStops={orderedQueue}
       />
 
       <CreatePathWizard
