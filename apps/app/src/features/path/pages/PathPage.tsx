@@ -274,6 +274,10 @@ export function PathPage() {
   );
 
   const orderedQueue: Merchant[] = React.useMemo(() => {
+    // Only the discover-branch map consumes the ordered queue / routePath.
+    // Skip the O(n²) nearest-neighbor pass in every other view (entry/active/
+    // running) where ActivePathView/RunningPath compute their own route.
+    if (pathView !== "discover") return [];
     if (queuedMerchants.length === 0) return [];
     // Nearest-neighbor only makes sense for geocoded stops; without
     // coords we preserve insertion order so the rep sees what they
@@ -285,7 +289,7 @@ export function PathPage() {
       geocoded.map((m) => ({ lat: m.lat, lng: m.lng })),
     );
     return idxOrder.map((i) => geocoded[i]!);
-  }, [queuedMerchants, origin]);
+  }, [pathView, queuedMerchants, origin]);
 
   // Route path = origin → each stop in order. Used by the map polyline.
   // Only drawn if every stop is geocoded — partial routes are confusing.
