@@ -239,6 +239,16 @@ with sort+search) behind "Edit stops"; **Done** → Confirm. Map pins view-only 
 outliers chip both deferred (v1 scope cuts). Spec/plan `…/2026-06-05-select-stops-confirm-route-*`.
 `SelectStopsProps` unchanged. NOTE: the wizard tests now mock `MerchantMap` (Confirm
 renders the real MapLibre map by default).
+
+**Select stops — single-screen map + accordions — SHIPPED (2026-06-05, merge `7c1a428`).**
+Superseded the Confirm/Edit split (map alone felt passive; the rep wanted the actions
+under it). `SelectStops` is now ONE screen: route **map** (view-only) + a `routeDescriptor`
+line + two **accordion** sections — **"In your route · N · mi · ETA"** (expand → numbered
+RouteRows, remove ✕) and **"Add nearby · M"** (expand → sort + search + AddRow checkboxes)
+— both collapsed by default, opening one collapses the other (single `expanded:
+"route"|"add"|null`; auto-opens "add" at 0 selected). Sticky Back (→ filters) + Start.
+The `view`/"Edit stops"/"Done" are gone. Spec/plan `…/2026-06-05-select-stops-map-accordions-*`.
+`SelectStopsProps` unchanged; wizard test reaches the sort toggle via "Add nearby".
 **DEPLOY/PWA gotcha (learned the hard way):** prod served the new bundle but a stuck
 `autoUpdate` service worker kept showing the old UI through hard-refresh + `?nocache`
 (the SW's precache navigation route ignores query strings). Incognito / SW-unregister
