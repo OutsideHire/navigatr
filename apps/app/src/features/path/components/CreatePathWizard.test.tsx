@@ -147,7 +147,6 @@ describe("CreatePathWizard radius + max stops + select stops", () => {
     mockPrefs = { automotive: allSubtypes("automotive") };
     renderWizard({ merchants: [mkAutoMerchant("a", 0)] });
     fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
-    fireEvent.click(screen.getByRole("button", { name: /edit stops/i }));
     fireEvent.click(screen.getByRole("button", { name: /add nearby/i }));
     expect(screen.getByRole("button", { name: /opportunity/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /distance/i })).toBeInTheDocument();
