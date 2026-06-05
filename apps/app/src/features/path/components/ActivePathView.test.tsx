@@ -135,6 +135,12 @@ describe("ActivePathView", () => {
     expect(onStartRoute).toHaveBeenCalledTimes(1);
   });
 
+  it("shows the remaining-stops summary on the Start route hero (singular)", () => {
+    // Fixture has one pending stop (m1) and one visited (m2).
+    renderView();
+    expect(screen.getByText("1 stop to go")).toBeInTheDocument();
+  });
+
   it("renders the summary and no stop rows when complete", () => {
     complete = true;
     renderView();
