@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { toast } from "sonner";
 import { ActivePathView } from "./ActivePathView";
 
 const setStatus = vi.fn();
@@ -50,6 +51,9 @@ const todayState = {
 vi.mock("../hooks/useTodayPath", () => ({ useTodayPath: () => todayState.current }));
 vi.mock("./MerchantMap", () => ({ MerchantMap: () => <div data-testid="map" /> }));
 vi.mock("./PathSummary", () => ({ PathSummary: () => <div data-testid="summary" /> }));
+vi.mock("sonner", () => ({
+  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+}));
 
 function renderView(props?: Partial<{ onAddStops: () => void; onStartRoute: () => void }>) {
   return render(
@@ -67,6 +71,8 @@ beforeEach(() => {
   setStatus.mockClear();
   remove.mockClear();
   clear.mockClear();
+  vi.mocked(toast).mockClear();
+  vi.mocked(toast.success).mockClear();
   complete = false;
 });
 
@@ -82,6 +88,12 @@ describe("ActivePathView", () => {
     renderView();
     fireEvent.click(screen.getByRole("button", { name: /mark visited/i }));
     expect(setStatus).toHaveBeenCalledWith("m1", "visited");
+  });
+
+  it("toasts on mark visited", () => {
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: /mark visited/i }));
+    expect(toast.success).toHaveBeenCalledWith("Marked Uratex as visited");
   });
 
   it("skips a pending stop via setStatus", () => {
@@ -107,6 +119,13 @@ describe("ActivePathView", () => {
     renderView();
     fireEvent.click(screen.getByRole("button", { name: /clear path/i }));
     expect(clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not clear the path when confirm is declined", () => {
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: /clear path/i }));
+    expect(clear).not.toHaveBeenCalled();
   });
 
   it("shows Start route when a stop is pending and calls onStartRoute", () => {

@@ -12,6 +12,7 @@
 import * as React from "react";
 import { Check, CircleDashed, Navigation, Plus, SkipForward, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/navigatr";
@@ -37,10 +38,12 @@ export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathV
   const { stops, setStatus, remove, clear, isComplete } = useTodayPath();
   const navigate = useNavigate();
 
-  const orderedCoords = stops.map((s) => ({ lat: s.lat, lng: s.lng }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const stats = React.useMemo(() => routeStats(origin, orderedCoords), [origin, stops]);
-  const routePath = stops.length > 0 ? [origin, ...orderedCoords] : undefined;
+  const stats = React.useMemo(
+    () => routeStats(origin, stops.map((s) => ({ lat: s.lat, lng: s.lng }))),
+    [origin, stops],
+  );
+  const routePath =
+    stops.length > 0 ? [origin, ...stops.map((s) => ({ lat: s.lat, lng: s.lng }))] : undefined;
 
   const visited = stops.filter((s) => s.status === "visited").length;
   const skipped = stops.filter((s) => s.status === "skipped").length;
@@ -64,7 +67,7 @@ export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathV
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-heading-md text-text-default">Today&apos;s path</h2>
           <span className="text-caption tabular-nums text-text-muted">
-            {visited}/{stats.stopCount} visited · {formatDistance(stats.totalRouteMeters)} · ~{formatEta(stats.etaMinutes)}
+            {visited}/{stats.stopCount} visited · {formatDistance(stats.totalRouteMeters)} · {formatEta(stats.etaMinutes)}
           </span>
         </div>
 
@@ -103,10 +106,19 @@ export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathV
                   key={s.merchantId}
                   stop={s}
                   index={i}
-                  leg={legs[i] ?? Number.POSITIVE_INFINITY}
-                  onVisited={() => setStatus(s.merchantId, "visited")}
-                  onSkip={() => setStatus(s.merchantId, "skipped")}
-                  onRemove={() => remove(s.merchantId)}
+                  leg={legs[i] ?? 0}
+                  onVisited={() => {
+                    setStatus(s.merchantId, "visited");
+                    toast.success(`Marked ${s.name} as visited`);
+                  }}
+                  onSkip={() => {
+                    setStatus(s.merchantId, "skipped");
+                    toast(`Skipped ${s.name}`);
+                  }}
+                  onRemove={() => {
+                    remove(s.merchantId);
+                    toast(`Removed ${s.name} from path`);
+                  }}
                   onReopen={() => setStatus(s.merchantId, "pending")}
                 />
               ))}
