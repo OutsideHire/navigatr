@@ -140,6 +140,22 @@ describe("PathPage location states", () => {
     expect(screen.queryByText(/location is blocked/i)).not.toBeInTheDocument();
   });
 
+  it("hides the manual City/ZIP search once an origin is set (kept only for the no-origin recovery path)", () => {
+    originState.current = {
+      ...base, origin: { lat: 40, lng: -105 }, originSource: "gps",
+      originLabel: "Current location", geoStatus: "ready",
+    };
+    render(<PathPage />, { wrapper });
+    expect(screen.queryByLabelText(/search by city or zip/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Showing:/)).not.toBeInTheDocument();
+  });
+
+  it("still shows the City/ZIP search when there is no origin (e.g. GPS blocked) so the rep can get unstuck", () => {
+    originState.current = { ...base, geoStatus: "denied" };
+    render(<PathPage />, { wrapper });
+    expect(screen.getByLabelText(/search by city or zip/i)).toBeInTheDocument();
+  });
+
   it("defaults to entry cards when origin is set and there are no stops (discovery is no longer the default body)", () => {
     originState.current = {
       ...base, origin: { lat: 40, lng: -105 }, originSource: "gps",
