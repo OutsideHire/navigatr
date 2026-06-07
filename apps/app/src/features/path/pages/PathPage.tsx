@@ -386,23 +386,28 @@ export function PathPage() {
         </div>
       </header>
 
-      {/* Location bar — always available so a traveling rep can re-center on a
-          city even with a valid GPS fix. */}
-      <div className="mt-3 flex flex-wrap items-center gap-3 self-start">
-        {originLabel && (
-          <span className="text-caption text-text-muted">
-            Showing: <span className="font-medium text-text-default">{originLabel}</span>
-          </span>
-        )}
-        {/* LocationSearch focuses once, the first time autoFocus is true (one-shot),
-            so landing on the empty state focuses the search but it never re-steals focus. */}
-        <LocationSearch onSearch={searchLocation} searching={searching} error={searchError} autoFocus={!origin} />
-        {originSource === "manual" && (
-          <Button variant="tertiary" size="sm" leadingIcon={LocateFixed} onClick={useMyLocation}>
-            Use my location
-          </Button>
-        )}
-      </div>
+      {/* Location bar — shown only while there is NO origin yet (first load, or
+          GPS blocked/unavailable) so the rep can search a city/ZIP to get unstuck;
+          the no-origin cards below point here ("search a city or ZIP above").
+          Hidden once an origin is set — manual city re-center is disabled for now;
+          the header "Re-center" button still re-acquires GPS. */}
+      {!origin && (
+        <div className="mt-3 flex flex-wrap items-center gap-3 self-start">
+          {originLabel && (
+            <span className="text-caption text-text-muted">
+              Showing: <span className="font-medium text-text-default">{originLabel}</span>
+            </span>
+          )}
+          {/* LocationSearch focuses once, the first time autoFocus is true (one-shot),
+              so landing on the empty state focuses the search but it never re-steals focus. */}
+          <LocationSearch onSearch={searchLocation} searching={searching} error={searchError} autoFocus={!origin} />
+          {originSource === "manual" && (
+            <Button variant="tertiary" size="sm" leadingIcon={LocateFixed} onClick={useMyLocation}>
+              Use my location
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Body — structured as:
           1. No-origin states (loading / blocked / unavailable): always shown regardless
