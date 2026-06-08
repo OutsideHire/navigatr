@@ -34,6 +34,34 @@ vi.mock("../hooks/useTodayPath", () => ({
   useTodayPath: () => ({ logVisit, markDealCreated, stops }),
 }));
 
+// Controllable voice recorder + upload + auth.
+let recorderState = "idle";
+const recorderBlob = new Blob(["x"], { type: "audio/webm" });
+const recStart = vi.fn();
+const recStop = vi.fn();
+const recReset = vi.fn();
+vi.mock("../hooks/useVoiceRecorder", () => ({
+  useVoiceRecorder: () => ({
+    state: recorderState,
+    blob: recorderState === "recorded" ? recorderBlob : null,
+    durationMs: 3000,
+    mimeType: "audio/webm",
+    start: recStart,
+    stop: recStop,
+    reset: recReset,
+  }),
+}));
+const uploadVoiceNote = vi.fn().mockResolvedValue("user-1/x.webm");
+vi.mock("../lib/voiceNoteStorage", () => ({
+  uploadVoiceNote: (...a: unknown[]) => uploadVoiceNote(...a),
+  signedUrlFor: vi.fn(),
+}));
+vi.mock("@/stores/auth", () => ({
+  useAuth: (sel: (s: { user: { id: string } }) => unknown) => sel({ user: { id: "user-1" } }),
+}));
+// Keep these tests focused on commit wiring (the real recorder uses URL.createObjectURL).
+vi.mock("./VoiceNoteRecorder", () => ({ VoiceNoteRecorder: () => null }));
+
 const { DropInSheet } = await import("./DropInSheet");
 import { toast } from "sonner";
 import type { Merchant } from "../mockData";
@@ -68,6 +96,8 @@ describe("DropInSheet", () => {
     markDealCreated.mockClear();
     onOpenChange.mockClear();
     stops = [];
+    recorderState = "idle";
+    uploadVoiceNote.mockClear();
   });
 
   it("renders the 10 redesigned tiles with their sub-labels", () => {
@@ -164,5 +194,41 @@ describe("DropInSheet", () => {
     expect(markDealCreated).not.toHaveBeenCalled();
     expect(onLogged).toHaveBeenCalledWith("statement_secured");
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("engaged disposition with a recording uploads + passes voiceNoteUrl to logActivity", async () => {
+    recorderState = "recorded";
+    renderSheet();
+    await act(async () => { fireEvent.click(screen.getByText("Statement Secured")); });
+    expect(uploadVoiceNote).toHaveBeenCalledWith(recorderBlob, "audio/webm", "user-1");
+    expect(logActivityMutateAsync).toHaveBeenCalledWith(expect.objectContaining({ voiceNoteUrl: "user-1/x.webm" }));
+  });
+
+  it("terminal disposition with a recording confirms, discards (no upload) on confirm", async () => {
+    recorderState = "recorded";
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderSheet();
+    await act(async () => { fireEvent.click(screen.getByText("Not Interested")); });
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(uploadVoiceNote).not.toHaveBeenCalled();
+    expect(logVisit).toHaveBeenCalledWith("m-1", "not_interested");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("terminal + recording + confirm cancelled aborts the commit", async () => {
+    recorderState = "recorded";
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderSheet();
+    await act(async () => { fireEvent.click(screen.getByText("Not Interested")); });
+    expect(logVisit).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("no recording: engaged commit passes voiceNoteUrl null, no upload", async () => {
+    recorderState = "idle";
+    renderSheet();
+    await act(async () => { fireEvent.click(screen.getByText("Statement Secured")); });
+    expect(uploadVoiceNote).not.toHaveBeenCalled();
+    expect(logActivityMutateAsync).toHaveBeenCalledWith(expect.objectContaining({ voiceNoteUrl: null }));
   });
 });

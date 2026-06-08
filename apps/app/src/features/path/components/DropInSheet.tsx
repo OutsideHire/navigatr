@@ -33,6 +33,10 @@ import { PATH_DISPOSITION_KEYS } from "../lib/pathDispositions";
 import { todayISO } from "../lib/today";
 import { useCreateDeal } from "@/features/pipeline/hooks/useCreateDeal";
 import { useLogActivity } from "@/features/activities/hooks/useLogActivity";
+import { useAuth } from "@/stores/auth";
+import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
+import { VoiceNoteRecorder } from "./VoiceNoteRecorder";
+import { uploadVoiceNote } from "../lib/voiceNoteStorage";
 
 /** Default follow-up date for the inline picker: today + N calendar days, yyyy-mm-dd. */
 function plusDaysISODate(days: number): string {
@@ -62,6 +66,8 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
     : false;
   const createDeal = useCreateDeal();
   const logActivity = useLogActivity();
+  const userId = useAuth((s) => s.user?.id);
+  const recorder = useVoiceRecorder();
 
   const [selected, setSelected] = React.useState<Disposition | null>(null);
   const [notes, setNotes] = React.useState("");
@@ -80,6 +86,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
       setCustomDate(plusDaysISODate(7));
       setSaving(false);
       savingRef.current = false;
+      recorder.reset();
     }
   }, [open, merchant?.id]);
 
@@ -87,6 +94,12 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
 
   const commit = async (disposition: Disposition, customDateStr?: string) => {
     if (!merchant || savingRef.current) return;
+    const hasRecording = recorder.state === "recorded" && recorder.blob != null;
+    if (hasRecording && !schedulesFollowUp(disposition)) {
+      if (!window.confirm("No deal is created for this outcome, so the voice note won't be saved. Log it anyway?")) {
+        return;
+      }
+    }
     savingRef.current = true;
     setSaving(true);
     // Always record the disposition on the queue stop.
@@ -97,6 +110,14 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
         const followUpDate = customDateStr
           ? new Date(`${customDateStr}T00:00:00Z`).toISOString()
           : calculateFollowUpDate(disposition);
+        let voiceNoteUrl: string | null = null;
+        if (hasRecording && userId) {
+          try {
+            voiceNoteUrl = await uploadVoiceNote(recorder.blob!, recorder.mimeType, userId);
+          } catch {
+            toast.error("Couldn't save the voice note — logging the visit anyway.");
+          }
+        }
         const { id: dealId } = await createDeal.mutateAsync({
           companyName: merchant.name,
           address: merchant.address,
@@ -114,6 +135,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
           disposition,
           outcomeNotes: notes.trim(),
           followUpDate,
+          voiceNoteUrl,
         });
         // Both mutations succeeded — only now is a deal truly created.
         await markDealCreated(merchant.id);
@@ -168,6 +190,14 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
           </div>
 
           <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
+            <VoiceNoteRecorder
+              state={recorder.state}
+              durationMs={recorder.durationMs}
+              blob={recorder.blob}
+              onStart={() => void recorder.start()}
+              onStop={recorder.stop}
+              onReset={recorder.reset}
+            />
             <div className="grid grid-cols-2 gap-2">
               {PATH_DISPOSITION_KEYS.map((key) => (
                 <DispositionTile
