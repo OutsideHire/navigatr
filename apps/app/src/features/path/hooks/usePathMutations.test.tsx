@@ -194,6 +194,9 @@ describe("continuePreviousPath", () => {
       (c) => c.table === "path_stops" && c.op === "update" && (c.payload as { path_id?: string }).path_id === "today-1",
     );
     expect(reparents).toHaveLength(2);
+    const positions = reparents.map((c) => (c.payload as { position: number }).position).sort();
+    expect(positions).toEqual([0, 1]);
+    expect(reparents.every((c) => (c.payload as { path_id: string }).path_id === "today-1")).toBe(true);
     expect(
       calls.some(
         (c) =>
