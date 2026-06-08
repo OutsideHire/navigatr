@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import type { ReactNode } from "react";
@@ -81,6 +81,21 @@ const todayState = {
 };
 vi.mock("../hooks/useTodayPath", () => ({ useTodayPath: () => todayState.current }));
 
+// Detection hook — controllable per test.
+const prevUnfinishedState = { current: { data: null as null | { pathId: string; pathDate: string; pendingCount: number } } };
+vi.mock("../hooks/usePreviousUnfinishedPath", () => ({
+  usePreviousUnfinishedPath: () => prevUnfinishedState.current,
+}));
+// PathPage calls usePathMutations directly for continue/close.
+const continueMutate = vi.fn();
+const closeMutate = vi.fn();
+vi.mock("../hooks/usePathMutations", () => ({
+  usePathMutations: () => ({
+    continuePreviousPath: { mutate: vi.fn(), mutateAsync: continueMutate, isPending: false },
+    closePreviousPath: { mutate: closeMutate, mutateAsync: vi.fn(), isPending: false },
+  }),
+}));
+
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return (
@@ -104,6 +119,9 @@ beforeEach(() => {
   toastMock.error.mockClear();
   capturedOnStart = null;
   nearestNeighborSpy.mockClear();
+  prevUnfinishedState.current = { data: null };
+  continueMutate.mockReset();
+  closeMutate.mockReset();
 });
 
 describe("PathPage location states", () => {
@@ -206,6 +224,57 @@ describe("PathPage path-first view states", () => {
     originState.current = { ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready" };
     render(<PathPage />, { wrapper });
     expect(screen.getByTestId("active-path")).toBeInTheDocument();
+  });
+});
+
+describe("PathPage carryover", () => {
+  const ready = { ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready" } as PathOrigin;
+
+  it("shows the resume card on the entry screen when there's an unfinished past path", () => {
+    originState.current = ready;
+    todayState.current = { ...todayState.current, stops: [] };
+    prevUnfinishedState.current = { data: { pathId: "p7", pathDate: "2026-06-07", pendingCount: 4 } };
+    render(<PathPage />, { wrapper });
+    expect(screen.getByText(/4 stops left/i)).toBeInTheDocument();
+  });
+
+  it("does not show the resume card when there's no unfinished past path", () => {
+    originState.current = ready;
+    todayState.current = { ...todayState.current, stops: [] };
+    prevUnfinishedState.current = { data: null };
+    render(<PathPage />, { wrapper });
+    expect(screen.queryByText(/stops? left/i)).not.toBeInTheDocument();
+  });
+
+  it("Continue today calls continuePreviousPath with the path id + date", async () => {
+    originState.current = ready;
+    todayState.current = { ...todayState.current, stops: [] };
+    prevUnfinishedState.current = { data: { pathId: "p7", pathDate: "2026-06-07", pendingCount: 4 } };
+    render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /continue today/i }));
+    await waitFor(() => expect(continueMutate).toHaveBeenCalledWith({ prevPathId: "p7", prevPathDate: "2026-06-07" }));
+  });
+
+  it("starting a fresh Create path implicitly closes the unfinished path", () => {
+    originState.current = ready;
+    todayState.current = { ...todayState.current, stops: [] };
+    prevUnfinishedState.current = { data: { pathId: "p7", pathDate: "2026-06-07", pendingCount: 4 } };
+    render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /create a path/i }));
+    expect(closeMutate).toHaveBeenCalledWith({ prevPathId: "p7", prevPathDate: "2026-06-07" });
+  });
+
+  it("transitions to the active view once stops arrive after Continue", async () => {
+    originState.current = ready;
+    todayState.current = { ...todayState.current, stops: [] };
+    prevUnfinishedState.current = { data: { pathId: "p7", pathDate: "2026-06-07", pendingCount: 4 } };
+    continueMutate.mockResolvedValueOnce(undefined);
+    const { rerender } = render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /continue today/i }));
+    // Simulate the carried stops landing (query invalidation → useActivePath refetch).
+    todayState.current = { ...todayState.current, stops: [{ merchantId: "s1" }] };
+    rerender(<PathPage />);
+    await waitFor(() => expect(screen.getByTestId("active-path")).toBeInTheDocument());
   });
 });
 
