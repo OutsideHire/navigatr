@@ -193,10 +193,13 @@ describe("continuePreviousPath", () => {
     const reparents = calls.filter(
       (c) => c.table === "path_stops" && c.op === "update" && (c.payload as { path_id?: string }).path_id === "today-1",
     );
-    expect(reparents).toHaveLength(2);
-    const positions = reparents.map((c) => (c.payload as { position: number }).position).sort();
-    expect(positions).toEqual([0, 1]);
-    expect(reparents.every((c) => (c.payload as { path_id: string }).path_id === "today-1")).toBe(true);
+    // ONE bulk reparent, not a per-stop loop.
+    expect(reparents).toHaveLength(1);
+    const reparent = reparents[0];
+    expect(reparent.payload).toEqual({ path_id: "today-1" });
+    // Filtered by an `in` on id containing both pending ids.
+    const inFilter = reparent.filters.find(([col]) => col === "id");
+    expect(inFilter?.[1]).toEqual(["ps1", "ps2"]);
     expect(
       calls.some(
         (c) =>
