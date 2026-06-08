@@ -231,4 +231,15 @@ describe("DropInSheet", () => {
     expect(uploadVoiceNote).not.toHaveBeenCalled();
     expect(logActivityMutateAsync).toHaveBeenCalledWith(expect.objectContaining({ voiceNoteUrl: null }));
   });
+
+  it("upload failure: shows toast, still creates the deal with voiceNoteUrl null", async () => {
+    recorderState = "recorded";
+    uploadVoiceNote.mockRejectedValueOnce(new Error("storage error"));
+    renderSheet();
+    await act(async () => { fireEvent.click(screen.getByText("Statement Secured")); });
+    expect(toast.error).toHaveBeenCalled();
+    expect(createDealMutateAsync).toHaveBeenCalled();
+    expect(logActivityMutateAsync).toHaveBeenCalledWith(expect.objectContaining({ voiceNoteUrl: null }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
 });

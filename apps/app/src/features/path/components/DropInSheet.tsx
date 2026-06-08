@@ -88,6 +88,9 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
       savingRef.current = false;
       recorder.reset();
     }
+    // recorder.reset is stable; omitting `recorder` avoids re-running on its
+    // per-render reference churn while still resetting on every open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, merchant?.id]);
 
   if (!merchant) return null;
