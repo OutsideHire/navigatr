@@ -53,8 +53,11 @@ import { PathEntry } from "../components/PathEntry";
 import { PathSettings } from "../components/PathSettings";
 import { ActivePathView } from "../components/ActivePathView";
 import { RunningPath } from "../components/RunningPath";
+import { ResumePathCard } from "../components/ResumePathCard";
 import { usePathQueue } from "../hooks/usePathQueue";
 import { useTodayPath } from "../hooks/useTodayPath";
+import { usePreviousUnfinishedPath } from "../hooks/usePreviousUnfinishedPath";
+import { usePathMutations } from "../hooks/usePathMutations";
 import { toast } from "sonner";
 import { planQueueMigration } from "../lib/migrateLocalQueue";
 import { useMerchants } from "../hooks/useMerchants";
@@ -128,6 +131,8 @@ export function PathPage() {
   // downstream route math, badge counts, etc. keep working unchanged.
   const todayPath = useTodayPath();
   const queueStops = todayPath.stops;
+  const prevUnfinished = usePreviousUnfinishedPath();
+  const { continuePreviousPath, closePreviousPath } = usePathMutations();
 
   // Sync default view from stops. Never override an explicit "discover" — the
   // rep is in the middle of adding stops and we shouldn't yank them back.
@@ -147,6 +152,29 @@ export function PathPage() {
   // "active" when stops exist. Avoids a stale queueStops.length read right after
   // an async add.
   const handleDoneDiscovering = React.useCallback(() => setPathView("entry"), []);
+
+  // Continue the unfinished path into today: reparent its pending stops; the
+  // stops-sync effect then moves us to the active home once they land.
+  const handleContinuePrevious = React.useCallback(async () => {
+    const prev = prevUnfinished.data;
+    if (!prev) return;
+    try {
+      await continuePreviousPath.mutateAsync({ prevPathId: prev.pathId, prevPathDate: prev.pathDate });
+    } catch {
+      toast.error("Couldn't continue the path. Please try again.");
+    }
+  }, [prevUnfinished.data, continuePreviousPath]);
+
+  // Starting fresh (Create / Plan) or an explicit Close finalizes any unfinished
+  // path so the resume card doesn't reappear every empty morning. Fire-and-forget
+  // — the detection query refreshes on success and the card disappears.
+  const finalizePrevious = React.useCallback(() => {
+    const prev = prevUnfinished.data;
+    if (prev) closePreviousPath.mutate({ prevPathId: prev.pathId, prevPathDate: prev.pathDate });
+  }, [prevUnfinished.data, closePreviousPath]);
+
+  const handleCreate = React.useCallback(() => { finalizePrevious(); setCreateOpen(true); }, [finalizePrevious]);
+  const handlePlan = React.useCallback(() => { finalizePrevious(); enterDiscover(); }, [finalizePrevious, enterDiscover]);
 
   // One-time migration: an existing local queue -> today's server path. Runs once
   // per device when merchants are loaded (snapshots need their display fields).
@@ -467,7 +495,17 @@ export function PathPage() {
           )}
         </Card>
       ) : pathView === "entry" ? (
-        <PathEntry onCreate={() => setCreateOpen(true)} onPlan={enterDiscover} />
+        <>
+          {prevUnfinished.data && (
+            <ResumePathCard
+              pathDate={prevUnfinished.data.pathDate}
+              pendingCount={prevUnfinished.data.pendingCount}
+              onContinue={handleContinuePrevious}
+              onClose={finalizePrevious}
+            />
+          )}
+          <PathEntry onCreate={handleCreate} onPlan={handlePlan} />
+        </>
       ) : pathView === "active" ? (
         <ActivePathView origin={origin} onAddStops={enterDiscover} onStartRoute={() => setPathView("running")} />
       ) : pathView === "running" ? (
