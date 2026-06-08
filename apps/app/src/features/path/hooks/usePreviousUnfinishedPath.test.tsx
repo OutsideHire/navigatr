@@ -21,7 +21,12 @@ function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
-beforeEach(() => { orderMock.mockReset(); });
+beforeEach(() => {
+  selectMock.mockClear();
+  ltMock.mockClear();
+  neqMock.mockClear();
+  orderMock.mockReset();
+});
 
 describe("usePreviousUnfinishedPath", () => {
   it("returns the most-recent past path that has pending stops, with the pending count", async () => {

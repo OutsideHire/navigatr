@@ -15,6 +15,7 @@ export function formatPathDate(iso: string, todayIso: string = todayISO()): stri
   const d = new Date(`${iso}T00:00:00`);
   const today = new Date(`${todayIso}T00:00:00`);
   const diffDays = Math.round((today.getTime() - d.getTime()) / 86_400_000);
+  if (diffDays === 0) return "today";
   if (diffDays === 1) return "yesterday";
   return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }

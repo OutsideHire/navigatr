@@ -38,6 +38,8 @@ export function usePreviousUnfinishedPath() {
         .order("path_date", { ascending: false });
       if (error) throw error;
       const rows = (data ?? []) as unknown as Row[];
+      // Newest-first; pick the first row that has any pending stop. Embedded
+      // path_stops order is irrelevant here — we only test existence + count.
       const hit = rows.find((r) => (r.path_stops ?? []).some((s) => s.status === "pending"));
       if (!hit) return null;
       const pendingCount = hit.path_stops.filter((s) => s.status === "pending").length;
