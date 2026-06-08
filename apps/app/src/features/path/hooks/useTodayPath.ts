@@ -13,14 +13,8 @@ import type { Disposition } from "@/lib/followUpScheduling";
 import { useActivePath } from "./useActivePath";
 import { usePathMutations, type StopSnapshot } from "./usePathMutations";
 import type { StopStatus } from "../lib/pathTypes";
-
-/** Today's local date as yyyy-mm-dd (path_date is a calendar day, local to the rep). */
-export function todayISO(): string {
-  const d = new Date();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${day}`;
-}
+import { todayISO } from "../lib/today";
+export { todayISO };
 
 /** Queue-compatible stop shape the existing components read. */
 export interface TodayStop {
