@@ -1,25 +1,20 @@
 import { describe, it, expect } from "vitest";
 import { PATH_DISPOSITION_KEYS, isEngagedDisposition } from "./pathDispositions";
-import { DISPOSITIONS } from "@/lib/followUpScheduling";
 
-describe("pathDispositions", () => {
-  it("lists the 10 field drop-in tiles, each a real disposition", () => {
-    expect(PATH_DISPOSITION_KEYS).toHaveLength(10);
-    for (const k of PATH_DISPOSITION_KEYS) {
-      expect(DISPOSITIONS[k]).toBeDefined();
+describe("path dispositions", () => {
+  it("lists the 10 redesigned dispositions in screenshot order", () => {
+    expect(PATH_DISPOSITION_KEYS).toEqual([
+      "statement_secured","positive_engagement","connected_with_dm",
+      "dm_unavailable","followup_requested","future_potential",
+      "low_probability","wrong_number","not_interested","closed_lost",
+    ]);
+  });
+  it("treats any disposition that schedules a follow-up as engaged (creates a deal)", () => {
+    for (const d of ["statement_secured","positive_engagement","connected_with_dm","dm_unavailable","followup_requested","future_potential","low_probability"] as const) {
+      expect(isEngagedDisposition(d)).toBe(true);
     }
-  });
-
-  it("marks exactly the four engaged outcomes as deal-creating", () => {
-    const engaged = PATH_DISPOSITION_KEYS.filter(isEngagedDisposition);
-    expect(new Set(engaged)).toEqual(
-      new Set(["met_dm", "gatekeeper", "left_collateral", "scheduled_callback"]),
-    );
-  });
-
-  it("non-engaged outcomes are not deal-creating", () => {
-    expect(isEngagedDisposition("not_in_office")).toBe(false);
-    expect(isEngagedDisposition("out_of_business")).toBe(false);
-    expect(isEngagedDisposition("not_interested")).toBe(false);
+    for (const d of ["wrong_number","not_interested","closed_lost"] as const) {
+      expect(isEngagedDisposition(d)).toBe(false);
+    }
   });
 });
