@@ -172,9 +172,12 @@ export function usePathMutations() {
       // possible and each update is idempotent / retry-safe. If a caller ever
       // invokes this with a non-empty today path, switch to an upsert with
       // onConflict:"path_id,prospect_id" + a delete of the old pending rows.
-      for (let i = 0; i < pendingIds.length; i++) {
+      if (pendingIds.length > 0) {
+        // Single bulk reparent — NOT a per-stop loop (that was ~N sequential
+        // round-trips and left the UI disabled for seconds on a big path).
+        // Positions are advisory; the stops keep their existing relative order.
         const { error } = await supabase
-          .from("path_stops").update({ path_id: todayId, position: i }).eq("id", pendingIds[i]);
+          .from("path_stops").update({ path_id: todayId }).in("id", pendingIds);
         if (error) throw error;
       }
       const { error: e2 } = await supabase.from("paths").update({ status: "completed" }).eq("id", input.prevPathId);
