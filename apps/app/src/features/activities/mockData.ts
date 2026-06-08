@@ -26,6 +26,8 @@ export interface Activity {
   followUpDate: string | null;
   /** UUID of the user who logged this activity. Present on org-wide queries. */
   loggedBy?: string | null;
+  /** Storage path of an attached voice note (private bucket); null when none. */
+  voiceNoteUrl?: string | null;
 }
 
 const TODAY = new Date("2026-04-30T12:00:00Z");

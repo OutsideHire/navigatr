@@ -121,6 +121,19 @@ describe("useLogActivity", () => {
     expect(invalidatedKeys).toContainEqual(["deals", "list", "user-1"]);
   });
 
+  it("writes voice_note_url when voiceNoteUrl is provided", async () => {
+    singleMock.mockResolvedValueOnce({ data: { id: "a1" }, error: null });
+    const { result } = renderHook(() => useLogActivity(), { wrapper: makeWrapper(new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })) });
+    await result.current.mutateAsync({ dealId: "d1", type: "drop_in", disposition: "statement_secured", voiceNoteUrl: "user-1/x.webm" });
+    expect(insertMock).toHaveBeenCalledWith(expect.objectContaining({ voice_note_url: "user-1/x.webm" }));
+  });
+  it("writes voice_note_url null when omitted", async () => {
+    singleMock.mockResolvedValueOnce({ data: { id: "a1" }, error: null });
+    const { result } = renderHook(() => useLogActivity(), { wrapper: makeWrapper(new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })) });
+    await result.current.mutateAsync({ dealId: "d1", type: "drop_in", disposition: "not_interested" });
+    expect(insertMock).toHaveBeenCalledWith(expect.objectContaining({ voice_note_url: null }));
+  });
+
   it("throws when not signed in (no Supabase call fires)", async () => {
     authUserId = undefined;
     const { result } = renderHook(() => useLogActivity(), {

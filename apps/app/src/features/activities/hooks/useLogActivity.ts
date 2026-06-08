@@ -30,6 +30,8 @@ export interface LogActivityInput {
   occurredAt?: string;
   /** ISO timestamp from the frontend scheduler; we convert to DATE here. */
   followUpDate?: string | null;
+  /** Storage path of an uploaded voice note (private bucket); null when none. */
+  voiceNoteUrl?: string | null;
 }
 
 export function useLogActivity() {
@@ -63,6 +65,7 @@ export function useLogActivity() {
           outcome_notes:    input.outcomeNotes ?? "",
           occurred_at:      input.occurredAt ?? new Date().toISOString(),
           follow_up_date:   followUpDateOnly,
+          voice_note_url:   input.voiceNoteUrl ?? null,
         })
         .select("id")
         .single();

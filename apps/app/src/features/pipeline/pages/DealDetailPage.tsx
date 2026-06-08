@@ -63,6 +63,7 @@ import {
   type LostReasonCategory,
 } from "../mockData";
 import { LostReasonModal } from "../components/LostReasonModal";
+import { VoiceNotePlayer } from "../components/VoiceNotePlayer";
 import { useDeal } from "../hooks/useDeal";
 import { useTerm, useTermCapitalized } from "@/features/profession/useTerm";
 import { useUpdateDeal } from "../hooks/useUpdateDeal";
@@ -477,21 +478,28 @@ function LatestActivityCard({
 function ActivityRow({ activity, onEdit }: { activity: Activity; onEdit?: (a: Activity) => void }) {
   const spec = DISPOSITIONS[activity.disposition];
   return (
-    <ListRow
-      onClick={onEdit ? () => onEdit(activity) : undefined}
-      leading={
-        <span className="flex h-9 w-9 items-center justify-center rounded-radius-full bg-accent-teal-20 text-accent-teal">
-          <PhoneIcon className="h-4 w-4" aria-hidden />
-        </span>
-      }
-      title={`Call · ${activity.durationMinutes ?? "—"} min · ${spec.label}`}
-      subtitle={activity.outcomeNotes || "No notes"}
-      trailing={
-        <span className="text-caption tabular-nums text-text-muted">
-          {formatRelative(activity.occurredAt)}
-        </span>
-      }
-    />
+    <div className="flex flex-col">
+      <ListRow
+        onClick={onEdit ? () => onEdit(activity) : undefined}
+        leading={
+          <span className="flex h-9 w-9 items-center justify-center rounded-radius-full bg-accent-teal-20 text-accent-teal">
+            <PhoneIcon className="h-4 w-4" aria-hidden />
+          </span>
+        }
+        title={`Call · ${activity.durationMinutes ?? "—"} min · ${spec.label}`}
+        subtitle={activity.outcomeNotes || "No notes"}
+        trailing={
+          <span className="text-caption tabular-nums text-text-muted">
+            {formatRelative(activity.occurredAt)}
+          </span>
+        }
+      />
+      {activity.voiceNoteUrl && (
+        <div className="pl-12 pr-3 pb-2">
+          <VoiceNotePlayer path={activity.voiceNoteUrl} />
+        </div>
+      )}
+    </div>
   );
 }
 
