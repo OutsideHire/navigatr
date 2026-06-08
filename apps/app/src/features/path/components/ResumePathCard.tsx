@@ -27,16 +27,16 @@ export function ResumePathCard({ pathDate, pendingCount, onContinue, onClose, to
   return (
     <Card
       padding="lg"
-      className="mt-6 flex flex-col gap-3 self-stretch border-brand md:mx-auto md:w-full md:max-w-2xl"
+      className="mt-6 flex flex-col gap-3 self-stretch border-brand-primary md:mx-auto md:w-full md:max-w-2xl"
     >
       <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-radius-md bg-brand-10 text-brand">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-radius-md bg-brand-primary-10 text-brand-primary">
           <RotateCcw className="h-5 w-5" aria-hidden />
         </span>
         <div className="flex flex-col">
           <p className="text-heading-sm text-text-default">Pick up your last path</p>
           <p className="text-body-md text-text-muted">
-            {stops} unvisited &middot; {when}
+            {stops} &middot; {when}
           </p>
         </div>
       </div>
