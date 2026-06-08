@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { usePathMutations } from "./usePathMutations";
 
-type Call = { table: string; op: string; payload?: unknown; filters: [string, unknown][] };
+type Call = { table: string; op: string; payload?: unknown; opts?: unknown; filters: [string, unknown][] };
 const calls: Call[] = [];
 // Controllable result for terminal points that need explicit data/error.
 let nextSingle: { data: unknown; error: unknown } = { data: { id: "today-1" }, error: null };
@@ -34,6 +34,7 @@ function builder(table: string) {
     upsert(p: unknown, _o?: unknown) {
       rec.op = "upsert";
       rec.payload = p;
+      rec.opts = _o;
       return api;
     },
     update(p: unknown) {
@@ -121,6 +122,7 @@ describe("usePathMutations.createPath", () => {
       origin_lat: 30.27,
       origin_lng: -97.74,
     });
+    expect(upsert?.opts).toEqual({ onConflict: "user_id,path_date" });
     expect(id).toBe("p1");
   });
 });
@@ -141,6 +143,22 @@ describe("usePathMutations.addStops", () => {
     expect(upsert?.payload).toEqual([
       { path_id: "p1", prospect_id: "pr1", name: "A", address: null, phone: null, lat: 1, lng: 2, category: "automotive", primary_type: "car_repair", position: 2 },
     ]);
+    expect(upsert?.opts).toEqual({ onConflict: "path_id,prospect_id", ignoreDuplicates: true });
+  });
+
+  it("uses ignoreDuplicates so re-adding a prospect already on the path is a no-op (no 23505)", async () => {
+    const { result } = renderHook(() => usePathMutations(), { wrapper });
+    await act(async () => {
+      await result.current.addStops.mutateAsync({
+        pathId: "p1",
+        basePosition: 0,
+        stops: [
+          { prospectId: "pr1", name: "A", address: null, phone: null, lat: 1, lng: 2, category: "automotive", primaryType: null },
+        ],
+      });
+    });
+    const upsert = calls.find((c) => c.table === "path_stops" && c.op === "upsert");
+    expect(upsert?.opts).toMatchObject({ onConflict: "path_id,prospect_id", ignoreDuplicates: true });
   });
 
   it("surfaces an insert error", async () => {
