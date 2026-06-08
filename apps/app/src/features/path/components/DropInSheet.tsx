@@ -68,7 +68,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
   const [customDate, setCustomDate] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   // Synchronous guard against double-submit: `saving` state is a stale closure
-  // within a single tick, so a fast double-tap can fire handleSave twice and
+  // within a single tick, so a fast double-tap can fire commit() twice and
   // create two deals before React re-renders. The ref flips immediately.
   const savingRef = React.useRef(false);
 
