@@ -503,7 +503,7 @@ export function PathPage() {
               pendingCount={prevUnfinished.data.pendingCount}
               onContinue={handleContinuePrevious}
               onClose={finalizePrevious}
-              disabled={continuePreviousPath.isPending}
+              disabled={continuePreviousPath.isPending || closePreviousPath.isPending}
             />
           )}
           <PathEntry onCreate={handleCreate} onPlan={handlePlan} />
