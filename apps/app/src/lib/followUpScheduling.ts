@@ -57,35 +57,35 @@ export const DISPOSITIONS: Record<Disposition, DispositionSpec> = {
   statement_secured: {
     key: "statement_secured",
     label: "Statement Secured",
-    rationale: "Highest urgency · 1 day follow-up",
+    rationale: "Highest urgency. 1 day.",
     tier: "positive",
     businessDays: 1,
   },
   positive_engagement: {
     key: "positive_engagement",
     label: "Positive Engagement",
-    rationale: "Warm signal · 3 day follow-up",
+    rationale: "Warm. 3 days.",
     tier: "positive",
     businessDays: 3,
   },
   connected_with_dm: {
     key: "connected_with_dm",
     label: "Connected with DM",
-    rationale: "Spoke with decision-maker · 7 day follow-up",
+    rationale: "Relationship. 7 days.",
     tier: "positive",
     businessDays: 7,
   },
   dm_unavailable: {
     key: "dm_unavailable",
-    label: "Decision Maker Unavailable",
-    rationale: "Try again · 3 day follow-up",
+    label: "DM Unavailable",
+    rationale: "Retry. 3 days.",
     tier: "neutral",
     businessDays: 3,
   },
   followup_requested: {
     key: "followup_requested",
-    label: "Follow-up Requested",
-    rationale: "Prospect picked a time · manual date",
+    label: "Follow-Up Requested",
+    rationale: "Custom date.",
     tier: "neutral",
     // null = rep picks a date manually. Sprint 1 keeps this out of the
     // active UI; the spec stays so Sprint 2 can wire the manual picker.
@@ -94,35 +94,35 @@ export const DISPOSITIONS: Record<Disposition, DispositionSpec> = {
   future_potential: {
     key: "future_potential",
     label: "Future Potential",
-    rationale: "Long-term play · 30 day follow-up",
-    tier: "cool",
+    rationale: "Long cycle. 30 days.",
+    tier: "neutral",
     businessDays: 30,
   },
   low_probability: {
     key: "low_probability",
     label: "Low Probability",
-    rationale: "Worth one more shot · 15 day follow-up",
+    rationale: "Cool. 15 days.",
     tier: "cool",
     businessDays: 15,
   },
   not_interested: {
     key: "not_interested",
     label: "Not Interested",
-    rationale: "Closed out · no follow-up",
+    rationale: "No follow-up.",
     tier: "negative",
     businessDays: null,
   },
   wrong_number: {
     key: "wrong_number",
-    label: "Wrong Number",
-    rationale: "Bad contact data · no follow-up",
-    tier: "negative",
+    label: "Wrong Person",
+    rationale: "No follow-up.",
+    tier: "cool",
     businessDays: null,
   },
   closed_lost: {
     key: "closed_lost",
     label: "Closed Lost",
-    rationale: "Deal lost · no follow-up",
+    rationale: "No follow-up.",
     tier: "negative",
     businessDays: null,
   },
@@ -219,6 +219,12 @@ export function calculateFollowUpDate(
   // Normalize to start-of-day UTC so client tz doesn't drift the date.
   next.setUTCHours(0, 0, 0, 0);
   return next.toISOString();
+}
+
+/** True when this disposition schedules a follow-up (and thus creates a deal):
+ *  any interval disposition, plus followup_requested whose date is rep-picked. */
+export function schedulesFollowUp(d: Disposition): boolean {
+  return DISPOSITIONS[d].businessDays != null || d === "followup_requested";
 }
 
 /** Pretty short-form for toasts and chips: "Mon, May 18". */

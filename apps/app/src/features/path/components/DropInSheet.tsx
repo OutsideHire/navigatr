@@ -1,11 +1,18 @@
 /**
- * DropInSheet — log a field drop-in for a path stop (Path v2, Slice 3).
+ * DropInSheet — log a field drop-in for a path stop.
  *
- * Tiles → notes → optional contact name. On save:
- *   - always: record the disposition on the queue stop (usePathQueue.logVisit).
- *   - engaged outcomes (met_dm / gatekeeper / left_collateral / scheduled_callback):
- *     also create a Pipeline deal (company = business name, email/value null) and
- *     log a `drop_in` activity whose disposition auto-schedules the follow-up.
+ * Tap-to-auto-save: tapping a disposition tile commits immediately and advances
+ * to the next stop. There is no Save button; the footer keeps only Cancel.
+ *   - always: record the disposition on the queue stop (useTodayPath.logVisit).
+ *   - follow-up outcomes (schedulesFollowUp === true): also create a Pipeline
+ *     deal (company = business name, contact = business name) and log a
+ *     `drop_in` activity whose disposition auto-schedules the follow-up.
+ *   - terminal outcomes: log the visit only — no deal.
+ *
+ * Follow-Up Requested is the one exception: instead of committing on tap, it
+ * reveals an inline date picker (default +7 calendar days, min = today) and a
+ * "Set follow-up & next" button that commits with the chosen date.
+ *
  * Places-only: no employee count, estimated value, or email captured.
  */
 import * as React from "react";
@@ -14,12 +21,27 @@ import { X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button, Input, NotesFieldWithMic, DispositionTile } from "@/components/navigatr";
-import { DISPOSITIONS, calculateFollowUpDate, type Disposition } from "@/lib/followUpScheduling";
+import {
+  DISPOSITIONS,
+  calculateFollowUpDate,
+  schedulesFollowUp,
+  type Disposition,
+} from "@/lib/followUpScheduling";
 import type { Merchant } from "../mockData";
 import { useTodayPath } from "../hooks/useTodayPath";
-import { PATH_DISPOSITION_KEYS, isEngagedDisposition } from "../lib/pathDispositions";
+import { PATH_DISPOSITION_KEYS } from "../lib/pathDispositions";
+import { todayISO } from "../lib/today";
 import { useCreateDeal } from "@/features/pipeline/hooks/useCreateDeal";
 import { useLogActivity } from "@/features/activities/hooks/useLogActivity";
+
+/** Default follow-up date for the inline picker: today + N calendar days, yyyy-mm-dd. */
+function plusDaysISODate(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
 
 export interface DropInSheetProps {
   merchant: Merchant | null;
@@ -43,10 +65,10 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
 
   const [selected, setSelected] = React.useState<Disposition | null>(null);
   const [notes, setNotes] = React.useState("");
-  const [contactName, setContactName] = React.useState("");
+  const [customDate, setCustomDate] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   // Synchronous guard against double-submit: `saving` state is a stale closure
-  // within a single tick, so a fast double-tap can fire handleSave twice and
+  // within a single tick, so a fast double-tap can fire commit() twice and
   // create two deals before React re-renders. The ref flips immediately.
   const savingRef = React.useRef(false);
 
@@ -55,7 +77,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
     if (open) {
       setSelected(null);
       setNotes("");
-      setContactName("");
+      setCustomDate(plusDaysISODate(7));
       setSaving(false);
       savingRef.current = false;
     }
@@ -63,21 +85,23 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
 
   if (!merchant) return null;
 
-  const handleSave = async () => {
-    if (!selected || savingRef.current) return;
+  const commit = async (disposition: Disposition, customDateStr?: string) => {
+    if (!merchant || savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
     // Always record the disposition on the queue stop.
-    await logVisit(merchant.id, selected);
+    await logVisit(merchant.id, disposition);
 
-    if (isEngagedDisposition(selected) && !alreadyDealCreated) {
+    if (schedulesFollowUp(disposition) && !alreadyDealCreated) {
       try {
-        const followUpDate = calculateFollowUpDate(selected);
+        const followUpDate = customDateStr
+          ? new Date(`${customDateStr}T00:00:00Z`).toISOString()
+          : calculateFollowUpDate(disposition);
         const { id: dealId } = await createDeal.mutateAsync({
           companyName: merchant.name,
           address: merchant.address,
           industry: merchant.category,
-          contactName: contactName.trim() || merchant.name,
+          contactName: merchant.name,
           contactPhone: merchant.phone ?? "",
           stage: "new",
           probability: 20,
@@ -87,7 +111,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
         await logActivity.mutateAsync({
           dealId,
           type: "drop_in",
-          disposition: selected,
+          disposition,
           outcomeNotes: notes.trim(),
           followUpDate,
         });
@@ -102,12 +126,21 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
         toast.error("Couldn't finish logging — the visit was saved but the deal/follow-up may not have been.");
       }
     } else {
-      toast.success(`Visit logged: ${DISPOSITIONS[selected].label}`);
+      toast.success(`Visit logged: ${DISPOSITIONS[disposition].label}`);
     }
     setSaving(false);
     savingRef.current = false;
-    onLogged?.(selected);
+    onLogged?.(disposition);
     onOpenChange(false);
+  };
+
+  // Tap-to-auto-save: most tiles commit immediately. Follow-Up Requested is the
+  // exception — it reveals the inline date picker and waits for confirmation.
+  const handleSelect = (key: Disposition) => {
+    setSelected(key);
+    if (key !== "followup_requested") {
+      void commit(key);
+    }
   };
 
   return (
@@ -118,15 +151,20 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
           aria-describedby={undefined}
           className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[90dvh] w-full max-w-lg flex-col rounded-t-radius-lg bg-surface-default p-5 shadow-card-hover sm:inset-0 sm:bottom-auto sm:top-1/2 sm:max-h-[85dvh] sm:-translate-y-1/2 sm:rounded-radius-lg"
         >
-          <div className="flex items-center justify-between pb-3">
-            <Dialog.Title className="text-heading-sm text-text-default">
-              Log drop-in · {merchant.name}
-            </Dialog.Title>
-            <Dialog.Close asChild>
-              <button aria-label="Close" className="rounded-radius-sm p-1 text-text-muted hover:text-text-default">
-                <X className="h-5 w-5" aria-hidden />
-              </button>
-            </Dialog.Close>
+          <div className="pb-3">
+            <div className="flex items-center justify-between">
+              <Dialog.Title className="text-heading-sm text-text-default">
+                Log drop-in · {merchant.name}
+              </Dialog.Title>
+              <Dialog.Close asChild>
+                <button aria-label="Close" className="rounded-radius-sm p-1 text-text-muted hover:text-text-default">
+                  <X className="h-5 w-5" aria-hidden />
+                </button>
+              </Dialog.Close>
+            </div>
+            <p className="mt-1 text-caption text-text-muted">
+              Tap an outcome — auto-saves and advances to the next stop.
+            </p>
           </div>
 
           <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
@@ -134,23 +172,35 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
               {PATH_DISPOSITION_KEYS.map((key) => (
                 <DispositionTile
                   key={key}
-                  dense
                   tier={DISPOSITIONS[key].tier}
                   title={DISPOSITIONS[key].label}
+                  description={DISPOSITIONS[key].rationale}
                   selected={selected === key}
-                  onClick={() => setSelected(key)}
+                  onClick={() => handleSelect(key)}
                 />
               ))}
             </div>
 
-            <label className="flex flex-col gap-1.5">
-              <span className="text-caption font-medium text-text-muted">Contact name (optional)</span>
-              <Input
-                value={contactName}
-                onChange={(e) => setContactName(e.target.value)}
-                placeholder="Who did you talk to?"
-              />
-            </label>
+            {selected === "followup_requested" && (
+              <label className="flex flex-col gap-1.5">
+                <span className="text-caption font-medium text-text-muted">Follow-up date</span>
+                <Input
+                  type="date"
+                  value={customDate}
+                  min={todayISO()}
+                  onChange={(e) => setCustomDate(e.target.value)}
+                />
+                <Button
+                  variant="primary"
+                  className="mt-1 self-start"
+                  disabled={!customDate || saving}
+                  loading={saving}
+                  onClick={() => void commit("followup_requested", customDate)}
+                >
+                  Set follow-up & next
+                </Button>
+              </label>
+            )}
 
             <NotesFieldWithMic
               value={notes}
@@ -162,15 +212,6 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
           <div className="flex gap-2 pt-4">
             <Button variant="secondary" onClick={() => onOpenChange(false)} className="flex-1">
               Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleSave}
-              disabled={!selected || saving}
-              loading={saving}
-              className="flex-1"
-            >
-              Save
             </Button>
           </div>
         </Dialog.Content>
