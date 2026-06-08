@@ -11,6 +11,8 @@ interface ResumePathCardProps {
   onContinue: () => void;
   /** Close it out (finalize, don't carry). */
   onClose: () => void;
+  /** Disable the actions while a carryover mutation is in flight. */
+  disabled?: boolean;
   /** Override "today" for deterministic tests. */
   todayIso?: string;
 }
@@ -21,7 +23,7 @@ interface ResumePathCardProps {
  * usual reason a rep opens the page in the morning is to keep going). Two explicit
  * choices, no ambiguous "dismiss".
  */
-export function ResumePathCard({ pathDate, pendingCount, onContinue, onClose, todayIso }: ResumePathCardProps) {
+export function ResumePathCard({ pathDate, pendingCount, onContinue, onClose, disabled, todayIso }: ResumePathCardProps) {
   const when = formatPathDate(pathDate, todayIso);
   const stops = `${pendingCount} stop${pendingCount === 1 ? "" : "s"} left`;
   return (
@@ -41,8 +43,8 @@ export function ResumePathCard({ pathDate, pendingCount, onContinue, onClose, to
         </div>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button variant="primary" size="sm" onClick={onContinue}>Continue today</Button>
-        <Button variant="secondary" size="sm" onClick={onClose}>Close it out</Button>
+        <Button variant="primary" size="sm" onClick={onContinue} disabled={disabled}>Continue today</Button>
+        <Button variant="secondary" size="sm" onClick={onClose} disabled={disabled}>Close it out</Button>
       </div>
     </Card>
   );

@@ -91,8 +91,8 @@ const continueMutate = vi.fn();
 const closeMutate = vi.fn();
 vi.mock("../hooks/usePathMutations", () => ({
   usePathMutations: () => ({
-    continuePreviousPath: { mutate: vi.fn(), mutateAsync: continueMutate },
-    closePreviousPath: { mutate: closeMutate, mutateAsync: vi.fn() },
+    continuePreviousPath: { mutate: vi.fn(), mutateAsync: continueMutate, isPending: false },
+    closePreviousPath: { mutate: closeMutate, mutateAsync: vi.fn(), isPending: false },
   }),
 }));
 
@@ -262,6 +262,19 @@ describe("PathPage carryover", () => {
     render(<PathPage />, { wrapper });
     fireEvent.click(screen.getByRole("button", { name: /create a path/i }));
     expect(closeMutate).toHaveBeenCalledWith({ prevPathId: "p7", prevPathDate: "2026-06-07" });
+  });
+
+  it("transitions to the active view once stops arrive after Continue", async () => {
+    originState.current = ready;
+    todayState.current = { ...todayState.current, stops: [] };
+    prevUnfinishedState.current = { data: { pathId: "p7", pathDate: "2026-06-07", pendingCount: 4 } };
+    continueMutate.mockResolvedValueOnce(undefined);
+    const { rerender } = render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /continue today/i }));
+    // Simulate the carried stops landing (query invalidation → useActivePath refetch).
+    todayState.current = { ...todayState.current, stops: [{ merchantId: "s1" }] };
+    rerender(<PathPage />);
+    await waitFor(() => expect(screen.getByTestId("active-path")).toBeInTheDocument());
   });
 });
 

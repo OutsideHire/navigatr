@@ -156,6 +156,7 @@ export function PathPage() {
   // Continue the unfinished path into today: reparent its pending stops; the
   // stops-sync effect then moves us to the active home once they land.
   const handleContinuePrevious = React.useCallback(async () => {
+    if (continuePreviousPath.isPending) return;
     const prev = prevUnfinished.data;
     if (!prev) return;
     try {
@@ -173,8 +174,8 @@ export function PathPage() {
     if (prev) closePreviousPath.mutate({ prevPathId: prev.pathId, prevPathDate: prev.pathDate });
   }, [prevUnfinished.data, closePreviousPath]);
 
-  const handleCreate = React.useCallback(() => { finalizePrevious(); setCreateOpen(true); }, [finalizePrevious]);
-  const handlePlan = React.useCallback(() => { finalizePrevious(); enterDiscover(); }, [finalizePrevious, enterDiscover]);
+  const handleCreate = React.useCallback(() => { if (!closePreviousPath.isPending) finalizePrevious(); setCreateOpen(true); }, [finalizePrevious, closePreviousPath.isPending]);
+  const handlePlan = React.useCallback(() => { if (!closePreviousPath.isPending) finalizePrevious(); enterDiscover(); }, [finalizePrevious, closePreviousPath.isPending, enterDiscover]);
 
   // One-time migration: an existing local queue -> today's server path. Runs once
   // per device when merchants are loaded (snapshots need their display fields).
@@ -502,6 +503,7 @@ export function PathPage() {
               pendingCount={prevUnfinished.data.pendingCount}
               onContinue={handleContinuePrevious}
               onClose={finalizePrevious}
+              disabled={continuePreviousPath.isPending}
             />
           )}
           <PathEntry onCreate={handleCreate} onPlan={handlePlan} />

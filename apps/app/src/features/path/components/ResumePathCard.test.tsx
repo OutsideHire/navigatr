@@ -26,4 +26,13 @@ describe("ResumePathCard", () => {
     expect(screen.getByText(/1 stop left/i)).toBeInTheDocument();
     expect(screen.getByText(/Fri, Jun 5/)).toBeInTheDocument();
   });
+
+  it("disables both actions when disabled", () => {
+    render(
+      <ResumePathCard pathDate="2026-06-07" pendingCount={2} todayIso="2026-06-08"
+        disabled onContinue={() => {}} onClose={() => {}} />,
+    );
+    expect(screen.getByRole("button", { name: /continue today/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /close it out/i })).toBeDisabled();
+  });
 });
