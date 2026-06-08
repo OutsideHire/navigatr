@@ -3,10 +3,13 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { DispositionTile } from "./DispositionTile";
 
 describe("DispositionTile", () => {
-  it("default variant shows the title and description", () => {
-    render(<DispositionTile tier="positive" title="Met with DM" description="Spoke to the decision maker" />);
+  it("default variant shows the title and description and hugs content (no fixed 130px height)", () => {
+    const { container } = render(<DispositionTile tier="positive" title="Met with DM" description="Spoke to the decision maker" />);
     expect(screen.getByText("Met with DM")).toBeInTheDocument();
     expect(screen.getByText("Spoke to the decision maker")).toBeInTheDocument();
+    // Tiles hug their content — a fixed min-height left ~70px of dead space per
+    // tile and ballooned the drop-in grid into a long scroll.
+    expect(container.querySelector(".min-h-\\[130px\\]")).toBeNull();
   });
   it("dense variant shows the title but NOT the description, and is not a 130px card", () => {
     const { container } = render(

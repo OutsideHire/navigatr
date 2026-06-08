@@ -83,9 +83,11 @@ export const DispositionTile = React.forwardRef<HTMLButtonElement, DispositionTi
         onClick={onClick}
         aria-pressed={selected}
         className={cn(
-          // Figma dims: 160 × 130. Use min-h to allow vertical growth on
-          // longer descriptions; min-w-0 + flex-1 in callers handles wrap.
-          "group relative flex min-h-[130px] w-full flex-col items-stretch overflow-hidden text-left",
+          // Hug content (title + one-line description) — no fixed min-height,
+          // so a grid of these doesn't balloon into dead space + scroll. The
+          // band still spans full height via inset-y-0; min-w-0/flex-1 in
+          // callers handles wrap.
+          "group relative flex w-full flex-col items-stretch overflow-hidden text-left",
           "rounded-radius-md transition-all",
           "bg-surface-elevated shadow-card",
           // Border: 1 px subtle by default, 2 px brand-primary when selected
@@ -104,7 +106,7 @@ export const DispositionTile = React.forwardRef<HTMLButtonElement, DispositionTi
           className={cn("absolute inset-y-0 left-0 w-1", bandColor[tier])}
         />
 
-        <div className="flex flex-col gap-1 px-4 py-4 pl-5">
+        <div className="flex flex-col gap-0.5 px-4 py-3 pl-5">
           <span className="text-body-strong text-text-default">{title}</span>
           {description ? <span className="text-caption text-text-muted">{description}</span> : null}
         </div>
