@@ -14,6 +14,7 @@ import { LoginForm } from "./LoginForm";
 const signInWithEmailMock = vi.fn();
 const signInWithMagicLinkMock = vi.fn();
 const verifyMagicLinkCodeMock = vi.fn();
+const signInWithGoogleMock = vi.fn();
 
 vi.mock("@/stores/auth", () => ({
   useAuth: (selector: (s: AuthStore) => unknown) =>
@@ -21,6 +22,7 @@ vi.mock("@/stores/auth", () => ({
       signInWithEmail: signInWithEmailMock,
       signInWithMagicLink: signInWithMagicLinkMock,
       verifyMagicLinkCode: verifyMagicLinkCodeMock,
+      signInWithGoogle: signInWithGoogleMock,
     }),
 }));
 
@@ -32,6 +34,7 @@ interface AuthStore {
   signInWithEmail: typeof signInWithEmailMock;
   signInWithMagicLink: typeof signInWithMagicLinkMock;
   verifyMagicLinkCode: typeof verifyMagicLinkCodeMock;
+  signInWithGoogle: typeof signInWithGoogleMock;
 }
 
 function renderForm() {
@@ -55,6 +58,14 @@ describe("LoginForm / magic link path", () => {
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /sign in$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /sign in without a password/i })).toBeInTheDocument();
+  });
+
+  it("offers Google SSO but not the dead Microsoft/azure button", () => {
+    // Azure provider isn't enabled in Supabase — the Microsoft button was a
+    // dead path (400 validation_failed). It's removed; Google stays.
+    renderForm();
+    expect(screen.getByRole("button", { name: /continue with google/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /continue with microsoft/i })).not.toBeInTheDocument();
   });
 
   it("toggling to magic-link mode hides the password field", async () => {

@@ -26,17 +26,6 @@ function GoogleIcon() {
   );
 }
 
-function MicrosoftIcon() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 21 21" aria-hidden="true">
-      <rect x="1" y="1" width="9" height="9" fill="#F25022" />
-      <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
-      <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
-      <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
-    </svg>
-  );
-}
-
 /**
  * Both SSO buttons in a vertical stack. Identical across Login, Sign Up, and
  * Invitation pages so we keep them in one place.
@@ -54,7 +43,6 @@ export function OAuthButtons({
   inviteCode?: string;
 }) {
   const signInWithGoogle = useAuth((s) => s.signInWithGoogle);
-  const signInWithMicrosoft = useAuth((s) => s.signInWithMicrosoft);
 
   const onGoogle = async () => {
     try {
@@ -64,23 +52,14 @@ export function OAuthButtons({
     }
   };
 
-  const onMicrosoft = async () => {
-    try {
-      await signInWithMicrosoft(inviteCode || undefined);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Microsoft sign-in failed");
-    }
-  };
-
+  // Microsoft/Azure SSO disabled until the provider is enabled in Supabase
+  // (Auth → Providers → Azure). Re-add when configured. The store still
+  // exposes signInWithMicrosoft; only the dead button is removed here.
   return (
     <div className="flex flex-col gap-3">
       <Button type="button" variant="secondary" size="lg" fullWidth onClick={onGoogle} disabled={disabled}>
         <GoogleIcon />
         Continue with Google
-      </Button>
-      <Button type="button" variant="secondary" size="lg" fullWidth onClick={onMicrosoft} disabled={disabled}>
-        <MicrosoftIcon />
-        Continue with Microsoft
       </Button>
     </div>
   );
