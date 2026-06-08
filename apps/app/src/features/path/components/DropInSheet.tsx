@@ -38,7 +38,9 @@ import { useLogActivity } from "@/features/activities/hooks/useLogActivity";
 function plusDaysISODate(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
 }
 
 export interface DropInSheetProps {
@@ -135,9 +137,8 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
   // Tap-to-auto-save: most tiles commit immediately. Follow-Up Requested is the
   // exception — it reveals the inline date picker and waits for confirmation.
   const handleSelect = (key: Disposition) => {
-    if (key === "followup_requested") {
-      setSelected(key);
-    } else {
+    setSelected(key);
+    if (key !== "followup_requested") {
       void commit(key);
     }
   };

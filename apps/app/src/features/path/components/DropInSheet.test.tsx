@@ -35,6 +35,7 @@ vi.mock("../hooks/useTodayPath", () => ({
 }));
 
 const { DropInSheet } = await import("./DropInSheet");
+import { toast } from "sonner";
 import type { Merchant } from "../mockData";
 
 const merchant: Merchant = {
@@ -145,5 +146,23 @@ describe("DropInSheet", () => {
       fireEvent.click(screen.getByText("Not Interested"));
     });
     await waitFor(() => expect(onLogged).toHaveBeenCalledWith("not_interested"));
+  });
+
+  it("guards against double-submit: rapid taps log the visit once", async () => {
+    renderSheet();
+    const tile = screen.getByText("Statement Secured");
+    await act(async () => { fireEvent.click(tile); fireEvent.click(tile); });
+    expect(logVisit).toHaveBeenCalledTimes(1);
+  });
+
+  it("on activity-write failure: error toast, no markDealCreated, still closes + onLogged", async () => {
+    logActivityMutateAsync.mockRejectedValueOnce(new Error("boom"));
+    const onLogged = vi.fn();
+    renderSheet({ onLogged });
+    await act(async () => { fireEvent.click(screen.getByText("Statement Secured")); });
+    expect(toast.error).toHaveBeenCalled();
+    expect(markDealCreated).not.toHaveBeenCalled();
+    expect(onLogged).toHaveBeenCalledWith("statement_secured");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });
