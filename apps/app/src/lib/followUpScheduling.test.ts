@@ -3,6 +3,7 @@ import {
   calculateFollowUpDate,
   DISPOSITIONS,
   formatFollowUpDate,
+  schedulesFollowUp,
   type Disposition,
 } from "./followUpScheduling";
 
@@ -70,5 +71,24 @@ describe("field dispositions (Path Slice 3)", () => {
     expect(calculateFollowUpDate("scheduled_callback", from)).not.toBeNull();
     expect(calculateFollowUpDate("out_of_business", from)).toBeNull();
     expect(calculateFollowUpDate("do_not_contact", from)).toBeNull();
+  });
+});
+
+describe("disposition catalog (drop-in redesign)", () => {
+  it("has the redesigned metadata for the 10 outcome dispositions", () => {
+    expect(DISPOSITIONS.dm_unavailable.label).toBe("DM Unavailable");
+    expect(DISPOSITIONS.followup_requested.label).toBe("Follow-Up Requested");
+    expect(DISPOSITIONS.wrong_number.label).toBe("Wrong Person");
+    expect(DISPOSITIONS.wrong_number.tier).toBe("cool");
+    expect(DISPOSITIONS.future_potential.tier).toBe("neutral");
+    expect(DISPOSITIONS.statement_secured.rationale).toBe("Highest urgency. 1 day.");
+    expect(DISPOSITIONS.connected_with_dm.rationale).toBe("Relationship. 7 days.");
+  });
+
+  it("schedulesFollowUp is true for the 7 with a follow-up, false for the 3 terminal", () => {
+    const yes: Disposition[] = ["statement_secured","positive_engagement","connected_with_dm","dm_unavailable","followup_requested","future_potential","low_probability"];
+    const no: Disposition[] = ["wrong_number","not_interested","closed_lost"];
+    for (const d of yes) expect(schedulesFollowUp(d)).toBe(true);
+    for (const d of no) expect(schedulesFollowUp(d)).toBe(false);
   });
 });
