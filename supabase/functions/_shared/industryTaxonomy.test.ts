@@ -1,73 +1,45 @@
 import { describe, it, expect } from "vitest";
 import {
-  INDUSTRIES,
-  INDUSTRY_KEYS,
-  TIER_1_KEYS,
-  TIER_2_KEYS,
-  ALL_FETCHABLE_KEYS,
-  searchableTypes,
-  bucketForType,
-  SEARCH_UNSUPPORTED_TYPES,
-  type IndustryKey,
+  INDUSTRIES, INDUSTRY_KEYS, ALL_FETCHABLE_KEYS, RECOMMENDED_KEYS,
+  SEARCH_UNSUPPORTED_TYPES, searchableTypes, bucketForType,
 } from "./industryTaxonomy";
 
-describe("INDUSTRIES config", () => {
-  it("has the 13 keys incl 'other' and a label + order for each", () => {
-    expect(INDUSTRY_KEYS).toHaveLength(13);
-    for (const k of INDUSTRY_KEYS) {
-      expect(INDUSTRIES[k].label.length).toBeGreaterThan(0);
-      expect(typeof INDUSTRIES[k].order).toBe("number");
+describe("industryTaxonomy (revised mapping)", () => {
+  it("has 23 fetchable buckets + the 'other' fallback", () => {
+    expect(INDUSTRY_KEYS).toContain("other");
+    expect(ALL_FETCHABLE_KEYS).toHaveLength(23);
+    expect(ALL_FETCHABLE_KEYS).not.toContain("other");
+  });
+  it("is one-to-one: no place type appears in more than one fetchable bucket", () => {
+    const seen = new Map<string, string>();
+    for (const k of ALL_FETCHABLE_KEYS) {
+      for (const t of INDUSTRIES[k].includedTypes) {
+        expect(seen.has(t), `${t} in both ${seen.get(t)} and ${k}`).toBe(false);
+        seen.set(t, k);
+      }
     }
   });
-
-  it("tiers: Tier 1 = the 5 core B2B families; 'other' is in no fetchable tier", () => {
-    expect(new Set(TIER_1_KEYS)).toEqual(
-      new Set(["manufacturing", "construction_trades", "healthcare", "professional_services", "automotive"]),
-    );
-    expect(ALL_FETCHABLE_KEYS).toEqual([...TIER_1_KEYS, ...TIER_2_KEYS]);
-    expect(ALL_FETCHABLE_KEYS).not.toContain("other");
-    expect(ALL_FETCHABLE_KEYS).toHaveLength(12);
-  });
-
-  it("Tier-1 core includes manufacturer/supplier (previously missing)", () => {
-    expect(INDUSTRIES.manufacturing.includedTypes).toEqual(
-      expect.arrayContaining(["manufacturer", "supplier", "corporate_office"]),
+  it("RECOMMENDED_KEYS is exactly the 7 payments buckets", () => {
+    expect([...RECOMMENDED_KEYS].sort()).toEqual(
+      ["automotive","convenience_fuel","food_beverage","grocery_food_retail","healthcare","personal_services","professional_services"],
     );
   });
-
-  it("automotive drops Table-A Exclude types (car_rental, truck_dealer)", () => {
-    expect(INDUSTRIES.automotive.includedTypes).not.toContain("car_rental");
-    expect(INDUSTRIES.automotive.includedTypes).not.toContain("truck_dealer");
+  it("buckets relocated types to their new home", () => {
+    expect(bucketForType(["gas_station"])).toBe("convenience_fuel");
+    expect(bucketForType(["accounting"])).toBe("finance_banking");
+    expect(bucketForType(["veterinary_care"])).toBe("veterinary_pet");
+    expect(bucketForType(["pharmacy"])).toBe("pharmacy_health_retail");
+    expect(bucketForType(["hardware_store"])).toBe("home_hardware");
+    expect(bucketForType(["wholesaler"])).toBe("manufacturing_wholesale");
+    expect(bucketForType(["pizza_restaurant"])).toBe("food_beverage");
   });
-});
-
-describe("searchableTypes", () => {
-  it("strips Table B unsupported types (general_contractor)", () => {
+  it("strips general_contractor from searchable types but keeps it for bucketing", () => {
     expect(SEARCH_UNSUPPORTED_TYPES.has("general_contractor")).toBe(true);
     expect(searchableTypes("construction_trades")).not.toContain("general_contractor");
+    expect(bucketForType(["general_contractor"])).toBe("construction_trades");
   });
-  it("returns the industry's other types intact", () => {
-    expect(searchableTypes("healthcare")).toContain("dental_clinic");
-  });
-});
-
-describe("bucketForType", () => {
-  it("maps a known type to its industry", () => {
-    expect(bucketForType(["dental_clinic"])).toBe("healthcare");
-    expect(bucketForType(["manufacturer"])).toBe("manufacturing");
-  });
-  it("prefers primaryType over the types array", () => {
-    expect(bucketForType(["bar"], "doctor")).toBe("healthcare");
-  });
-  it("resolves overlaps by Tier-1-first precedence", () => {
-    // hardware_store is in BOTH construction_trades (Tier 1) and retail (Tier 2)
-    expect(bucketForType(["hardware_store"])).toBe("construction_trades");
-    // accounting is in BOTH professional_services (Tier 1) and finance_banking (Tier 2)
-    expect(bucketForType(["accounting"])).toBe("professional_services");
-  });
-  it("falls back to 'other' for unknown/empty", () => {
-    expect(bucketForType(["zzz_unknown"])).toBe("other");
+  it("unknown types fall back to 'other'", () => {
+    expect(bucketForType(["something_unknown"])).toBe("other");
     expect(bucketForType([])).toBe("other");
-    expect(bucketForType(null)).toBe("other");
   });
 });
