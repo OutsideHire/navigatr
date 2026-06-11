@@ -22,19 +22,12 @@
 export type MerchantStatus = "untouched" | "prospect" | "active" | "won" | "cooled";
 
 export type MerchantCategory =
-  | "manufacturing"
-  | "construction_trades"
-  | "healthcare"
-  | "professional_services"
-  | "automotive"
-  | "retail"
-  | "food_beverage"
-  | "hospitality"
-  | "education"
-  | "finance_banking"
-  | "fitness_wellness"
-  | "non_profit"
-  | "other";
+  | "manufacturing_wholesale" | "construction_trades" | "healthcare" | "veterinary_pet"
+  | "professional_services" | "automotive" | "convenience_fuel" | "grocery_food_retail"
+  | "apparel_accessories" | "home_hardware" | "electronics_specialty" | "pharmacy_health_retail"
+  | "general_merchandise" | "food_beverage" | "hospitality" | "education" | "finance_banking"
+  | "fitness_wellness" | "personal_services" | "entertainment" | "sports_recreation"
+  | "transportation" | "non_profit" | "other";
 
 export interface Merchant {
   id: string;
@@ -150,17 +143,41 @@ export const STATUS_MAP_COLOR: Record<MerchantStatus, string> = {
 };
 
 export const CATEGORY_LABEL: Record<MerchantCategory, string> = {
-  manufacturing:         "Manufacturing",
-  construction_trades:   "Construction & Trades",
-  healthcare:            "Healthcare",
+  manufacturing_wholesale: "Manufacturing & Wholesale",
+  construction_trades: "Construction & Trades",
+  healthcare: "Healthcare",
+  veterinary_pet: "Veterinary & Pet Services",
   professional_services: "Professional Services",
-  automotive:            "Automotive",
-  retail:                "Retail",
-  food_beverage:         "Food & Beverage",
-  hospitality:           "Hospitality",
-  education:             "Education",
-  finance_banking:       "Finance & Banking",
-  fitness_wellness:      "Fitness & Wellness",
-  non_profit:            "Non-Profit",
-  other:                 "Other",
+  automotive: "Automotive",
+  convenience_fuel: "Convenience & Fuel",
+  grocery_food_retail: "Grocery & Food Retail",
+  apparel_accessories: "Apparel & Accessories",
+  home_hardware: "Home & Hardware",
+  electronics_specialty: "Electronics & Specialty Retail",
+  pharmacy_health_retail: "Pharmacy & Health Retail",
+  general_merchandise: "General Merchandise",
+  food_beverage: "Food & Beverage",
+  hospitality: "Hospitality",
+  education: "Education",
+  finance_banking: "Finance & Banking",
+  fitness_wellness: "Fitness & Wellness",
+  personal_services: "Personal Services",
+  entertainment: "Entertainment",
+  sports_recreation: "Sports & Recreation",
+  transportation: "Transportation",
+  non_profit: "Non-Profit",
+  other: "Other",
 };
+
+/** Labels for retired pre-migration category keys still on old merchant/path_stop
+ *  rows, so historical data renders a sensible name. */
+const RETIRED_CATEGORY_LABEL: Record<string, string> = {
+  manufacturing: "Manufacturing",
+  retail: "Retail",
+};
+
+/** Display label for ANY stored category string — new key, retired key, or unknown.
+ *  Route all category-label display lookups through this. */
+export function labelForCategory(key: string): string {
+  return (CATEGORY_LABEL as Record<string, string>)[key] ?? RETIRED_CATEGORY_LABEL[key] ?? "Other";
+}
