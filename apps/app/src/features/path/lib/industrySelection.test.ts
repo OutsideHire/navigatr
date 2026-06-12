@@ -7,7 +7,7 @@ import {
 describe("industrySelection", () => {
   it("RECOMMENDED_SELECTION is the 5 Tier-1 categories, each fully selected", () => {
     const cats = selectedCategories(RECOMMENDED_SELECTION).sort();
-    expect(cats).toEqual(["automotive", "construction_trades", "healthcare", "manufacturing", "professional_services"].sort());
+    expect(cats).toEqual(["automotive", "construction_trades", "healthcare", "manufacturing_wholesale", "professional_services"].sort());
     expect(isFullySelected(RECOMMENDED_SELECTION, "automotive")).toBe(true);
   });
 
@@ -42,7 +42,7 @@ describe("industrySelection", () => {
   it("matchesSelection: null primary_type → matches its (selected) category, not dropped", () => {
     const sel: IndustrySelection = { automotive: ["car_repair"] };
     expect(matchesSelection(null, "automotive", sel)).toBe(true);
-    expect(matchesSelection(null, "retail", sel)).toBe(false);
+    expect(matchesSelection(null, "general_merchandise", sel)).toBe(false);
   });
 
   it("humanizeSubtype turns a raw type into a label", () => {

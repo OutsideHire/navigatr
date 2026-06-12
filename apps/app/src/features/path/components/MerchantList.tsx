@@ -13,7 +13,7 @@ import { ChevronRight, MapPin, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge, Button, Card, ListRow } from "@/components/navigatr";
 import {
-  CATEGORY_LABEL,
+  labelForCategory,
   STATUS_LABEL,
   STATUS_PILL_CLASS,
   type Merchant,
@@ -108,7 +108,7 @@ export function MerchantList({ merchants, selectedId, onSelect, onResetFilters }
                 }
                 subtitle={
                   <span className="text-caption text-text-muted">
-                    {CATEGORY_LABEL[m.category]} · {m.employeeCountRange} · {relativeLastActivity(m.lastActivity)}
+                    {labelForCategory(m.category)} · {m.employeeCountRange} · {relativeLastActivity(m.lastActivity)}
                   </span>
                 }
                 trailing={

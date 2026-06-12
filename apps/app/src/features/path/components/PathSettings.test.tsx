@@ -5,7 +5,7 @@ import { allSubtypes } from "../lib/industrySelection";
 
 const mutateAsync = vi.fn(async () => {});
 vi.mock("../hooks/usePathPreferences", () => ({
-  usePathPreferences: () => ({ data: { retail: allSubtypes("retail") }, isLoading: false }),
+  usePathPreferences: () => ({ data: { general_merchandise: allSubtypes("general_merchandise") }, isLoading: false }),
   useUpdateDefaultIndustries: () => ({ mutate: vi.fn(), mutateAsync, isPending: false }),
 }));
 
@@ -15,7 +15,7 @@ describe("PathSettings", () => {
   it("renders the Default industries section with the saved selection when open", () => {
     render(<PathSettings open onOpenChange={() => {}} />);
     expect(screen.getByText(/default industries/i)).toBeInTheDocument();
-    expect(screen.getByText(/retail/i)).toBeInTheDocument();
+    expect(screen.getByText(/general merchandise/i)).toBeInTheDocument();
   });
 
   it("Save persists then closes the sheet", async () => {

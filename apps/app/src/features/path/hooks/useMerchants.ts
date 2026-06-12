@@ -227,3 +227,4 @@ export function useMerchants(
 
 // Re-exported so consumers don't have to dig through mockData.ts.
 export { CATEGORY_LABEL };
+export { labelForCategory } from "../mockData";

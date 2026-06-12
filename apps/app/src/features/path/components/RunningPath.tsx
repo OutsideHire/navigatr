@@ -2,7 +2,7 @@ import * as React from "react";
 import { Pause, Phone, Navigation, ChevronLeft, ChevronRight, ClipboardList } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/navigatr";
-import { CATEGORY_LABEL, type MerchantCategory } from "../mockData";
+import { labelForCategory } from "../mockData";
 import { useTodayPath } from "../hooks/useTodayPath";
 import { routeStats } from "../lib/routeStats";
 import { directionsUrl } from "../lib/directionsUrl";
@@ -100,7 +100,7 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit }: Running
         <div className="flex flex-col gap-1">
           <h2 className="text-heading-sm text-text-default">{cur.name}</h2>
           <p className="text-body-md text-text-muted">
-            {cur.address ? `${cur.address} · ` : ""}{CATEGORY_LABEL[cur.category as MerchantCategory]}
+            {cur.address ? `${cur.address} · ` : ""}{labelForCategory(cur.category)}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

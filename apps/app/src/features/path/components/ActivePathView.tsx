@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/navigatr";
 import { formatDistance, haversineMeters } from "@/lib/distance";
 import type { Disposition } from "@/lib/followUpScheduling";
-import { CATEGORY_LABEL, type MerchantCategory } from "../mockData";
+import { labelForCategory } from "../mockData";
 import { useTodayPath } from "../hooks/useTodayPath";
 import type { TodayStop } from "../hooks/useTodayPath";
 import { routeStats, formatEta } from "../lib/routeStats";
@@ -225,7 +225,7 @@ function StopRow({
             {stop.name}
           </p>
           <p className="text-caption text-text-muted">
-            {CATEGORY_LABEL[stop.category as MerchantCategory] ?? stop.category}
+            {labelForCategory(stop.category)}
             {stop.address ? ` · ${stop.address}` : ""}
           </p>
           <p className="mt-1 text-caption text-text-subtle tabular-nums">

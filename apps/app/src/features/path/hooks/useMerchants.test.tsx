@@ -73,12 +73,12 @@ beforeEach(() => {
 describe("categoryFromPlaces", () => {
   it("passes every known MerchantCategory bucket through unchanged", () => {
     for (const c of [
-      "manufacturing",
+      "manufacturing_wholesale",
       "construction_trades",
       "healthcare",
       "professional_services",
       "automotive",
-      "retail",
+      "general_merchandise",
       "food_beverage",
       "hospitality",
       "education",

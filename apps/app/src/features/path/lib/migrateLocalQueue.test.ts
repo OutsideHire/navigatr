@@ -9,7 +9,7 @@ const merchant = (over: Partial<Merchant> & { id: string }): Merchant => ({
   address: over.address ?? "Addr",
   lat: over.lat ?? 1,
   lng: over.lng ?? 2,
-  category: over.category ?? "manufacturing",
+  category: over.category ?? "manufacturing_wholesale",
   phone: over.phone ?? "+10000000000",
   employeeCountRange: over.employeeCountRange ?? "1-10",
   status: over.status ?? "prospect",
@@ -26,8 +26,8 @@ describe("planQueueMigration", () => {
     const { snapshots, unresolved } = planQueueMigration(local, byId);
     expect(unresolved).toEqual([]);
     expect(snapshots).toEqual([
-      { prospectId: "a", name: "A", address: "Addr", lat: 1, lng: 2, category: "manufacturing", primaryType: null, phone: "+10000000000" },
-      { prospectId: "b", name: "B", address: "Addr", lat: 3, lng: 4, category: "manufacturing", primaryType: null, phone: "+10000000000" },
+      { prospectId: "a", name: "A", address: "Addr", lat: 1, lng: 2, category: "manufacturing_wholesale", primaryType: null, phone: "+10000000000" },
+      { prospectId: "b", name: "B", address: "Addr", lat: 3, lng: 4, category: "manufacturing_wholesale", primaryType: null, phone: "+10000000000" },
     ]);
   });
 

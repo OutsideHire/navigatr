@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Badge, Button, PhoneWithClickToCall } from "@/components/navigatr";
 import {
-  CATEGORY_LABEL,
+  labelForCategory,
   STATUS_LABEL,
   STATUS_PILL_CLASS,
   type Merchant,
@@ -91,7 +91,7 @@ export function MerchantDetailSheet({
                 <span className={cn("inline-flex items-center rounded-radius-full px-2 py-0.5 text-caption font-medium", STATUS_PILL_CLASS[merchant.status])}>
                   {STATUS_LABEL[merchant.status]}
                 </span>
-                <span className="text-caption text-text-muted">{CATEGORY_LABEL[merchant.category]}</span>
+                <span className="text-caption text-text-muted">{labelForCategory(merchant.category)}</span>
                 {merchant.isChain && (
                   <Badge kind="priority-low">{merchant.chainBrandName ? `Chain · ${merchant.chainBrandName}` : "Chain"}</Badge>
                 )}
