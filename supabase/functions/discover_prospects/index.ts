@@ -39,7 +39,6 @@ import {
 } from "../_shared/icpFilter.ts";
 import { decodeGeohash, decodeGeohashBounds, cellsCovering } from "../_shared/geohash.ts";
 import {
-  TIER_1_KEYS,
   ALL_FETCHABLE_KEYS,
   bucketForType,
   searchableTypes,
@@ -136,6 +135,9 @@ interface RequestBody {
   radius_m?: number;
   profession?: string | null;
   industries?: string[];
+  /** Fetch every fetchable bucket (the "All industries" mode). Overrides
+   *  `industries`. */
+  all_industries?: boolean;
   force_refresh?: boolean;
   include_chains?: boolean;
 }
@@ -161,6 +163,17 @@ interface BucketPullResult {
  * PLACES_MOCK short-circuits to fixtures (which ignore includedTypes — fine, the
  * caller dedups the union before counting). Otherwise hits Google Places (New).
  */
+/** Google searchNearby caps includedTypes at 50 per request. Buckets can exceed
+ *  that (food_beverage has 167), so we split into ≤50-type batches and merge. */
+const INCLUDED_TYPES_CAP = 50;
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  if (arr.length <= size) return [arr];
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
 async function searchNearbyForTypes(
   lat: number,
   lng: number,
@@ -173,6 +186,25 @@ async function searchNearbyForTypes(
   if (!GOOGLE_PLACES_API_KEY) {
     throw new Error("GOOGLE_PLACES_API_KEY not set (and PLACES_MOCK != 1)");
   }
+  // Chunk to the Google includedTypes cap, pull batches in parallel, dedupe by id.
+  const batches = chunk(includedTypes, INCLUDED_TYPES_CAP);
+  const results = await Promise.all(batches.map((b) => searchNearbyOneRequest(lat, lng, radiusM, b)));
+  const byId = new Map<string, PlacesNewPlace>();
+  for (const places of results) {
+    for (const p of places) {
+      if (p.id) byId.set(p.id, p);
+    }
+  }
+  return [...byId.values()];
+}
+
+/** A single searchNearby request scoped to one ≤50-type batch. */
+async function searchNearbyOneRequest(
+  lat: number,
+  lng: number,
+  radiusM: number,
+  includedTypes: string[],
+): Promise<PlacesNewPlace[]> {
   const res = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
     method: "POST",
     headers: {
@@ -280,11 +312,15 @@ Deno.serve(async (req) => {
   const includeChains = body?.include_chains === true;
 
   // Industries to cold-fill. Validate against the known fetchable set; unknown
-  // values are dropped. Empty/absent → Tier 1 default (the highest-fit B2B core).
+  // values are dropped. "All industries" (or an empty/absent list) → every
+  // fetchable bucket; the per-bucket pulls are chunked so big buckets (e.g.
+  // food_beverage's 167 types) stay under the Google includedTypes cap.
   const requested = Array.isArray(body?.industries)
     ? (body!.industries.filter((s) => (ALL_FETCHABLE_KEYS as string[]).includes(s)) as IndustryKey[])
     : [];
-  const scopeIndustries: IndustryKey[] = requested.length > 0 ? requested : [...TIER_1_KEYS];
+  const allIndustries = body?.all_industries === true;
+  const scopeIndustries: IndustryKey[] =
+    allIndustries || requested.length === 0 ? [...ALL_FETCHABLE_KEYS] : requested;
 
   // Verify the caller is a real authenticated user (don't trust a raw header).
   const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
