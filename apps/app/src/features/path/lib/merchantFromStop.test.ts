@@ -4,7 +4,7 @@ import type { TodayStop } from "../hooks/useTodayPath";
 
 const STOP: TodayStop = {
   merchantId: "m1", name: "Acme", address: "1 Main St", lat: 35, lng: -97,
-  category: "manufacturing", primaryType: "metal_supplier", phone: "+15551234567",
+  category: "manufacturing_wholesale", primaryType: "metal_supplier", phone: "+15551234567",
   status: "pending", disposition: null, dealCreated: false, addedAt: "t1",
 };
 
@@ -15,7 +15,7 @@ describe("merchantFromStop", () => {
     expect(m.name).toBe("Acme");
     expect(m.address).toBe("1 Main St");
     expect(m.phone).toBe("+15551234567");
-    expect(m.category).toBe("manufacturing");
+    expect(m.category).toBe("manufacturing_wholesale");
   });
   it("tolerates null address/phone", () => {
     const m = merchantFromStop({ ...STOP, address: null, phone: null });

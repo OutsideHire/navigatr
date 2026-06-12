@@ -3,7 +3,7 @@ import { ChevronDown, Navigation, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button, Checkbox, Input } from "@/components/navigatr";
 import { formatDistance, type LatLng } from "@/lib/distance";
-import { CATEGORY_LABEL, type MerchantCategory } from "../mockData";
+import { labelForCategory, type MerchantCategory } from "../mockData";
 import type { MerchantWithDistance } from "./MerchantList";
 import { MerchantMap } from "./MerchantMap";
 import { type PathSortMode } from "../lib/sortMerchants";
@@ -31,7 +31,7 @@ export interface SelectStopsProps {
 function metaLine(m: MerchantWithDistance): string {
   return (
     (Number.isFinite(m.distanceMeters) ? `${formatDistance(m.distanceMeters)} · ` : "") +
-    CATEGORY_LABEL[m.category] +
+    labelForCategory(m.category) +
     (typeof m.rating === "number" ? ` · ★${m.rating.toFixed(1)}` : "")
   );
 }
@@ -41,7 +41,7 @@ export function routeDescriptor(stops: MerchantWithDistance[]): string {
   if (stops.length === 0) return "";
   const counts = new Map<MerchantCategory, number>();
   for (const s of stops) counts.set(s.category, (counts.get(s.category) ?? 0) + 1);
-  const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([c]) => CATEGORY_LABEL[c]);
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([c]) => labelForCategory(c));
   return top.length === 1 ? `All ${top[0]}` : `Mostly ${top[0]} & ${top[1]}`;
 }
 

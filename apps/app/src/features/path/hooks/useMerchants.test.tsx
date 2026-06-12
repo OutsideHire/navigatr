@@ -18,7 +18,6 @@ import {
   opportunityScore,
   type ProspectRow,
 } from "./useMerchants";
-import { TIER_1_KEYS } from "../../../../../../supabase/functions/_shared/industryTaxonomy";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 const invokeMock = vi.fn();
@@ -73,12 +72,12 @@ beforeEach(() => {
 describe("categoryFromPlaces", () => {
   it("passes every known MerchantCategory bucket through unchanged", () => {
     for (const c of [
-      "manufacturing",
+      "manufacturing_wholesale",
       "construction_trades",
       "healthcare",
       "professional_services",
       "automotive",
-      "retail",
+      "general_merchandise",
       "food_beverage",
       "hospitality",
       "education",
@@ -199,7 +198,7 @@ describe("useMerchants", () => {
     );
     await waitFor(() => expect(result.current.merchants).toHaveLength(2));
     expect(invokeMock).toHaveBeenCalledWith("discover_prospects", {
-      body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: TIER_1_KEYS, include_chains: false },
+      body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: false, include_chains: false },
     });
     expect(result.current.merchants.map((m) => m.id)).toEqual(["a", "b"]);
     expect(result.current.merchants[0]!.status).toBe("untouched");
@@ -233,7 +232,16 @@ describe("useMerchants", () => {
     });
     await waitFor(() => expect(invokeMock).toHaveBeenCalled());
     expect(invokeMock).toHaveBeenCalledWith("discover_prospects", {
-      body: { lat: 30.2672, lng: -97.7431, radius_m: 1500, profession: "merchant_services", industries: TIER_1_KEYS, include_chains: false },
+      body: { lat: 30.2672, lng: -97.7431, radius_m: 1500, profession: "merchant_services", industries: [], all_industries: false, include_chains: false },
+    });
+  });
+
+  it("sends all_industries + empty industries when allIndustries is set", async () => {
+    invokeMock.mockResolvedValue({ data: { prospects: [] }, error: null });
+    renderHook(() => useMerchants({ lat: 30.2672, lng: -97.7431 }, { industries: ["healthcare"], allIndustries: true }), { wrapper });
+    await waitFor(() => expect(invokeMock).toHaveBeenCalled());
+    expect(invokeMock).toHaveBeenCalledWith("discover_prospects", {
+      body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: true, include_chains: false },
     });
   });
 });

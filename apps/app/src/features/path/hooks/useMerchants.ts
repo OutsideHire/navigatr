@@ -30,7 +30,7 @@ import {
   type MerchantCategory,
 } from "../mockData";
 import {
-  TIER_1_KEYS,
+  INDUSTRY_KEYS,
   type IndustryKey,
 } from "../../../../../../supabase/functions/_shared/industryTaxonomy";
 
@@ -86,21 +86,9 @@ interface DiscoverResponse {
  * per-bucket cache expires and re-pulls them with a coarse bucket — acceptable
  * self-healing, no migration needed.
  */
-const MERCHANT_CATEGORIES = new Set<string>([
-  "manufacturing",
-  "construction_trades",
-  "healthcare",
-  "professional_services",
-  "automotive",
-  "retail",
-  "food_beverage",
-  "hospitality",
-  "education",
-  "finance_banking",
-  "fitness_wellness",
-  "non_profit",
-  "other",
-]);
+// Derived from the taxonomy so it always tracks the current bucket set
+// (the Edge buckets every prospect into one of these at ingest).
+const MERCHANT_CATEGORIES = new Set<string>(INDUSTRY_KEYS);
 
 export function categoryFromPlaces(raw: string | null | undefined): MerchantCategory {
   const c = (raw ?? "").toLowerCase().trim();
@@ -166,8 +154,11 @@ export interface UseMerchantsResult {
 
 export interface UseMerchantsOptions {
   radiusM?: number;
-  /** Industry buckets to ingest. Defaults to Tier 1 when omitted. */
+  /** Industry buckets to ingest. Ignored when allIndustries is true. */
   industries?: IndustryKey[];
+  /** When true, fetch ALL industries (the Edge omits includedTypes); overrides
+   *  `industries`. */
+  allIndustries?: boolean;
   /** When true, the read includes chains (flagged via isChain) so browse can
    *  show + badge them. Create stays chain-free via candidatePool. Default off. */
   includeChains?: boolean;
@@ -190,7 +181,11 @@ export function useMerchants(
   opts: UseMerchantsOptions = {},
 ): UseMerchantsResult {
   const radiusM = opts.radiusM ?? DEFAULT_RADIUS_M;
-  const industries = opts.industries && opts.industries.length > 0 ? opts.industries : TIER_1_KEYS;
+  const allIndustries = opts.allIndustries === true;
+  // No client-side Tier-1 default anymore: callers pass the recommended selection
+  // (or the All-industries flag). An empty list with allIndustries=false is sent
+  // as-is; the Edge treats an empty/all request as "fetch everything".
+  const industries = allIndustries ? [] : (opts.industries ?? []);
   const includeChains = opts.includeChains ?? false;
   const user = useAuth((s) => s.user);
   const profession = getProfession(user);
@@ -199,13 +194,13 @@ export function useMerchants(
   const lng = origin ? roundCoord(origin.lng) : null;
 
   const query = useQuery({
-    queryKey: ["path", "prospects", lat, lng, radiusM, profession, industries, includeChains],
+    queryKey: ["path", "prospects", lat, lng, radiusM, profession, industries, allIndustries, includeChains],
     enabled: origin != null,
     staleTime: 5 * 60_000, // 5 min — the server-side cache is the real TTL
     queryFn: async (): Promise<Merchant[]> => {
       const { data, error } = await supabase.functions.invoke<DiscoverResponse>(
         "discover_prospects",
-        { body: { lat: origin!.lat, lng: origin!.lng, radius_m: radiusM, profession, industries, include_chains: includeChains } },
+        { body: { lat: origin!.lat, lng: origin!.lng, radius_m: radiusM, profession, industries, all_industries: allIndustries, include_chains: includeChains } },
       );
       if (error) throw error;
       // Returns the server's nearest-first order. Ordering for display lives in
@@ -227,3 +222,4 @@ export function useMerchants(
 
 // Re-exported so consumers don't have to dig through mockData.ts.
 export { CATEGORY_LABEL };
+export { labelForCategory } from "../mockData";

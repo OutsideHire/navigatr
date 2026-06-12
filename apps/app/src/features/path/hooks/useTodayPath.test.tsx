@@ -29,7 +29,7 @@ vi.mock("./usePathMutations", () => ({
   }),
 }));
 
-const SNAP: StopSnapshot = { prospectId: "m1", name: "A", address: null, phone: null, lat: 1, lng: 2, category: "manufacturing", primaryType: null };
+const SNAP: StopSnapshot = { prospectId: "m1", name: "A", address: null, phone: null, lat: 1, lng: 2, category: "manufacturing_wholesale", primaryType: null };
 
 beforeEach(() => {
   [createPath, addStops, removeStop, setStopStatus, setStopDisposition, markDealCreatedM, deletePath].forEach((m) => m.mockClear());
@@ -45,14 +45,14 @@ describe("useTodayPath", () => {
   it("exposes stops with snapshot fields (merchantId = prospectId)", () => {
     activeState.current = { data: { path: { id: "p1" }, stops: [
       { id: "s1", prospectId: "m1", name: "Uratex", address: "Rd", lat: 1, lng: 2,
-        category: "manufacturing", primaryType: null, status: "visited",
+        category: "manufacturing_wholesale", primaryType: null, status: "visited",
         disposition: "met_dm", dealCreated: true, addedAt: "t1", position: 0,
         phone: "+15551234567" },
     ] }, isLoading: false };
     const { result } = renderHook(() => useTodayPath());
     expect(result.current.stops).toEqual([
       { merchantId: "m1", name: "Uratex", address: "Rd", lat: 1, lng: 2,
-        category: "manufacturing", primaryType: null, status: "visited",
+        category: "manufacturing_wholesale", primaryType: null, status: "visited",
         disposition: "met_dm", dealCreated: true, addedAt: "t1",
         phone: "+15551234567" },
     ]);

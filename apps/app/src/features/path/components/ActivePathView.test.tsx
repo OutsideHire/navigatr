@@ -19,7 +19,7 @@ const todayState = {
         phone: null,
         lat: 30.3,
         lng: -97.7,
-        category: "manufacturing",
+        category: "manufacturing_wholesale",
         primaryType: null,
         status: "pending",
         disposition: null,
@@ -33,7 +33,7 @@ const todayState = {
         phone: null,
         lat: 30.4,
         lng: -97.7,
-        category: "manufacturing",
+        category: "manufacturing_wholesale",
         primaryType: null,
         status: "visited",
         disposition: "met_dm",
@@ -80,7 +80,7 @@ describe("ActivePathView", () => {
   it("renders rich rows with name, category · address, and a leg line", () => {
     renderView();
     expect(screen.getByText("Uratex")).toBeInTheDocument();
-    expect(screen.getByText(/Manufacturing · Rd$/)).toBeInTheDocument();
+    expect(screen.getByText(/Manufacturing & Wholesale · Rd$/)).toBeInTheDocument();
     expect(screen.getByText(/From start/i)).toBeInTheDocument();
   });
 

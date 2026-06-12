@@ -31,7 +31,7 @@ describe("useActivePath", () => {
             category: "automotive", primary_type: "car_repair", position: 1, status: "pending",
             disposition: null, deal_created: false, added_at: "t2" },
           { id: "s1", path_id: "p1", prospect_id: "pr1", name: "A", address: null, lat: 3, lng: 4,
-            category: "manufacturing", primary_type: null, position: 0, status: "pending",
+            category: "manufacturing_wholesale", primary_type: null, position: 0, status: "pending",
             disposition: null, deal_created: false, added_at: "t1" },
         ],
       },
