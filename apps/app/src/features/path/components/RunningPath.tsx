@@ -103,11 +103,15 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit }: Running
       toast.error("Couldn't carry the stops to tomorrow — please try again.");
     }
   };
-  const handleClearRestart = () => {
+  const handleClearRestart = async () => {
     if (!window.confirm("Clear today's path and start over?")) return;
-    void clear();
-    setEndOpen(false);
-    onExit();
+    try {
+      await clear();
+      setEndOpen(false);
+      onExit();
+    } catch {
+      toast.error("Couldn't clear the path — please try again.");
+    }
   };
 
   return (
