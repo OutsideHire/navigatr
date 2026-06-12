@@ -103,14 +103,16 @@ export function PathPage() {
     useMyLocation,
   } = usePathOrigin();
   const [displayRadiusM, setDisplayRadiusM] = React.useState<number>(DEFAULT_DISPLAY_RADIUS_M);
-  // Industry scope the wizard drives. Empty → useMerchants defaults to Tier 1.
+  // Industry scope the wizard drives. `ingestAllIndustries` overrides the list
+  // (fetch every bucket); otherwise the selected categories scope the ingest.
   const [ingestIndustries, setIngestIndustries] = React.useState<MerchantCategory[]>([]);
+  const [ingestAllIndustries, setIngestAllIndustries] = React.useState(false);
   const {
     merchants: liveMerchants,
     isLoading: merchantsLoading,
     isError: merchantsError,
     refetch: refetchMerchants,
-  } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, includeChains: true });
+  } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, allIndustries: ingestAllIndustries, includeChains: true });
   const [categoryFilter, setCategoryFilter] = React.useState<CategoryFilter>("all");
   const [sortMode, setSortMode] = React.useState<PathSortMode>(DEFAULT_SORT_MODE);
   const [hideChains, setHideChains] = React.useState(false);
@@ -752,6 +754,7 @@ export function PathPage() {
         radiusM={displayRadiusM}
         onRadiusChange={setDisplayRadiusM}
         onIndustriesChange={setIngestIndustries}
+        onAllIndustriesChange={setIngestAllIndustries}
         onStart={handleStartPath}
       />
 

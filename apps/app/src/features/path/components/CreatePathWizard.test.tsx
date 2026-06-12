@@ -42,6 +42,7 @@ function renderWizard(
       radiusM={16093}
       onRadiusChange={() => {}}
       onIndustriesChange={vi.fn()}
+      onAllIndustriesChange={vi.fn()}
       onStart={vi.fn()}
       {...props}
     />,
@@ -66,6 +67,23 @@ describe("CreatePathWizard step 1 — default-industries-first", () => {
     expect(onIndustriesChange).toHaveBeenCalledWith(
       expect.arrayContaining(selectedCategories(mockPrefs)),
     );
+  });
+
+  it("All industries toggle lifts allIndustries and overrides bucket selection", () => {
+    mockPrefs = { automotive: allSubtypes("automotive") };
+    const onAllIndustriesChange = vi.fn();
+    renderWizard({ onAllIndustriesChange });
+    // Seeded bucket pill shows initially.
+    expect(screen.getByText("Automotive")).toBeInTheDocument();
+    const toggle = screen.getByRole("checkbox", { name: /all industries/i });
+    fireEvent.click(toggle);
+    expect(onAllIndustriesChange).toHaveBeenCalledWith(true);
+    expect(screen.getByText(/every business type nearby/i)).toBeInTheDocument();
+    expect(screen.queryByText("Automotive")).not.toBeInTheDocument();
+    // Turning it off restores the bucket selection.
+    fireEvent.click(toggle);
+    expect(onAllIndustriesChange).toHaveBeenLastCalledWith(false);
+    expect(screen.getByText("Automotive")).toBeInTheDocument();
   });
 
   it("shows a Min rating control and not a Min employees control", () => {
