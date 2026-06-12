@@ -8,7 +8,10 @@ import { routeStats } from "../lib/routeStats";
 import { directionsUrl } from "../lib/directionsUrl";
 import { merchantFromStop } from "../lib/merchantFromStop";
 import { DropInSheet } from "./DropInSheet";
+import { EndRouteSheet } from "./EndRouteSheet";
 import { PathSummary } from "./PathSummary";
+import { usePathMutations } from "../hooks/usePathMutations";
+import { todayISO } from "../lib/today";
 import { DISPOSITIONS, type Disposition } from "@/lib/followUpScheduling";
 
 export interface RunningPathProps {
@@ -24,10 +27,12 @@ export interface RunningPathProps {
  * to the next pending stop + an Undo toast. When no stops are pending, shows PathSummary.
  */
 export function RunningPath({ origin, onPause, onViewPipeline, onExit }: RunningPathProps) {
-  const { stops, setStatus, clear } = useTodayPath();
+  const { stops, setStatus, clear, pathId, pendingCount } = useTodayPath();
+  const { carryToTomorrow } = usePathMutations();
   const firstPending = Math.max(0, stops.findIndex((s) => s.status === "pending"));
   const [index, setIndex] = React.useState(firstPending);
   const [logOpen, setLogOpen] = React.useState(false);
+  const [endOpen, setEndOpen] = React.useState(false);
 
   const total = stops.length;
   const visited = stops.filter((s) => s.status === "visited").length;
@@ -84,6 +89,26 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit }: Running
     advance();
   };
   const skip = () => { void setStatus(cur.merchantId, "skipped"); advance(); };
+  const handleEndRoute = () => {
+    if (pendingCount() === 0) { onExit(); return; }
+    setEndOpen(true);
+  };
+  const handleCarry = async () => {
+    if (!pathId) return;
+    try {
+      await carryToTomorrow.mutateAsync({ pathId, pathDate: todayISO() });
+      setEndOpen(false);
+      onExit();
+    } catch {
+      toast.error("Couldn't carry the stops to tomorrow — please try again.");
+    }
+  };
+  const handleClearRestart = () => {
+    if (!window.confirm("Clear today's path and start over?")) return;
+    void clear();
+    setEndOpen(false);
+    onExit();
+  };
 
   return (
     <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4">
@@ -92,7 +117,10 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit }: Running
           <span className="mr-2 inline-block h-2 w-2 rounded-radius-full bg-status-success align-middle" aria-hidden />
           Path active · {visited}/{total} stops
         </span>
-        <Button variant="secondary" size="sm" leadingIcon={Pause} onClick={onPause}>Pause</Button>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" size="sm" leadingIcon={Pause} onClick={onPause}>Pause</Button>
+          <Button variant="tertiary" size="sm" onClick={handleEndRoute}>End route</Button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-3 rounded-radius-md border border-border-default p-4">
@@ -130,6 +158,14 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit }: Running
       </div>
 
       <DropInSheet merchant={merchantFromStop(cur)} open={logOpen} onOpenChange={setLogOpen} onLogged={handleLogged} />
+      <EndRouteSheet
+        open={endOpen}
+        onOpenChange={setEndOpen}
+        pendingCount={pendingCount()}
+        busy={carryToTomorrow.isPending}
+        onCarry={handleCarry}
+        onClear={handleClearRestart}
+      />
     </div>
   );
 }
