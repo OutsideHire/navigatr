@@ -38,6 +38,7 @@ import {
   type ProspectCandidate,
 } from "../_shared/icpFilter.ts";
 import { decodeGeohash, decodeGeohashBounds, cellsCovering } from "../_shared/geohash.ts";
+import { chunk, dedupeById } from "../_shared/chunk.ts";
 import {
   ALL_FETCHABLE_KEYS,
   bucketForType,
@@ -164,15 +165,9 @@ interface BucketPullResult {
  * caller dedups the union before counting). Otherwise hits Google Places (New).
  */
 /** Google searchNearby caps includedTypes at 50 per request. Buckets can exceed
- *  that (food_beverage has 167), so we split into ≤50-type batches and merge. */
+ *  that (food_beverage has 167), so we split into ≤50-type batches and merge.
+ *  `chunk`/`dedupeById` live in _shared (Deno-free, vitest-covered). */
 const INCLUDED_TYPES_CAP = 50;
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  if (arr.length <= size) return [arr];
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
 
 async function searchNearbyForTypes(
   lat: number,
@@ -189,13 +184,7 @@ async function searchNearbyForTypes(
   // Chunk to the Google includedTypes cap, pull batches in parallel, dedupe by id.
   const batches = chunk(includedTypes, INCLUDED_TYPES_CAP);
   const results = await Promise.all(batches.map((b) => searchNearbyOneRequest(lat, lng, radiusM, b)));
-  const byId = new Map<string, PlacesNewPlace>();
-  for (const places of results) {
-    for (const p of places) {
-      if (p.id) byId.set(p.id, p);
-    }
-  }
-  return [...byId.values()];
+  return dedupeById(results.flat());
 }
 
 /** A single searchNearby request scoped to one ≤50-type batch. */

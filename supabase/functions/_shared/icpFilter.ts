@@ -57,6 +57,8 @@ export const DEFAULT_ICP_CONFIG: IcpConfig = {
     // tourist / civic attractions
     "tourist_attraction",
     "amusement_park",
+    "amusement_center",
+    "water_park",
     "aquarium",
     "zoo",
     "national_park",
@@ -72,8 +74,12 @@ export const DEFAULT_ICP_CONFIG: IcpConfig = {
     "convention_center",
     "performing_arts_theater",
     "concert_hall",
+    "opera_house",
+    "philharmonic_hall",
+    "planetarium",
     "parking",
     "parking_garage",
+    "parking_lot",
     // municipal recreation — city-run pools/rec centers. Google tags these
     // "swimming_pool" with no government type, so the institutional gate misses
     // them (e.g. Barton Springs Pool, austintexas.gov). A private swim school
@@ -92,6 +98,7 @@ export const DEFAULT_ICP_CONFIG: IcpConfig = {
     "secondary_school",
     "preschool",
     "university",
+    "educational_institution",
   ],
   institutionalTypes: [
     "local_government_office",

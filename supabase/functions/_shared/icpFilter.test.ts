@@ -47,6 +47,19 @@ describe("isConsumerOnly", () => {
   it("true for a parking garage", () => {
     expect(isConsumerOnly(["parking_garage"])).toBe(true);
   });
+  it("true for a parking lot (new taxonomy — parking family)", () => {
+    expect(isConsumerOnly(["parking_lot"])).toBe(true);
+  });
+  it("true for new-taxonomy attractions/venues (water park, opera house)", () => {
+    expect(isConsumerOnly(["water_park"])).toBe(true);
+    expect(isConsumerOnly(["opera_house"])).toBe(true);
+  });
+  it("false for Personal Services SMBs (salons/barbers are prime merchant-services ICP)", () => {
+    // Deliberately NOT excluded — these take card payments and are the target.
+    expect(isConsumerOnly(["hair_salon"])).toBe(false);
+    expect(isConsumerOnly(["barber_shop"])).toBe(false);
+    expect(isConsumerOnly(["nail_salon"])).toBe(false);
+  });
   it("true for a municipal swimming pool (city-run rec, e.g. Barton Springs)", () => {
     expect(isConsumerOnly(["swimming_pool"])).toBe(true);
   });
