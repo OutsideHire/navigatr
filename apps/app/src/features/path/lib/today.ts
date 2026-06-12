@@ -9,6 +9,16 @@ export function todayISO(): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
+/** yyyy-mm-dd `days` after `iso` (calendar days). Parses at local midnight so a
+ *  DST shift can't roll the date. */
+export function addDaysISO(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
 /** Human label for a path_date relative to today: "yesterday" or "Fri, Jun 5".
  *  Dates are parsed at local midnight (append T00:00:00) to avoid UTC shifting. */
 export function formatPathDate(iso: string, todayIso: string = todayISO()): string {

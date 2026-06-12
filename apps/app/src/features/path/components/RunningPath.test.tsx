@@ -1,13 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { RunningPath } from "./RunningPath";
 import type { TodayStop } from "../hooks/useTodayPath";
 
 const setStatus = vi.fn(async () => {});
 const clear = vi.fn(async () => {});
 let stops: TodayStop[] = [];
+let pathId: string | null = "today-1";
+let pendingCount = () => stops.filter((s) => s.status === "pending").length;
 vi.mock("../hooks/useTodayPath", () => ({
-  useTodayPath: () => ({ stops, setStatus, clear }),
+  useTodayPath: () => ({ stops, setStatus, clear, pathId, pendingCount }),
+}));
+const carryMutate = vi.fn();
+vi.mock("../hooks/usePathMutations", () => ({
+  usePathMutations: () => ({ carryToTomorrow: { mutateAsync: carryMutate, isPending: false } }),
+}));
+vi.mock("./EndRouteSheet", () => ({
+  EndRouteSheet: (p: { open: boolean; pendingCount: number; onCarry: () => void; onClear: () => void; onOpenChange: (o: boolean) => void }) =>
+    p.open ? (
+      <div data-testid="end-sheet"><span>{p.pendingCount} pending</span>
+        <button onClick={p.onCarry}>carry</button><button onClick={p.onClear}>clear</button>
+        <button onClick={() => p.onOpenChange(false)}>cancel</button></div>
+    ) : null,
 }));
 vi.mock("./DropInSheet", () => ({
   DropInSheet: ({ open, merchant, onLogged, onOpenChange }: any) =>
@@ -26,7 +40,13 @@ function stop(id: string, over: Partial<TodayStop> = {}): TodayStop {
     primaryType: null, phone: "+15551230000", status: "pending", disposition: null, dealCreated: false, addedAt: "t", ...over };
 }
 const ORIGIN = { lat: 35, lng: -97 };
-beforeEach(() => { setStatus.mockClear(); clear.mockClear(); });
+beforeEach(() => {
+  setStatus.mockClear();
+  clear.mockClear();
+  carryMutate.mockReset();
+  pathId = "today-1";
+  pendingCount = () => stops.filter((s) => s.status === "pending").length;
+});
 
 describe("RunningPath", () => {
   it("starts at the first pending stop", () => {
@@ -83,5 +103,83 @@ describe("RunningPath", () => {
     stops = [stop("A", { status: "visited" })];
     rerender(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
     expect(screen.getByTestId("summary")).toBeInTheDocument();
+  });
+
+  it("End route with pending stops opens the sheet", () => {
+    stops = [stop("A"), stop("B")];
+    pendingCount = () => 2;
+    pathId = "today-1";
+    const onExitSpy = vi.fn();
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} />);
+    fireEvent.click(screen.getByRole("button", { name: /end route/i }));
+    expect(screen.getByTestId("end-sheet")).toBeInTheDocument();
+    expect(onExitSpy).not.toHaveBeenCalled();
+  });
+  it("Carry to tomorrow calls carryToTomorrow then exits", async () => {
+    stops = [stop("A"), stop("B")];
+    pendingCount = () => 2;
+    pathId = "today-1";
+    carryMutate.mockResolvedValueOnce(undefined);
+    const onExitSpy = vi.fn();
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} />);
+    fireEvent.click(screen.getByRole("button", { name: /end route/i }));
+    await act(async () => { fireEvent.click(screen.getByText("carry")); });
+    expect(carryMutate).toHaveBeenCalledWith({ pathId: "today-1", pathDate: expect.any(String) });
+    expect(onExitSpy).toHaveBeenCalled();
+    expect(screen.queryByTestId("end-sheet")).not.toBeInTheDocument();
+  });
+  it("Carry failure keeps the sheet open and does not exit", async () => {
+    stops = [stop("A"), stop("B")];
+    pendingCount = () => 2;
+    pathId = "today-1";
+    carryMutate.mockRejectedValueOnce(new Error("network"));
+    const onExitSpy = vi.fn();
+    const { toast } = await import("sonner");
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} />);
+    fireEvent.click(screen.getByRole("button", { name: /end route/i }));
+    await act(async () => { fireEvent.click(screen.getByText("carry")); });
+    expect(toast.error).toHaveBeenCalled();
+    expect(onExitSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId("end-sheet")).toBeInTheDocument();
+  });
+  it("Clear & start over (confirmed) clears and exits", async () => {
+    stops = [stop("A"), stop("B")];
+    pendingCount = () => 2;
+    pathId = "today-1";
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const onExitSpy = vi.fn();
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} />);
+    fireEvent.click(screen.getByRole("button", { name: /end route/i }));
+    await act(async () => { fireEvent.click(screen.getByText("clear")); });
+    expect(clear).toHaveBeenCalled();
+    expect(onExitSpy).toHaveBeenCalled();
+  });
+  it("Clear failure keeps the sheet open and does not exit", async () => {
+    stops = [stop("A"), stop("B")];
+    pendingCount = () => 2;
+    pathId = "today-1";
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    clear.mockRejectedValueOnce(new Error("delete failed"));
+    const onExitSpy = vi.fn();
+    const { toast } = await import("sonner");
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} />);
+    fireEvent.click(screen.getByRole("button", { name: /end route/i }));
+    await act(async () => { fireEvent.click(screen.getByText("clear")); });
+    expect(toast.error).toHaveBeenCalled();
+    expect(onExitSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId("end-sheet")).toBeInTheDocument();
+  });
+  it("Cancel closes the sheet without mutating or exiting", () => {
+    stops = [stop("A"), stop("B")];
+    pendingCount = () => 2;
+    pathId = "today-1";
+    const onExitSpy = vi.fn();
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} />);
+    fireEvent.click(screen.getByRole("button", { name: /end route/i }));
+    fireEvent.click(screen.getByText("cancel"));
+    expect(screen.queryByTestId("end-sheet")).not.toBeInTheDocument();
+    expect(carryMutate).not.toHaveBeenCalled();
+    expect(clear).not.toHaveBeenCalled();
+    expect(onExitSpy).not.toHaveBeenCalled();
   });
 });

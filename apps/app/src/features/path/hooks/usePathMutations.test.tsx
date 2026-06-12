@@ -87,7 +87,7 @@ vi.mock("@/lib/supabase", () => ({ supabase: { from: (t: string) => builder(t) }
 vi.mock("@/stores/auth", () => ({
   useAuth: (s: (x: { user: { id: string } }) => unknown) => s({ user: { id: "user-1" } }),
 }));
-vi.mock("../lib/today", () => ({ todayISO: () => "2026-06-08", formatPathDate: () => "x" }));
+vi.mock("../lib/today", () => ({ todayISO: () => "2026-06-08", formatPathDate: () => "x", addDaysISO: () => "2026-06-13" }));
 
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -209,6 +209,24 @@ describe("continuePreviousPath", () => {
           c.filters.some(([col, v]) => col === "id" && v === "p7"),
       ),
     ).toBe(true);
+  });
+});
+
+describe("carryToTomorrow", () => {
+  it("upserts tomorrow's path, reparents today's pending stops, marks today completed", async () => {
+    pendingStops = [{ id: "ps1" }, { id: "ps2" }];
+    const { result } = renderHook(() => usePathMutations(), { wrapper });
+    await act(async () => {
+      await result.current.carryToTomorrow.mutateAsync({ pathId: "today-1", pathDate: "2026-06-12" });
+    });
+    expect(calls.some((c) => c.table === "paths" && c.op === "upsert"
+      && (c.payload as { path_date?: string }).path_date === "2026-06-13")).toBe(true);
+    expect(calls.some((c) => c.table === "path_stops" && c.op === "update"
+      && (c.payload as { path_id?: string }).path_id === "today-1"
+      && c.filters.some(([col]) => col === "id"))).toBe(true);
+    expect(calls.some((c) => c.table === "paths" && c.op === "update"
+      && (c.payload as { status?: string }).status === "completed"
+      && c.filters.some(([col, v]) => col === "id" && v === "today-1"))).toBe(true);
   });
 });
 
