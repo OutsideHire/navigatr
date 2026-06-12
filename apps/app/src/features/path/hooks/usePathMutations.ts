@@ -11,7 +11,7 @@ import type { MerchantCategory } from "../mockData";
 import type { StopStatus } from "../lib/pathTypes";
 import { PATHS_QUERY_KEY } from "./usePaths";
 import { ACTIVE_PATH_QUERY_KEY } from "./useActivePath";
-import { todayISO } from "../lib/today";
+import { todayISO, addDaysISO } from "../lib/today";
 import { PREVIOUS_UNFINISHED_QUERY_KEY } from "./usePreviousUnfinishedPath";
 
 export interface CreatePathInput {
@@ -187,6 +187,38 @@ export function usePathMutations() {
     onSuccess: invalidate,
   });
 
+  const carryToTomorrow = useMutation({
+    mutationFn: async (input: { pathId: string; pathDate: string }): Promise<void> => {
+      if (!userId) throw new Error("Not signed in");
+      const tomorrow = addDaysISO(input.pathDate, 1);
+      const { data: toRow, error: e0 } = await supabase
+        .from("paths")
+        .upsert(
+          { user_id: userId, path_date: tomorrow, origin_label: null, origin_lat: null, origin_lng: null },
+          { onConflict: "user_id,path_date" },
+        )
+        .select("id").single();
+      if (e0) throw e0;
+      const toId = (toRow as unknown as { id: string }).id;
+      const { data: pend, error: e1 } = await supabase
+        .from("path_stops").select("id")
+        .eq("path_id", input.pathId).eq("status", "pending")
+        .order("position", { ascending: true });
+      if (e1) throw e1;
+      const pendingIds = ((pend ?? []) as { id: string }[]).map((r) => r.id);
+      // Reparent today's pending stops onto tomorrow's (normally empty) path.
+      // Same precondition as continuePreviousPath: no (path_id, prospect_id)
+      // collision since tomorrow's path is typically empty.
+      if (pendingIds.length > 0) {
+        const { error } = await supabase.from("path_stops").update({ path_id: toId }).in("id", pendingIds);
+        if (error) throw error;
+      }
+      const { error: e2 } = await supabase.from("paths").update({ status: "completed" }).eq("id", input.pathId);
+      if (e2) throw e2;
+    },
+    onSuccess: invalidate,
+  });
+
   const closePreviousPath = useMutation({
     mutationFn: async (input: { prevPathId: string; prevPathDate: string }): Promise<void> => {
       await finalizeSingle(input.prevPathId);
@@ -195,5 +227,5 @@ export function usePathMutations() {
     onSuccess: invalidate,
   });
 
-  return { createPath, addStops, removeStop, reorderStops, setStopStatus, setStopDisposition, markDealCreated, deletePath, continuePreviousPath, closePreviousPath };
+  return { createPath, addStops, removeStop, reorderStops, setStopStatus, setStopDisposition, markDealCreated, deletePath, continuePreviousPath, carryToTomorrow, closePreviousPath };
 }
