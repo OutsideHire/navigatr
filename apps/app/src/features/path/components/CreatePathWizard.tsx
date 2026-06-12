@@ -19,7 +19,7 @@ import { X, Route as RouteIcon, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
-import { Button, Input, Select } from "@/components/navigatr";
+import { Button, Checkbox, Input, Select } from "@/components/navigatr";
 import { CATEGORY_LABEL, type MerchantCategory } from "../mockData";
 import { IndustryEditor } from "./IndustryEditor";
 import { SelectStops } from "./SelectStops";
@@ -41,6 +41,8 @@ export interface CreatePathWizardProps {
   onRadiusChange: (meters: number) => void;
   /** Push the rep's industry scope up so PathPage re-ingests (like radius). */
   onIndustriesChange: (industries: MerchantCategory[]) => void;
+  /** Push the "All industries" toggle up so PathPage ingests every bucket. */
+  onAllIndustriesChange: (allIndustries: boolean) => void;
   /** Called with the ordered merchant IDs when the rep starts the path. */
   onStart: (orderedIds: string[]) => void;
 }
@@ -81,6 +83,7 @@ export function CreatePathWizard({
   radiusM,
   onRadiusChange,
   onIndustriesChange,
+  onAllIndustriesChange,
   onStart,
 }: CreatePathWizardProps) {
   const { data: prefs } = usePathPreferences();
@@ -88,6 +91,7 @@ export function CreatePathWizard({
 
   const [step, setStep] = React.useState<Step>("filters");
   const [selection, setSelection] = React.useState<IndustrySelection>({});
+  const [allIndustries, setAllIndustries] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
   const [minRating, setMinRating] = React.useState(0);
   const [stopCapText, setStopCapText] = React.useState<string>(String(DEFAULT_STOP_CAP));
@@ -118,11 +122,22 @@ export function CreatePathWizard({
       setEditing(false);
       setMinRating(0);
       setSelection({});
+      setAllIndustries(false);
+      onAllIndustriesChange(false);
       setStopCapText(String(DEFAULT_STOP_CAP));
       setSortMode("opportunity");
       setSelectedIds(new Set());
     }
-  }, [open]);
+    // onAllIndustriesChange is PathPage's stable useState setter — safe in deps.
+  }, [open, onAllIndustriesChange]);
+
+  // Toggle "All industries": fetch every bucket (Edge omits per-bucket scoping)
+  // and stop filtering the displayed pool by industry. Closes the editor.
+  const toggleAllIndustries = React.useCallback((on: boolean) => {
+    setAllIndustries(on);
+    if (on) setEditing(false);
+    onAllIndustriesChange(on);
+  }, [onAllIndustriesChange]);
 
   // Seed the working selection from saved defaults ONCE per open, as soon as the
   // preference query has data. seededRef stops a later refetch (e.g. after
@@ -146,8 +161,10 @@ export function CreatePathWizard({
   // Select-stops step lets the rep curate from this; SelectStops orders the
   // chosen set itself for Start + the live distance/ETA.
   const pool = React.useMemo(
-    () => candidatePool(merchants, { industries: chosen, selection, minRating, sortMode }),
-    [merchants, chosen, selection, minRating, sortMode],
+    () => candidatePool(merchants, allIndustries
+      ? { industries: [], minRating, sortMode }
+      : { industries: chosen, selection, minRating, sortMode }),
+    [merchants, allIndustries, chosen, selection, minRating, sortMode],
   );
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
 
@@ -232,13 +249,22 @@ export function CreatePathWizard({
                         Auto-applied from your default · Edit changes this path only.
                       </span>
                     </div>
-                    {!editing && (
+                    {!editing && !allIndustries && (
                       <Button variant="secondary" size="sm" leadingIcon={Pencil} onClick={() => setEditing(true)}>
                         Edit
                       </Button>
                     )}
                   </div>
-                  {editing ? (
+                  <Checkbox
+                    label="All industries"
+                    checked={allIndustries}
+                    onCheckedChange={(v) => toggleAllIndustries(v === true)}
+                  />
+                  {allIndustries ? (
+                    <p className="text-caption text-text-muted">
+                      Every business type nearby is included. Turn off to pick specific industries.
+                    </p>
+                  ) : editing ? (
                     <IndustryEditor
                       value={selection}
                       scope="path"
