@@ -5,10 +5,10 @@ import {
 } from "./industrySelection";
 
 describe("industrySelection", () => {
-  it("RECOMMENDED_SELECTION is the 5 Tier-1 categories, each fully selected", () => {
+  it("RECOMMENDED_SELECTION is the 7 payments buckets, each fully selected", () => {
     const cats = selectedCategories(RECOMMENDED_SELECTION).sort();
-    expect(cats).toEqual(["automotive", "construction_trades", "healthcare", "manufacturing_wholesale", "professional_services"].sort());
-    expect(isFullySelected(RECOMMENDED_SELECTION, "automotive")).toBe(true);
+    expect(cats).toEqual(["automotive", "convenience_fuel", "food_beverage", "grocery_food_retail", "healthcare", "personal_services", "professional_services"].sort());
+    expect(isFullySelected(RECOMMENDED_SELECTION, "convenience_fuel")).toBe(true);
   });
 
   it("allSubtypes returns a category's includedTypes", () => {

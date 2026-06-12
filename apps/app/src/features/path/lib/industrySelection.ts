@@ -4,7 +4,7 @@
  * to the sub-type (Google primary_type) keys selected within it; a category with
  * all its sub-types is fully selected, a subset is partial, absent is unselected.
  */
-import { INDUSTRIES, INDUSTRY_KEYS } from "../../../../../../supabase/functions/_shared/industryTaxonomy";
+import { INDUSTRIES, RECOMMENDED_KEYS } from "../../../../../../supabase/functions/_shared/industryTaxonomy";
 import type { MerchantCategory } from "../mockData";
 
 export type IndustrySelection = Partial<Record<MerchantCategory, string[]>>;
@@ -13,8 +13,10 @@ export function allSubtypes(category: MerchantCategory): string[] {
   return INDUSTRIES[category as keyof typeof INDUSTRIES]?.includedTypes ?? [];
 }
 
-export const RECOMMENDED_SELECTION: IndustrySelection = INDUSTRY_KEYS.reduce<IndustrySelection>((acc, key) => {
-  if (INDUSTRIES[key].tier === 1) acc[key as MerchantCategory] = [...INDUSTRIES[key].includedTypes];
+/** Default pre-selection = the payments/merchant-services recommended buckets,
+ *  each fully selected (all sub-types). */
+export const RECOMMENDED_SELECTION: IndustrySelection = RECOMMENDED_KEYS.reduce<IndustrySelection>((acc, key) => {
+  acc[key as MerchantCategory] = [...INDUSTRIES[key].includedTypes];
   return acc;
 }, {});
 
