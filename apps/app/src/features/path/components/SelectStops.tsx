@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ChevronDown, Navigation, X } from "lucide-react";
+import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button, Checkbox, Input } from "@/components/navigatr";
 import { formatDistance, type LatLng } from "@/lib/distance";
@@ -25,7 +25,7 @@ export interface SelectStopsProps {
   selectedIds: Set<string>;
   onToggle: (id: string) => void;
   onBack: () => void;
-  onStart: (orderedIds: string[]) => void;
+  onReview: () => void;
 }
 
 function metaLine(m: MerchantWithDistance): string {
@@ -55,7 +55,7 @@ const sectionBar =
  * logic lives in the wizard.
  */
 export function SelectStops({
-  pool, origin, sortMode, onSortChange, selectedIds, onToggle, onBack, onStart,
+  pool, origin, sortMode, onSortChange, selectedIds, onToggle, onBack, onReview,
 }: SelectStopsProps) {
   const selected = React.useMemo(() => pool.filter((m) => selectedIds.has(m.id)), [pool, selectedIds]);
   const ordered = React.useMemo(() => orderStops(origin, selected), [origin, selected]);
@@ -172,10 +172,10 @@ export function SelectStops({
       <div className="flex shrink-0 gap-2 border-t border-border-default px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <Button variant="secondary" onClick={onBack}>Back</Button>
         <Button
-          variant="primary" leadingIcon={Navigation} className="flex-1"
-          disabled={noStops} onClick={() => onStart(ordered.map((m) => m.id))}
+          variant="primary" leadingIcon={ChevronRight} className="flex-1"
+          disabled={noStops} onClick={onReview}
         >
-          Start path ({selected.length})
+          Review route ({selected.length})
         </Button>
       </div>
     </div>

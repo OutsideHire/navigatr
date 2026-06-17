@@ -18,16 +18,16 @@ const POOL = [row("Acme"), row("Bravo"), row("Charlie")];
 
 function setup(selectedIds: Set<string>, props: Partial<React.ComponentProps<typeof SelectStops>> = {}) {
   const onToggle = vi.fn();
-  const onStart = vi.fn();
+  const onReview = vi.fn();
   const onBack = vi.fn();
   render(
     <SelectStops
       pool={POOL} origin={ORIGIN} sortMode="opportunity" onSortChange={vi.fn()}
-      selectedIds={selectedIds} onToggle={onToggle} onBack={onBack} onStart={onStart}
+      selectedIds={selectedIds} onToggle={onToggle} onBack={onBack} onReview={onReview}
       {...props}
     />,
   );
-  return { onToggle, onStart, onBack };
+  return { onToggle, onReview, onBack };
 }
 
 describe("SelectStops — map + accordions", () => {
@@ -36,7 +36,7 @@ describe("SelectStops — map + accordions", () => {
     expect(screen.getByTestId("map")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /in your route · 2/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /add nearby/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /start path/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /review route/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^back$/i })).toBeInTheDocument();
     expect(screen.queryByText("Acme")).not.toBeInTheDocument();        // route collapsed
     expect(screen.queryByLabelText("Charlie")).not.toBeInTheDocument(); // add collapsed
@@ -64,13 +64,13 @@ describe("SelectStops — map + accordions", () => {
   it("0 selected: Add nearby auto-expanded, Start disabled", () => {
     setup(new Set());
     expect(screen.getByLabelText("Acme")).toBeInTheDocument(); // candidates visible (add auto-open)
-    expect(screen.getByRole("button", { name: /start path/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /review route/i })).toBeDisabled();
   });
 
-  it("Start fires onStart NN-ordered; Back calls onBack", () => {
-    const { onStart, onBack } = setup(new Set(["Acme", "Charlie"]));
-    fireEvent.click(screen.getByRole("button", { name: /start path/i }));
-    expect((onStart.mock.calls[0][0] as string[]).sort()).toEqual(["Acme", "Charlie"]);
+  it("Review calls onReview; Back calls onBack", () => {
+    const { onReview, onBack } = setup(new Set(["Acme", "Charlie"]));
+    fireEvent.click(screen.getByRole("button", { name: /review route/i }));
+    expect(onReview).toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /^back$/i }));
     expect(onBack).toHaveBeenCalled();
   });
