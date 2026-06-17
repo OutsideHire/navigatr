@@ -91,8 +91,17 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
     if (!merchant || savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
-    // Always record the disposition on the queue stop.
-    await logVisit(merchant.id, disposition);
+    try {
+      // Always record the disposition on the queue stop.
+      await logVisit(merchant.id, disposition);
+    } catch {
+      // The visit itself failed to save — let the rep retry without losing the
+      // sheet. Reset guards and bail before any deal/close side effects.
+      toast.error("Couldn't save the visit — please try again.");
+      setSaving(false);
+      savingRef.current = false;
+      return;
+    }
 
     if (schedulesFollowUp(disposition) && !alreadyDealCreated) {
       try {

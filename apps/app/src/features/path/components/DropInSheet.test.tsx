@@ -187,4 +187,15 @@ describe("DropInSheet", () => {
     expect(onLogged).toHaveBeenCalledWith("statement_secured");
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  it("on logVisit failure: error toast, does NOT close or fire onLogged (retryable)", async () => {
+    logVisit.mockRejectedValueOnce(new Error("net"));
+    const onLogged = vi.fn();
+    renderSheet({ onLogged });
+    fireEvent.click(screen.getByText("Not Interested"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    expect(toast.error).toHaveBeenCalled();
+    expect(onLogged).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
 });
