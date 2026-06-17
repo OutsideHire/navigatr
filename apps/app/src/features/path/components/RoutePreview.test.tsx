@@ -1,0 +1,69 @@
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { RoutePreview } from "./RoutePreview";
+import type { MerchantWithDistance } from "./MerchantList";
+import type { RouteStats } from "../lib/routeStats";
+
+function row(id: string, distanceMeters: number, over: Partial<MerchantWithDistance> = {}): MerchantWithDistance {
+  return {
+    id, name: id, category: "automotive", address: `${id} St`, lat: 35, lng: -97,
+    phone: "+15125550100", employeeCountRange: "", status: "untouched", lastActivity: null,
+    isChain: false, distanceMeters, rating: 4.2, ...over,
+  } as MerchantWithDistance;
+}
+
+const STATS: RouteStats = {
+  stopCount: 6,
+  nearestMeters: 643.7,   // ~0.4 mi
+  furthestMeters: 13196,  // ~8.2 mi
+  totalRouteMeters: 20000,
+  etaMinutes: 210,        // ~3h 30m
+};
+
+function setup(count: number, statsOver: Partial<RouteStats> = {}) {
+  const ordered = Array.from({ length: count }, (_, i) => row(`Stop${i + 1}`, (i + 1) * 643.7));
+  const onBack = vi.fn();
+  const onStart = vi.fn();
+  render(<RoutePreview ordered={ordered} stats={{ ...STATS, stopCount: count, ...statsOver }} onBack={onBack} onStart={onStart} />);
+  return { onBack, onStart };
+}
+
+describe("RoutePreview", () => {
+  it("renders the four KPI values from stats", () => {
+    setup(6);
+    expect(screen.getByText("6")).toBeInTheDocument();          // Stops
+    expect(screen.getByText("Stops")).toBeInTheDocument();
+    expect(screen.getByText("0.4 mi")).toBeInTheDocument();     // Nearest
+    expect(screen.getByText("8.2 mi")).toBeInTheDocument();     // Furthest
+    expect(screen.getByText("~3h 30m")).toBeInTheDocument();    // Est. time
+  });
+
+  it("renders only the first 4 stops and a '+N more' line when longer", () => {
+    setup(6);
+    expect(screen.getByText("Stop1")).toBeInTheDocument();
+    expect(screen.getByText("Stop4")).toBeInTheDocument();
+    expect(screen.queryByText("Stop5")).not.toBeInTheDocument();
+    expect(screen.getByText(/\+\s*2\s*more stops/i)).toBeInTheDocument();
+  });
+
+  it("renders all stops and no '+more' line when 4 or fewer", () => {
+    setup(3);
+    expect(screen.getByText("Stop3")).toBeInTheDocument();
+    expect(screen.queryByText(/more stops/i)).not.toBeInTheDocument();
+  });
+
+  it("shows no employee or dollar-estimate text", () => {
+    setup(4);
+    expect(screen.queryByText(/emp\b/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/est\./i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
+  });
+
+  it("Back calls onBack and Start path calls onStart", () => {
+    const { onBack, onStart } = setup(4);
+    fireEvent.click(screen.getByRole("button", { name: /^back$/i }));
+    expect(onBack).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /start path/i }));
+    expect(onStart).toHaveBeenCalled();
+  });
+});
