@@ -1,11 +1,9 @@
-// Tests for DropInSheet (drop-in disposition redesign):
-//   - Renders the 10 redesigned tiles with their sub-labels; no Save button,
-//     no contact-name field.
-//   - Tap-to-auto-save: tapping a follow-up disposition commits immediately
-//     (logVisit + deal + activity + markDealCreated) and advances/closes.
-//   - Tapping a terminal disposition logs the visit only — no deal.
-//   - Follow-Up Requested reveals an inline date picker and does NOT commit
-//     until confirmed.
+// Tests for DropInSheet (explicit-commit redesign):
+//   - Tapping a tile SELECTS it; nothing commits until "Log Stop".
+//   - Log Stop disabled until a disposition is selected.
+//   - Terminal disposition → logVisit only, no deal; follow-up → deal + activity
+//     (voiceNoteUrl: null). Follow-Up Requested commits with the chosen date.
+//   - Voice note is a disabled "Coming soon" placeholder.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
@@ -34,34 +32,6 @@ vi.mock("../hooks/useTodayPath", () => ({
   useTodayPath: () => ({ logVisit, markDealCreated, stops }),
 }));
 
-// Controllable voice recorder + upload + auth.
-let recorderState = "idle";
-const recorderBlob = new Blob(["x"], { type: "audio/webm" });
-const recStart = vi.fn();
-const recStop = vi.fn();
-const recReset = vi.fn();
-vi.mock("../hooks/useVoiceRecorder", () => ({
-  useVoiceRecorder: () => ({
-    state: recorderState,
-    blob: recorderState === "recorded" ? recorderBlob : null,
-    durationMs: 3000,
-    mimeType: "audio/webm",
-    start: recStart,
-    stop: recStop,
-    reset: recReset,
-  }),
-}));
-const uploadVoiceNote = vi.fn().mockResolvedValue("user-1/x.webm");
-vi.mock("../lib/voiceNoteStorage", () => ({
-  uploadVoiceNote: (...a: unknown[]) => uploadVoiceNote(...a),
-  signedUrlFor: vi.fn(),
-}));
-vi.mock("@/stores/auth", () => ({
-  useAuth: (sel: (s: { user: { id: string } }) => unknown) => sel({ user: { id: "user-1" } }),
-}));
-// Keep these tests focused on commit wiring (the real recorder uses URL.createObjectURL).
-vi.mock("./VoiceNoteRecorder", () => ({ VoiceNoteRecorder: () => null }));
-
 const { DropInSheet } = await import("./DropInSheet");
 import { toast } from "sonner";
 import type { Merchant } from "../mockData";
@@ -87,6 +57,8 @@ function renderSheet(extra: Partial<React.ComponentProps<typeof DropInSheet>> = 
   );
 }
 
+const logStopBtn = () => screen.getByRole("button", { name: /log stop/i });
+
 describe("DropInSheet", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -96,24 +68,56 @@ describe("DropInSheet", () => {
     markDealCreated.mockClear();
     onOpenChange.mockClear();
     stops = [];
-    recorderState = "idle";
-    uploadVoiceNote.mockClear();
   });
 
-  it("renders the 10 redesigned tiles with their sub-labels", () => {
+  it("renders the 10 tiles, a Log Stop button, and no Save/contact-name field", () => {
     renderSheet();
     expect(screen.getByText("Statement Secured")).toBeInTheDocument();
     expect(screen.getByText("Highest urgency. 1 day.")).toBeInTheDocument();
     expect(screen.getByText("Wrong Person")).toBeInTheDocument();
+    expect(logStopBtn()).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^save$/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/contact name/i)).not.toBeInTheDocument();
   });
 
-  it("tapping a follow-up disposition commits immediately: logVisit + deal + activity + advance", async () => {
+  it("renders a disabled 'Coming soon' voice-note placeholder", () => {
     renderSheet();
-    await act(async () => {
-      fireEvent.click(screen.getByText("Statement Secured"));
-    });
+    expect(screen.getByText(/coming soon/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /record a voice note/i })).toBeDisabled();
+  });
+
+  it("tapping a tile selects it but does NOT commit", () => {
+    const onLogged = vi.fn();
+    renderSheet({ onLogged });
+    fireEvent.click(screen.getByText("Statement Secured"));
+    expect(logVisit).not.toHaveBeenCalled();
+    expect(createDealMutateAsync).not.toHaveBeenCalled();
+    expect(onLogged).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("Log Stop is disabled with no selection and enabled after selecting", () => {
+    renderSheet();
+    expect(logStopBtn()).toBeDisabled();
+    fireEvent.click(screen.getByText("Not Interested"));
+    expect(logStopBtn()).toBeEnabled();
+  });
+
+  it("terminal disposition + Log Stop logs the visit only, then closes", async () => {
+    const onLogged = vi.fn();
+    renderSheet({ onLogged });
+    fireEvent.click(screen.getByText("Not Interested"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    expect(logVisit).toHaveBeenCalledWith("m-1", "not_interested");
+    expect(createDealMutateAsync).not.toHaveBeenCalled();
+    expect(onLogged).toHaveBeenCalledWith("not_interested");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("follow-up disposition + Log Stop creates deal + activity (voiceNoteUrl null)", async () => {
+    renderSheet();
+    fireEvent.click(screen.getByText("Statement Secured"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
     expect(logVisit).toHaveBeenCalledWith("m-1", "statement_secured");
     expect(createDealMutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({ contactName: "Bluewater", leadSource: "path_dropin" }),
@@ -123,65 +127,52 @@ describe("DropInSheet", () => {
         type: "drop_in",
         disposition: "statement_secured",
         followUpDate: expect.any(String),
+        voiceNoteUrl: null,
       }),
     );
     expect(markDealCreated).toHaveBeenCalledWith("m-1");
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("tapping a terminal disposition logs the visit only, no deal", async () => {
-    renderSheet();
-    await act(async () => {
-      fireEvent.click(screen.getByText("Not Interested"));
-    });
-    expect(logVisit).toHaveBeenCalledWith("m-1", "not_interested");
-    expect(createDealMutateAsync).not.toHaveBeenCalled();
-    expect(onOpenChange).toHaveBeenCalledWith(false);
-  });
-
-  it("Follow-Up Requested reveals a date picker and does NOT commit until confirmed", async () => {
+  it("Follow-Up Requested: date picker shows; Log Stop commits with the chosen date", async () => {
     renderSheet();
     fireEvent.click(screen.getByText("Follow-Up Requested"));
-    expect(logVisit).not.toHaveBeenCalled();
     const dateInput = screen.getByLabelText(/follow-up date/i);
     fireEvent.change(dateInput, { target: { value: "2026-06-20" } });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /set follow-up/i }));
-    });
+    await act(async () => { fireEvent.click(logStopBtn()); });
     expect(logVisit).toHaveBeenCalledWith("m-1", "followup_requested");
     expect(logActivityMutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({
         disposition: "followup_requested",
         followUpDate: expect.stringContaining("2026-06-20"),
+        voiceNoteUrl: null,
       }),
     );
+  });
+
+  it("Follow-Up Requested: Log Stop is disabled when the date is cleared", () => {
+    renderSheet();
+    fireEvent.click(screen.getByText("Follow-Up Requested"));
+    fireEvent.change(screen.getByLabelText(/follow-up date/i), { target: { value: "" } });
+    expect(logStopBtn()).toBeDisabled();
   });
 
   it("skips deal creation when the stop already has a deal", async () => {
     stops = [{ merchantId: "m-1", dealCreated: true }];
     renderSheet();
-    await act(async () => {
-      fireEvent.click(screen.getByText("Statement Secured"));
-    });
+    fireEvent.click(screen.getByText("Statement Secured"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
     await waitFor(() => expect(logVisit).toHaveBeenCalledWith("m-1", "statement_secured"));
     expect(createDealMutateAsync).not.toHaveBeenCalled();
     expect(logActivityMutateAsync).not.toHaveBeenCalled();
     expect(markDealCreated).not.toHaveBeenCalled();
   });
 
-  it("calls onLogged with the chosen disposition after commit", async () => {
-    const onLogged = vi.fn();
-    renderSheet({ onLogged });
-    await act(async () => {
-      fireEvent.click(screen.getByText("Not Interested"));
-    });
-    await waitFor(() => expect(onLogged).toHaveBeenCalledWith("not_interested"));
-  });
-
-  it("guards against double-submit: rapid taps log the visit once", async () => {
+  it("guards against double-submit: rapid Log Stop clicks log the visit once", async () => {
     renderSheet();
-    const tile = screen.getByText("Statement Secured");
-    await act(async () => { fireEvent.click(tile); fireEvent.click(tile); });
+    fireEvent.click(screen.getByText("Statement Secured"));
+    const btn = logStopBtn();
+    await act(async () => { fireEvent.click(btn); fireEvent.click(btn); });
     expect(logVisit).toHaveBeenCalledTimes(1);
   });
 
@@ -189,57 +180,22 @@ describe("DropInSheet", () => {
     logActivityMutateAsync.mockRejectedValueOnce(new Error("boom"));
     const onLogged = vi.fn();
     renderSheet({ onLogged });
-    await act(async () => { fireEvent.click(screen.getByText("Statement Secured")); });
+    fireEvent.click(screen.getByText("Statement Secured"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
     expect(toast.error).toHaveBeenCalled();
     expect(markDealCreated).not.toHaveBeenCalled();
     expect(onLogged).toHaveBeenCalledWith("statement_secured");
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("engaged disposition with a recording uploads + passes voiceNoteUrl to logActivity", async () => {
-    recorderState = "recorded";
-    renderSheet();
-    await act(async () => { fireEvent.click(screen.getByText("Statement Secured")); });
-    expect(uploadVoiceNote).toHaveBeenCalledWith(recorderBlob, "audio/webm", "user-1");
-    expect(logActivityMutateAsync).toHaveBeenCalledWith(expect.objectContaining({ voiceNoteUrl: "user-1/x.webm" }));
-  });
-
-  it("terminal disposition with a recording confirms, discards (no upload) on confirm", async () => {
-    recorderState = "recorded";
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
-    renderSheet();
-    await act(async () => { fireEvent.click(screen.getByText("Not Interested")); });
-    expect(confirmSpy).toHaveBeenCalled();
-    expect(uploadVoiceNote).not.toHaveBeenCalled();
-    expect(logVisit).toHaveBeenCalledWith("m-1", "not_interested");
-    expect(onOpenChange).toHaveBeenCalledWith(false);
-  });
-
-  it("terminal + recording + confirm cancelled aborts the commit", async () => {
-    recorderState = "recorded";
-    vi.spyOn(window, "confirm").mockReturnValue(false);
-    renderSheet();
-    await act(async () => { fireEvent.click(screen.getByText("Not Interested")); });
-    expect(logVisit).not.toHaveBeenCalled();
-    expect(onOpenChange).not.toHaveBeenCalled();
-  });
-
-  it("no recording: engaged commit passes voiceNoteUrl null, no upload", async () => {
-    recorderState = "idle";
-    renderSheet();
-    await act(async () => { fireEvent.click(screen.getByText("Statement Secured")); });
-    expect(uploadVoiceNote).not.toHaveBeenCalled();
-    expect(logActivityMutateAsync).toHaveBeenCalledWith(expect.objectContaining({ voiceNoteUrl: null }));
-  });
-
-  it("upload failure: shows toast, still creates the deal with voiceNoteUrl null", async () => {
-    recorderState = "recorded";
-    uploadVoiceNote.mockRejectedValueOnce(new Error("storage error"));
-    renderSheet();
-    await act(async () => { fireEvent.click(screen.getByText("Statement Secured")); });
+  it("on logVisit failure: error toast, does NOT close or fire onLogged (retryable)", async () => {
+    logVisit.mockRejectedValueOnce(new Error("net"));
+    const onLogged = vi.fn();
+    renderSheet({ onLogged });
+    fireEvent.click(screen.getByText("Not Interested"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
     expect(toast.error).toHaveBeenCalled();
-    expect(createDealMutateAsync).toHaveBeenCalled();
-    expect(logActivityMutateAsync).toHaveBeenCalledWith(expect.objectContaining({ voiceNoteUrl: null }));
-    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(onLogged).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
   });
 });

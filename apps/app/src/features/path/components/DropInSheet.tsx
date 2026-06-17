@@ -1,23 +1,25 @@
 /**
  * DropInSheet — log a field drop-in for a path stop.
  *
- * Tap-to-auto-save: tapping a disposition tile commits immediately and advances
- * to the next stop. There is no Save button; the footer keeps only Cancel.
+ * Explicit-commit: tapping a disposition tile only *selects* it. Nothing is
+ * saved until the rep taps "Log Stop" in the footer. On commit:
  *   - always: record the disposition on the queue stop (useTodayPath.logVisit).
  *   - follow-up outcomes (schedulesFollowUp === true): also create a Pipeline
  *     deal (company = business name, contact = business name) and log a
  *     `drop_in` activity whose disposition auto-schedules the follow-up.
  *   - terminal outcomes: log the visit only — no deal.
  *
- * Follow-Up Requested is the one exception: instead of committing on tap, it
- * reveals an inline date picker (default +7 calendar days, min = today) and a
- * "Set follow-up & next" button that commits with the chosen date.
+ * Follow-Up Requested reveals an inline date picker (default +7 calendar days,
+ * min = today); the footer "Log Stop" button commits with the chosen date.
+ *
+ * Voice note: disabled "Coming soon" placeholder. The recorder hook/component
+ * and upload helper remain in the repo, unused here, for Phase 2 re-wiring.
  *
  * Places-only: no employee count, estimated value, or email captured.
  */
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
+import { Mic, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button, Input, NotesFieldWithMic, DispositionTile } from "@/components/navigatr";
@@ -33,10 +35,6 @@ import { PATH_DISPOSITION_KEYS } from "../lib/pathDispositions";
 import { todayISO } from "../lib/today";
 import { useCreateDeal } from "@/features/pipeline/hooks/useCreateDeal";
 import { useLogActivity } from "@/features/activities/hooks/useLogActivity";
-import { useAuth } from "@/stores/auth";
-import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
-import { VoiceNoteRecorder } from "./VoiceNoteRecorder";
-import { uploadVoiceNote } from "../lib/voiceNoteStorage";
 
 /** Default follow-up date for the inline picker: today + N calendar days, yyyy-mm-dd. */
 function plusDaysISODate(days: number): string {
@@ -51,7 +49,7 @@ export interface DropInSheetProps {
   merchant: Merchant | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Fired after a successful save, with the chosen disposition. Lets running
+  /** Fired after a successful commit, with the chosen disposition. Lets running
    *  mode advance to the next stop once a visit is logged. */
   onLogged?: (disposition: Disposition) => void;
 }
@@ -66,8 +64,6 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
     : false;
   const createDeal = useCreateDeal();
   const logActivity = useLogActivity();
-  const userId = useAuth((s) => s.user?.id);
-  const recorder = useVoiceRecorder();
 
   const [selected, setSelected] = React.useState<Disposition | null>(null);
   const [notes, setNotes] = React.useState("");
@@ -86,41 +82,32 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
       setCustomDate(plusDaysISODate(7));
       setSaving(false);
       savingRef.current = false;
-      recorder.reset();
     }
-    // recorder.reset is stable; omitting `recorder` avoids re-running on its
-    // per-render reference churn while still resetting on every open.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, merchant?.id]);
 
   if (!merchant) return null;
 
   const commit = async (disposition: Disposition, customDateStr?: string) => {
     if (!merchant || savingRef.current) return;
-    const hasRecording = recorder.state === "recorded" && recorder.blob != null;
-    if (hasRecording && !schedulesFollowUp(disposition)) {
-      if (!window.confirm("No deal is created for this outcome, so the voice note won't be saved. Log it anyway?")) {
-        return;
-      }
-    }
     savingRef.current = true;
     setSaving(true);
-    // Always record the disposition on the queue stop.
-    await logVisit(merchant.id, disposition);
+    try {
+      // Always record the disposition on the queue stop.
+      await logVisit(merchant.id, disposition);
+    } catch {
+      // The visit itself failed to save — let the rep retry without losing the
+      // sheet. Reset guards and bail before any deal/close side effects.
+      toast.error("Couldn't save the visit — please try again.");
+      setSaving(false);
+      savingRef.current = false;
+      return;
+    }
 
     if (schedulesFollowUp(disposition) && !alreadyDealCreated) {
       try {
         const followUpDate = customDateStr
           ? new Date(`${customDateStr}T00:00:00Z`).toISOString()
           : calculateFollowUpDate(disposition);
-        let voiceNoteUrl: string | null = null;
-        if (hasRecording && userId) {
-          try {
-            voiceNoteUrl = await uploadVoiceNote(recorder.blob!, recorder.mimeType, userId);
-          } catch {
-            toast.error("Couldn't save the voice note — logging the visit anyway.");
-          }
-        }
         const { id: dealId } = await createDeal.mutateAsync({
           companyName: merchant.name,
           address: merchant.address,
@@ -138,15 +125,15 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
           disposition,
           outcomeNotes: notes.trim(),
           followUpDate,
-          voiceNoteUrl,
+          voiceNoteUrl: null,
         });
         // Both mutations succeeded — only now is a deal truly created.
         await markDealCreated(merchant.id);
         toast.success(`Deal created for ${merchant.name}`);
-        // Known accepted edge for this slice: if createDeal succeeds but
-        // logActivity throws, an orphan deal exists with no drop-in activity /
-        // follow-up. We don't roll back the deal here; the visit is recorded
-        // and dealCreated stays false, so the summary won't over-count.
+        // Known accepted edge: if createDeal succeeds but logActivity throws, an
+        // orphan deal exists with no drop-in activity / follow-up. We don't roll
+        // back; the visit is recorded and dealCreated stays false, so the summary
+        // won't over-count.
       } catch {
         toast.error("Couldn't finish logging — the visit was saved but the deal/follow-up may not have been.");
       }
@@ -159,13 +146,9 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
     onOpenChange(false);
   };
 
-  // Tap-to-auto-save: most tiles commit immediately. Follow-Up Requested is the
-  // exception — it reveals the inline date picker and waits for confirmation.
-  const handleSelect = (key: Disposition) => {
-    setSelected(key);
-    if (key !== "followup_requested") {
-      void commit(key);
-    }
+  const handleLog = () => {
+    if (!selected) return;
+    void commit(selected, selected === "followup_requested" ? customDate : undefined);
   };
 
   return (
@@ -188,19 +171,29 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
               </Dialog.Close>
             </div>
             <p className="mt-1 text-caption text-text-muted">
-              Tap an outcome — auto-saves and advances to the next stop.
+              Pick an outcome, add a note, then log the stop.
             </p>
           </div>
 
           <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
-            <VoiceNoteRecorder
-              state={recorder.state}
-              durationMs={recorder.durationMs}
-              blob={recorder.blob}
-              onStart={() => void recorder.start()}
-              onStop={recorder.stop}
-              onReset={recorder.reset}
-            />
+            {/* Voice note — Coming soon (disabled placeholder; Phase 2 re-wires). */}
+            <div className="rounded-radius-md border border-border-default p-4 opacity-60">
+              <div className="flex items-center justify-between">
+                <span className="text-caption font-medium text-text-muted">Voice note</span>
+                <span className="rounded-radius-full bg-surface-sunken px-2 py-0.5 text-caption font-medium text-text-muted">
+                  Coming soon
+                </span>
+              </div>
+              <button
+                type="button"
+                disabled
+                aria-disabled
+                className="mt-2 inline-flex cursor-not-allowed items-center gap-2 rounded-radius-md bg-surface-sunken px-4 py-2 text-body-md font-medium text-text-muted"
+              >
+                <Mic className="h-4 w-4" aria-hidden /> Record a voice note
+              </button>
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               {PATH_DISPOSITION_KEYS.map((key) => (
                 <DispositionTile
@@ -209,7 +202,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
                   title={DISPOSITIONS[key].label}
                   description={DISPOSITIONS[key].rationale}
                   selected={selected === key}
-                  onClick={() => handleSelect(key)}
+                  onClick={() => setSelected(key)}
                 />
               ))}
             </div>
@@ -223,15 +216,6 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
                   min={todayISO()}
                   onChange={(e) => setCustomDate(e.target.value)}
                 />
-                <Button
-                  variant="primary"
-                  className="mt-1 self-start"
-                  disabled={!customDate || saving}
-                  loading={saving}
-                  onClick={() => void commit("followup_requested", customDate)}
-                >
-                  Set follow-up & next
-                </Button>
               </label>
             )}
 
@@ -245,6 +229,15 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
           <div className="flex gap-2 pt-4">
             <Button variant="secondary" onClick={() => onOpenChange(false)} className="flex-1">
               Cancel
+            </Button>
+            <Button
+              variant="primary"
+              className="flex-1"
+              disabled={!selected || (selected === "followup_requested" && !customDate) || saving}
+              loading={saving}
+              onClick={handleLog}
+            >
+              Log Stop
             </Button>
           </div>
         </Dialog.Content>
