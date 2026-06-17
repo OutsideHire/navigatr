@@ -35,7 +35,7 @@ export function RoutePreview({ ordered, stats, onBack, onStart }: RoutePreviewPr
     { label: "Stops", value: String(stats.stopCount) },
     { label: "Nearest", value: formatDistance(stats.nearestMeters ?? NaN) },
     { label: "Furthest", value: formatDistance(stats.furthestMeters ?? NaN) },
-    { label: "Time", value: formatEta(stats.etaMinutes) },
+    { label: "Est. time", value: formatEta(stats.etaMinutes) },
   ];
 
   return (

@@ -55,7 +55,6 @@ describe("RoutePreview", () => {
   it("shows no employee or dollar-estimate text", () => {
     setup(4);
     expect(screen.queryByText(/emp\b/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/est\./i)).not.toBeInTheDocument();
     expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
   });
 
