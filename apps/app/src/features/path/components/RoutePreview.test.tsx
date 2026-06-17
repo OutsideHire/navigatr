@@ -46,9 +46,9 @@ describe("RoutePreview", () => {
     expect(screen.getByText(/\+\s*2\s*more stops/i)).toBeInTheDocument();
   });
 
-  it("renders all stops and no '+more' line when 4 or fewer", () => {
-    setup(3);
-    expect(screen.getByText("Stop3")).toBeInTheDocument();
+  it("renders all stops and no '+more' line at the 4-stop boundary", () => {
+    setup(4);
+    expect(screen.getByText("Stop4")).toBeInTheDocument();
     expect(screen.queryByText(/more stops/i)).not.toBeInTheDocument();
   });
 
