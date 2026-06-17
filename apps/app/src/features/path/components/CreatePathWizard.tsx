@@ -27,7 +27,9 @@ import { usePathPreferences, useUpdateDefaultIndustries } from "../hooks/usePath
 import { selectedCategories, type IndustrySelection } from "../lib/industrySelection";
 import type { MerchantWithDistance } from "./MerchantList";
 import { type PathSortMode } from "../lib/sortMerchants";
-import { candidatePool } from "../lib/proposeRoute";
+import { candidatePool, orderStops } from "../lib/proposeRoute";
+import { routeStats } from "../lib/routeStats";
+import { RoutePreview } from "./RoutePreview";
 
 export interface CreatePathWizardProps {
   open: boolean;
@@ -73,7 +75,7 @@ const RATING_OPTIONS: Array<{ label: string; value: number }> = [
 const DEFAULT_STOP_CAP = 25;
 const MAX_STOP_CAP = 100;
 
-type Step = "filters" | "select";
+type Step = "filters" | "select" | "preview";
 
 export function CreatePathWizard({
   open,
@@ -192,6 +194,21 @@ export function CreatePathWizard({
     });
   }, []);
 
+  // Step 3 (preview) needs the same ordered route + stats SelectStops shows. Derive
+  // them here from the curated selection so the preview and the started queue agree.
+  const selectedStops = React.useMemo(
+    () => pool.filter((m) => selectedIds.has(m.id)),
+    [pool, selectedIds],
+  );
+  const orderedStops = React.useMemo(
+    () => orderStops(origin, selectedStops),
+    [origin, selectedStops],
+  );
+  const previewStats = React.useMemo(
+    () => routeStats(origin, orderedStops.map((m) => ({ lat: m.lat, lng: m.lng }))),
+    [origin, orderedStops],
+  );
+
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
@@ -202,7 +219,7 @@ export function CreatePathWizard({
         >
           <div className="flex shrink-0 items-center justify-between border-b border-border-default px-5 py-4">
             <Dialog.Title className="text-heading-sm text-text-default">
-              {step === "filters" ? "Create path" : "Select stops"}
+              {step === "filters" ? "Create path" : step === "select" ? "Select stops" : "Optimized route preview"}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button aria-label="Close" className="rounded-radius-sm p-1 text-text-muted hover:text-text-default">
@@ -338,7 +355,16 @@ export function CreatePathWizard({
               selectedIds={selectedIds}
               onToggle={toggleStop}
               onBack={() => setStep("filters")}
-              onStart={onStart}
+              onReview={() => setStep("preview")}
+            />
+          )}
+
+          {step === "preview" && (
+            <RoutePreview
+              ordered={orderedStops}
+              stats={previewStats}
+              onBack={() => setStep("select")}
+              onStart={() => onStart(orderedStops.map((m) => m.id))}
             />
           )}
         </Dialog.Content>

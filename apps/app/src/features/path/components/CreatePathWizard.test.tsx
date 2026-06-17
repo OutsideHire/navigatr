@@ -145,7 +145,7 @@ describe("CreatePathWizard radius + max stops + select stops", () => {
     mockPrefs = { general_merchandise: allSubtypes("general_merchandise") };
     renderWizard({ merchants: [] });
     fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
-    expect(screen.getByRole("button", { name: /start path/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /review route/i })).toBeInTheDocument();
   });
 
   it("renders the Select stops step with its dialog title", () => {
@@ -158,7 +158,7 @@ describe("CreatePathWizard radius + max stops + select stops", () => {
     renderWizard({ merchants: [] });
     fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
     expect(screen.getByText(/no businesses match these filters/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /start path/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /review route/i })).toBeDisabled();
   });
 
   it("offers Opportunity and Distance sort in Select stops", () => {
@@ -196,6 +196,34 @@ describe("CreatePathWizard radius + max stops + select stops", () => {
     fireEvent.change(screen.getByLabelText(/max stops/i), { target: { value: "2" } });
     fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
     expect(screen.getByText(/in your route · 2/i)).toBeInTheDocument();
+  });
+
+  it("Review route advances from Select stops to the Optimized route preview", () => {
+    mockPrefs = { automotive: allSubtypes("automotive") };
+    renderWizard({ merchants: [mkAutoMerchant("a", 0)] });
+    fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
+    fireEvent.click(screen.getByRole("button", { name: /review route/i }));
+    expect(screen.getByRole("heading", { name: /optimized route preview/i })).toBeInTheDocument();
+  });
+
+  it("preview Start path fires onStart with the ordered ids", () => {
+    mockPrefs = { automotive: allSubtypes("automotive") };
+    const onStart = vi.fn();
+    renderWizard({ merchants: [mkAutoMerchant("a", 0)], onStart });
+    fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
+    fireEvent.click(screen.getByRole("button", { name: /review route/i }));
+    fireEvent.click(screen.getByRole("button", { name: /start path/i }));
+    expect(onStart).toHaveBeenCalledWith(["a"]);
+  });
+
+  it("Back from the preview returns to Select stops", () => {
+    mockPrefs = { automotive: allSubtypes("automotive") };
+    renderWizard({ merchants: [mkAutoMerchant("a", 0)] });
+    fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
+    fireEvent.click(screen.getByRole("button", { name: /review route/i }));
+    expect(screen.getByRole("heading", { name: /optimized route preview/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^back$/i }));
+    expect(screen.getByRole("heading", { name: /select stops/i })).toBeInTheDocument();
   });
 });
 
