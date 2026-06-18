@@ -73,6 +73,9 @@ export interface Deal {
   lostReasonCategory: LostReasonCategory | null;
   /** Optional free-text notes supplementing the loss reason category. */
   lostReasonNotes: string | null;
+  /** Freeform deal notes. Stage-transition lines are prepended here when a
+   *  rep moves the deal to a non-lost stage (FR-PIPE-07). DB column exists. */
+  notes?: string;
 }
 
 // Static "today" so subsequent renders don't shift cards' relative dates.
@@ -90,7 +93,7 @@ function daysAhead(n: number): string {
   return d.toISOString();
 }
 
-const STAGE_DEFAULT_PROBABILITY: Record<DealStage, number> = {
+export const STAGE_DEFAULT_PROBABILITY: Record<DealStage, number> = {
   new: 20,
   contacted: 35,
   qualified: 55,

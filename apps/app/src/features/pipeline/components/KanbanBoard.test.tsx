@@ -75,4 +75,21 @@ describe("KanbanBoard", () => {
     renderBoard([deal("a", "new", 100_00)]);
     expect(screen.queryByRole("button", { name: /add to/i })).toBeNull();
   });
+
+  it("makes cards draggable and fires onDropDeal when dropped on another column", () => {
+    const onDropDeal = vi.fn();
+    render(
+      <MemoryRouter>
+        <KanbanBoard deals={[deal("a", "new", 100_00, "Acme")]} onDropDeal={onDropDeal} />
+      </MemoryRouter>,
+    );
+    const card = within(screen.getByLabelText("New stage")).getByText("Acme").closest("button")!;
+    expect(card).toHaveAttribute("draggable", "true");
+    const dataTransfer = { setData: vi.fn(), getData: () => "a" };
+    fireEvent.dragStart(card, { dataTransfer });
+    const qualifiedCol = screen.getByLabelText("Qualified stage");
+    fireEvent.dragOver(qualifiedCol, { dataTransfer });
+    fireEvent.drop(qualifiedCol, { dataTransfer });
+    expect(onDropDeal).toHaveBeenCalledWith("a", "qualified");
+  });
 });

@@ -47,6 +47,7 @@ import { useDeals } from "../hooks/useDeals";
 import {
   STAGE_CHIP_COUNTS,
   STAGE_LABEL,
+  formatShortDate,
   type Deal,
   type DealStage,
 } from "../mockData";
@@ -54,6 +55,9 @@ import { DealCard } from "../components/DealCard";
 import { DealCardSkeleton } from "../components/DealCardSkeleton";
 import { AddDealSheet } from "../components/AddDealSheet";
 import { KanbanBoard } from "../components/KanbanBoard";
+import { StageUpdateModal } from "../components/StageUpdateModal";
+import { appendStageNote } from "../lib/stageNote";
+import { useUpdateDeal } from "../hooks/useUpdateDeal";
 import { useTerm, useTermCapitalized } from "@/features/profession/useTerm";
 
 // ───────────────────────────────────────────────────────────────────────
@@ -401,8 +405,25 @@ export function PipelinePage() {
   // Stage/search filters still applied in-memory below; dataset is small
   // enough that round-tripping per chip click would be wasteful.
   const { data: deals, isLoading } = useDeals();
+  const update = useUpdateDeal();
+  const [pendingDrop, setPendingDrop] = React.useState<{ deal: Deal; toStage: DealStage } | null>(null);
 
   const onAddDeal = () => setSheetOpen(true);
+
+  const handleDropConfirm = async (probability: number, note: string) => {
+    if (!pendingDrop) return;
+    const { deal: dd, toStage } = pendingDrop;
+    try {
+      await update.mutateAsync({
+        id: dd.id,
+        patch: { stage: toStage, probability, notes: appendStageNote(dd.notes, dd.stage, toStage, note, formatShortDate(new Date().toISOString())) },
+      });
+      toast.success(`Moved to ${STAGE_LABEL[toStage]}`);
+      setPendingDrop(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't update stage");
+    }
+  };
 
   const filtered = React.useMemo(() => {
     if (!deals) return [];
@@ -467,7 +488,14 @@ export function PipelinePage() {
                 the list view of the same filtered set so mobile + tablet
                 users always see SOMETHING after toggling. */}
             <div className="hidden lg:block">
-              <KanbanBoard deals={filtered} onAddToStage={(s) => { setAddStage(s); setSheetOpen(true); }} />
+              <KanbanBoard
+                deals={filtered}
+                onAddToStage={(s) => { setAddStage(s); setSheetOpen(true); }}
+                onDropDeal={(id, stage) => {
+                  const dd = (deals ?? []).find((x) => x.id === id);
+                  if (dd && dd.stage !== stage) setPendingDrop({ deal: dd, toStage: stage });
+                }}
+              />
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:hidden">
               {filtered.map((deal) => (
@@ -485,6 +513,15 @@ export function PipelinePage() {
       </div>
 
       <AddDealSheet open={sheetOpen} onOpenChange={(o) => { setSheetOpen(o); if (!o) setAddStage(undefined); }} defaultStage={addStage} />
+
+      <StageUpdateModal
+        open={!!pendingDrop}
+        onOpenChange={(o) => { if (!o) setPendingDrop(null); }}
+        deal={pendingDrop?.deal ?? null}
+        toStage={pendingDrop?.toStage ?? null}
+        busy={update.isPending}
+        onConfirm={handleDropConfirm}
+      />
     </div>
   );
 }

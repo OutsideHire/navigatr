@@ -63,6 +63,8 @@ import {
   type LostReasonCategory,
 } from "../mockData";
 import { LostReasonModal } from "../components/LostReasonModal";
+import { StageUpdateModal } from "../components/StageUpdateModal";
+import { appendStageNote } from "../lib/stageNote";
 import { VoiceNotePlayer } from "../components/VoiceNotePlayer";
 import { useDeal } from "../hooks/useDeal";
 import { useTerm, useTermCapitalized } from "@/features/profession/useTerm";
@@ -135,6 +137,8 @@ function StagePicker({ deal }: { deal: Deal }) {
   const update = useUpdateDeal();
   const [editing, setEditing] = React.useState(false);
   const [lostModalOpen, setLostModalOpen] = React.useState(false);
+  const [pendingStage, setPendingStage] = React.useState<DealStage | null>(null);
+  const [stageModalOpen, setStageModalOpen] = React.useState(false);
 
   const handleChange = async (next: string) => {
     if (next === deal.stage) {
@@ -147,13 +151,27 @@ function StagePicker({ deal }: { deal: Deal }) {
       setLostModalOpen(true);
       return;
     }
+    // Non-lost change — open StageUpdateModal to capture probability + note.
+    setPendingStage(next as DealStage);
+    setStageModalOpen(true);
+    setEditing(false);
+    return;
+  };
+
+  const handleStageConfirm = async (probability: number, note: string) => {
+    if (!pendingStage) return;
     try {
       await update.mutateAsync({
         id: deal.id,
-        patch: { stage: next as DealStage },
+        patch: {
+          stage: pendingStage,
+          probability,
+          notes: appendStageNote(deal.notes, deal.stage, pendingStage, note, formatShortDate(new Date().toISOString())),
+        },
       });
-      toast.success(`Moved to ${STAGE_LABEL[next as DealStage]}`);
-      setEditing(false);
+      toast.success(`Moved to ${STAGE_LABEL[pendingStage]}`);
+      setStageModalOpen(false);
+      setPendingStage(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't update stage");
     }
@@ -163,20 +181,24 @@ function StagePicker({ deal }: { deal: Deal }) {
     category: LostReasonCategory,
     notes: string | null,
   ) => {
-    await update.mutateAsync({
-      id: deal.id,
-      patch: {
-        stage: "lost",
-        lostReasonCategory: category,
-        lostReasonNotes: notes,
-      },
-    });
-    toast.success("Moved to Lost");
+    try {
+      await update.mutateAsync({
+        id: deal.id,
+        patch: {
+          stage: "lost",
+          lostReasonCategory: category,
+          lostReasonNotes: notes,
+        },
+      });
+      toast.success("Moved to Lost");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't update stage");
+    }
   };
 
-  if (!editing) {
-    return (
-      <>
+  return (
+    <>
+      {!editing ? (
         <button
           type="button"
           onClick={() => setEditing(true)}
@@ -192,29 +214,28 @@ function StagePicker({ deal }: { deal: Deal }) {
             {STAGE_LABEL[deal.stage]}
           </Badge>
         </button>
-        <LostReasonModal
-          open={lostModalOpen}
-          onOpenChange={setLostModalOpen}
-          onSubmit={handleLostSubmit}
-        />
-      </>
-    );
-  }
-
-  return (
-    <>
-      <div className="w-48">
-        <Select
-          id={`stage-${deal.id}`}
-          value={deal.stage}
-          onValueChange={handleChange}
-          options={STAGE_OPTIONS}
-        />
-      </div>
+      ) : (
+        <div className="w-48">
+          <Select
+            id={`stage-${deal.id}`}
+            value={deal.stage}
+            onValueChange={handleChange}
+            options={STAGE_OPTIONS}
+          />
+        </div>
+      )}
       <LostReasonModal
         open={lostModalOpen}
         onOpenChange={setLostModalOpen}
         onSubmit={handleLostSubmit}
+      />
+      <StageUpdateModal
+        open={stageModalOpen}
+        onOpenChange={(o) => { setStageModalOpen(o); if (!o) setPendingStage(null); }}
+        deal={deal}
+        toStage={pendingStage}
+        busy={update.isPending}
+        onConfirm={handleStageConfirm}
       />
     </>
   );
@@ -597,6 +618,21 @@ export function DealDetailPage() {
   const [editOpen, setEditOpen] = React.useState(false);
   const [editingActivity, setEditingActivity] = React.useState<Activity | null>(null);
   const [tab, setTab] = React.useState<TabKey>("overview");
+  const lostUpdate = useUpdateDeal();
+  const [lostOpen, setLostOpen] = React.useState(false);
+
+  const handlePageLostSubmit = async (category: LostReasonCategory, notes: string | null) => {
+    if (!deal) return;
+    try {
+      await lostUpdate.mutateAsync({
+        id: deal.id,
+        patch: { stage: "lost", lostReasonCategory: category, lostReasonNotes: notes },
+      });
+      toast.success("Moved to Lost");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't update stage");
+    }
+  };
 
   if (isLoading) {
     return (
@@ -659,7 +695,7 @@ export function DealDetailPage() {
               onViewAll={() => setTab("activity")}
               onEdit={setEditingActivity}
             />
-            <QuickActionsCard />
+            <QuickActionsCard onMarkLost={() => setLostOpen(true)} />
             <RelatedCard deal={deal} />
           </div>
         </div>
@@ -681,6 +717,12 @@ export function DealDetailPage() {
         onOpenChange={setEditOpen}
         deal={deal}
         onDeleted={() => navigate("/pipeline")}
+      />
+
+      <LostReasonModal
+        open={lostOpen}
+        onOpenChange={setLostOpen}
+        onSubmit={handlePageLostSubmit}
       />
 
       {editingActivity && (
