@@ -74,6 +74,8 @@ import { DISPOSITIONS } from "@/lib/followUpScheduling";
 import { LogActivitySheet } from "@/features/activities/components/LogActivitySheet";
 import { EditDealSheet } from "../components/EditDealSheet";
 import { EditActivitySheet } from "@/features/activities/components/EditActivitySheet";
+import { QuickActionsCard } from "../components/QuickActionsCard";
+import { RelatedCard } from "../components/RelatedCard";
 
 // ───────────────────────────────────────────────────────────────────────
 // Not-found state
@@ -446,11 +448,11 @@ function PipelineProgressionCard({ deal }: { deal: Deal }) {
 }
 
 function LatestActivityCard({
-  activity,
+  activities,
   onViewAll,
   onEdit,
 }: {
-  activity: Activity | undefined;
+  activities: Activity[];
   onViewAll: () => void;
   onEdit?: (a: Activity) => void;
 }) {
@@ -462,10 +464,14 @@ function LatestActivityCard({
           View all
         </Button>
       </div>
-      {activity ? (
-        <ActivityRow activity={activity} onEdit={onEdit} />
-      ) : (
+      {activities.length === 0 ? (
         <p className="text-body-md text-text-muted">No activity yet. Log a call to get started.</p>
+      ) : (
+        <div className="flex flex-col">
+          {activities.slice(0, 3).map((a) => (
+            <ActivityRow key={a.id} activity={a} onEdit={onEdit} />
+          ))}
+        </div>
       )}
     </Card>
   );
@@ -623,36 +629,40 @@ export function DealDetailPage() {
           onEdit={() => setEditOpen(true)}
         />
 
-        <Tabs.Root value={tab} onValueChange={(v) => setTab(v as TabKey)}>
-          <TabBar />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-6">
+          <div className="lg:col-span-2">
+            <Tabs.Root value={tab} onValueChange={(v) => setTab(v as TabKey)}>
+              <TabBar />
+              <Tabs.Content value="overview" className="mt-4 flex flex-col gap-4 focus-visible:outline-none">
+                <ContactInfoCard deal={deal} />
+                <SourceCard deal={deal} />
+                <PipelineProgressionCard deal={deal} />
+              </Tabs.Content>
+              <Tabs.Content value="activity" className="mt-4 focus-visible:outline-none">
+                <ActivityList activities={activities} onEdit={setEditingActivity} />
+              </Tabs.Content>
+              <Tabs.Content value="contacts" className="mt-4 focus-visible:outline-none">
+                <PlaceholderTab title="Contacts" />
+              </Tabs.Content>
+              <Tabs.Content value="qualification" className="mt-4 focus-visible:outline-none">
+                <QualificationTab deal={deal} />
+              </Tabs.Content>
+              <Tabs.Content value="notes" className="mt-4 focus-visible:outline-none">
+                <PlaceholderTab title="Notes & Files" />
+              </Tabs.Content>
+            </Tabs.Root>
+          </div>
 
-          <Tabs.Content value="overview" className="mt-4 flex flex-col gap-4 focus-visible:outline-none">
-            <ContactInfoCard deal={deal} />
-            <SourceCard deal={deal} />
-            <PipelineProgressionCard deal={deal} />
+          <div className="flex flex-col gap-4 lg:col-span-1">
             <LatestActivityCard
-              activity={activities[0]}
+              activities={activities}
               onViewAll={() => setTab("activity")}
               onEdit={setEditingActivity}
             />
-          </Tabs.Content>
-
-          <Tabs.Content value="activity" className="mt-4 focus-visible:outline-none">
-            <ActivityList activities={activities} onEdit={setEditingActivity} />
-          </Tabs.Content>
-
-          <Tabs.Content value="contacts" className="mt-4 focus-visible:outline-none">
-            <PlaceholderTab title="Contacts" />
-          </Tabs.Content>
-
-          <Tabs.Content value="qualification" className="mt-4 focus-visible:outline-none">
-            <QualificationTab deal={deal} />
-          </Tabs.Content>
-
-          <Tabs.Content value="notes" className="mt-4 focus-visible:outline-none">
-            <PlaceholderTab title="Notes & Files" />
-          </Tabs.Content>
-        </Tabs.Root>
+            <QuickActionsCard />
+            <RelatedCard deal={deal} />
+          </div>
+        </div>
       </div>
 
       <LogActivitySheet
