@@ -27,6 +27,8 @@ function KanbanCard({ deal }: { deal: Deal }) {
   return (
     <button
       type="button"
+      draggable
+      onDragStart={(e) => e.dataTransfer.setData("text/plain", deal.id)}
       onClick={() => navigate(`/pipeline/${deal.id}`)}
       className={cn(
         "flex w-full flex-col gap-2 rounded-radius-md bg-surface-default p-3 text-left ring-1 ring-border-subtle",
@@ -50,12 +52,24 @@ function KanbanCard({ deal }: { deal: Deal }) {
 }
 
 function Column({
-  stage, deals, onAddToStage,
-}: { stage: DealStage; deals: Deal[]; onAddToStage?: (s: DealStage) => void }) {
+  stage, deals, onAddToStage, onDropDeal,
+}: {
+  stage: DealStage;
+  deals: Deal[];
+  onAddToStage?: (s: DealStage) => void;
+  onDropDeal?: (dealId: string, stage: DealStage) => void;
+}) {
   const totalCents = deals.reduce((sum, d) => sum + d.valueCents, 0);
   return (
     <section
       aria-label={`${STAGE_LABEL[stage]} stage`}
+      onDragOver={(e) => { if (onDropDeal) e.preventDefault(); }}
+      onDrop={(e) => {
+        if (!onDropDeal) return;
+        e.preventDefault();
+        const id = e.dataTransfer.getData("text/plain");
+        if (id) onDropDeal(id, stage);
+      }}
       className="flex min-w-0 flex-col gap-3 rounded-radius-md bg-surface-sunken p-3"
     >
       <header className="flex flex-col gap-0.5 px-1">
@@ -89,8 +103,12 @@ function Column({
 }
 
 export function KanbanBoard({
-  deals, onAddToStage,
-}: { deals: Deal[]; onAddToStage?: (stage: DealStage) => void }) {
+  deals, onAddToStage, onDropDeal,
+}: {
+  deals: Deal[];
+  onAddToStage?: (stage: DealStage) => void;
+  onDropDeal?: (dealId: string, stage: DealStage) => void;
+}) {
   const byStage: Record<DealStage, Deal[]> = {
     new: [], contacted: [], qualified: [], proposal: [], won: [], lost: [],
   };
@@ -100,7 +118,7 @@ export function KanbanBoard({
     <div role="list" className="grid grid-cols-5 gap-3">
       {STAGES.map((s) => (
         <div key={s}>
-          <Column stage={s} deals={byStage[s]} onAddToStage={onAddToStage} />
+          <Column stage={s} deals={byStage[s]} onAddToStage={onAddToStage} onDropDeal={onDropDeal} />
         </div>
       ))}
     </div>
