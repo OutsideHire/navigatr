@@ -90,7 +90,7 @@ function daysAhead(n: number): string {
   return d.toISOString();
 }
 
-const STAGE_DEFAULT_PROBABILITY: Record<DealStage, number> = {
+export const STAGE_DEFAULT_PROBABILITY: Record<DealStage, number> = {
   new: 20,
   contacted: 35,
   qualified: 55,
