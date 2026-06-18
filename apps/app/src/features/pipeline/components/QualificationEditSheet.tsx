@@ -20,6 +20,11 @@ import {
 import { useUpdateDeal } from "../hooks/useUpdateDeal";
 import type { Deal } from "../mockData";
 
+function numOrUndef(s: string): number | undefined {
+  const n = Number(s);
+  return s.trim() !== "" && Number.isFinite(n) ? n : undefined;
+}
+
 export interface QualificationEditSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -51,11 +56,6 @@ export function QualificationEditSheet({ open, onOpenChange, deal }: Qualificati
     setAcceptanceMethods((prev) =>
       checked ? [...prev, key] : prev.filter((m) => m !== key),
     );
-  };
-
-  const numOrUndef = (s: string) => {
-    const n = Number(s);
-    return s.trim() !== "" && Number.isFinite(n) ? n : undefined;
   };
 
   const onSave = async () => {

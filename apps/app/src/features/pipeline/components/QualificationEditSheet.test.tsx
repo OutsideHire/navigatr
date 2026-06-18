@@ -56,4 +56,20 @@ describe("QualificationEditSheet", () => {
       }),
     );
   });
+
+  it("toggles acceptance methods on save (add + remove branches)", async () => {
+    // deal() seeds acceptanceMethods = ["card_present"] (no "ecommerce")
+    const d = deal();
+    render(<QualificationEditSheet open deal={d} onOpenChange={vi.fn()} />);
+
+    // add: check an unchecked method
+    fireEvent.click(screen.getByLabelText(/e-commerce/i));
+    // remove: uncheck the seeded one
+    fireEvent.click(screen.getByLabelText(/card present/i));
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    const patch = mutateAsyncSpy.mock.calls[0][0].patch.professionData.acceptanceMethods;
+    expect(patch).toContain("ecommerce");
+    expect(patch).not.toContain("card_present");
+  });
 });
