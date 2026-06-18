@@ -248,6 +248,24 @@ export const STAGE_BAND_COLOR: Record<DealStage, BandColor> = {
   lost: "danger",
 };
 
+/** Per-stage tones: the left band color, the solid probability-bar fill, and
+ *  the soft pill background + text. One source of truth so a card renders
+ *  mono-stage-colored (band + pill + bar agree). */
+export interface StageTone {
+  band: BandColor;
+  barFill: string;
+  pillBg: string;
+  pillText: string;
+}
+export const STAGE_TONE: Record<DealStage, StageTone> = {
+  new:       { band: "info",    barFill: "bg-status-info",    pillBg: "bg-status-info-bg",    pillText: "text-status-info" },
+  contacted: { band: "warning", barFill: "bg-status-warning", pillBg: "bg-status-warning-bg", pillText: "text-status-warning" },
+  qualified: { band: "teal",    barFill: "bg-accent-teal",    pillBg: "bg-accent-teal-20",    pillText: "text-accent-teal" },
+  proposal:  { band: "violet",  barFill: "bg-accent-violet",  pillBg: "bg-accent-violet-20",  pillText: "text-accent-violet" },
+  won:       { band: "success", barFill: "bg-status-success", pillBg: "bg-status-success-bg", pillText: "text-status-success" },
+  lost:      { band: "danger",  barFill: "bg-status-danger",  pillBg: "bg-status-danger-bg",  pillText: "text-status-danger" },
+};
+
 export const STAGE_LABEL: Record<DealStage, string> = {
   new: "New",
   contacted: "Contacted",
