@@ -6,7 +6,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
-import { RECOMMENDED_SELECTION, selectedCategories, type IndustrySelection } from "../lib/industrySelection";
+import { RECOMMENDED_SELECTION, selectedCategories, pruneToKnownCategories, type IndustrySelection } from "../lib/industrySelection";
 
 export const PATH_PREFS_QUERY_KEY = ["path", "preferences"] as const;
 
@@ -21,7 +21,7 @@ export function usePathPreferences() {
         .select("default_industries")
         .maybeSingle() as unknown as Promise<{ data: { default_industries: IndustrySelection } | null; error: { message: string } | null }>);
       if (error) throw error;
-      const saved = ((data?.default_industries ?? {}) as IndustrySelection);
+      const saved = pruneToKnownCategories((data?.default_industries ?? {}) as IndustrySelection);
       return selectedCategories(saved).length > 0 ? saved : RECOMMENDED_SELECTION;
     },
   });

@@ -37,6 +37,12 @@ describe("usePathPreferences", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(RECOMMENDED_SELECTION);
   });
+  it("prunes stale (post-migration) keys from the saved selection", async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { default_industries: { retail: ["x"], food_beverage: ["y"] } }, error: null });
+    const { result } = renderHook(() => usePathPreferences(), { wrapper: wrap(makeClient()) });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(Object.keys(result.current.data ?? {})).toEqual(["food_beverage"]);
+  });
   it("falls back to RECOMMENDED_SELECTION when default_industries is empty", async () => {
     maybeSingle.mockResolvedValueOnce({ data: { default_industries: {} }, error: null });
     const { result } = renderHook(() => usePathPreferences(), { wrapper: wrap(makeClient()) });
