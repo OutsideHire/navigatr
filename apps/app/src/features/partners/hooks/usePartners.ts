@@ -27,7 +27,7 @@ interface PartnerRow {
   next_followup_at: string | null;
   notes: string;
   // Nested via PostgREST embedded resource
-  partner_deals: Array<{ deal_id: string }> | null;
+  partner_deals: Array<{ deal_id: string; direction?: string }> | null;
 }
 
 function toPartner(row: PartnerRow): Partner {
@@ -42,7 +42,9 @@ function toPartner(row: PartnerRow): Partner {
     city: row.city ?? "",
     lastTouch: row.last_touch_at,
     nextFollowup: row.next_followup_at,
-    attributedDealIds: (row.partner_deals ?? []).map((pd) => pd.deal_id),
+    attributedDealIds: (row.partner_deals ?? [])
+      .filter((l) => l.direction !== "outbound")
+      .map((l) => l.deal_id),
     notes: row.notes,
   };
 }
@@ -61,7 +63,7 @@ export function usePartners() {
         .select(
           "id, name, company, type, status, phone, email, city, " +
             "last_touch_at, next_followup_at, notes, " +
-            "partner_deals(deal_id)",
+            "partner_deals(deal_id, direction)",
         )
         .order("updated_at", { ascending: false });
       if (error) throw error;
