@@ -378,6 +378,7 @@ export function PipelinePage() {
   const [searchInput, setSearchInput] = React.useState("");
   const debouncedSearch = useDebounced(searchInput, 300);
   const [sheetOpen, setSheetOpen] = React.useState(false);
+  const [addStage, setAddStage] = React.useState<DealStage | undefined>(undefined);
   const [searchParams, setSearchParams] = useSearchParams();
   const [viewMode, setViewMode] = usePersistedViewMode();
 
@@ -466,7 +467,7 @@ export function PipelinePage() {
                 the list view of the same filtered set so mobile + tablet
                 users always see SOMETHING after toggling. */}
             <div className="hidden lg:block">
-              <KanbanBoard deals={filtered} />
+              <KanbanBoard deals={filtered} onAddToStage={(s) => { setAddStage(s); setSheetOpen(true); }} />
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:hidden">
               {filtered.map((deal) => (
@@ -483,7 +484,7 @@ export function PipelinePage() {
         )}
       </div>
 
-      <AddDealSheet open={sheetOpen} onOpenChange={setSheetOpen} />
+      <AddDealSheet open={sheetOpen} onOpenChange={(o) => { setSheetOpen(o); if (!o) setAddStage(undefined); }} defaultStage={addStage} />
     </div>
   );
 }
