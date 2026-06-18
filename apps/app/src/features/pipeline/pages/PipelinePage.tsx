@@ -25,13 +25,11 @@ import * as React from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
-  ChevronDown,
   Columns,
   List,
   PackageOpen,
   Plus,
   Search,
-  SlidersHorizontal,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -41,7 +39,12 @@ import {
   Chip,
   FormField,
   Input,
+  Select,
 } from "@/components/navigatr";
+
+import { sortDeals, DEAL_SORT_LABEL, type DealSortKey } from "../lib/sortDeals";
+import { applyDealFilters, EMPTY_DEAL_FILTERS, type DealFilters } from "../lib/filterDeals";
+import { PipelineFilterPopover } from "../components/PipelineFilterPopover";
 
 import { useDeals } from "../hooks/useDeals";
 import {
@@ -194,6 +197,10 @@ function PageHeader({
   viewMode,
   onViewModeChange,
   subhead,
+  filters,
+  onFiltersChange,
+  sortKey,
+  onSortChange,
 }: {
   search: string;
   onSearchChange: (s: string) => void;
@@ -201,6 +208,10 @@ function PageHeader({
   viewMode: ViewMode;
   onViewModeChange: (m: ViewMode) => void;
   subhead: string;
+  filters: DealFilters;
+  onFiltersChange: (f: DealFilters) => void;
+  sortKey: DealSortKey;
+  onSortChange: (k: DealSortKey) => void;
 }) {
   // Profession-aware labels. Page title uses the capitalized form
   // (sentence-start); inline noun usage stays lowercase.
@@ -247,23 +258,13 @@ function PageHeader({
         <div className="hidden lg:block">
           <ViewToggle mode={viewMode} onChange={onViewModeChange} />
         </div>
-        <Button
-          variant="secondary"
-          size="md"
-          leadingIcon={SlidersHorizontal}
-          onClick={() => toast("Advanced filters land in Sprint 2")}
-        >
-          Filter
-        </Button>
-        <Button
-          variant="tertiary"
-          size="md"
-          trailingIcon={ChevronDown}
-          onClick={() => toast("Sort options land in Sprint 2")}
-        >
-          {/* TODO Sprint 2: real sort dropdown. */}
-          Sort: Last activity
-        </Button>
+        <PipelineFilterPopover filters={filters} onChange={onFiltersChange} />
+        <Select
+          aria-label="Sort deals"
+          value={sortKey}
+          onValueChange={(v) => onSortChange(v as DealSortKey)}
+          options={(Object.keys(DEAL_SORT_LABEL) as DealSortKey[]).map((k) => ({ value: k, label: `Sort: ${DEAL_SORT_LABEL[k]}` }))}
+        />
         <Button variant="primary" size="md" leadingIcon={Plus} onClick={onAddDeal}>
           Add {dealNoun}
         </Button>
@@ -385,6 +386,8 @@ export function PipelinePage() {
   const [addStage, setAddStage] = React.useState<DealStage | undefined>(undefined);
   const [searchParams, setSearchParams] = useSearchParams();
   const [viewMode, setViewMode] = usePersistedViewMode();
+  const [filters, setFilters] = React.useState<DealFilters>(EMPTY_DEAL_FILTERS);
+  const [sortKey, setSortKey] = React.useState<DealSortKey>("last_activity");
 
   // Deep-link: /pipeline?action=add auto-opens the Add Deal sheet. We
   // strip the param after opening so a back-nav doesn't re-fire it.
@@ -436,6 +439,11 @@ export function PipelinePage() {
     });
   }, [deals, stageFilter, debouncedSearch, ownerFilter]);
 
+  const visible = React.useMemo(
+    () => sortDeals(applyDealFilters(filtered, filters), sortKey),
+    [filtered, filters, sortKey],
+  );
+
   const headerKpis = React.useMemo(() => computeKpis(ownerFilter ? filtered : deals), [deals, filtered, ownerFilter]);
   const subhead = `${headerKpis.activeDeals} active deals · ${fmtMoneyShort(headerKpis.weighted)} weighted`;
 
@@ -466,6 +474,10 @@ export function PipelinePage() {
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           subhead={subhead}
+          filters={filters}
+          onFiltersChange={setFilters}
+          sortKey={sortKey}
+          onSortChange={setSortKey}
         />
 
         <KpiStrip deals={ownerFilter ? filtered : deals} filtered={Boolean(ownerFilter)} />
@@ -480,7 +492,7 @@ export function PipelinePage() {
 
         {isLoading ? (
           <LoadingList />
-        ) : filtered.length === 0 ? (
+        ) : visible.length === 0 ? (
           <EmptyState onAddDeal={onAddDeal} />
         ) : viewMode === "kanban" ? (
           <>
@@ -489,7 +501,7 @@ export function PipelinePage() {
                 users always see SOMETHING after toggling. */}
             <div className="hidden lg:block">
               <KanbanBoard
-                deals={filtered}
+                deals={visible}
                 onAddToStage={(s) => { setAddStage(s); setSheetOpen(true); }}
                 onDropDeal={(id, stage) => {
                   const dd = (deals ?? []).find((x) => x.id === id);
@@ -498,14 +510,14 @@ export function PipelinePage() {
               />
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:hidden">
-              {filtered.map((deal) => (
+              {visible.map((deal) => (
                 <DealCard key={deal.id} deal={deal} />
               ))}
             </div>
           </>
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {filtered.map((deal) => (
+            {visible.map((deal) => (
               <DealCard key={deal.id} deal={deal} />
             ))}
           </div>
