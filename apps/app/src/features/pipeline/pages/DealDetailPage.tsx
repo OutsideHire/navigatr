@@ -81,6 +81,7 @@ import { RelatedCard } from "../components/RelatedCard";
 import { QualificationTab } from "../components/QualificationTab";
 import { QualificationEditSheet } from "../components/QualificationEditSheet";
 import { SendReferralSheet } from "../components/SendReferralSheet";
+import { ContactsTab } from "../components/ContactsTab";
 
 // ───────────────────────────────────────────────────────────────────────
 // Not-found state
@@ -668,7 +669,7 @@ export function DealDetailPage() {
                 <ActivityList activities={activities} onEdit={setEditingActivity} />
               </Tabs.Content>
               <Tabs.Content value="contacts" className="mt-4 focus-visible:outline-none">
-                <PlaceholderTab title="Contacts" />
+                <ContactsTab deal={deal} />
               </Tabs.Content>
               <Tabs.Content value="qualification" className="mt-4 focus-visible:outline-none">
                 <QualificationTab deal={deal} onEdit={() => setQualOpen(true)} />
