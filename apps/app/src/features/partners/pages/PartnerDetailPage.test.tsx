@@ -20,6 +20,18 @@ import { DEALS_QUERY_KEY } from "@/features/pipeline/hooks/useDeals";
 import type { Partner } from "../mockData";
 import type { Deal } from "@/features/pipeline/mockData";
 
+// usePartner is the page's source for the partner. The old test relied
+// on useAuth resolving to undefined so usePartners stayed disabled and
+// returned the seeded PARTNERS_QUERY_KEY(undefined) cache. That's
+// fragile: giving useAuth a real user id would *enable* the query and
+// have it refetch (clobbering the seed). Instead we mock usePartner to
+// return the partner the test seeds for, deterministically — no
+// reliance on auth resolving to undefined.
+const partnerResult: { partner: Partner | undefined } = { partner: undefined };
+vi.mock("../hooks/usePartner", () => ({
+  usePartner: () => ({ partner: partnerResult.partner, isLoading: false, isError: false }),
+}));
+
 // Capturable spies for the mutation hooks. Each hook returns an object
 // with mutateAsync; we assert against these.
 const attributeMutate = vi.fn().mockResolvedValue(undefined);
@@ -80,6 +92,8 @@ function partner(args: {
 
 function renderPage(seed: { partners: Partner[]; deals: Deal[]; partnerId: string }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  // usePartner is mocked; point it at the seeded partner for this id.
+  partnerResult.partner = seed.partners.find((p) => p.id === seed.partnerId);
   client.setQueryData(PARTNERS_QUERY_KEY(undefined), seed.partners);
   client.setQueryData(DEALS_QUERY_KEY(undefined), seed.deals);
   return render(

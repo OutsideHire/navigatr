@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 import { ReferralSection } from "./ReferralSection";
@@ -82,6 +82,33 @@ describe("ReferralSection", () => {
     fireEvent.click(screen.getByRole("button", { name: /^attach/i }));
 
     expect(onAdd).toHaveBeenCalledWith(eligible[0].value);
+  });
+
+  it("keeps the picker open when onAdd rejects", async () => {
+    const onAdd = vi.fn().mockRejectedValue(new Error("nope"));
+    render(
+      <MemoryRouter>
+        <ReferralSection
+          title="Referred to them"
+          deals={[]}
+          eligibleOptions={[{ value: "d1", label: "Acme · $1" }]}
+          addLabel="Refer a deal"
+          onAdd={onAdd}
+          onRemove={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    // Open the add picker, select the option, confirm.
+    fireEvent.click(screen.getByRole("button", { name: /refer a deal/i }));
+    const combobox = screen.getByRole("combobox");
+    fireEvent.click(combobox);
+    fireEvent.click(screen.getByRole("option", { name: "Acme · $1" }));
+    fireEvent.click(screen.getByRole("button", { name: /^attach/i }));
+
+    await waitFor(() => expect(onAdd).toHaveBeenCalledWith("d1"));
+    // Picker (Select combobox) is still rendered after the rejection.
+    expect(screen.getByRole("combobox")).toBeInTheDocument();
   });
 
   it("clicking a deal row's remove button calls onRemove(deal.id)", () => {
