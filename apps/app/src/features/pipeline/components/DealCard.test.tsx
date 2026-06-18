@@ -63,4 +63,11 @@ describe("DealCard", () => {
     fireEvent.click(screen.getByRole("link", { name: /john@acme\.com/i }));
     expect(navigate).not.toHaveBeenCalled();
   });
+
+  it("clicking the call button does NOT navigate into the card", () => {
+    renderCard(deal({ id: "d-123", phone: "+15125550100" }));
+    // PhoneWithClickToCall renders a call button labelled "Call <formatted number>".
+    fireEvent.click(screen.getByRole("button", { name: /call/i }));
+    expect(navigate).not.toHaveBeenCalled();
+  });
 });
