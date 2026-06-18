@@ -10,11 +10,12 @@ describe("QuickActionsCard", () => {
     expect(screen.getByRole("button", { name: /schedule appointment/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /mark as lost/i })).toBeInTheDocument();
   });
-  it("disables the not-yet-built actions", () => {
+  it("disables actions with no integration (Send to CRM, Schedule appointment)", () => {
     render(<QuickActionsCard />);
     expect(screen.getByRole("button", { name: /send to crm/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /send as referral/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /schedule appointment/i })).toBeDisabled();
+    // Send as referral / Mark as lost are disabled only when no handler is passed:
+    expect(screen.getByRole("button", { name: /send as referral/i })).toBeDisabled();
   });
   it("disables Mark as lost when no handler is provided", () => {
     render(<QuickActionsCard />);
