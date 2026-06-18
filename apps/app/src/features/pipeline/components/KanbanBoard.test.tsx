@@ -1,95 +1,78 @@
-// Tests the kanban grouping: every deal lands in its stage column, the
-// total-value-per-column math is right, and empty columns render their
-// placeholder. The pipeline is the canonical "scan and act" surface for
-// reps — wrong bucketing here would silently put real money in the wrong
-// pile.
-
-import { describe, it, expect } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+// Kanban grouping + redesigned card. 5 active columns (no Lost), each card shows
+// company + value + a probability bar, and a "+ Add to {stage}" footer button.
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, within, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { KanbanBoard } from "./KanbanBoard";
 import type { Deal } from "../mockData";
 
 function deal(id: string, stage: Deal["stage"], valueCents: number, company = `Co-${id}`): Deal {
   return {
-    id,
-    companyName: company,
-    contactName: "X",
-    phone: "+12025550100",
-    email: "x@x.x",
-    valueCents,
-    stage,
-    probability: 50,
-    lastActivity: "2026-05-18T12:00:00Z",
-    nextFollowup: null,
-    address: null,
-    employeeCountRange: "1-10",
-    leadSource: "",
-    updatedAt: "2026-05-18T12:00:00Z",
-    owner_id: null,
-    lostReasonCategory: null,
-    lostReasonNotes: null,
+    id, companyName: company, contactName: "X", phone: "+12025550100", email: "x@x.x",
+    valueCents, stage, probability: 50, lastActivity: "2026-05-18T12:00:00Z", nextFollowup: null,
+    address: null, employeeCountRange: "1-10", leadSource: "", updatedAt: "2026-05-18T12:00:00Z",
+    owner_id: null, lostReasonCategory: null, lostReasonNotes: null,
   };
 }
 
-function renderBoard(deals: Deal[]) {
-  return render(
-    <MemoryRouter>
-      <KanbanBoard deals={deals} />
-    </MemoryRouter>,
-  );
+function renderBoard(deals: Deal[], onAddToStage?: (s: Deal["stage"]) => void) {
+  return render(<MemoryRouter><KanbanBoard deals={deals} onAddToStage={onAddToStage} /></MemoryRouter>);
 }
 
 describe("KanbanBoard", () => {
-  it("renders all 5 stage columns, even when some have no deals", () => {
+  it("renders the 5 active stage columns and NOT a Lost column", () => {
     renderBoard([deal("a", "new", 100_00)]);
     for (const label of ["New", "Contacted", "Qualified", "Proposal", "Won"]) {
       expect(screen.getByLabelText(`${label} stage`)).toBeInTheDocument();
     }
+    expect(screen.queryByLabelText("Lost stage")).toBeNull();
   });
 
   it("buckets each deal into the correct stage column", () => {
     renderBoard([
-      deal("a", "new",       100_00, "Acme"),
+      deal("a", "new", 100_00, "Acme"),
       deal("b", "qualified", 200_00, "Beta"),
-      deal("c", "won",       300_00, "Gamma"),
+      deal("c", "won", 300_00, "Gamma"),
     ]);
-    const newCol = screen.getByLabelText("New stage");
-    const qualifiedCol = screen.getByLabelText("Qualified stage");
-    const wonCol = screen.getByLabelText("Won stage");
-
-    expect(within(newCol).getByText("Acme")).toBeInTheDocument();
-    expect(within(qualifiedCol).getByText("Beta")).toBeInTheDocument();
-    expect(within(wonCol).getByText("Gamma")).toBeInTheDocument();
-
-    // Cross-bucket check — Acme should NOT appear in any column other
-    // than New.
-    expect(within(qualifiedCol).queryByText("Acme")).toBeNull();
-    expect(within(wonCol).queryByText("Acme")).toBeNull();
+    expect(within(screen.getByLabelText("New stage")).getByText("Acme")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Qualified stage")).getByText("Beta")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Won stage")).getByText("Gamma")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Qualified stage")).queryByText("Acme")).toBeNull();
   });
 
-  it("sums each column's total in tabular figures", () => {
-    renderBoard([
-      deal("a", "new", 5_00),    // $5
-      deal("b", "new", 10_00),   // $10 — sum to $15, formatMoney rounds to "$15"
-    ]);
+  it("shows each column's count and total", () => {
+    renderBoard([deal("a", "new", 5_00), deal("b", "new", 10_00)]);
     const newCol = screen.getByLabelText("New stage");
-    // formatMoney formats $15 (cents 1500/100) as "$15"
-    expect(within(newCol).getByText("$15")).toBeInTheDocument();
+    expect(within(newCol).getByText(/\$15/)).toBeInTheDocument();
+    expect(within(newCol).getByText(/^2 ·/)).toBeInTheDocument();
   });
 
-  it("renders 'No deals' placeholder in an empty column", () => {
+  it("renders a probability bar on each card", () => {
     renderBoard([deal("a", "new", 100_00)]);
-    const wonCol = screen.getByLabelText("Won stage");
-    expect(within(wonCol).getByText(/no deals/i)).toBeInTheDocument();
+    const newCol = screen.getByLabelText("New stage");
+    const bar = within(newCol).getByRole("progressbar");
+    expect(bar).toHaveAttribute("aria-valuenow", "50");
   });
 
-  it("each deal card is a button (clickable to drill into detail)", () => {
+  it("renders 'No deals' in an empty column", () => {
+    renderBoard([deal("a", "new", 100_00)]);
+    expect(within(screen.getByLabelText("Won stage")).getByText(/no deals/i)).toBeInTheDocument();
+  });
+
+  it("each deal card is a clickable button", () => {
     renderBoard([deal("a", "new", 100_00, "Acme")]);
-    const newCol = screen.getByLabelText("New stage");
-    // Find the card by company name then walk to the closest button.
-    const acme = within(newCol).getByText("Acme");
-    const btn = acme.closest("button");
-    expect(btn).not.toBeNull();
+    expect(within(screen.getByLabelText("New stage")).getByText("Acme").closest("button")).not.toBeNull();
+  });
+
+  it("'+ Add to {stage}' calls onAddToStage with that stage", () => {
+    const onAdd = vi.fn();
+    renderBoard([deal("a", "new", 100_00)], onAdd);
+    fireEvent.click(within(screen.getByLabelText("Qualified stage")).getByRole("button", { name: /add to qualified/i }));
+    expect(onAdd).toHaveBeenCalledWith("qualified");
+  });
+
+  it("omits the add button when onAddToStage is not provided", () => {
+    renderBoard([deal("a", "new", 100_00)]);
+    expect(screen.queryByRole("button", { name: /add to/i })).toBeNull();
   });
 });
