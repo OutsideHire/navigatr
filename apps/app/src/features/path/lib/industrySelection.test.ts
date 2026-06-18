@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   RECOMMENDED_SELECTION, allSubtypes, selectedCategories, subtypeCount,
-  isFullySelected, matchesSelection, humanizeSubtype, type IndustrySelection,
+  isFullySelected, matchesSelection, humanizeSubtype, pruneToKnownCategories,
+  type IndustrySelection,
 } from "./industrySelection";
 
 describe("industrySelection", () => {
@@ -48,5 +49,19 @@ describe("industrySelection", () => {
   it("humanizeSubtype turns a raw type into a label", () => {
     expect(humanizeSubtype("car_repair")).toBe("Car repair");
     expect(humanizeSubtype("fast_food_restaurant")).toBe("Fast food restaurant");
+  });
+
+  it("selectedCategories excludes stale (non-taxonomy) keys", () => {
+    const sel = { retail: ["x"], food_beverage: ["y"] } as IndustrySelection;
+    expect(selectedCategories(sel)).toEqual(["food_beverage"]);
+  });
+
+  it("pruneToKnownCategories drops stale keys, preserves known ones", () => {
+    const sel = { retail: ["x"], food_beverage: ["y"] } as IndustrySelection;
+    expect(pruneToKnownCategories(sel)).toEqual({ food_beverage: ["y"] });
+  });
+
+  it("pruneToKnownCategories on empty selection returns {}", () => {
+    expect(pruneToKnownCategories({})).toEqual({});
   });
 });
