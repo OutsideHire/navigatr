@@ -42,6 +42,8 @@ export interface Partner {
   nextFollowup: string | null;
   /** Deal ids in MOCK_DEALS this partner referred. */
   attributedDealIds: string[];
+  /** Deal ids in MOCK_DEALS we referred TO this partner (outbound). */
+  outboundDealIds: string[];
   notes: string;
 }
 
@@ -84,6 +86,7 @@ function partner(
     lastTouch: lastTouchDays === null ? null : isoDaysAgo(lastTouchDays),
     nextFollowup: nextFollowupDays === null ? null : isoDaysAhead(nextFollowupDays),
     attributedDealIds,
+    outboundDealIds: [],
     notes,
   };
 }

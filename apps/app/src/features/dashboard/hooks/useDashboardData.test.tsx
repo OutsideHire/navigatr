@@ -74,7 +74,7 @@ function partner(id: string, name: string, dealIds: string[] = []): Partner {
     id, name, company: `${name} & Co`, type: "cpa", status: "active",
     phone: "+12025550100", email: `${id}@x.x`, city: "",
     lastTouch: null, nextFollowup: null,
-    attributedDealIds: dealIds, notes: "",
+    attributedDealIds: dealIds, outboundDealIds: [], notes: "",
   };
 }
 

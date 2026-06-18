@@ -76,11 +76,44 @@ describe("usePartners", () => {
         lastTouch: "2026-05-17T00:00:00Z",
         nextFollowup: "2026-05-22T00:00:00Z",
         attributedDealIds: ["d-206", "d-301"],
+        outboundDealIds: ["d-999"],
         notes: "Best CPA in network",
       },
     ]);
     // Outbound links are excluded from attribution (inbound-only).
     expect(result.current.data?.[0].attributedDealIds).not.toContain("d-999");
+  });
+
+  it("splits partner_deals into inbound attribution and outbound referrals", async () => {
+    orderMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: "p-3",
+          name: "Split",
+          company: "Split Co",
+          type: "cpa",
+          status: "active",
+          phone: null,
+          email: null,
+          city: null,
+          last_touch_at: null,
+          next_followup_at: null,
+          notes: "",
+          partner_deals: [
+            { deal_id: "in1", direction: "inbound" },
+            { deal_id: "out1", direction: "outbound" },
+            // No direction → treated as inbound.
+            { deal_id: "in2" },
+          ],
+        },
+      ],
+      error: null,
+    });
+
+    const { result } = renderHook(() => usePartners(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0].attributedDealIds).toEqual(["in1", "in2"]);
+    expect(result.current.data?.[0].outboundDealIds).toEqual(["out1"]);
   });
 
   it("partner with no attributed deals produces empty attributedDealIds (not undefined)", async () => {

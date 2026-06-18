@@ -31,6 +31,7 @@ interface PartnerRow {
 }
 
 function toPartner(row: PartnerRow): Partner {
+  const links = row.partner_deals ?? [];
   return {
     id: row.id,
     name: row.name,
@@ -42,8 +43,11 @@ function toPartner(row: PartnerRow): Partner {
     city: row.city ?? "",
     lastTouch: row.last_touch_at,
     nextFollowup: row.next_followup_at,
-    attributedDealIds: (row.partner_deals ?? [])
+    attributedDealIds: links
       .filter((l) => l.direction !== "outbound")
+      .map((l) => l.deal_id),
+    outboundDealIds: links
+      .filter((l) => l.direction === "outbound")
       .map((l) => l.deal_id),
     notes: row.notes,
   };

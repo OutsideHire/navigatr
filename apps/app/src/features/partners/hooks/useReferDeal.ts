@@ -50,8 +50,8 @@ export function useReferDeal() {
     onSuccess: () => {
       // The partners query embeds partner_deals(deal_id); invalidating
       // it refetches the full list (and rebuilds each partner's
-      // attributedDealIds). The deals list isn't touched — deal rows
-      // don't carry attribution.
+      // attributedDealIds and outboundDealIds). The deals list isn't
+      // touched — deal rows don't carry attribution.
       void queryClient.invalidateQueries({ queryKey: PARTNERS_QUERY_KEY(userId) });
     },
   });
