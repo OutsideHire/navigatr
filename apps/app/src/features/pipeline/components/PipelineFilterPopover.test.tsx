@@ -34,4 +34,18 @@ describe("PipelineFilterPopover", () => {
     fireEvent.click(screen.getByRole("button", { name: /clear/i }));
     expect(onChange).toHaveBeenCalledWith(EMPTY_DEAL_FILTERS);
   });
+  it("min value: typing a dollar amount calls onChange with correct cents", () => {
+    const onChange = vi.fn();
+    render(<PipelineFilterPopover filters={EMPTY_DEAL_FILTERS} onChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: /filter/i }));
+    fireEvent.change(screen.getByRole("spinbutton"), { target: { value: "500" } });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ minValueCents: 50000 }));
+  });
+  it("min value: clearing the input sets minValueCents to null", () => {
+    const onChange = vi.fn();
+    render(<PipelineFilterPopover filters={{ ...EMPTY_DEAL_FILTERS, minValueCents: 50000 }} onChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: /filter/i }));
+    fireEvent.change(screen.getByRole("spinbutton"), { target: { value: "" } });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ minValueCents: null }));
+  });
 });

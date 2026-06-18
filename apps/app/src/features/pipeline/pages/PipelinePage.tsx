@@ -259,12 +259,14 @@ function PageHeader({
           <ViewToggle mode={viewMode} onChange={onViewModeChange} />
         </div>
         <PipelineFilterPopover filters={filters} onChange={onFiltersChange} />
-        <Select
-          aria-label="Sort deals"
-          value={sortKey}
-          onValueChange={(v) => onSortChange(v as DealSortKey)}
-          options={(Object.keys(DEAL_SORT_LABEL) as DealSortKey[]).map((k) => ({ value: k, label: `Sort: ${DEAL_SORT_LABEL[k]}` }))}
-        />
+        <FormField htmlFor="pipeline-sort" label="Sort deals" showLabel={false}>
+          <Select
+            id="pipeline-sort"
+            value={sortKey}
+            onValueChange={(v) => onSortChange(v as DealSortKey)}
+            options={(Object.keys(DEAL_SORT_LABEL) as DealSortKey[]).map((k) => ({ value: k, label: `Sort: ${DEAL_SORT_LABEL[k]}` }))}
+          />
+        </FormField>
         <Button variant="primary" size="md" leadingIcon={Plus} onClick={onAddDeal}>
           Add {dealNoun}
         </Button>
