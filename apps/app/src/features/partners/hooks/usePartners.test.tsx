@@ -49,7 +49,13 @@ describe("usePartners", () => {
           last_touch_at: "2026-05-17T00:00:00Z",
           next_followup_at: "2026-05-22T00:00:00Z",
           notes: "Best CPA in network",
-          partner_deals: [{ deal_id: "d-206" }, { deal_id: "d-301" }],
+          partner_deals: [
+            { deal_id: "d-206", direction: "inbound" },
+            { deal_id: "d-301", direction: "inbound" },
+            // Outbound link (we referred a deal TO this partner) must be
+            // excluded from attribution.
+            { deal_id: "d-999", direction: "outbound" },
+          ],
         },
       ],
       error: null,
@@ -73,6 +79,8 @@ describe("usePartners", () => {
         notes: "Best CPA in network",
       },
     ]);
+    // Outbound links are excluded from attribution (inbound-only).
+    expect(result.current.data?.[0].attributedDealIds).not.toContain("d-999");
   });
 
   it("partner with no attributed deals produces empty attributedDealIds (not undefined)", async () => {
