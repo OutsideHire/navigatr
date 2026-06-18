@@ -47,19 +47,19 @@ import {
   type Partner,
 } from "../mockData";
 import {
-  STAGE_BADGE_KIND,
-  STAGE_LABEL,
   formatMoney,
   type Deal,
 } from "@/features/pipeline/mockData";
 import { usePartner } from "../hooks/usePartner";
 import { useAttributeDeal, useUnattributeDeal } from "../hooks/useAttributeDeal";
+import { useReferDeal } from "../hooks/useReferDeal";
 import { useUpdatePartner } from "../hooks/useUpdatePartner";
 import { usePartnerActivities, type PartnerTouch, type PartnerTouchType } from "../hooks/usePartnerActivities";
 import { useLogPartnerTouch } from "../hooks/useLogPartnerTouch";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
-import { Loader2, X, Check, MessageSquare } from "lucide-react";
+import { Loader2, Check, MessageSquare } from "lucide-react";
 import { Select, type SelectOption, Textarea } from "@/components/navigatr";
+import { ReferralSection } from "../components/ReferralSection";
 import { type PartnerStatus } from "../mockData";
 
 // ── Not found ──────────────────────────────────────────────────────
@@ -331,151 +331,6 @@ function NotesCard({ partner }: { partner: Partner }) {
   );
 }
 
-function ReferralsCard({
-  partnerId,
-  attributedDeals,
-  allDeals,
-}: {
-  partnerId: string;
-  attributedDeals: Deal[];
-  allDeals: Deal[];
-}) {
-  const navigate = useNavigate();
-  const attribute = useAttributeDeal();
-  const unattribute = useUnattributeDeal();
-  const [picking, setPicking] = React.useState(false);
-  const [pickedDealId, setPickedDealId] = React.useState<string>("");
-
-  // Eligible = every deal in the org that isn't already attributed to
-  // THIS partner. (A deal can be attributed to multiple partners — the
-  // link table allows it — so we only filter against this partner's set.)
-  const attributedIds = React.useMemo(
-    () => new Set(attributedDeals.map((d) => d.id)),
-    [attributedDeals],
-  );
-  const eligibleOptions = React.useMemo<SelectOption[]>(
-    () =>
-      allDeals
-        .filter((d) => !attributedIds.has(d.id))
-        .map((d) => ({ value: d.id, label: `${d.companyName} · ${formatMoney(d.valueCents)}` })),
-    [allDeals, attributedIds],
-  );
-
-  const handleAttach = async () => {
-    if (!pickedDealId) return;
-    try {
-      await attribute.mutateAsync({ partnerId, dealId: pickedDealId });
-      toast.success("Deal attributed");
-      setPicking(false);
-      setPickedDealId("");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not attribute deal");
-    }
-  };
-
-  const handleUnlink = async (dealId: string) => {
-    try {
-      await unattribute.mutateAsync({ partnerId, dealId });
-      toast.success("Attribution removed");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not remove attribution");
-    }
-  };
-
-  return (
-    <Card padding="md">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-body-strong text-text-default">Referrals · {attributedDeals.length}</h2>
-        {!picking && eligibleOptions.length > 0 && (
-          <Button variant="tertiary" size="sm" leadingIcon={Plus} onClick={() => setPicking(true)}>
-            Attach deal
-          </Button>
-        )}
-      </div>
-
-      {picking && (
-        <div className="mb-3 flex items-end gap-2 rounded-radius-md border border-border-subtle bg-surface-sunken p-3">
-          <div className="min-w-0 flex-1">
-            <label className="mb-1 block text-caption text-text-muted" htmlFor={`attach-deal-${partnerId}`}>
-              Attach a deal to this partner
-            </label>
-            <Select
-              id={`attach-deal-${partnerId}`}
-              value={pickedDealId}
-              onValueChange={setPickedDealId}
-              options={eligibleOptions}
-              placeholder="Pick a deal…"
-            />
-          </div>
-          <Button
-            variant="primary"
-            size="md"
-            onClick={handleAttach}
-            disabled={!pickedDealId || attribute.isPending}
-          >
-            {attribute.isPending ? "Attaching…" : "Attach"}
-          </Button>
-          <Button
-            variant="tertiary"
-            size="md"
-            onClick={() => { setPicking(false); setPickedDealId(""); }}
-          >
-            Cancel
-          </Button>
-        </div>
-      )}
-
-      {attributedDeals.length === 0 ? (
-        <p className="text-body-md text-text-muted">
-          No deals attributed yet.
-          {eligibleOptions.length > 0 && !picking && " Click “Attach deal” to link one."}
-        </p>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {attributedDeals.map((d) => (
-            <div
-              key={d.id}
-              className={cn(
-                "flex items-center justify-between gap-3 rounded-radius-md border border-border-subtle bg-surface-default p-3",
-                "focus-within:ring-2 focus-within:ring-brand-primary focus-within:ring-offset-2 focus-within:ring-offset-surface-canvas",
-              )}
-            >
-              <button
-                type="button"
-                onClick={() => navigate(`/pipeline/${d.id}`)}
-                className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left transition-colors hover:opacity-80 focus-visible:outline-none"
-              >
-                <div className="flex min-w-0 flex-col">
-                  <p className="truncate text-body-strong text-text-default">{d.companyName}</p>
-                  <p className="truncate text-caption text-text-muted">{d.contactName}</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <span className="text-body-strong tabular-nums text-text-default">{formatMoney(d.valueCents)}</span>
-                  <Badge kind={STAGE_BADGE_KIND[d.stage]}>{STAGE_LABEL[d.stage]}</Badge>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleUnlink(d.id)}
-                disabled={unattribute.isPending}
-                aria-label={`Remove attribution for ${d.companyName}`}
-                className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-radius-md text-text-subtle",
-                  "transition-colors hover:bg-status-danger-bg hover:text-status-danger",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-danger",
-                  "disabled:cursor-not-allowed disabled:opacity-50",
-                )}
-              >
-                <X className="h-4 w-4" aria-hidden />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </Card>
-  );
-}
-
 // ── Touch timeline (with inline log-touch form) ──────────────────
 
 const TOUCH_TYPE_OPTIONS: SelectOption[] = [
@@ -704,6 +559,12 @@ export function PartnerDetailPage() {
   const { partner, isLoading } = usePartner(partnerId);
   const { data: allDeals = [] } = useDeals();
 
+  // Referral mutations owned at the page level; ReferralSection stays
+  // data-agnostic and the parent supplies onAdd/onRemove + toasts.
+  const attribute = useAttributeDeal();
+  const referDeal = useReferDeal();
+  const unattribute = useUnattributeDeal();
+
   // HeroCard's "Log touch" button toggles this; TouchTimelineCard reads
   // it. When the form opens, we also scroll the timeline card into view
   // so the form is visible without the user hunting for it.
@@ -718,15 +579,32 @@ export function PartnerDetailPage() {
     });
   }, []);
 
-  const deals = React.useMemo<Deal[]>(() => {
+  const inboundDeals = React.useMemo<Deal[]>(() => {
     if (!partner) return [];
     const byId = new Map(allDeals.map((d) => [d.id, d]));
     return partner.attributedDealIds.map((id) => byId.get(id)).filter(Boolean) as Deal[];
   }, [partner, allDeals]);
+  const outboundDeals = React.useMemo<Deal[]>(() => {
+    if (!partner) return [];
+    const byId = new Map(allDeals.map((d) => [d.id, d]));
+    return partner.outboundDealIds.map((id) => byId.get(id)).filter(Boolean) as Deal[];
+  }, [partner, allDeals]);
+  const linkedIds = React.useMemo(
+    () => new Set([...(partner?.attributedDealIds ?? []), ...(partner?.outboundDealIds ?? [])]),
+    [partner],
+  );
+  const eligibleOptions = React.useMemo(
+    () =>
+      allDeals
+        .filter((d) => !linkedIds.has(d.id))
+        .map((d) => ({ value: d.id, label: `${d.companyName} · ${formatMoney(d.valueCents)}` })),
+    [allDeals, linkedIds],
+  );
 
+  // KPIs stay inbound-only.
   const totalRevenue = React.useMemo(
-    () => deals.reduce((sum, d) => sum + d.valueCents, 0),
-    [deals],
+    () => inboundDeals.reduce((sum, d) => sum + d.valueCents, 0),
+    [inboundDeals],
   );
 
   if (isLoading) {
@@ -755,7 +633,7 @@ export function PartnerDetailPage() {
       <div className="flex flex-col gap-4 lg:gap-6">
         <HeroCard
           partner={partner}
-          dealCount={deals.length}
+          dealCount={inboundDeals.length}
           totalRevenue={totalRevenue}
           onLogTouch={openLogTouch}
         />
@@ -767,7 +645,56 @@ export function PartnerDetailPage() {
           open={logTouchOpen}
           onOpenChange={setLogTouchOpen}
         />
-        <ReferralsCard partnerId={partner.id} attributedDeals={deals} allDeals={allDeals} />
+        <ReferralSection
+          title="Referred to us"
+          deals={inboundDeals}
+          eligibleOptions={eligibleOptions}
+          addLabel="Attach deal"
+          emptyText="No deals attributed yet."
+          onAdd={async (dealId) => {
+            try {
+              await attribute.mutateAsync({ partnerId: partner.id, dealId });
+              toast.success("Deal attributed");
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Could not attribute deal");
+              throw err;
+            }
+          }}
+          onRemove={async (dealId) => {
+            try {
+              await unattribute.mutateAsync({ partnerId: partner.id, dealId });
+              toast.success("Attribution removed");
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Could not remove attribution");
+              throw err;
+            }
+          }}
+        />
+        <ReferralSection
+          title="Referred to them"
+          deals={outboundDeals}
+          eligibleOptions={eligibleOptions}
+          addLabel="Refer a deal"
+          emptyText="No deals referred to this partner yet."
+          onAdd={async (dealId) => {
+            try {
+              await referDeal.mutateAsync({ partnerId: partner.id, dealId });
+              toast.success("Deal referred");
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Could not refer deal");
+              throw err;
+            }
+          }}
+          onRemove={async (dealId) => {
+            try {
+              await unattribute.mutateAsync({ partnerId: partner.id, dealId });
+              toast.success("Referral removed");
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Could not remove referral");
+              throw err;
+            }
+          }}
+        />
       </div>
     </div>
   );
