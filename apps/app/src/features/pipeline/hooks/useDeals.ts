@@ -38,6 +38,7 @@ interface DealRow {
   owner_id: string | null;
   lost_reason_category: LostReasonCategory | null;
   lost_reason_notes: string | null;
+  profession_data?: Record<string, unknown> | null;
 }
 
 /**
@@ -70,6 +71,7 @@ function toDeal(row: DealRow): Deal {
     owner_id: row.owner_id,
     lostReasonCategory: row.lost_reason_category,
     lostReasonNotes: row.lost_reason_notes,
+    professionData: row.profession_data ?? null,
   };
 }
 
@@ -88,7 +90,8 @@ export function useDeals() {
           "id, company_name, contact_name, contact_phone, contact_email, " +
             "value_cents, stage, probability, last_activity_at, " +
             "next_followup_at, address, employee_count_range, lead_source, " +
-            "updated_at, owner_id, lost_reason_category, lost_reason_notes",
+            "updated_at, owner_id, lost_reason_category, lost_reason_notes, " +
+            "profession_data",
         )
         .order("updated_at", { ascending: false });
       if (error) throw error;

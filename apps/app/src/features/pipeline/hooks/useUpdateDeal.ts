@@ -42,6 +42,7 @@ export interface UpdateDealInput {
     nextFollowupAt?: string | null;
     lostReasonCategory?: LostReasonCategory | null;
     lostReasonNotes?: string | null;
+    professionData?: Record<string, unknown>;
   };
 }
 
@@ -67,6 +68,7 @@ function toSnakeCase(patch: UpdateDealInput["patch"]): Record<string, unknown> {
   // Send even when value is null so we can clear the columns.
   if ("lostReasonCategory" in patch)          out.lost_reason_category = patch.lostReasonCategory;
   if ("lostReasonNotes" in patch)             out.lost_reason_notes = patch.lostReasonNotes;
+  if (patch.professionData !== undefined)     out.profession_data = patch.professionData;
   return out;
 }
 

@@ -146,6 +146,22 @@ describe("useUpdateDeal", () => {
     });
   });
 
+  it("maps professionData to the profession_data JSONB column", async () => {
+    eqMock.mockResolvedValueOnce({ error: null });
+    const { result } = renderHook(() => useUpdateDeal(), {
+      wrapper: makeWrapper(new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })),
+    });
+    await result.current.mutateAsync({
+      id: "deal-1",
+      patch: { professionData: { profession: "merchant_services", annualVolume: 500000 } },
+    });
+    expect(updateMock).toHaveBeenCalledWith({
+      profession_data: { profession: "merchant_services", annualVolume: 500000 },
+    });
+  });
+
   it("surfaces RLS denial (rep editing a deal they don't own)", async () => {
     eqMock.mockResolvedValueOnce({
       error: { message: "permission denied for table deals" },

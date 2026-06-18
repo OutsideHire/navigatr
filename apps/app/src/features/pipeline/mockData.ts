@@ -76,6 +76,9 @@ export interface Deal {
   /** Freeform deal notes. Stage-transition lines are prepended here when a
    *  rep moves the deal to a non-lost stage (FR-PIPE-07). DB column exists. */
   notes?: string;
+  /** Profession-specific qualification payload (FR-PIPE-08). Read defensively
+   *  via lib/merchantQualification. JSONB column; null for older rows. */
+  professionData?: Record<string, unknown> | null;
 }
 
 // Static "today" so subsequent renders don't shift cards' relative dates.
