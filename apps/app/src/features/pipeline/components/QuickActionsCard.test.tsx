@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { QuickActionsCard } from "./QuickActionsCard";
 
 describe("QuickActionsCard", () => {
@@ -19,5 +19,22 @@ describe("QuickActionsCard", () => {
   it("disables Mark as lost when no handler is provided", () => {
     render(<QuickActionsCard />);
     expect(screen.getByRole("button", { name: /mark as lost/i })).toBeDisabled();
+  });
+  it("enables Mark as lost and fires the handler when provided", () => {
+    const onMarkLost = vi.fn();
+    render(<QuickActionsCard onMarkLost={onMarkLost} />);
+    const btn = screen.getByRole("button", { name: /mark as lost/i });
+    expect(btn).not.toBeDisabled();
+    fireEvent.click(btn);
+    expect(onMarkLost).toHaveBeenCalledTimes(1);
+  });
+
+  it("enables Send as referral and fires the handler when provided", () => {
+    const onSendReferral = vi.fn();
+    render(<QuickActionsCard onSendReferral={onSendReferral} />);
+    const btn = screen.getByRole("button", { name: /send as referral/i });
+    expect(btn).not.toBeDisabled();
+    fireEvent.click(btn);
+    expect(onSendReferral).toHaveBeenCalledTimes(1);
   });
 });

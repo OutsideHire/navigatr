@@ -14,6 +14,9 @@ interface QuickAction {
   label: string;
   onClick?: () => void;
   danger?: boolean;
+  /** Tooltip shown while the action is disabled. Omit when disabled is
+   *  merely an un-wired handler (no explanatory tooltip wanted). */
+  disabledTitle?: string;
 }
 
 function ActionButton({ action }: { action: QuickAction }) {
@@ -23,7 +26,7 @@ function ActionButton({ action }: { action: QuickAction }) {
       type="button"
       disabled={disabled}
       aria-disabled={disabled}
-      title={disabled ? "Coming soon" : undefined}
+      title={disabled ? action.disabledTitle : undefined}
       onClick={action.onClick}
       className={cn(
         "w-full rounded-radius-md border border-border-default px-3 py-2 text-body-sm font-medium",
@@ -48,9 +51,9 @@ export function QuickActionsCard({
   onMarkLost?: () => void;
 }) {
   const actions: QuickAction[] = [
-    { label: "Send to CRM" },
-    { label: "Send as referral", onClick: onSendReferral },
-    { label: "Schedule appointment" },
+    { label: "Send to CRM", disabledTitle: "Coming soon" },
+    { label: "Send as referral", onClick: onSendReferral, disabledTitle: "Coming soon" },
+    { label: "Schedule appointment", disabledTitle: "Coming soon" },
     { label: "Mark as lost", onClick: onMarkLost, danger: true },
   ];
   return (
