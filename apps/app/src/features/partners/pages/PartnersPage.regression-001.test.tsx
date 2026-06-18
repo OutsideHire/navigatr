@@ -62,6 +62,7 @@ function partner(args: {
     lastTouch: null,
     nextFollowup: null,
     attributedDealIds: args.attributedDealIds ?? [],
+    outboundDealIds: [],
     notes: "",
   };
 }
