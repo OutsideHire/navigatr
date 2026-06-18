@@ -88,9 +88,9 @@ export function useDeleteDealFile() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, path }: { id: string; dealId: string; path: string }) => {
-      await removeDealFile(path);
       const { error } = await supabase.from("deal_files").delete().eq("id", id);
       if (error) throw error;
+      await removeDealFile(path);
     },
     onSuccess: (_r, v) => {
       void qc.invalidateQueries({ queryKey: DEAL_FILES_KEY(v.dealId) });

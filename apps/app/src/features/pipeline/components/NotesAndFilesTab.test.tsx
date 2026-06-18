@@ -14,17 +14,22 @@ import { toast } from "sonner";
 let notesData: any[] = [];
 let filesData: any[] = [];
 const createNote = vi.fn().mockResolvedValue({ id: "n1" });
+const deleteNote = vi.fn().mockResolvedValue(undefined);
 const uploadFile = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../hooks/useDealNotes", () => ({
   useDealNotes: () => ({ data: notesData, isLoading: false }),
   useCreateDealNote: () => ({ mutateAsync: createNote, isPending: false }),
-  useDeleteDealNote: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteDealNote: () => ({ mutateAsync: deleteNote, isPending: false }),
 }));
 vi.mock("../hooks/useDealFiles", () => ({
   useDealFiles: () => ({ data: filesData, isLoading: false }),
   useUploadDealFile: () => ({ mutateAsync: uploadFile, isPending: false }),
   useDeleteDealFile: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+vi.mock("@/stores/auth", () => ({
+  useAuth: (selector: (s: { user: { id: string } | null }) => unknown) =>
+    selector({ user: { id: "u1" } }),
 }));
 vi.mock("../lib/dealFileStorage", () => ({ signedUrlFor: vi.fn().mockResolvedValue("https://signed") }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
@@ -79,6 +84,14 @@ describe("NotesAndFilesTab", () => {
     ];
     renderTab();
     expect(screen.getByText("contract.pdf")).toBeInTheDocument();
+  });
+
+  it("cancelling the confirm does not delete the note", () => {
+    notesData = [{ id: "n1", dealId: deal.id, body: "Called back", createdBy: "u1", createdAt: new Date().toISOString() }];
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderTab();
+    fireEvent.click(screen.getByRole("button", { name: /delete note/i }));
+    expect(deleteNote).not.toHaveBeenCalled();
   });
 
   it("(d) selecting an oversize file rejects: toast.error fires, uploadFile is NOT called", () => {

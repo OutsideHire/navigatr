@@ -15,6 +15,7 @@ import { Download, Plus, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button, Card, NotesFieldWithMic } from "@/components/navigatr";
+import { useAuth } from "@/stores/auth";
 import { formatShortDate, type Deal } from "../mockData";
 import {
   useDealNotes,
@@ -52,6 +53,8 @@ function NotesSection({ deal }: { deal: Deal }) {
   const { data, isLoading } = useDealNotes(deal.id);
   const createNote = useCreateDealNote();
   const deleteNote = useDeleteDealNote();
+  const userId = useAuth((s) => s.user?.id);
+  const authorLabel = (id: string) => (id === userId ? "You" : "Teammate");
   const [body, setBody] = useState("");
 
   const notes = data ?? [];
@@ -124,7 +127,7 @@ function NotesSection({ deal }: { deal: Deal }) {
                   />
                 </div>
                 <div className="flex items-center gap-2 text-caption text-text-muted">
-                  <span>{note.createdBy}</span>
+                  <span>{authorLabel(note.createdBy)}</span>
                   <span aria-hidden>·</span>
                   <span>{formatShortDate(note.createdAt)}</span>
                 </div>
@@ -141,6 +144,8 @@ function FilesSection({ deal }: { deal: Deal }) {
   const { data, isLoading } = useDealFiles(deal.id);
   const uploadFile = useUploadDealFile();
   const deleteFile = useDeleteDealFile();
+  const userId = useAuth((s) => s.user?.id);
+  const authorLabel = (id: string) => (id === userId ? "You" : "Teammate");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const files = data ?? [];
@@ -221,7 +226,7 @@ function FilesSection({ deal }: { deal: Deal }) {
                   <div className="flex flex-wrap items-center gap-2 text-caption text-text-muted">
                     <span>{formatBytes(file.sizeBytes)}</span>
                     <span aria-hidden>·</span>
-                    <span>{file.uploadedBy}</span>
+                    <span>{authorLabel(file.uploadedBy)}</span>
                     <span aria-hidden>·</span>
                     <span>{formatShortDate(file.createdAt)}</span>
                   </div>

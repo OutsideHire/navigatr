@@ -211,14 +211,19 @@ describe("useUploadDealFile", () => {
 });
 
 describe("useDeleteDealFile", () => {
-  it("removes the object then deletes the row by id", async () => {
-    vi.mocked(removeDealFile).mockResolvedValueOnce(undefined);
+  it("deletes the row by id then removes the object", async () => {
     eqMock.mockResolvedValueOnce({ error: null });
+    const invocations: string[] = [];
+    deleteMock.mockImplementation(() => invocations.push("delete"));
+    vi.mocked(removeDealFile).mockImplementation(async () => {
+      invocations.push("removeDealFile");
+    });
     const { result } = renderHook(() => useDeleteDealFile(), { wrapper });
     await result.current.mutateAsync({ id: "df-1", dealId: "deal-1", path: "deal-1/abc" });
     expect(vi.mocked(removeDealFile)).toHaveBeenCalledWith("deal-1/abc");
     expect(deleteMock).toHaveBeenCalledTimes(1);
     expect(eqMock).toHaveBeenCalledWith("id", "df-1");
+    expect(invocations).toEqual(["delete", "removeDealFile"]);
   });
 
   it("throws when the row delete errors", async () => {
