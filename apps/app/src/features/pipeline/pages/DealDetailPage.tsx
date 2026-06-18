@@ -78,6 +78,8 @@ import { EditDealSheet } from "../components/EditDealSheet";
 import { EditActivitySheet } from "@/features/activities/components/EditActivitySheet";
 import { QuickActionsCard } from "../components/QuickActionsCard";
 import { RelatedCard } from "../components/RelatedCard";
+import { QualificationTab } from "../components/QualificationTab";
+import { QualificationEditSheet } from "../components/QualificationEditSheet";
 
 // ───────────────────────────────────────────────────────────────────────
 // Not-found state
@@ -587,21 +589,6 @@ function PlaceholderTab({ title }: { title: string }) {
   );
 }
 
-function QualificationTab({ deal }: { deal: Deal }) {
-  return (
-    <Card padding="md">
-      <h3 className="mb-3 text-body-strong text-text-default">Qualification data</h3>
-      <p className="mb-3 text-caption text-text-muted">
-        Profession-specific fields captured during Add Deal. Sprint 2 builds the
-        editable view.
-      </p>
-      <pre className="overflow-x-auto rounded-radius-md bg-surface-sunken p-3 text-caption text-text-default">
-        {JSON.stringify(deal, null, 2)}
-      </pre>
-    </Card>
-  );
-}
-
 // ───────────────────────────────────────────────────────────────────────
 // Page
 // ───────────────────────────────────────────────────────────────────────
@@ -620,6 +607,7 @@ export function DealDetailPage() {
   const [tab, setTab] = React.useState<TabKey>("overview");
   const lostUpdate = useUpdateDeal();
   const [lostOpen, setLostOpen] = React.useState(false);
+  const [qualOpen, setQualOpen] = React.useState(false);
 
   const handlePageLostSubmit = async (category: LostReasonCategory, notes: string | null) => {
     if (!deal) return;
@@ -681,7 +669,7 @@ export function DealDetailPage() {
                 <PlaceholderTab title="Contacts" />
               </Tabs.Content>
               <Tabs.Content value="qualification" className="mt-4 focus-visible:outline-none">
-                <QualificationTab deal={deal} />
+                <QualificationTab deal={deal} onEdit={() => setQualOpen(true)} />
               </Tabs.Content>
               <Tabs.Content value="notes" className="mt-4 focus-visible:outline-none">
                 <PlaceholderTab title="Notes & Files" />
@@ -723,6 +711,12 @@ export function DealDetailPage() {
         open={lostOpen}
         onOpenChange={setLostOpen}
         onSubmit={handlePageLostSubmit}
+      />
+
+      <QualificationEditSheet
+        open={qualOpen}
+        onOpenChange={setQualOpen}
+        deal={deal}
       />
 
       {editingActivity && (
