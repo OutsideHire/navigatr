@@ -48,3 +48,55 @@ describe("pwa update prompt", () => {
     setInt.mockRestore();
   });
 });
+
+// Re-uses the same import-cached module + capturedOpts as the suite above. Note the
+// module's `visibilitychange` listener was registered once at import; it closes over
+// the live module state (`registration`, `pendingUpdate`). By the time these run,
+// the prior suite has already set `pendingUpdate = true` (test 1's onNeedRefresh) and
+// `registration` to a `{ update }` reg (test 2's onRegisteredSW). We rebind the
+// module's `registration` here by re-invoking onRegisteredSW with a fresh spy so the
+// listener calls *our* reg.
+describe("pwa update checks on tab focus", () => {
+  const goVisible = () => {
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  };
+
+  it("checks for a newer SW when the tab becomes visible", async () => {
+    await import("./pwa");
+    const opts = capturedOpts as { onRegisteredSW: (url: string, reg?: unknown) => void };
+    const reg = { update: vi.fn() } as unknown as ServiceWorkerRegistration;
+    opts.onRegisteredSW("/sw.js", reg); // rebinds module-scoped `registration` to this reg
+    goVisible();
+    expect((reg as unknown as { update: ReturnType<typeof vi.fn> }).update).toHaveBeenCalled();
+  });
+
+  it("does nothing on visibilitychange when the tab is hidden", async () => {
+    await import("./pwa");
+    const opts = capturedOpts as { onRegisteredSW: (url: string, reg?: unknown) => void };
+    const reg = { update: vi.fn() } as unknown as ServiceWorkerRegistration;
+    opts.onRegisteredSW("/sw.js", reg);
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect((reg as unknown as { update: ReturnType<typeof vi.fn> }).update).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it("re-surfaces the Refresh toast on focus when an update is pending", async () => {
+    await import("./pwa");
+    const opts = capturedOpts as {
+      onNeedRefresh: () => void;
+      onRegisteredSW: (url: string, reg?: unknown) => void;
+    };
+    const reg = { update: vi.fn() } as unknown as ServiceWorkerRegistration;
+    opts.onRegisteredSW("/sw.js", reg);
+    opts.onNeedRefresh(); // latch pendingUpdate = true; also shows the toast once
+    toast.mockReset(); // simulate the user dismissing the toast: clear the spy
+    goVisible();
+    // The re-shown prompt: same Refresh action + stable id so it replaces, not stacks.
+    expect(toast).toHaveBeenCalled();
+    const [, cfg] = toast.mock.calls[0] as [string, { id: string; action: { label: string } }];
+    expect(cfg.id).toBe("pwa-update");
+    expect(cfg.action.label).toMatch(/refresh/i);
+  });
+});
