@@ -455,9 +455,10 @@ function TreasuryQualification({
 export interface AddDealSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  defaultStage?: DealStage;
 }
 
-export function AddDealSheet({ open, onOpenChange }: AddDealSheetProps) {
+export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetProps) {
   const user = useAuth((s) => s.user);
   const profession: Profession = getProfession(user) ?? "merchant_services";
   const createDeal = useCreateDeal();
@@ -479,7 +480,7 @@ export function AddDealSheet({ open, onOpenChange }: AddDealSheetProps) {
       // Empty-string defaults so the placeholder shows. Schema preprocess
       // turns "" into undefined → triggers the "required" error on submit.
       dealValue: "" as unknown as number,
-      stage: "new" as DealStage,
+      stage: (defaultStage ?? "new") as DealStage,
       probability: "" as unknown as number,
       expectedClose: "",
       leadSource: undefined,
@@ -492,7 +493,7 @@ export function AddDealSheet({ open, onOpenChange }: AddDealSheetProps) {
       return { ...base, profession: "treasury_management", servicesInUse: [] } as DealFormValues;
     }
     return { ...base, profession: "merchant_services", acceptanceMethods: [] } as DealFormValues;
-  }, [profession]);
+  }, [profession, defaultStage]);
 
   const form = useForm<DealFormValues>({
     resolver: zodResolver(dealSchema),
