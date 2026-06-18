@@ -55,6 +55,20 @@ describe("computeKpis", () => {
       expect.objectContaining({ totalPipeline: 0, weighted: 0, activeDeals: 0 }),
     );
   });
+
+  it("counts won deals closed this month and excludes prior-month wins", () => {
+    const now = new Date();
+    const thisMonth = new Date(now.getFullYear(), now.getMonth(), 2).toISOString();
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 15).toISOString();
+    const deals = [
+      d({ id: "w1", stage: "won", valueCents: 500_00, updatedAt: thisMonth }),
+      d({ id: "w2", stage: "won", valueCents: 200_00, updatedAt: lastMonth }),
+    ];
+    const k = computeKpis(deals);
+    expect(k.wonThisMonth).toBe(500_00);
+    expect(k.wonDealsThisMonth).toBe(1);
+    expect(k.activeDeals).toBe(0);
+  });
 });
 
 describe("PipelinePage", () => {
