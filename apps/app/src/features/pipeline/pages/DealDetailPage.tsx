@@ -78,6 +78,7 @@ import { EditDealSheet } from "../components/EditDealSheet";
 import { EditActivitySheet } from "@/features/activities/components/EditActivitySheet";
 import { QuickActionsCard } from "../components/QuickActionsCard";
 import { RelatedCard } from "../components/RelatedCard";
+import { QualificationTab } from "../components/QualificationTab";
 
 // ───────────────────────────────────────────────────────────────────────
 // Not-found state
@@ -587,21 +588,6 @@ function PlaceholderTab({ title }: { title: string }) {
   );
 }
 
-function QualificationTab({ deal }: { deal: Deal }) {
-  return (
-    <Card padding="md">
-      <h3 className="mb-3 text-body-strong text-text-default">Qualification data</h3>
-      <p className="mb-3 text-caption text-text-muted">
-        Profession-specific fields captured during Add Deal. Sprint 2 builds the
-        editable view.
-      </p>
-      <pre className="overflow-x-auto rounded-radius-md bg-surface-sunken p-3 text-caption text-text-default">
-        {JSON.stringify(deal, null, 2)}
-      </pre>
-    </Card>
-  );
-}
-
 // ───────────────────────────────────────────────────────────────────────
 // Page
 // ───────────────────────────────────────────────────────────────────────
@@ -681,7 +667,7 @@ export function DealDetailPage() {
                 <PlaceholderTab title="Contacts" />
               </Tabs.Content>
               <Tabs.Content value="qualification" className="mt-4 focus-visible:outline-none">
-                <QualificationTab deal={deal} />
+                <QualificationTab deal={deal} onEdit={() => toast("Edit coming…")} />
               </Tabs.Content>
               <Tabs.Content value="notes" className="mt-4 focus-visible:outline-none">
                 <PlaceholderTab title="Notes & Files" />
