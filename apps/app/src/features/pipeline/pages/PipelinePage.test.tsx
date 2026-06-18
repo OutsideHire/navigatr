@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeAll } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeAll, afterEach } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { computeKpis, PipelinePage } from "./PipelinePage";
@@ -9,6 +9,9 @@ import { MOCK_DEALS } from "../mockData";
 // This project's vitest env doesn't ship a fully-functional jsdom
 // localStorage; usePersistedViewMode reads it on mount. Install a small
 // in-memory shim so the page renders (mirrors CookieBanner.test.tsx).
+// We also install the pointer-capture / scrollIntoView polyfills that
+// Radix Popover + Select need to open in jsdom (mirrors
+// PipelineFilterPopover.test.tsx + DealDetailPage.stage-picker.test.tsx).
 beforeAll(() => {
   const store = new Map<string, string>();
   Object.defineProperty(window, "localStorage", {
@@ -23,10 +26,24 @@ beforeAll(() => {
     writable: true,
     configurable: true,
   });
+  if (!Element.prototype.hasPointerCapture) {
+    Element.prototype.hasPointerCapture = () => false;
+    Element.prototype.setPointerCapture = () => {};
+    Element.prototype.releasePointerCapture = () => {};
+    Element.prototype.scrollIntoView = () => {};
+  }
+});
+
+// Mutable dataset the useDeals mock returns. Defaults to MOCK_DEALS so the
+// existing subhead/KPI/card tests are unchanged; individual tests can
+// override it (e.g. the filter test below) and afterEach restores it.
+let mockDeals: Deal[] = MOCK_DEALS;
+afterEach(() => {
+  mockDeals = MOCK_DEALS;
 });
 
 vi.mock("../hooks/useDeals", () => ({
-  useDeals: () => ({ data: MOCK_DEALS, isLoading: false }),
+  useDeals: () => ({ data: mockDeals, isLoading: false }),
 }));
 vi.mock("@/features/profession/useTerm", () => ({
   useTerm: (k: string) => k,
@@ -100,5 +117,43 @@ describe("PipelinePage", () => {
     // below-lg fallback grid (CSS hides one; jsdom keeps both), so the
     // company name appears more than once.
     expect(screen.getAllByText(MOCK_DEALS[0].companyName).length).toBeGreaterThan(0);
+  });
+
+  it("renders the Filter trigger and the Sort control", () => {
+    renderPage();
+    expect(screen.getByRole("button", { name: /filter/i })).toBeInTheDocument();
+    // Sort Select renders its current value as the trigger label.
+    expect(screen.getByText(/sort: last activity/i)).toBeInTheDocument();
+  });
+
+  it("applying the min-probability filter drops low-probability deals from the rendered cards", () => {
+    // Three open-stage deals with differing probabilities. The two
+    // higher ones should survive a 50%+ filter; the 20% one shouldn't.
+    mockDeals = [
+      d({ id: "lo", companyName: "Lowball LLC", stage: "new", probability: 20 }),
+      d({ id: "mid", companyName: "Midtier Inc", stage: "qualified", probability: 60 }),
+      d({ id: "hi", companyName: "Highrise Co", stage: "proposal", probability: 90 }),
+    ];
+    renderPage();
+
+    // Sanity: all three render before filtering.
+    expect(screen.getAllByText("Lowball LLC").length).toBeGreaterThan(0);
+
+    // Open the Filter popover, then pick "50%+" in the Min probability Select.
+    fireEvent.click(screen.getByRole("button", { name: /filter/i }));
+    // The popover has one Radix Select (Min probability) whose trigger shows
+    // the placeholder "Any"; the page's other combobox is the Sort control
+    // (reads "Sort: …"), so the "Any"-labelled combobox is unambiguous.
+    const probTrigger = screen
+      .getAllByRole("combobox")
+      .find((el) => el.textContent?.trim() === "Any");
+    expect(probTrigger).toBeDefined();
+    fireEvent.click(probTrigger!);
+    fireEvent.click(screen.getByText("50%+"));
+
+    // The 20% deal is filtered out of the rendered cards; the others stay.
+    expect(screen.queryByText("Lowball LLC")).toBeNull();
+    expect(screen.getAllByText("Midtier Inc").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Highrise Co").length).toBeGreaterThan(0);
   });
 });
