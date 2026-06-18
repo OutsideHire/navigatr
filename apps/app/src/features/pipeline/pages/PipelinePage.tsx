@@ -22,15 +22,13 @@
  */
 
 import * as React from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
-  ArrowRight,
   ChevronDown,
   Columns,
   List,
   PackageOpen,
-  Phone,
   Plus,
   Search,
   SlidersHorizontal,
@@ -40,30 +38,67 @@ import { cn } from "@/lib/utils";
 import {
   Button,
   Card,
-  CardWithStatusBand,
   Chip,
   FormField,
   Input,
-  KpiCard,
 } from "@/components/navigatr";
 
 import { useDeals } from "../hooks/useDeals";
 import {
-  formatMoney,
-  formatRelative,
-  formatShortDate,
-  HEADER_SUBHEAD,
-  STAGE_BAND_COLOR,
-  STAGE_NEXT_VERB,
   STAGE_CHIP_COUNTS,
   STAGE_LABEL,
   type Deal,
   type DealStage,
 } from "../mockData";
+import { DealCard } from "../components/DealCard";
 import { DealCardSkeleton } from "../components/DealCardSkeleton";
 import { AddDealSheet } from "../components/AddDealSheet";
 import { KanbanBoard } from "../components/KanbanBoard";
 import { useTerm, useTermCapitalized } from "@/features/profession/useTerm";
+
+// ───────────────────────────────────────────────────────────────────────
+// KPI math
+// ───────────────────────────────────────────────────────────────────────
+
+export interface PipelineKpis {
+  totalPipeline: number;
+  weighted: number;
+  activeDeals: number;
+  wonThisMonth: number;
+  wonDealsThisMonth: number;
+}
+
+/** Open-stage pipeline + weighted value + active count, and won-this-month.
+ *  Won/lost are excluded from the open pipeline; won deals closed in the
+ *  current calendar month feed the "won this month" tile. */
+export function computeKpis(deals: Deal[] | undefined): PipelineKpis {
+  const zero = { totalPipeline: 0, weighted: 0, activeDeals: 0, wonThisMonth: 0, wonDealsThisMonth: 0 };
+  if (!deals || deals.length === 0) return zero;
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const k = { ...zero };
+  for (const dDeal of deals) {
+    if (dDeal.stage === "won" || dDeal.stage === "lost") {
+      if (dDeal.stage === "won" && new Date(dDeal.updatedAt) >= monthStart) {
+        k.wonThisMonth += dDeal.valueCents;
+        k.wonDealsThisMonth += 1;
+      }
+    } else {
+      k.totalPipeline += dDeal.valueCents;
+      k.weighted += Math.round(dDeal.valueCents * (dDeal.probability / 100));
+      k.activeDeals += 1;
+    }
+  }
+  return k;
+}
+
+/** $1,234,000 → "$1.2M"; $98,000 → "$98K". */
+function fmtMoneyShort(cents: number): string {
+  const dollars = cents / 100;
+  if (dollars >= 1_000_000) return `$${(dollars / 1_000_000).toFixed(1)}M`;
+  if (dollars >= 1_000) return `$${Math.round(dollars / 1_000)}K`;
+  return `$${Math.round(dollars)}`;
+}
 
 // ───────────────────────────────────────────────────────────────────────
 // Filter / search state
@@ -107,116 +142,6 @@ function useDebounced<T>(value: T, delayMs: number): T {
     return () => clearTimeout(id);
   }, [value, delayMs]);
   return debounced;
-}
-
-// ───────────────────────────────────────────────────────────────────────
-// Deal card
-// ───────────────────────────────────────────────────────────────────────
-
-/** Probability rendered as 5 dots filled left-to-right (20% per dot).
- *  Replaces the prior 1px progress bar — that read as an empty input. */
-function ProbabilityDots({ value }: { value: number }) {
-  const filled = Math.max(0, Math.min(5, Math.round(value / 20)));
-  return (
-    <span className="inline-flex items-center gap-1" aria-hidden>
-      {Array.from({ length: 5 }, (_, i) => (
-        <span
-          key={i}
-          className={cn(
-            "h-1.5 w-1.5 rounded-radius-full",
-            i < filled ? "bg-brand-primary" : "bg-surface-sunken",
-          )}
-        />
-      ))}
-    </span>
-  );
-}
-
-/** Format E.164 → "(202) 555-0199". Tolerates already-formatted strings
- *  and short / non-US numbers by falling back to the raw value. */
-function formatPhoneForDisplay(e164: string): string {
-  const digits = e164.replace(/\D/g, "");
-  // Strip leading "1" country code if present.
-  const ten = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
-  if (ten.length !== 10) return e164;
-  return `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}`;
-}
-
-function DealCard({ deal }: { deal: Deal }) {
-  const navigate = useNavigate();
-  const nextVerb = STAGE_NEXT_VERB[deal.stage];
-
-  return (
-    <CardWithStatusBand
-      bandColor={STAGE_BAND_COLOR[deal.stage]}
-      onClick={() => navigate(`/pipeline/${deal.id}`)}
-      contentPadding="md"
-      aria-label={`${deal.companyName}, ${formatMoney(deal.valueCents)}, next: ${nextVerb}`}
-    >
-      <div className="flex flex-col gap-3">
-        {/* Row 1: company ↔ value. Stage band on the left already encodes
-            the stage — no badge needed, freeing the right column for the
-            scan-critical $value. */}
-        <div className="flex items-baseline justify-between gap-3">
-          <p className="min-w-0 truncate text-body-strong text-text-default">
-            {deal.companyName}
-          </p>
-          <span className="shrink-0 text-heading-sm tabular-nums text-text-default">
-            {formatMoney(deal.valueCents)}
-          </span>
-        </div>
-
-        {/* Row 2: tappable contact-and-phone pill (the primary action
-            anywhere in the card except "drill in") ↔ probability dots+%. */}
-        <div className="flex items-center justify-between gap-3">
-          <a
-            href={`tel:${deal.phone}`}
-            onClick={(e) => e.stopPropagation()}
-            className={cn(
-              "inline-flex min-w-0 items-center gap-2 rounded-radius-sm px-2 py-1 -mx-2",
-              "text-body-sm text-text-default",
-              "transition-colors hover:bg-surface-sunken",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary",
-            )}
-            aria-label={`Call ${deal.contactName} at ${formatPhoneForDisplay(deal.phone)}`}
-          >
-            <Phone
-              className="h-3.5 w-3.5 shrink-0 text-text-muted"
-              aria-hidden
-            />
-            <span className="truncate font-medium">{deal.contactName}</span>
-            <span className="text-text-subtle">·</span>
-            <span className="truncate tabular-nums text-text-muted">
-              {formatPhoneForDisplay(deal.phone)}
-            </span>
-          </a>
-          <span className="inline-flex shrink-0 items-center gap-2 text-caption text-text-muted">
-            <ProbabilityDots value={deal.probability} />
-            <span className="tabular-nums text-text-default">{deal.probability}%</span>
-          </span>
-        </div>
-
-        {/* Action zone — hairline-separated. Promotes the next action
-            from "data" (a date) to "instruction" (verb + date). The
-            arrow + verb is the single most important thing on this
-            card; "last touched" demotes to grey-on-grey. */}
-        <div className="flex items-center justify-between gap-2 border-t border-border-subtle pt-3">
-          <span className="inline-flex min-w-0 items-center gap-1.5 text-body-sm text-text-default">
-            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-text-muted" aria-hidden />
-            <span className="truncate font-medium">{nextVerb}</span>
-            {deal.nextFollowup && (
-              <span className="truncate text-text-muted">
-                · <span className="tabular-nums">{formatShortDate(deal.nextFollowup)}</span>
-              </span>
-            )}
-          </span>
-          <span className="shrink-0 text-caption text-text-subtle">
-            Last touched <span className="tabular-nums">{formatRelative(deal.lastActivity)}</span>
-          </span>
-        </div>
-      </div>
-    </CardWithStatusBand>
-  );
 }
 
 // ───────────────────────────────────────────────────────────────────────
@@ -264,12 +189,14 @@ function PageHeader({
   onAddDeal,
   viewMode,
   onViewModeChange,
+  subhead,
 }: {
   search: string;
   onSearchChange: (s: string) => void;
   onAddDeal: () => void;
   viewMode: ViewMode;
   onViewModeChange: (m: ViewMode) => void;
+  subhead: string;
 }) {
   // Profession-aware labels. Page title uses the capitalized form
   // (sentence-start); inline noun usage stays lowercase.
@@ -280,7 +207,7 @@ function PageHeader({
     <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div className="flex flex-col gap-1">
         <h1 className="text-heading-lg text-text-default">{pipelineTitle}</h1>
-        <p className="text-body-md text-text-muted">{HEADER_SUBHEAD}</p>
+        <p className="text-body-md text-text-muted">{subhead}</p>
       </div>
 
       {/* Mobile FAB — fixed bottom-right above BottomNav. */}
@@ -341,91 +268,29 @@ function PageHeader({
   );
 }
 
-interface KpiStripProps {
-  deals: Deal[] | undefined;
-  /** When true, KPIs are filtered to an agent subset. */
-  filtered: boolean;
-}
+const KPI_DOT: Record<string, string> = {
+  teal: "bg-accent-teal", violet: "bg-accent-violet", blue: "bg-accent-blue", success: "bg-status-success",
+};
 
-function KpiStrip({ deals, filtered }: KpiStripProps) {
-  const kpi = React.useMemo(() => {
-    if (!deals || deals.length === 0) {
-      return { totalPipeline: 0, weighted: 0, activeDeals: 0, wonThisMonth: 0, wonDealsThisMonth: 0 };
-    }
-
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    let totalPipeline = 0;
-    let weighted = 0;
-    let activeDeals = 0;
-    let wonThisMonth = 0;
-    let wonDealsThisMonth = 0;
-
-    for (const d of deals) {
-      if (d.stage === "won" || d.stage === "lost") {
-        // Count won deals closed this calendar month
-        if (d.stage === "won") {
-          const updatedAt = new Date(d.updatedAt);
-          if (updatedAt >= monthStart) {
-            wonThisMonth += d.valueCents;
-            wonDealsThisMonth += 1;
-          }
-        }
-      } else {
-        totalPipeline += d.valueCents;
-        weighted += Math.round(d.valueCents * (d.probability / 100));
-        activeDeals += 1;
-      }
-    }
-
-    return { totalPipeline, weighted, activeDeals, wonThisMonth, wonDealsThisMonth };
-  }, [deals]);
-
-  function fmt(cents: number): string {
-    const dollars = cents / 100;
-    if (dollars >= 1_000_000) return `$${(dollars / 1_000_000).toFixed(1)}M`;
-    if (dollars >= 1_000) return `$${Math.round(dollars / 1_000)}K`;
-    return `$${Math.round(dollars)}`;
-  }
-
-  // Profession-aware singular/plural ("deals" → "relationships" for treasury).
-  const dealSingular = useTerm("deal");
-  const dealPlural = useTerm("deals");
-  const wonSubtitle = kpi.wonDealsThisMonth === 0
-    ? "this month"
-    : `${kpi.wonDealsThisMonth} ${kpi.wonDealsThisMonth === 1 ? dealSingular : dealPlural}`;
-
+function KpiStrip({ deals, filtered }: { deals: Deal[] | undefined; filtered: boolean }) {
+  const k = React.useMemo(() => computeKpis(deals), [deals]);
+  const tiles = [
+    { dot: "teal",    eyebrow: filtered ? "Pipeline (filtered)" : "Total pipeline", value: fmtMoneyShort(k.totalPipeline) },
+    { dot: "violet",  eyebrow: "Weighted",       value: fmtMoneyShort(k.weighted) },
+    { dot: "blue",    eyebrow: "Active deals",   value: String(k.activeDeals) },
+    { dot: "success", eyebrow: "Won this month", value: fmtMoneyShort(k.wonThisMonth) },
+  ];
   return (
     <div className="hidden gap-4 md:grid md:grid-cols-4">
-      <KpiCard
-        eyebrow={filtered ? "PIPELINE (FILTERED)" : "TOTAL PIPELINE"}
-        value={fmt(kpi.totalPipeline)}
-        subtitle="open stages"
-        accent="teal"
-        size="standard"
-      />
-      <KpiCard
-        eyebrow="WEIGHTED"
-        value={fmt(kpi.weighted)}
-        subtitle="probability·value"
-        accent="violet"
-        size="standard"
-      />
-      <KpiCard
-        eyebrow="ACTIVE DEALS"
-        value={String(kpi.activeDeals)}
-        subtitle="across stages"
-        accent="blue"
-        size="standard"
-      />
-      <KpiCard
-        eyebrow="WON THIS MONTH"
-        value={fmt(kpi.wonThisMonth)}
-        subtitle={wonSubtitle}
-        accent="orange"
-        size="standard"
-      />
+      {tiles.map((t) => (
+        <div key={t.eyebrow} className="flex flex-col gap-2 rounded-radius-md border border-border-subtle bg-surface-default p-4">
+          <span className="inline-flex items-center gap-2 text-caption font-medium uppercase tracking-wide text-text-muted">
+            <span className={cn("h-2 w-2 rounded-radius-full", KPI_DOT[t.dot])} aria-hidden />
+            {t.eyebrow}
+          </span>
+          <span className="text-heading-lg tabular-nums text-text-default">{t.value}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -549,6 +414,9 @@ export function PipelinePage() {
     });
   }, [deals, stageFilter, debouncedSearch, ownerFilter]);
 
+  const headerKpis = React.useMemo(() => computeKpis(ownerFilter ? filtered : deals), [deals, filtered, ownerFilter]);
+  const subhead = `${headerKpis.activeDeals} active deals · ${fmtMoneyShort(headerKpis.weighted)} weighted`;
+
   return (
     <div className="mx-auto w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
       <div className="flex flex-col gap-4 lg:gap-6">
@@ -575,6 +443,7 @@ export function PipelinePage() {
           onAddDeal={onAddDeal}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
+          subhead={subhead}
         />
 
         <KpiStrip deals={ownerFilter ? filtered : deals} filtered={Boolean(ownerFilter)} />
@@ -599,14 +468,14 @@ export function PipelinePage() {
             <div className="hidden lg:block">
               <KanbanBoard deals={filtered} />
             </div>
-            <div className="flex flex-col gap-3 lg:hidden">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:hidden">
               {filtered.map((deal) => (
                 <DealCard key={deal.id} deal={deal} />
               ))}
             </div>
           </>
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {filtered.map((deal) => (
               <DealCard key={deal.id} deal={deal} />
             ))}
