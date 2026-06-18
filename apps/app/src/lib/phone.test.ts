@@ -28,6 +28,19 @@ describe("formatPhone", () => {
     expect(r.display).toBe("");
     expect(r.valid).toBe(false);
   });
+
+  it("formats a US number in international format when requested", () => {
+    const r = formatPhone("+15125550100", "international");
+    expect(r.display).toBe("+1 512 555 0100");
+    expect(r.valid).toBe(true);
+  });
+
+  it("formats a valid non-US number in international format", () => {
+    const r = formatPhone("+447911123456");
+    expect(r.display).toBe("+44 7911 123456");
+    expect(r.valid).toBe(true);
+    expect(r.e164).toBe("+447911123456");
+  });
 });
 
 describe("formatPhoneDisplay", () => {
