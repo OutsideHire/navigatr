@@ -40,8 +40,8 @@ export function useCreateDealContact() {
       if (!userId) throw new Error("Not signed in");
       const { data, error } = await supabase.from("deal_contacts").insert({
         deal_id: dealId, created_by: userId,
-        name: input.name, title: input.title ?? null, email: input.email ?? null,
-        phone: input.phone ?? null, role: input.role ?? null, note: input.note ?? null,
+        name: input.name, title: input.title || null, email: input.email || null,
+        phone: input.phone || null, role: input.role || null, note: input.note || null,
       }).select("id").single();
       if (error) throw error;
       return { id: data.id as string };
@@ -56,11 +56,11 @@ export function useUpdateDealContact() {
     mutationFn: async ({ id, patch }: { id: string; dealId: string; patch: Partial<DealContactInput> }) => {
       const { error } = await supabase.from("deal_contacts").update({
         ...(patch.name !== undefined ? { name: patch.name } : {}),
-        ...(patch.title !== undefined ? { title: patch.title ?? null } : {}),
-        ...(patch.email !== undefined ? { email: patch.email ?? null } : {}),
-        ...(patch.phone !== undefined ? { phone: patch.phone ?? null } : {}),
-        ...(patch.role !== undefined ? { role: patch.role ?? null } : {}),
-        ...(patch.note !== undefined ? { note: patch.note ?? null } : {}),
+        ...(patch.title !== undefined ? { title: patch.title || null } : {}),
+        ...(patch.email !== undefined ? { email: patch.email || null } : {}),
+        ...(patch.phone !== undefined ? { phone: patch.phone || null } : {}),
+        ...(patch.role !== undefined ? { role: patch.role || null } : {}),
+        ...(patch.note !== undefined ? { note: patch.note || null } : {}),
       }).eq("id", id);
       if (error) throw error;
     },

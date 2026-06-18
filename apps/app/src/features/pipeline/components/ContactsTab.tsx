@@ -8,6 +8,7 @@
 
 import { useState } from "react";
 import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { Button, Card, PhoneWithClickToCall } from "@/components/navigatr";
@@ -60,9 +61,15 @@ export function ContactsTab({ deal, onEditPrimary }: ContactsTabProps) {
     setSheetOpen(true);
   };
 
-  const handleDelete = (contact: DealContact) => {
+  const handleDelete = async (contact: DealContact) => {
     if (!window.confirm(`Delete ${contact.name}?`)) return;
-    void deleteContact.mutateAsync({ id: contact.id, dealId: deal.id });
+    try {
+      await deleteContact.mutateAsync({ id: contact.id, dealId: deal.id });
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Couldn't delete contact — please try again.",
+      );
+    }
   };
 
   const contacts = data ?? [];

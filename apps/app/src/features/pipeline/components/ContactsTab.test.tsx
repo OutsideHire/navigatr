@@ -21,11 +21,12 @@ beforeAll(() => {
 });
 
 let contactsData: any[] = [];
+const deleteMutateAsync = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock("../hooks/useDealContacts", () => ({
   useDealContacts: () => ({ data: contactsData, isLoading: false }),
   useCreateDealContact: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateDealContact: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useDeleteDealContact: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteDealContact: () => ({ mutateAsync: deleteMutateAsync, isPending: false }),
 }));
 
 const deal = MOCK_DEALS[0];
@@ -43,7 +44,15 @@ function renderTab() {
 
 beforeEach(() => {
   contactsData = [];
+  deleteMutateAsync.mockClear();
+  vi.restoreAllMocks();
 });
+
+const oneContact = {
+  id: "c1", dealId: deal.id, name: "Dana Rep", title: "Buyer",
+  email: "dana@co.com", phone: "+15551234567", role: "gatekeeper",
+  note: null, createdAt: "2026-01-01T00:00:00Z",
+};
 
 describe("ContactsTab", () => {
   it("renders the primary contact with a 'Primary' label", () => {
@@ -76,5 +85,21 @@ describe("ContactsTab", () => {
     fireEvent.click(screen.getByRole("button", { name: /add contact/i }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /add contact/i })).toBeInTheDocument();
+  });
+
+  it("deletes a contact when confirm is accepted", () => {
+    contactsData = [oneContact];
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderTab();
+    fireEvent.click(screen.getByRole("button", { name: /delete dana rep/i }));
+    expect(deleteMutateAsync).toHaveBeenCalledWith({ id: "c1", dealId: deal.id });
+  });
+
+  it("does not delete when confirm is dismissed", () => {
+    contactsData = [oneContact];
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderTab();
+    fireEvent.click(screen.getByRole("button", { name: /delete dana rep/i }));
+    expect(deleteMutateAsync).not.toHaveBeenCalled();
   });
 });
