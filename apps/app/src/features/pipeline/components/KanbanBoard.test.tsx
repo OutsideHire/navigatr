@@ -1,5 +1,9 @@
 // Kanban grouping + redesigned card. 5 active columns (no Lost), each card shows
 // company + value + a probability bar, and a "+ Add to {stage}" footer button.
+//
+// Real pointer-drag is verified manually in-browser: jsdom can't simulate
+// @dnd-kit's pointer sensors, so the drop is not driven here. The pure drop
+// decision is unit-tested in ../lib/resolveDrop.test.ts.
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, within, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -59,9 +63,11 @@ describe("KanbanBoard", () => {
     expect(within(screen.getByLabelText("Won stage")).getByText(/no deals/i)).toBeInTheDocument();
   });
 
-  it("each deal card is a clickable button", () => {
+  it("each deal card is a clickable role=button (dnd-kit draggable)", () => {
     renderBoard([deal("a", "new", 100_00, "Acme")]);
-    expect(within(screen.getByLabelText("New stage")).getByText("Acme").closest("button")).not.toBeNull();
+    expect(
+      within(screen.getByLabelText("New stage")).getByText("Acme").closest('[role="button"]'),
+    ).not.toBeNull();
   });
 
   it("'+ Add to {stage}' calls onAddToStage with that stage", () => {
@@ -74,22 +80,5 @@ describe("KanbanBoard", () => {
   it("omits the add button when onAddToStage is not provided", () => {
     renderBoard([deal("a", "new", 100_00)]);
     expect(screen.queryByRole("button", { name: /add to/i })).toBeNull();
-  });
-
-  it("makes cards draggable and fires onDropDeal when dropped on another column", () => {
-    const onDropDeal = vi.fn();
-    render(
-      <MemoryRouter>
-        <KanbanBoard deals={[deal("a", "new", 100_00, "Acme")]} onDropDeal={onDropDeal} />
-      </MemoryRouter>,
-    );
-    const card = within(screen.getByLabelText("New stage")).getByText("Acme").closest("button")!;
-    expect(card).toHaveAttribute("draggable", "true");
-    const dataTransfer = { setData: vi.fn(), getData: () => "a" };
-    fireEvent.dragStart(card, { dataTransfer });
-    const qualifiedCol = screen.getByLabelText("Qualified stage");
-    fireEvent.dragOver(qualifiedCol, { dataTransfer });
-    fireEvent.drop(qualifiedCol, { dataTransfer });
-    expect(onDropDeal).toHaveBeenCalledWith("a", "qualified");
   });
 });
