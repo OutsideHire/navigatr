@@ -80,6 +80,7 @@ import { QuickActionsCard } from "../components/QuickActionsCard";
 import { RelatedCard } from "../components/RelatedCard";
 import { QualificationTab } from "../components/QualificationTab";
 import { QualificationEditSheet } from "../components/QualificationEditSheet";
+import { SendReferralSheet } from "../components/SendReferralSheet";
 
 // ───────────────────────────────────────────────────────────────────────
 // Not-found state
@@ -608,6 +609,7 @@ export function DealDetailPage() {
   const lostUpdate = useUpdateDeal();
   const [lostOpen, setLostOpen] = React.useState(false);
   const [qualOpen, setQualOpen] = React.useState(false);
+  const [referralOpen, setReferralOpen] = React.useState(false);
 
   const handlePageLostSubmit = async (category: LostReasonCategory, notes: string | null) => {
     if (!deal) return;
@@ -683,7 +685,10 @@ export function DealDetailPage() {
               onViewAll={() => setTab("activity")}
               onEdit={setEditingActivity}
             />
-            <QuickActionsCard onMarkLost={() => setLostOpen(true)} />
+            <QuickActionsCard
+              onSendReferral={() => setReferralOpen(true)}
+              onMarkLost={() => setLostOpen(true)}
+            />
             <RelatedCard deal={deal} />
           </div>
         </div>
@@ -716,6 +721,12 @@ export function DealDetailPage() {
       <QualificationEditSheet
         open={qualOpen}
         onOpenChange={setQualOpen}
+        deal={deal}
+      />
+
+      <SendReferralSheet
+        open={referralOpen}
+        onOpenChange={setReferralOpen}
         deal={deal}
       />
 
