@@ -26,7 +26,7 @@
 
 import * as React from "react";
 import { Phone, ChevronDown, ChevronUp } from "lucide-react";
-import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
+import { formatPhone } from "@/lib/phone";
 import { cn } from "@/lib/utils";
 import { Button } from "./Button";
 
@@ -46,21 +46,6 @@ export interface PhoneWithClickToCallProps {
   disabled?: boolean;
   size?: PhoneSize;
   className?: string;
-}
-
-function formatPhone(raw: string, format: "us" | "international" = "us"): {
-  display: string;
-  e164: string | null;
-  valid: boolean;
-} {
-  const parsed = parsePhoneNumberFromString(raw, "US" as CountryCode);
-  if (!parsed || !parsed.isValid()) {
-    return { display: raw, e164: null, valid: false };
-  }
-  const display = format === "us" && parsed.country === "US"
-    ? parsed.formatNational()
-    : parsed.formatInternational();
-  return { display, e164: parsed.number, valid: true };
 }
 
 export const PhoneWithClickToCall = React.forwardRef<HTMLDivElement, PhoneWithClickToCallProps>(

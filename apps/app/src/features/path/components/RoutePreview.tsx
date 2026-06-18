@@ -8,6 +8,7 @@ import { Navigation, Phone } from "lucide-react";
 
 import { Button } from "@/components/navigatr";
 import { formatDistance } from "@/lib/distance";
+import { formatPhoneDisplay } from "@/lib/phone";
 import { formatEta, type RouteStats } from "../lib/routeStats";
 import type { MerchantWithDistance } from "./MerchantList";
 
@@ -69,7 +70,7 @@ export function RoutePreview({ ordered, stats, onBack, onStart }: RoutePreviewPr
                     {typeof m.rating === "number" && <span>★ {m.rating.toFixed(1)}</span>}
                     {m.phone && (
                       <span className="inline-flex items-center gap-1">
-                        <Phone className="h-3.5 w-3.5" aria-hidden /> {m.phone}
+                        <Phone className="h-3.5 w-3.5" aria-hidden /> {formatPhoneDisplay(m.phone)}
                       </span>
                     )}
                   </p>
