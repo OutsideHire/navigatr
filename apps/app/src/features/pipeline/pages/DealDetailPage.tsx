@@ -171,6 +171,7 @@ function StagePicker({ deal }: { deal: Deal }) {
       });
       toast.success(`Moved to ${STAGE_LABEL[pendingStage]}`);
       setStageModalOpen(false);
+      setPendingStage(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't update stage");
     }
@@ -180,15 +181,19 @@ function StagePicker({ deal }: { deal: Deal }) {
     category: LostReasonCategory,
     notes: string | null,
   ) => {
-    await update.mutateAsync({
-      id: deal.id,
-      patch: {
-        stage: "lost",
-        lostReasonCategory: category,
-        lostReasonNotes: notes,
-      },
-    });
-    toast.success("Moved to Lost");
+    try {
+      await update.mutateAsync({
+        id: deal.id,
+        patch: {
+          stage: "lost",
+          lostReasonCategory: category,
+          lostReasonNotes: notes,
+        },
+      });
+      toast.success("Moved to Lost");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't update stage");
+    }
   };
 
   return (
@@ -226,7 +231,7 @@ function StagePicker({ deal }: { deal: Deal }) {
       />
       <StageUpdateModal
         open={stageModalOpen}
-        onOpenChange={setStageModalOpen}
+        onOpenChange={(o) => { setStageModalOpen(o); if (!o) setPendingStage(null); }}
         deal={deal}
         toStage={pendingStage}
         busy={update.isPending}
@@ -618,11 +623,15 @@ export function DealDetailPage() {
 
   const handlePageLostSubmit = async (category: LostReasonCategory, notes: string | null) => {
     if (!deal) return;
-    await lostUpdate.mutateAsync({
-      id: deal.id,
-      patch: { stage: "lost", lostReasonCategory: category, lostReasonNotes: notes },
-    });
-    toast.success("Moved to Lost");
+    try {
+      await lostUpdate.mutateAsync({
+        id: deal.id,
+        patch: { stage: "lost", lostReasonCategory: category, lostReasonNotes: notes },
+      });
+      toast.success("Moved to Lost");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't update stage");
+    }
   };
 
   if (isLoading) {
