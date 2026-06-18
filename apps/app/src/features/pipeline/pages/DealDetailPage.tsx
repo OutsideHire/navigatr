@@ -82,6 +82,7 @@ import { QualificationTab } from "../components/QualificationTab";
 import { QualificationEditSheet } from "../components/QualificationEditSheet";
 import { SendReferralSheet } from "../components/SendReferralSheet";
 import { ContactsTab } from "../components/ContactsTab";
+import { NotesAndFilesTab } from "../components/NotesAndFilesTab";
 
 // ───────────────────────────────────────────────────────────────────────
 // Not-found state
@@ -579,19 +580,6 @@ function ActivityList({ activities, onEdit }: { activities: Activity[]; onEdit?:
 }
 
 // ───────────────────────────────────────────────────────────────────────
-// Placeholder tabs
-// ───────────────────────────────────────────────────────────────────────
-
-function PlaceholderTab({ title }: { title: string }) {
-  return (
-    <Card padding="lg" className="flex flex-col items-center gap-2 text-center">
-      <p className="text-body-strong text-text-default">{title}</p>
-      <p className="text-caption text-text-muted">Coming in sprint 2.</p>
-    </Card>
-  );
-}
-
-// ───────────────────────────────────────────────────────────────────────
 // Page
 // ───────────────────────────────────────────────────────────────────────
 
@@ -675,7 +663,7 @@ export function DealDetailPage() {
                 <QualificationTab deal={deal} onEdit={() => setQualOpen(true)} />
               </Tabs.Content>
               <Tabs.Content value="notes" className="mt-4 focus-visible:outline-none">
-                <PlaceholderTab title="Notes & Files" />
+                <NotesAndFilesTab deal={deal} />
               </Tabs.Content>
             </Tabs.Root>
           </div>
