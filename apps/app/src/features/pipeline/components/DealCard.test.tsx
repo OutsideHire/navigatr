@@ -52,6 +52,17 @@ describe("DealCard", () => {
     expect(screen.getByText(/Reach out/i)).toBeInTheDocument();
   });
 
+  it("hides the contact line when it duplicates the company name", () => {
+    renderCard(deal({ companyName: "Northwind Traders", contactName: "Northwind Traders" }));
+    expect(screen.getAllByText("Northwind Traders")).toHaveLength(1);
+  });
+
+  it("renders both company and a distinct contact name", () => {
+    renderCard(deal({ companyName: "Northwind Traders", contactName: "Dana Lopez" }));
+    expect(screen.getByText("Northwind Traders")).toBeInTheDocument();
+    expect(screen.getByText("Dana Lopez")).toBeInTheDocument();
+  });
+
   it("clicking the card navigates to the deal detail", () => {
     renderCard(deal({ id: "d-123", companyName: "Acme Corporation" }));
     fireEvent.click(screen.getByText("Acme Corporation"));

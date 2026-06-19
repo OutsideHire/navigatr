@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatPhone, formatPhoneDisplay } from "./phone";
+import { formatPhone, formatPhoneDisplay, dialableDigits } from "./phone";
 
 describe("formatPhone", () => {
   it("formats a 10-digit US number to national format", () => {
@@ -49,5 +49,23 @@ describe("formatPhoneDisplay", () => {
   });
   it("returns the raw string for an invalid number", () => {
     expect(formatPhoneDisplay("123")).toBe("123");
+  });
+});
+
+describe("dialableDigits", () => {
+  it("returns sanitized digits for a non-US but dialable number", () => {
+    expect(dialableDigits("(02) 8850 1565")).toBe("0288501565");
+  });
+
+  it("preserves a leading + for international numbers", () => {
+    expect(dialableDigits("+61 2 8850 1565")).toBe("+61288501565");
+  });
+
+  it("returns null for too-short input (< 7 digits)", () => {
+    expect(dialableDigits("123")).toBeNull();
+  });
+
+  it("returns null for an empty string", () => {
+    expect(dialableDigits("")).toBeNull();
   });
 });

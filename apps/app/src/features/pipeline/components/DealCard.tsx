@@ -39,7 +39,9 @@ export function DealCard({ deal }: { deal: Deal }) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate text-body-strong text-text-default">{deal.companyName}</p>
-            <p className="truncate text-body-sm text-text-muted">{deal.contactName}</p>
+            {deal.contactName && deal.contactName !== deal.companyName && (
+              <p className="truncate text-body-sm text-text-muted">{deal.contactName}</p>
+            )}
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1">
             <span className="text-heading-sm tabular-nums text-text-default">
