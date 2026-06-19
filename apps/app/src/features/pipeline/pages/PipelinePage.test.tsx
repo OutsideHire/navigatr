@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { computeKpis, PipelinePage } from "./PipelinePage";
@@ -121,9 +121,22 @@ describe("PipelinePage", () => {
 
   it("renders the Filter trigger and the Sort control", () => {
     renderPage();
-    expect(screen.getByRole("button", { name: /filter/i })).toBeInTheDocument();
+    // Filter + Sort now render in BOTH the desktop action row and the mobile
+    // control row (jsdom ignores media queries, so both are in the DOM).
+    expect(screen.getAllByRole("button", { name: /filter/i }).length).toBeGreaterThanOrEqual(2);
     // Sort Select renders its current value as the trigger label.
-    expect(screen.getByText(/sort: last activity/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/sort: last activity/i).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("exposes search, filter, and sort controls on the mobile control row", () => {
+    renderPage();
+    const mobile = screen.getByTestId("pipeline-mobile-controls");
+    // Search input (type=search) reachable inside the mobile row.
+    expect(within(mobile).getByPlaceholderText(/search deals/i)).toBeInTheDocument();
+    // Filter trigger reachable inside the mobile row.
+    expect(within(mobile).getByRole("button", { name: /filter/i })).toBeInTheDocument();
+    // Sort control reachable inside the mobile row.
+    expect(within(mobile).getByText(/sort: last activity/i)).toBeInTheDocument();
   });
 
   it("applying the min-probability filter drops low-probability deals from the rendered cards", () => {
@@ -139,8 +152,11 @@ describe("PipelinePage", () => {
     // Sanity: all three render before filtering.
     expect(screen.getAllByText("Lowball LLC").length).toBeGreaterThan(0);
 
-    // Open the Filter popover, then pick "50%+" in the Min probability Select.
-    fireEvent.click(screen.getByRole("button", { name: /filter/i }));
+    // Open the Filter popover (scope to the mobile row — the desktop action
+    // row renders an identical Filter trigger, so the unscoped query is now
+    // ambiguous). Either popover shares the same filters state.
+    const mobile = screen.getByTestId("pipeline-mobile-controls");
+    fireEvent.click(within(mobile).getByRole("button", { name: /filter/i }));
     // The popover has one Radix Select (Min probability) whose trigger shows
     // the placeholder "Any"; the page's other combobox is the Sort control
     // (reads "Sort: …"), so the "Any"-labelled combobox is unambiguous.
