@@ -27,3 +27,15 @@ export function formatPhone(raw: string, format: "us" | "international" = "us"):
 export function formatPhoneDisplay(raw: string): string {
   return formatPhone(raw).display;
 }
+
+/**
+ * Best-effort dialable form for numbers libphonenumber-js can't validate.
+ * Returns a sanitized `+?digits` string when the raw input has at least 7
+ * digits (enough to be a real, dialable number — e.g. a non-US line), else
+ * null. Preserves a leading `+` if present so `tel:` keeps the country code.
+ */
+export function dialableDigits(raw: string): string | null {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length < 7) return null;
+  return raw.trim().startsWith("+") ? `+${digits}` : digits;
+}

@@ -26,7 +26,7 @@
 
 import * as React from "react";
 import { Phone, ChevronDown, ChevronUp } from "lucide-react";
-import { formatPhone } from "@/lib/phone";
+import { formatPhone, dialableDigits } from "@/lib/phone";
 import { cn } from "@/lib/utils";
 import { Button } from "./Button";
 
@@ -64,7 +64,16 @@ export const PhoneWithClickToCall = React.forwardRef<HTMLDivElement, PhoneWithCl
   ) {
     const [expanded, setExpanded] = React.useState(false);
     const primary = formatPhone(phoneNumber, displayFormat);
-    const isInvalid = !primary.valid;
+    // Best-effort fallback: a real but unparseable number (e.g. non-US) is
+    // still dialable when it has ≥ 7 digits. We show it as-is and enable a
+    // tel: call on its digits rather than a dead "Invalid number" state.
+    const fallbackDigits = primary.valid ? null : dialableDigits(phoneNumber);
+    // Number to call: e164 when valid, raw digits when dialable, else null.
+    const callNumber = primary.valid ? primary.e164 : fallbackDigits;
+    // Text to show: formatted when valid, raw input when dialable fallback.
+    const displayText = primary.valid ? primary.display : phoneNumber;
+    // "Invalid" (greyed + disabled + helper) only when truly undialable.
+    const isInvalid = !primary.valid && fallbackDigits === null;
     const isDisabled = disabled || isInvalid;
 
     const handleCall = (e164OrRaw: string) => {
@@ -96,7 +105,7 @@ export const PhoneWithClickToCall = React.forwardRef<HTMLDivElement, PhoneWithCl
               isInvalid ? "text-text-subtle" : "text-text-default",
             )}
           >
-            {primary.display}
+            {displayText}
           </span>
 
           {multiNumber && alternateNumbers.length > 0 && (
@@ -119,8 +128,8 @@ export const PhoneWithClickToCall = React.forwardRef<HTMLDivElement, PhoneWithCl
             iconOnly
             leadingIcon={Phone}
             disabled={isDisabled}
-            onClick={() => primary.e164 && handleCall(primary.e164)}
-            aria-label={isInvalid ? "Invalid phone number" : `Call ${primary.display}`}
+            onClick={() => callNumber && handleCall(callNumber)}
+            aria-label={isInvalid ? "Invalid phone number" : `Call ${displayText}`}
             className={cn(btnSizeOverride, "rounded-radius-sm")}
           />
         </div>
