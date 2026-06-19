@@ -18,7 +18,7 @@
  * authenticated app, not just the demo pages.
  */
 
-import { ChevronLeft, LogOut, Moon, Search, Settings as SettingsIcon, Sun, Monitor, User as UserIcon } from "lucide-react";
+import { BarChart3, ChevronLeft, LogOut, Moon, Search, Settings as SettingsIcon, Sun, Monitor, User as UserIcon, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useTheme, type Theme } from "@/stores/theme";
 import { useAuth } from "@/stores/auth";
+import { useProfile } from "@/features/auth/useProfile";
 import { Logo } from "./Logo";
 import { NotificationsBell } from "./NotificationsBell";
 
@@ -214,6 +215,15 @@ interface AvatarMenuProps {
 }
 
 function AvatarMenu({ user, theme, resolvedTheme, setTheme, ThemeIcon, handleSignOut, desktop }: AvatarMenuProps) {
+  const navigate = useNavigate();
+  const profile = useProfile();
+  const isManagerOrAdmin =
+    profile.data?.role === "manager" || profile.data?.role === "admin";
+  // Mobile-only admin shortcuts: the desktop sidebar already exposes Team +
+  // Insights, but the mobile BottomNav doesn't — so managers/admins on mobile
+  // would otherwise have no nav entry to them. Surface them here.
+  const showAdminGroup = !desktop && isManagerOrAdmin;
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -237,6 +247,20 @@ function AvatarMenu({ user, theme, resolvedTheme, setTheme, ThemeIcon, handleSig
           {user.email && <span className="text-caption text-text-muted">{user.email}</span>}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {showAdminGroup && (
+          <>
+            <DropdownMenuLabel>Admin</DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => navigate("/admin/agents")}>
+              <Users />
+              Team
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => navigate("/admin/insights")}>
+              <BarChart3 />
+              Insights
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         <DropdownMenuItem onSelect={() => toast("Profile lands in a later session")}>
           <UserIcon />
           Profile
