@@ -1,6 +1,6 @@
 // apps/app/src/features/admin/pages/AgentsPage.test.tsx
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -42,9 +42,30 @@ describe("AgentsPage", () => {
         </QueryClientProvider>
       </MemoryRouter>,
     );
-    expect(screen.getByText("Alice")).toBeInTheDocument();
-    expect(screen.getByText("a@x.com")).toBeInTheDocument();
+    // Name + email render in both the table and the mobile card list, so scope
+    // to the desktop table to assert the row presence unambiguously.
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("Alice")).toBeInTheDocument();
+    expect(within(table).getByText("a@x.com")).toBeInTheDocument();
     expect(screen.getByText("1 / 10")).toBeInTheDocument();
+  });
+
+  it("renders a mobile card per agent with name, a key field, and an action", () => {
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <AgentsPage />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    const cards = screen.getByTestId("agents-mobile-cards");
+    // Same agent as the table, rendered in card form.
+    expect(within(cards).getByText("Alice")).toBeInTheDocument();
+    expect(within(cards).getByText("a@x.com")).toBeInTheDocument();
+    // A scan-critical labeled number (pipeline value).
+    expect(within(cards).getByText("Pipeline")).toBeInTheDocument();
+    // Same row action the table exposes.
+    expect(within(cards).getByRole("button", { name: "Row actions" })).toBeInTheDocument();
   });
 
   it("renders window selector buttons", () => {
@@ -68,9 +89,13 @@ describe("AgentsPage", () => {
         </QueryClientProvider>
       </MemoryRouter>,
     );
-    expect(screen.getByText(/Pipeline/i)).toBeInTheDocument();
-    expect(screen.getByText(/Open deals/i)).toBeInTheDocument();
-    expect(screen.getByText(/Activities/i)).toBeInTheDocument();
-    expect(screen.getByText(/Last active/i)).toBeInTheDocument();
+    // "Pipeline" / "Open deals" also appear as labeled stats in the mobile
+    // cards, so scope the header assertions to the desktop table.
+    const headers = within(screen.getByRole("table")).getAllByRole("columnheader");
+    const headerText = headers.map((h) => h.textContent ?? "").join(" ");
+    expect(headerText).toMatch(/Pipeline/i);
+    expect(headerText).toMatch(/Open deals/i);
+    expect(headerText).toMatch(/Activities/i);
+    expect(headerText).toMatch(/Last active/i);
   });
 });
