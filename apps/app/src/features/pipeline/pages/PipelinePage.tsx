@@ -225,6 +225,34 @@ function PageHeader({
         <p className="text-body-md text-text-muted">{subhead}</p>
       </div>
 
+      {/* Mobile control row — exposes search/filter/sort on small screens.
+          The desktop action row below is gated to sm:flex, so without this
+          mobile users only got the stage chips. ViewToggle is intentionally
+          omitted (kanban is desktop-only). */}
+      <div data-testid="pipeline-mobile-controls" className="flex flex-col gap-2 sm:hidden">
+        <FormField htmlFor="pipeline-search-mobile" label={`Search ${dealsNoun}`} showLabel={false}>
+          <Input
+            id="pipeline-search-mobile"
+            type="search"
+            placeholder={`Search ${dealsNoun}...`}
+            leadingIcon={Search}
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+          />
+        </FormField>
+        <div className="flex gap-2">
+          <PipelineFilterPopover filters={filters} onChange={onFiltersChange} />
+          <FormField htmlFor="pipeline-sort-mobile" label="Sort deals" showLabel={false}>
+            <Select
+              id="pipeline-sort-mobile"
+              value={sortKey}
+              onValueChange={(v) => onSortChange(v as DealSortKey)}
+              options={(Object.keys(DEAL_SORT_LABEL) as DealSortKey[]).map((k) => ({ value: k, label: `Sort: ${DEAL_SORT_LABEL[k]}` }))}
+            />
+          </FormField>
+        </div>
+      </div>
+
       {/* Mobile FAB — fixed bottom-right above BottomNav. */}
       <Button
         variant="primary"

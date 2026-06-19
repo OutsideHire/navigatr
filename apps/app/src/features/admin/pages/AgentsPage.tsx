@@ -11,6 +11,7 @@ import { useTeamLeaderboard, type LeaderboardRow } from "../hooks/useTeamLeaderb
 import { useResendInvite } from "../hooks/useResendInvite";
 import { useRevokeMember } from "../hooks/useRevokeMember";
 import { AgentListRow } from "../components/AgentListRow";
+import { AgentCard } from "../components/AgentCard";
 import { SeatUsageBadge } from "../components/SeatUsageBadge";
 import { InviteAgentModal } from "../components/InviteAgentModal";
 import { RevokeAgentDialog } from "../components/RevokeAgentDialog";
@@ -174,7 +175,10 @@ export function AgentsPage() {
       {isLoading ? (
         <p className="text-body-md text-text-muted">Loading…</p>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        {/* Desktop: the full leaderboard table. Cards take over below md so
+            the 11-column table never has to horizontal-scroll on phones. */}
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-left">
             <thead className="border-b border-border-default text-eyebrow text-text-subtle">
               <tr>
@@ -229,6 +233,25 @@ export function AgentsPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Mobile: same agents, same order, stacked into cards. */}
+        <div
+          data-testid="agents-mobile-cards"
+          className="flex flex-col gap-3 md:hidden"
+        >
+          {sorted.map((row) => (
+            <AgentCard
+              key={row.agent_id}
+              row={row}
+              onNameClick={(r) => navigate(`/admin/agents/${r.agent_id}`)}
+              onViewPipeline={(r) => navigate(`/pipeline?owner=${r.agent_id}`)}
+              onResend={handleResend}
+              onRevoke={handleRevoke}
+              onPromote={() => toast("Promote — coming in v1.1")}
+            />
+          ))}
+        </div>
+        </>
       )}
 
       <InviteAgentModal open={inviteOpen} onOpenChange={setInviteOpen} />
