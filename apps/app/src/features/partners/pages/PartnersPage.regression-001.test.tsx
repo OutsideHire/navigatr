@@ -11,7 +11,7 @@
 // the visible set, and a cache update is reflected in the next render.
 
 import { describe, it, expect } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, within, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -152,5 +152,33 @@ describe("PartnersPage / sort + revenue regression", () => {
       .map((el) => el.textContent ?? "");
     expect(cardNames).toContain("First Partner");
     expect(cardNames).toContain("Newly Added Partner");
+  });
+
+  it("mobile search row narrows the partner list as the user types", async () => {
+    const user = userEvent.setup();
+    renderWithSeed({
+      partners: [
+        partner({ id: "p1", name: "Acme Advisors" }),
+        partner({ id: "p2", name: "Zenith Capital" }),
+      ],
+      deals: [],
+    });
+
+    // Search input renders twice (desktop action row + mobile row).
+    // Scope to the mobile row via its testid wrapper.
+    const mobileRow = screen.getByTestId("partners-mobile-search");
+    const mobileSearch = within(mobileRow).getByPlaceholderText("Search partners...");
+
+    await user.type(mobileSearch, "Acme");
+
+    // Debounce is 300ms; wait for the non-matching partner to drop out.
+    await waitFor(() => {
+      expect(screen.queryByText("Zenith Capital")).toBeNull();
+    });
+    const cardNames = screen
+      .getAllByText(/./, { selector: "p.text-body-strong" })
+      .map((el) => el.textContent ?? "");
+    expect(cardNames).toContain("Acme Advisors");
+    expect(cardNames).not.toContain("Zenith Capital");
   });
 });

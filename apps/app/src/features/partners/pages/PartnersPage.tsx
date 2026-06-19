@@ -299,6 +299,22 @@ export function PartnersPage() {
           </div>
         </header>
 
+        {/* Mobile search — desktop search lives in the hidden sm:flex
+            action row above; on mobile that row collapses, so surface
+            search here bound to the same searchInput state. */}
+        <div className="sm:hidden" data-testid="partners-mobile-search">
+          <FormField htmlFor="partner-search-mobile" label="Search partners" showLabel={false}>
+            <Input
+              id="partner-search-mobile"
+              type="search"
+              placeholder="Search partners..."
+              leadingIcon={Search}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
+          </FormField>
+        </div>
+
         {/* Status chips */}
         <div
           className={cn(
