@@ -8,10 +8,14 @@
 -- The chain predicate in the WHERE clause changes from
 --   and (p_include_chains or not p.is_chain)
 -- to
---   and (p_include_chains or not p.is_chain or p.chain_confidence not in ('high', 'medium'))
--- Note `not in ('high','medium')` is null-safe in our favor here: a NULL
--- chain_confidence makes the IN unknown, so the whole predicate falls through to
--- the explicit OR clauses — a null-confidence chain is kept (not excluded).
+--   and (p_include_chains or not p.is_chain or coalesce(p.chain_confidence, '') not in ('high', 'medium'))
+-- The coalesce is REQUIRED for null-safety: a bare `chain_confidence not in
+-- ('high','medium')` evaluates to NULL (unknown) for a NULL confidence under SQL
+-- three-valued logic, which would DROP the row in a WHERE — wrongly excluding a
+-- null-confidence chain. coalesce(...,'') maps NULL → '' → not in (...) is TRUE,
+-- so low- and null-confidence chains are kept (only high/medium are excluded),
+-- matching §5 (`return is_chain AND chain_confidence in ('high','medium')`) and the
+-- client candidatePool gate.
 --
 -- Body is otherwise identical to 20260602000001_raise_read_limit.sql (the latest
 -- definition of this function). Signature unchanged → `create or replace` (no drop,
@@ -59,7 +63,7 @@ as $$
     ST_Distance(p.location, ST_MakePoint(p_lng, p_lat)::geography) as distance_m
   from prospects p
   where p.in_profile
-    and (p_include_chains or not p.is_chain or p.chain_confidence not in ('high', 'medium'))
+    and (p_include_chains or not p.is_chain or coalesce(p.chain_confidence, '') not in ('high', 'medium'))
     and ST_DWithin(p.location, ST_MakePoint(p_lng, p_lat)::geography, p_radius_m)
   order by distance_m asc
   limit greatest(1, least(coalesce(p_limit, 30), 500));
