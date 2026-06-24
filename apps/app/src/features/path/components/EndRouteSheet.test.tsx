@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { EndRouteSheet } from "./EndRouteSheet";
 
-const base = { open: true, onOpenChange: vi.fn(), pendingCount: 6, onCarry: vi.fn(), onClear: vi.fn() };
+const base = { open: true, onOpenChange: vi.fn(), pendingCount: 6, onComplete: vi.fn(), onCarry: vi.fn(), onClear: vi.fn() };
 
 describe("EndRouteSheet", () => {
   it("shows the pending count and fires Carry / Clear", () => {
@@ -30,5 +30,15 @@ describe("EndRouteSheet", () => {
     render(<EndRouteSheet {...base} pendingCount={1} />);
     expect(screen.getByText(/1 stop left/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /carry 1 to tomorrow/i })).toBeInTheDocument();
+  });
+  it("Mark route complete fires onComplete", () => {
+    const onComplete = vi.fn();
+    render(<EndRouteSheet {...base} onComplete={onComplete} />);
+    fireEvent.click(screen.getByRole("button", { name: /mark route complete/i }));
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+  it("busy disables Mark route complete", () => {
+    render(<EndRouteSheet {...base} busy />);
+    expect(screen.getByRole("button", { name: /mark route complete/i })).toBeDisabled();
   });
 });
