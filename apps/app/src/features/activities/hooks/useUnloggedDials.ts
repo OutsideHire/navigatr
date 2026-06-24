@@ -57,7 +57,10 @@ export function useUnloggedDials() {
       }));
       if (dials.length === 0) return [];
 
-      // Own Call activities since the oldest dial.
+      // Own Call activities since the oldest dial. The explicit logged_by
+      // filter is load-bearing: activities RLS is org-wide (managers can read),
+      // so unlike the rep-only coverage_signal query above we cannot lean on
+      // RLS for per-rep scoping here.
       const { data: callRows, error: callErr } = await supabase
         .from("activities")
         .select("deal_id, occurred_at")

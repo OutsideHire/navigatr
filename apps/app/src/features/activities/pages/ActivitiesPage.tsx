@@ -39,6 +39,7 @@ import { type Activity, type ActivityType } from "../mockData";
 import { type Deal } from "@/features/pipeline/mockData";
 import { DISPOSITIONS, formatFollowUpDate } from "@/lib/followUpScheduling";
 import { LogActivitySheet } from "../components/LogActivitySheet";
+import { UnloggedCallsSection } from "../components/UnloggedCallsSection";
 import { useActivitiesForOrg } from "../hooks/useActivities";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
 
@@ -406,6 +407,8 @@ export function ActivitiesPage() {
             )}
           </p>
         </header>
+
+        <UnloggedCallsSection />
 
         <Tabs.Root value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
           <Tabs.List
