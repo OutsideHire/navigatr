@@ -3,7 +3,7 @@ import { Pause, Phone, Navigation, ChevronLeft, ChevronRight, ClipboardList } fr
 import { toast } from "sonner";
 import { Button } from "@/components/navigatr";
 import { labelForCategory } from "../mockData";
-import { useTodayPath } from "../hooks/useTodayPath";
+import { useTodayPath, type TodayStop } from "../hooks/useTodayPath";
 import { routeStats } from "../lib/routeStats";
 import { directionsUrl } from "../lib/directionsUrl";
 import { merchantFromStop } from "../lib/merchantFromStop";
@@ -21,6 +21,41 @@ export interface RunningPathProps {
   onExit: () => void;
 }
 
+type PathSummaryStats = {
+  visitedCount: number;
+  skippedCount: number;
+  totalStops: number;
+  routeMeters: number;
+  dispositions: Disposition[];
+  dealsCreated: number;
+};
+
+/**
+ * Compute the six PathSummary stat fields from the current stop list. When
+ * `countPendingAsSkipped` is true, pending stops are folded into `skippedCount`
+ * (the route-complete snapshot rule); otherwise only status==="skipped" counts.
+ */
+function computePathSummaryStats(
+  stops: TodayStop[],
+  origin: { lat: number; lng: number },
+  visited: number,
+  total: number,
+  { countPendingAsSkipped }: { countPendingAsSkipped: boolean },
+): PathSummaryStats {
+  const skipped = stops.filter((s) => s.status === "skipped").length;
+  const pending = countPendingAsSkipped
+    ? stops.filter((s) => s.status === "pending").length
+    : 0;
+  return {
+    visitedCount: visited,
+    skippedCount: skipped + pending,
+    totalStops: total,
+    routeMeters: routeStats(origin, stops.map((s) => ({ lat: s.lat, lng: s.lng }))).totalRouteMeters,
+    dispositions: stops.map((s) => s.disposition).filter((d): d is Disposition => d != null),
+    dealsCreated: stops.filter((s) => s.dealCreated).length,
+  };
+}
+
 /**
  * RunningPath — Path v3 running mode. One focused stop at a time: Call / Directions /
  * Log drop-in, with Prev/Skip/Next. Logging a drop-in (via DropInSheet) auto-advances
@@ -28,11 +63,12 @@ export interface RunningPathProps {
  */
 export function RunningPath({ origin, onPause, onViewPipeline, onExit }: RunningPathProps) {
   const { stops, setStatus, clear, pathId, pendingCount } = useTodayPath();
-  const { carryToTomorrow } = usePathMutations();
+  const { carryToTomorrow, finalizeCurrentPath } = usePathMutations();
   const firstPending = Math.max(0, stops.findIndex((s) => s.status === "pending"));
   const [index, setIndex] = React.useState(firstPending);
   const [logOpen, setLogOpen] = React.useState(false);
   const [endOpen, setEndOpen] = React.useState(false);
+  const [completed, setCompleted] = React.useState<PathSummaryStats | null>(null);
 
   const total = stops.length;
   const visited = stops.filter((s) => s.status === "visited").length;
@@ -55,17 +91,24 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit }: Running
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [total]);
 
-  if (allDone) {
-    const stats = routeStats(origin, stops.map((s) => ({ lat: s.lat, lng: s.lng })));
+  if (completed) {
     return (
       <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
         <PathSummary
-          visitedCount={visited}
-          skippedCount={stops.filter((s) => s.status === "skipped").length}
-          totalStops={total}
-          routeMeters={stats.totalRouteMeters}
-          dispositions={stops.map((s) => s.disposition).filter((d): d is Disposition => d != null)}
-          dealsCreated={stops.filter((s) => s.dealCreated).length}
+          {...completed}
+          onViewPipeline={onViewPipeline}
+          onNewPath={() => { void clear(); onExit(); }}
+        />
+      </div>
+    );
+  }
+
+  if (allDone) {
+    const stats = computePathSummaryStats(stops, origin, visited, total, { countPendingAsSkipped: false });
+    return (
+      <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
+        <PathSummary
+          {...stats}
           onViewPipeline={onViewPipeline}
           onNewPath={() => { void clear(); onExit(); }}
         />
@@ -101,6 +144,17 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit }: Running
       onExit();
     } catch {
       toast.error("Couldn't carry the stops to tomorrow — please try again.");
+    }
+  };
+  const handleComplete = async () => {
+    if (!pathId) return;
+    const snapshot = computePathSummaryStats(stops, origin, visited, total, { countPendingAsSkipped: true });
+    try {
+      await finalizeCurrentPath.mutateAsync(pathId);
+      setEndOpen(false);
+      setCompleted(snapshot);
+    } catch {
+      toast.error("Couldn't mark the route complete — please try again.");
     }
   };
   const handleClearRestart = async () => {
@@ -166,7 +220,8 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit }: Running
         open={endOpen}
         onOpenChange={setEndOpen}
         pendingCount={pendingCount()}
-        busy={carryToTomorrow.isPending}
+        busy={carryToTomorrow.isPending || finalizeCurrentPath.isPending}
+        onComplete={handleComplete}
         onCarry={handleCarry}
         onClear={handleClearRestart}
       />
