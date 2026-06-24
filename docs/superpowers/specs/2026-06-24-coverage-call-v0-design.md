@@ -77,33 +77,39 @@ coverage_signal:
 - **Scope:** only `DealCard`, `DealDetailPage`, `ContactsTab` (pipeline, deal-scoped). Not Path
   `MerchantDetailSheet` or `PartnerDetailPage`.
 
-### C. Matching + read path — `unlogged_dials`
+### C. Matching + read path — a pure TS function
 
-A SQL view returning the current rep's **unlogged dials**:
+Matching runs **on read, client-side**, as a pure unit-tested function — mirroring the existing
+`useDashboardData` client-side-aggregation pattern, and chosen over a SQL view because the repo's
+test stack (vitest + mocked Supabase, no DB-integration harness) cannot exercise SQL logic.
 
-- A dial is **logged** when a Call activity exists for the same deal + rep within the grace
-  window: `EXISTS (select 1 from activities a where a.deal_id = s.deal_id and a.logged_by =
-  s.user_id and a.type = 'call' and a.occurred_at between s.detected_at and s.detected_at +
-  interval '4 hours')`. (navigatr's `activities.disposition` is `NOT NULL`, so the mere existence
-  of a Call activity *is* the "logged" marker — there is no logged-without-disposition state.)
-- A dial is **surfaced** when it is unlogged AND past the **4h grace** (`s.detected_at < now() -
-  interval '4 hours'`). Dials within the grace are "pending" and excluded.
-- Scoped to `s.user_id = auth.uid()` (RLS also enforces this).
-- **Dedup at the read layer:** return **one row per deal** — the most recent unlogged dial for
-  that deal — so repeated taps to the same deal collapse to a single actionable item. Columns:
-  `deal_id, last_detected_at, dial_count`.
-- The 4h window is the PRD's call-grace constant (§3.3.C.4). Defined once in the SQL; the
-  frontend does not hardcode it.
-- The view is created `with (security_invoker = true)` so `coverage_signal` + `activities` RLS run
-  as the querying rep; the explicit `s.user_id = auth.uid()` filter is belt-and-suspenders.
+- **Pure function** `computeUnloggedDials(dials, callActivities, now): UnloggedDial[]` in
+  `features/activities/lib/unloggedDials.ts`:
+  - A dial is **logged** when a Call activity exists for the same `deal_id` within the grace
+    window: a `callActivities` entry with `dealId === dial.dealId` and `occurredAt` in
+    `[detected_at, detected_at + 4h]`. (navigatr's `activities.disposition` is `NOT NULL`, so the
+    mere existence of a Call activity *is* the "logged" marker — there is no
+    logged-without-disposition state. `callActivities` is already the rep's own, type='call' set.)
+  - A dial is **surfaced** when it is unlogged AND past the **4h grace**
+    (`detected_at < now − 4h`). Dials within the grace are "pending" and excluded.
+  - **Dedup:** return **one row per deal** — the most recent unlogged dial for that deal — so
+    repeated taps collapse to a single actionable item. Shape:
+    `{ dealId: string; lastDetectedAt: string; dialCount: number }`.
+  - The **4h grace** is a single exported constant `CALL_GRACE_MS` (PRD §3.3.C.4); not duplicated.
+- **Hook** `useUnloggedDials()` (see D) fetches the inputs RLS-scoped to the rep and runs the
+  function:
+  - dials: `coverage_signal` where `user_id = auth.uid()`, `channel='phone'`, `signal_type='dial'`
+    (RLS already restricts to own rows). Bounded to the rep's own dials.
+  - callActivities: the rep's own Call activities — `activities` where `logged_by = auth.uid()`,
+    `type='call'`, `occurred_at >= (oldest dial's detected_at)`. Bounded.
 
 ### D. UI — "Unlogged calls" section on the Activities page
 
 - New component `features/activities/components/UnloggedCallsSection.tsx` rendered near the top of
   `ActivitiesPage` (above the Today/Upcoming/History tabs, so it is visible regardless of tab).
-- New hook `features/activities/hooks/useUnloggedDials.ts` queries the `unlogged_dials` view and
-  joins deal display data (company name) — reuse the deals cache / `useDeals` mapping rather than
-  re-fetching.
+- New hook `features/activities/hooks/useUnloggedDials.ts` fetches the rep's dials + Call
+  activities (per C), runs `computeUnloggedDials`, and joins deal display data (company name) by
+  reusing the `useDeals` cache rather than re-fetching.
 - Each row: deal/company name + "Call started {relative time} · not logged" + a **"Log outcome"**
   button.
 - "Log outcome" opens the existing `LogActivitySheet` **prefilled** with `dealId` and `type='call'`
@@ -138,9 +144,10 @@ prefilled `LogActivitySheet` → logging the Call activity matches the dial → 
   insert with-check enforces `user_id = auth.uid()`; the org-consistency trigger overwrites `org_id`.
 - **`useRecordDial`:** inserts a `phone/dial` signal carrying the deal id + phone number; the call
   still launches when the insert rejects (fire-and-forget).
-- **`unlogged_dials`:** dial + a Call activity for that deal+rep within 4h → excluded; dial with no
-  matching call, past grace → included; dial within grace → excluded; a Call activity *outside* the
-  4h window → does NOT match (still included); multiple dials to one deal → one row with `dial_count`.
+- **`computeUnloggedDials` (pure fn):** dial + a Call activity for that deal within 4h → excluded;
+  dial with no matching call, past grace → included; dial within grace → excluded; a Call activity
+  *outside* the 4h window → does NOT match (still included); multiple dials to one deal → one row
+  with `dialCount` = count and `lastDetectedAt` = most recent.
 - **`UnloggedCallsSection`:** renders a row per unmatched deal with company name + relative time;
   "Log outcome" opens `LogActivitySheet` prefilled with the deal + `type='call'`; section hidden
   when none; logging invalidates and removes the row.
