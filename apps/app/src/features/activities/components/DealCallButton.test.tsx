@@ -32,4 +32,13 @@ describe("DealCallButton", () => {
     expect(recordDialMock).toHaveBeenCalledWith({ dealId: "deal-1", phoneNumber: "+15551234567" });
     expect(assignMock).toHaveBeenCalledWith("tel:+15551234567");
   });
+
+  it("records + launches the normalized e164, not the raw formatted prop", () => {
+    // A valid US number passed formatted; the atom dials its normalized e164,
+    // so the recorded/launched value differs from the prop string.
+    wrap(<DealCallButton dealId="deal-2" phoneNumber="(512) 555-0100" />);
+    fireEvent.click(screen.getByRole("button", { name: /call/i }));
+    expect(recordDialMock).toHaveBeenCalledWith({ dealId: "deal-2", phoneNumber: "+15125550100" });
+    expect(assignMock).toHaveBeenCalledWith("tel:+15125550100");
+  });
 });

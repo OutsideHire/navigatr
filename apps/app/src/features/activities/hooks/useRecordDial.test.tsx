@@ -4,7 +4,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useRecordDial } from "./useRecordDial";
 
-const insertMock = vi.fn(() => Promise.resolve({ error: null }));
+const insertMock = vi.fn(
+  (): Promise<{ error: Error | null }> => Promise.resolve({ error: null }),
+);
 vi.mock("@/lib/supabase", () => ({
   supabase: { from: () => ({ insert: insertMock }) },
 }));
