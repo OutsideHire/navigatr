@@ -230,6 +230,34 @@ describe("carryToTomorrow", () => {
   });
 });
 
+describe("finalizeCurrentPath", () => {
+  it("skips this path's pending stops and marks it completed", async () => {
+    const { result } = renderHook(() => usePathMutations(), { wrapper });
+    await act(async () => {
+      await result.current.finalizeCurrentPath.mutateAsync("p7");
+    });
+    expect(
+      calls.some(
+        (c) =>
+          c.table === "path_stops" &&
+          c.op === "update" &&
+          (c.payload as { status?: string }).status === "skipped" &&
+          c.filters.some(([col, v]) => col === "path_id" && v === "p7") &&
+          c.filters.some(([col, v]) => col === "status" && v === "pending"),
+      ),
+    ).toBe(true);
+    expect(
+      calls.some(
+        (c) =>
+          c.table === "paths" &&
+          c.op === "update" &&
+          (c.payload as { status?: string }).status === "completed" &&
+          c.filters.some(([col, v]) => col === "id" && v === "p7"),
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("closePreviousPath", () => {
   it("skips the old path's pending stops and marks it completed", async () => {
     const { result } = renderHook(() => usePathMutations(), { wrapper });

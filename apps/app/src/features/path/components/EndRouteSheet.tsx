@@ -7,8 +7,14 @@ interface EndRouteSheetProps {
   onOpenChange: (open: boolean) => void;
   /** Stops still pending on the route. */
   pendingCount: number;
-  /** A carry/clear action is in flight — disable the buttons. */
+  /**
+   * An action (complete/carry/clear) is in flight — disables every button and
+   * shows the spinner on the primary "Mark route complete" button. Only one
+   * action runs at a time.
+   */
   busy?: boolean;
+  /** Finalize this path now (skip pending) + show the report. */
+  onComplete: () => void;
   /** Carry the pending stops to tomorrow. */
   onCarry: () => void;
   /** Clear today's path and start over. */
@@ -17,9 +23,10 @@ interface EndRouteSheetProps {
 
 /**
  * EndRouteSheet — shown from RunningPath's "End route" when stops remain. Lets the
- * rep carry the remaining stops to tomorrow or clear the path and start over.
+ * rep mark the route complete now (skipping the pending stops), carry the remaining
+ * stops to tomorrow, or clear the path and start over.
  */
-export function EndRouteSheet({ open, onOpenChange, pendingCount, busy, onCarry, onClear }: EndRouteSheetProps) {
+export function EndRouteSheet({ open, onOpenChange, pendingCount, busy, onComplete, onCarry, onClear }: EndRouteSheetProps) {
   const noun = pendingCount === 1 ? "stop" : "stops";
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -40,10 +47,13 @@ export function EndRouteSheet({ open, onOpenChange, pendingCount, busy, onCarry,
             </Dialog.Close>
           </div>
           <p className="text-body-md text-text-muted">
-            Carry the remaining {noun} to tomorrow, or clear this path and start over.
+            Mark this route complete, carry the remaining {noun} to tomorrow, or clear this path and start over.
           </p>
           <div className="flex flex-col gap-2">
-            <Button variant="primary" disabled={busy} loading={busy} onClick={onCarry}>
+            <Button variant="primary" disabled={busy} loading={busy} onClick={onComplete}>
+              Mark route complete
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={onCarry}>
               Carry {pendingCount} to tomorrow
             </Button>
             <Button variant="tertiary" disabled={busy} onClick={onClear}>

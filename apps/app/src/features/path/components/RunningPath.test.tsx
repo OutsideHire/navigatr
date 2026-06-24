@@ -12,13 +12,18 @@ vi.mock("../hooks/useTodayPath", () => ({
   useTodayPath: () => ({ stops, setStatus, clear, pathId, pendingCount }),
 }));
 const carryMutate = vi.fn();
+const finalizeMutate = vi.fn();
 vi.mock("../hooks/usePathMutations", () => ({
-  usePathMutations: () => ({ carryToTomorrow: { mutateAsync: carryMutate, isPending: false } }),
+  usePathMutations: () => ({
+    carryToTomorrow: { mutateAsync: carryMutate, isPending: false },
+    finalizeCurrentPath: { mutateAsync: finalizeMutate, isPending: false },
+  }),
 }));
 vi.mock("./EndRouteSheet", () => ({
-  EndRouteSheet: (p: { open: boolean; pendingCount: number; onCarry: () => void; onClear: () => void; onOpenChange: (o: boolean) => void }) =>
+  EndRouteSheet: (p: { open: boolean; pendingCount: number; onCarry: () => void; onClear: () => void; onComplete: () => void; onOpenChange: (o: boolean) => void }) =>
     p.open ? (
       <div data-testid="end-sheet"><span>{p.pendingCount} pending</span>
+        <button onClick={p.onComplete}>mark-complete</button>
         <button onClick={p.onCarry}>carry</button><button onClick={p.onClear}>clear</button>
         <button onClick={() => p.onOpenChange(false)}>cancel</button></div>
     ) : null,
@@ -32,7 +37,7 @@ vi.mock("./DropInSheet", () => ({
       </div>
     ) : null,
 }));
-vi.mock("./PathSummary", () => ({ PathSummary: () => <div data-testid="summary">summary</div> }));
+vi.mock("./PathSummary", () => ({ PathSummary: (p: { skippedCount: number }) => <div data-testid="summary" data-skipped={p.skippedCount}>summary</div> }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 
 function stop(id: string, over: Partial<TodayStop> = {}): TodayStop {
@@ -44,6 +49,7 @@ beforeEach(() => {
   setStatus.mockClear();
   clear.mockClear();
   carryMutate.mockReset();
+  finalizeMutate.mockReset();
   pathId = "today-1";
   pendingCount = () => stops.filter((s) => s.status === "pending").length;
 });
@@ -168,6 +174,36 @@ describe("RunningPath", () => {
     expect(toast.error).toHaveBeenCalled();
     expect(onExitSpy).not.toHaveBeenCalled();
     expect(screen.getByTestId("end-sheet")).toBeInTheDocument();
+  });
+  it("Mark route complete finalizes and shows the report without exiting", async () => {
+    stops = [stop("A"), stop("B", { status: "visited" })];
+    pendingCount = () => 1;
+    pathId = "today-1";
+    finalizeMutate.mockResolvedValueOnce(undefined);
+    const onExitSpy = vi.fn();
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} />);
+    fireEvent.click(screen.getByRole("button", { name: /end route/i }));
+    await act(async () => { fireEvent.click(screen.getByText("mark-complete")); });
+    expect(finalizeMutate).toHaveBeenCalledWith("today-1");
+    const summary = screen.getByTestId("summary");
+    expect(summary).toBeInTheDocument();
+    // pending-as-skipped: already-skipped (0) + pending (1 = stop A) = 1
+    expect(summary).toHaveAttribute("data-skipped", "1");
+    expect(onExitSpy).not.toHaveBeenCalled();
+  });
+  it("Mark complete failure toasts and keeps the sheet open (no report)", async () => {
+    stops = [stop("A")];
+    pendingCount = () => 1;
+    pathId = "today-1";
+    finalizeMutate.mockRejectedValueOnce(new Error("boom"));
+    const onExitSpy = vi.fn();
+    const { toast } = await import("sonner");
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} />);
+    fireEvent.click(screen.getByRole("button", { name: /end route/i }));
+    await act(async () => { fireEvent.click(screen.getByText("mark-complete")); });
+    expect(toast.error).toHaveBeenCalled();
+    expect(screen.queryByTestId("summary")).not.toBeInTheDocument();
+    expect(onExitSpy).not.toHaveBeenCalled();
   });
   it("Cancel closes the sheet without mutating or exiting", () => {
     stops = [stop("A"), stop("B")];

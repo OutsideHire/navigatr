@@ -219,6 +219,14 @@ export function usePathMutations() {
     onSuccess: invalidate,
   });
 
+  // Finalize THIS path now: skip its pending stops + mark it completed. Wraps the
+  // finalizeSingle helper so the End-route "Mark route complete" action gets
+  // mutateAsync + isPending + the shared cache invalidation.
+  const finalizeCurrentPath = useMutation({
+    mutationFn: (pathId: string) => finalizeSingle(pathId),
+    onSuccess: invalidate,
+  });
+
   const closePreviousPath = useMutation({
     mutationFn: async (input: { prevPathId: string; prevPathDate: string }): Promise<void> => {
       await finalizeSingle(input.prevPathId);
@@ -227,5 +235,5 @@ export function usePathMutations() {
     onSuccess: invalidate,
   });
 
-  return { createPath, addStops, removeStop, reorderStops, setStopStatus, setStopDisposition, markDealCreated, deletePath, continuePreviousPath, carryToTomorrow, closePreviousPath };
+  return { createPath, addStops, removeStop, reorderStops, setStopStatus, setStopDisposition, markDealCreated, deletePath, continuePreviousPath, carryToTomorrow, closePreviousPath, finalizeCurrentPath };
 }
