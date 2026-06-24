@@ -455,6 +455,8 @@ export interface LogActivitySheetProps {
   dealId: string;
   /** Called after a successful log so the parent can refresh activities. */
   onLogged?: () => void;
+  /** Open straight onto this type's form, skipping the picker. */
+  defaultType?: ActivityType;
 }
 
 export function LogActivitySheet({
@@ -462,13 +464,14 @@ export function LogActivitySheet({
   onOpenChange,
   dealId,
   onLogged,
+  defaultType,
 }: LogActivitySheetProps) {
-  const [type, setType] = React.useState<ActivityType | null>(null);
+  const [type, setType] = React.useState<ActivityType | null>(defaultType ?? null);
 
-  // Reset on close so reopening starts at the type picker.
+  // Reset on close so reopening starts where the caller asked (picker or a type).
   React.useEffect(() => {
-    if (!open) setType(null);
-  }, [open]);
+    if (!open) setType(defaultType ?? null);
+  }, [open, defaultType]);
 
   // All four types route to the shared ActivityForm; duration field is
   // gated per-type via TYPE_CONFIG.

@@ -11,7 +11,8 @@ import { useNavigate } from "react-router-dom";
 import { Mail } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { CardWithStatusBand, PhoneWithClickToCall } from "@/components/navigatr";
+import { CardWithStatusBand } from "@/components/navigatr";
+import { DealCallButton } from "@/features/activities/components/DealCallButton";
 import {
   formatMoney,
   formatRelative,
@@ -54,7 +55,7 @@ export function DealCard({ deal }: { deal: Deal }) {
         </div>
 
         <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-          <PhoneWithClickToCall phoneNumber={deal.phone} size="sm" />
+          <DealCallButton dealId={deal.id} phoneNumber={deal.phone} size="sm" />
           {deal.email && (
             <a
               href={`mailto:${deal.email}`}

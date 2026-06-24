@@ -11,7 +11,8 @@ import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
-import { Button, Card, PhoneWithClickToCall } from "@/components/navigatr";
+import { Button, Card } from "@/components/navigatr";
+import { DealCallButton } from "@/features/activities/components/DealCallButton";
 import type { Deal } from "../mockData";
 import { roleLabel } from "../lib/dealContactRoles";
 import {
@@ -95,7 +96,7 @@ export function ContactsTab({ deal, onEditPrimary }: ContactsTabProps) {
           </div>
           <p className="text-body-md font-medium text-text-default">{deal.contactName}</p>
           {deal.phone && (
-            <PhoneWithClickToCall phoneNumber={deal.phone} size="sm" />
+            <DealCallButton dealId={deal.id} phoneNumber={deal.phone} size="sm" />
           )}
           {deal.email && (
             <a
@@ -173,7 +174,7 @@ export function ContactsTab({ deal, onEditPrimary }: ContactsTabProps) {
                     </div>
                   </div>
                   {contact.phone && (
-                    <PhoneWithClickToCall phoneNumber={contact.phone} size="sm" />
+                    <DealCallButton dealId={deal.id} phoneNumber={contact.phone} size="sm" />
                   )}
                   {contact.email && (
                     <a

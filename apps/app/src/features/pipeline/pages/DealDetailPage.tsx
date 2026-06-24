@@ -47,7 +47,6 @@ import {
   Card,
   CardWithStatusBand,
   ListRow,
-  PhoneWithClickToCall,
 } from "@/components/navigatr";
 
 import {
@@ -74,6 +73,7 @@ import { Select, type SelectOption } from "@/components/navigatr";
 import type { Activity } from "@/features/activities/mockData";
 import { DISPOSITIONS } from "@/lib/followUpScheduling";
 import { LogActivitySheet } from "@/features/activities/components/LogActivitySheet";
+import { DealCallButton } from "@/features/activities/components/DealCallButton";
 import { EditDealSheet } from "../components/EditDealSheet";
 import { EditActivitySheet } from "@/features/activities/components/EditActivitySheet";
 import { QuickActionsCard } from "../components/QuickActionsCard";
@@ -358,7 +358,7 @@ function ContactInfoCard({ deal }: { deal: Deal }) {
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-teal-20 text-accent-teal">
             <PhoneIcon className="h-4 w-4" aria-hidden />
           </span>
-          <PhoneWithClickToCall phoneNumber={deal.phone} size="sm" />
+          <DealCallButton dealId={deal.id} phoneNumber={deal.phone} size="sm" />
         </div>
         <div className="flex items-center gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-blue-20 text-accent-blue">

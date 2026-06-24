@@ -145,6 +145,18 @@ describe("LogActivitySheet — submission payload by type", () => {
   });
 });
 
+describe("LogActivitySheet — defaultType", () => {
+  it("opens directly on the form when defaultType is set", () => {
+    render(<LogActivitySheet open onOpenChange={vi.fn()} dealId="deal-1" defaultType="call" />);
+    // Form title is "Log activity" (shared with the submit button); the
+    // type-picker title is "What did you do?". On the Call form we see the
+    // duration field and no picker title.
+    expect(screen.getAllByText(/log activity/i).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText(/duration/i)).toBeInTheDocument();
+    expect(screen.queryByText(/what did you do\?/i)).not.toBeInTheDocument();
+  });
+});
+
 describe("LogActivitySheet — change-type navigation", () => {
   it("'Change type' button returns to the picker without submitting", () => {
     openSheet();

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DealCard } from "./DealCard";
 import { MOCK_DEALS, type Deal } from "../mockData";
 
@@ -10,12 +11,26 @@ vi.mock("react-router-dom", async (orig) => ({
   useNavigate: () => navigate,
 }));
 
+vi.mock("@/stores/auth", () => ({
+  useAuth: (selector: (s: { user: { id: string } | null }) => unknown) =>
+    selector({ user: { id: "user-1" } }),
+}));
+vi.mock("@/features/auth/useProfile", () => ({
+  useProfile: () => ({ data: { org_id: "org-1" } }),
+}));
+
 function deal(over: Partial<Deal> = {}): Deal {
   return { ...MOCK_DEALS[0], ...over };
 }
 
 function renderCard(d: Deal) {
-  render(<MemoryRouter><DealCard deal={d} /></MemoryRouter>);
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter>
+        <DealCard deal={d} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
 beforeEach(() => navigate.mockClear());
