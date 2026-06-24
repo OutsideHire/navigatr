@@ -76,11 +76,25 @@ describe("candidatePool", () => {
   });
   it("excludes chains and applies minRating", () => {
     const pool = candidatePool(
-      [m({ id: "ok", rating: 4.5 }), m({ id: "low", rating: 2 }), m({ id: "chain", isChain: true })],
+      [m({ id: "ok", rating: 4.5 }), m({ id: "low", rating: 2 }), m({ id: "chain", isChain: true, chainConfidence: "high" })],
       { industries: [], sortMode: "distance", minRating: 4 },
     );
     expect(pool.map((x) => x.id)).toEqual(["ok"]);
   });
+  it("excludes only high/medium-confidence chains; keeps low/null-confidence chains and non-chains (spec §5)", () => {
+    const pool = candidatePool(
+      [
+        m({ id: "highChain", isChain: true, chainConfidence: "high" }),
+        m({ id: "mediumChain", isChain: true, chainConfidence: "medium" }),
+        m({ id: "lowChain", isChain: true, chainConfidence: "low" }),
+        m({ id: "nullChain", isChain: true, chainConfidence: null }),
+        m({ id: "nonChain", isChain: false }),
+      ],
+      { industries: [], sortMode: "distance" },
+    );
+    expect(pool.map((x) => x.id).sort()).toEqual(["lowChain", "nonChain", "nullChain"]);
+  });
+
   it("applies a sub-type selection", () => {
     const sel: IndustrySelection = { automotive: ["car_repair"] };
     const pool = candidatePool(

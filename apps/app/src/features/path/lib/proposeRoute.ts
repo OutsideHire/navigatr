@@ -9,6 +9,11 @@ import { sortMerchants, type PathSortMode } from "./sortMerchants";
 import { matchesSelection, type IndustrySelection } from "./industrySelection";
 import type { Merchant, MerchantCategory } from "../mockData";
 
+/** Spec §5: only high/medium-confidence chains are excluded; low/null are kept. */
+function isExcludedChain(m: { isChain?: boolean; chainConfidence?: string | null }): boolean {
+  return m.isChain === true && (m.chainConfidence === "high" || m.chainConfidence === "medium");
+}
+
 export interface CandidatePoolOpts {
   /** Category buckets to include. EMPTY = all. Ignored when `selection` is set. */
   industries: MerchantCategory[];
@@ -25,7 +30,7 @@ export function candidatePool<T extends Merchant & { distanceMeters?: number }>(
   opts: CandidatePoolOpts,
 ): T[] {
   const geocoded = merchants.filter(
-    (mch) => Number.isFinite(mch.lat) && Number.isFinite(mch.lng) && !mch.isChain,
+    (mch) => Number.isFinite(mch.lat) && Number.isFinite(mch.lng) && !isExcludedChain(mch),
   );
   const byRating =
     opts.minRating && opts.minRating > 0
