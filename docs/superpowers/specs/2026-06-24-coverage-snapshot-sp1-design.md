@@ -95,9 +95,12 @@ unique (user_id, snapshot_date)
 - Index `(user_id, snapshot_date desc)` for SP2's trend read; `(org_id, snapshot_date)` for rollups.
 - **Org-consistency trigger** (mirrors `activities`): overwrite `org_id` from the rep's profile/org.
   (The writer is service-role, but the trigger keeps the column authoritative.)
-- **RLS:** enable. `select using (user_id = auth.uid() OR public.user_can_see_owner(user_id))` —
-  rep sees own, manager/admin see their subtree. No client insert/update/delete (only the
-  service-role job writes; service role bypasses RLS).
+- **RLS:** enable. `select using (org_id = public.user_org_id() AND (user_id = auth.uid() OR
+  public.user_can_see_owner(user_id)))` — rep sees own, manager/admin see their subtree, **always
+  org-gated**. The `org_id = user_org_id()` AND is load-bearing: `user_can_see_owner` does no org
+  check itself (and returns true on a NULL `role_path`), so every caller (deals, activities) pairs
+  it with the org gate — omitting it leaks snapshots cross-org. No client insert/update/delete (only
+  the service-role job writes; service role bypasses RLS).
 
 **`organizations.coverage_config jsonb not null default '{}'::jsonb`** —
 `{ enabled_channels?, band_thresholds?, minimum_event_counts?, label_overrides? }`. Code supplies
