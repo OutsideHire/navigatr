@@ -46,6 +46,7 @@ import { type Activity, type ActivityType } from "../mockData";
 import { type Deal } from "@/features/pipeline/mockData";
 import { DISPOSITIONS, formatFollowUpDate } from "@/lib/followUpScheduling";
 import { LogActivitySheet } from "../components/LogActivitySheet";
+import { EditActivitySheet } from "../components/EditActivitySheet";
 import { UnloggedCallsSection } from "../components/UnloggedCallsSection";
 import { useActivitiesForOrg } from "../hooks/useActivities";
 import { useUpdateActivity } from "../hooks/useUpdateActivity";
@@ -227,12 +228,12 @@ function HistoryRow({
   activity,
   deal,
   now,
-  onOpenDeal,
+  onEdit,
 }: {
   activity: Activity;
   deal: Deal | undefined;
   now: Date;
-  onOpenDeal: (id: string) => void;
+  onEdit: (a: Activity) => void;
 }) {
   const Icon = TYPE_ICON[activity.type];
   const accent = TYPE_ACCENT[activity.type];
@@ -245,7 +246,8 @@ function HistoryRow({
   return (
     <button
       type="button"
-      onClick={() => onOpenDeal(activity.dealId)}
+      onClick={() => onEdit(activity)}
+      aria-label={`Edit ${TYPE_LABEL[activity.type]} activity`}
       className={cn(
         "flex w-full items-start gap-3 rounded-radius-md border border-border-subtle bg-surface-default p-4 text-left transition-colors",
         "hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas",
@@ -345,11 +347,11 @@ function typeFilterLabel(f: "all" | ActivityType): string {
 }
 
 export function ActivitiesPage() {
-  const navigate = useNavigate();
   const [tab, setTab] = React.useState<"today" | "upcoming" | "history">("today");
   const [typeFilter, setTypeFilter] = React.useState<"all" | ActivityType>("all");
   const [logSheetDealId, setLogSheetDealId] = React.useState<string | null>(null);
   const [logSheetOpen, setLogSheetOpen] = React.useState(false);
+  const [editingActivity, setEditingActivity] = React.useState<Activity | null>(null);
 
   // Pin "now" once per mount so the bucketing doesn't drift mid-session.
   // TODO: re-pin on tab visibility change so a rep who leaves the app
@@ -578,7 +580,7 @@ export function ActivitiesPage() {
                       activity={a}
                       deal={dealById.get(a.dealId)}
                       now={now}
-                      onOpenDeal={(id) => navigate(`/pipeline/${id}`)}
+                      onEdit={setEditingActivity}
                     />
                   ))}
                 </div>
@@ -599,6 +601,14 @@ export function ActivitiesPage() {
             // list cache — the tabs refetch automatically.
             toast.success("Activity logged");
           }}
+        />
+      )}
+
+      {editingActivity && (
+        <EditActivitySheet
+          open={!!editingActivity}
+          onOpenChange={(open) => !open && setEditingActivity(null)}
+          activity={editingActivity}
         />
       )}
     </div>
