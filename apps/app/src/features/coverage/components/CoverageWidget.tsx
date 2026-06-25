@@ -100,8 +100,8 @@ export function CoverageWidget() {
           {series.map((s) => (
             <span
               key={s.snapshotDate}
-              className={cn("flex-1 rounded-t-radius-sm", pres.tokenClass.replace("text-", "bg-"))}
-              style={{ height: `${Math.max((s.compositeCoverage / maxComposite) * 100, 4)}%`, opacity: 0.85 }}
+              className={cn("flex-1 rounded-t-radius-sm opacity-90", pres.barClass)}
+              style={{ height: `${Math.max((s.compositeCoverage / maxComposite) * 100, 4)}%` }}
             />
           ))}
         </div>

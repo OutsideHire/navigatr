@@ -17,6 +17,11 @@ describe("bandPresentation", () => {
   it("returns a pill class for each band", () => {
     expect(bandPresentation("good").pillClass).toBeTruthy();
   });
+  it("returns a static solid bar class per band tier", () => {
+    expect(bandPresentation("good").barClass).toBe("bg-status-success");
+    expect(bandPresentation("poor").barClass).toBe("bg-status-warning");
+    expect(bandPresentation("unreliable").barClass).toBe("bg-status-danger");
+  });
 });
 
 describe("confidenceLabel", () => {

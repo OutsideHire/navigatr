@@ -39,6 +39,14 @@ describe("CoverageWidget", () => {
     expect(screen.getByText(/phone/i)).toBeInTheDocument();
   });
 
+  it("uses the bare 'Estimated' qualifier for medium confidence", () => {
+    latest = snap({ confidenceLevel: "medium", compositeCoverage: 0.82 });
+    render(<CoverageWidget />);
+    expect(screen.getByText("82%")).toBeInTheDocument();
+    expect(screen.getByText("Estimated")).toBeInTheDocument();
+    expect(screen.queryByText(/low confidence/i)).not.toBeInTheDocument();
+  });
+
   it("renders the % with no qualifier for high confidence", () => {
     latest = snap({ confidenceLevel: "high", compositeCoverage: 0.92 });
     render(<CoverageWidget />);

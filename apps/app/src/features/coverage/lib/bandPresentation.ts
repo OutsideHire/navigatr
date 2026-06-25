@@ -11,14 +11,16 @@ export interface BandPresentation {
   tokenClass: string;
   /** background+text utilities for the band pill */
   pillClass: string;
+  /** solid background utility for the trend sparkline bars (static so Tailwind keeps it) */
+  barClass: string;
 }
 
 const BAND_PRESENTATION: Record<Band, BandPresentation> = {
-  excellent:  { label: "Excellent",  tokenClass: "text-status-success", pillClass: "bg-status-success-bg text-status-success" },
-  good:       { label: "Good",       tokenClass: "text-status-success", pillClass: "bg-status-success-bg text-status-success" },
-  adequate:   { label: "Adequate",   tokenClass: "text-status-warning", pillClass: "bg-status-warning-bg text-status-warning" },
-  poor:       { label: "Poor",       tokenClass: "text-status-warning", pillClass: "bg-status-warning-bg text-status-warning" },
-  unreliable: { label: "Unreliable", tokenClass: "text-status-danger",  pillClass: "bg-status-danger-bg text-status-danger" },
+  excellent:  { label: "Excellent",  tokenClass: "text-status-success", pillClass: "bg-status-success-bg text-status-success", barClass: "bg-status-success" },
+  good:       { label: "Good",       tokenClass: "text-status-success", pillClass: "bg-status-success-bg text-status-success", barClass: "bg-status-success" },
+  adequate:   { label: "Adequate",   tokenClass: "text-status-warning", pillClass: "bg-status-warning-bg text-status-warning", barClass: "bg-status-warning" },
+  poor:       { label: "Poor",       tokenClass: "text-status-warning", pillClass: "bg-status-warning-bg text-status-warning", barClass: "bg-status-warning" },
+  unreliable: { label: "Unreliable", tokenClass: "text-status-danger",  pillClass: "bg-status-danger-bg text-status-danger",  barClass: "bg-status-danger" },
 };
 
 export function bandPresentation(band: Band): BandPresentation {
