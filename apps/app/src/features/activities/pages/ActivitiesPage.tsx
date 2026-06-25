@@ -16,7 +16,8 @@
  *
  * Mobile-first single column. Desktop centers at max-w-5xl. Each task
  * row exposes a "Log activity" CTA that opens LogActivitySheet
- * pre-filled with the deal id. Snooze is a Sprint 2 stub (toast).
+ * pre-filled with the deal id, plus a Snooze menu that pushes the
+ * source activity's follow_up_date forward via useUpdateActivity.
  */
 
 import * as React from "react";
@@ -35,13 +36,21 @@ import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { Button, Card, Chip } from "@/components/navigatr";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { type Activity, type ActivityType } from "../mockData";
 import { type Deal } from "@/features/pipeline/mockData";
 import { DISPOSITIONS, formatFollowUpDate } from "@/lib/followUpScheduling";
 import { LogActivitySheet } from "../components/LogActivitySheet";
 import { UnloggedCallsSection } from "../components/UnloggedCallsSection";
 import { useActivitiesForOrg } from "../hooks/useActivities";
+import { useUpdateActivity } from "../hooks/useUpdateActivity";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
+import { snoozeDate, SNOOZE_OPTIONS, type SnoozeOption } from "../lib/snoozeDate";
 
 // ── Date helpers ──────────────────────────────────────────────────────
 
@@ -146,10 +155,12 @@ function TaskRow({
   task,
   now,
   onLog,
+  onSnooze,
 }: {
   task: DerivedTask;
   now: Date;
   onLog: (dealId: string) => void;
+  onSnooze: (task: DerivedTask, opt: SnoozeOption) => void;
 }) {
   const overdue = daysBetween(now, new Date(task.dueAt)) < 0;
   const spec = DISPOSITIONS[task.fromActivity.disposition];
@@ -193,13 +204,20 @@ function TaskRow({
         >
           Log activity
         </Button>
-        <Button
-          variant="tertiary"
-          size="sm"
-          onClick={() => toast("Snooze lands in sprint 2")}
-        >
-          Snooze
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="tertiary" size="sm">
+              Snooze
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {SNOOZE_OPTIONS.map((opt) => (
+              <DropdownMenuItem key={opt.value} onSelect={() => onSnooze(task, opt.value)}>
+                {opt.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
@@ -328,6 +346,7 @@ export function ActivitiesPage() {
   // newly logged activities surface without a refreshKey hack.
   const { data: activities = [] } = useActivitiesForOrg();
   const { data: deals = [] } = useDeals();
+  const updateActivity = useUpdateActivity();
 
   const dealById = React.useMemo(
     () => new Map(deals.map((d) => [d.id, d])),
@@ -385,6 +404,17 @@ export function ActivitiesPage() {
   const openLogSheet = (dealId: string) => {
     setLogSheetDealId(dealId);
     setLogSheetOpen(true);
+  };
+
+  const handleSnooze = (task: DerivedTask, opt: SnoozeOption) => {
+    const next = snoozeDate(opt, new Date());
+    updateActivity.mutate(
+      { id: task.fromActivity.id, dealId: task.deal.id, patch: { followUpDate: next } },
+      {
+        onSuccess: () => toast.success(`Snoozed to ${next}`),
+        onError: (e) => toast.error(e instanceof Error ? e.message : "Could not snooze"),
+      },
+    );
   };
 
   // Tab counts so the header chips show real numbers.
@@ -456,7 +486,7 @@ export function ActivitiesPage() {
                     <p className="text-eyebrow text-status-danger">Overdue · {overdue.length}</p>
                     <div className="flex flex-col gap-2">
                       {overdue.map((t) => (
-                        <TaskRow key={t.fromActivity.id} task={t} now={now} onLog={openLogSheet} />
+                        <TaskRow key={t.fromActivity.id} task={t} now={now} onLog={openLogSheet} onSnooze={handleSnooze} />
                       ))}
                     </div>
                   </section>
@@ -466,7 +496,7 @@ export function ActivitiesPage() {
                     <p className="text-eyebrow text-text-subtle">Due today · {today.length}</p>
                     <div className="flex flex-col gap-2">
                       {today.map((t) => (
-                        <TaskRow key={t.fromActivity.id} task={t} now={now} onLog={openLogSheet} />
+                        <TaskRow key={t.fromActivity.id} task={t} now={now} onLog={openLogSheet} onSnooze={handleSnooze} />
                       ))}
                     </div>
                   </section>
@@ -486,7 +516,7 @@ export function ActivitiesPage() {
                     <p className="text-eyebrow text-text-subtle">{dayHeading(items[0]!.dueAt, now)}</p>
                     <div className="flex flex-col gap-2">
                       {items.map((t) => (
-                        <TaskRow key={t.fromActivity.id} task={t} now={now} onLog={openLogSheet} />
+                        <TaskRow key={t.fromActivity.id} task={t} now={now} onLog={openLogSheet} onSnooze={handleSnooze} />
                       ))}
                     </div>
                   </section>
