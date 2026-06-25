@@ -116,15 +116,18 @@ describe("LogActivitySheet — submission payload by type", () => {
     });
   });
 
-  it("Drop-In submit sends type='drop_in' and durationMinutes=null", async () => {
+  it("Drop-In submit sends type='drop_in' with a field-visit disposition and durationMinutes=null", async () => {
     openSheet();
     fireEvent.click(screen.getByText("Drop-In"));
-    fireEvent.click(screen.getByText(/positive engagement/i));
+    // Drop-in offers field-visit outcomes, not call dispositions.
+    expect(screen.queryByText(/connected with dm/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText(/met with decision maker/i));
     fireEvent.click(screen.getByRole("button", { name: /log activity/i }));
 
     await waitFor(() => expect(mutateAsyncMock).toHaveBeenCalled());
     expect(mutateAsyncMock.mock.calls[0][0]).toMatchObject({
       type: "drop_in",
+      disposition: "met_dm",
       durationMinutes: null,
     });
   });
