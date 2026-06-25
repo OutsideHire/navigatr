@@ -25,7 +25,6 @@ import * as Tabs from "@radix-ui/react-tabs";
 import {
   Calendar,
   Check as CheckIcon,
-  Clock,
   Phone as PhoneIcon,
   PlusCircle,
 } from "lucide-react";
@@ -152,6 +151,10 @@ function TaskRow({
 }) {
   const overdue = daysBetween(now, new Date(task.dueAt)) < 0;
   const spec = DISPOSITIONS[task.fromActivity.disposition];
+  // Show the source activity's type via its icon. Overdue tasks keep the red
+  // treatment for urgency; otherwise the icon uses its type accent color.
+  const Icon = TYPE_ICON[task.fromActivity.type];
+  const accent = TYPE_ACCENT[task.fromActivity.type];
 
   return (
     <div
@@ -179,11 +182,11 @@ function TaskRow({
         <span
           className={cn(
             "flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full",
-            overdue ? "bg-status-danger text-text-inverse" : "bg-brand-primary-10 text-brand-primary",
+            overdue ? "bg-status-danger text-text-inverse" : cn(accent.bg, accent.fg),
           )}
           aria-hidden
         >
-          <Clock className="h-4 w-4" />
+          <Icon className="h-4 w-4" />
         </span>
         <div className="flex min-w-0 flex-col gap-0.5">
           <p className="truncate text-body-strong text-text-default group-hover:underline">{task.deal.companyName}</p>
