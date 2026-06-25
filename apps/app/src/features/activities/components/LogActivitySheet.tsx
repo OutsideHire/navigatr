@@ -52,6 +52,7 @@ import {
 } from "@/lib/followUpScheduling";
 import { type ActivityType } from "../mockData";
 import { useLogActivity } from "../hooks/useLogActivity";
+import { DISPOSITIONS_BY_TYPE, DISPOSITION_VALUES } from "../lib/dispositionSets";
 
 // ───────────────────────────────────────────────────────────────────────
 // Type picker
@@ -116,41 +117,8 @@ function TypePicker({
 // Call form (Sprint 1's only fully-implemented type)
 // ───────────────────────────────────────────────────────────────────────
 
-const TOP_DISPOSITIONS: Disposition[] = [
-  "statement_secured",
-  "positive_engagement",
-  "dm_unavailable",
-  "not_interested",
-];
-
-const ALL_DISPOSITIONS: Disposition[] = [
-  "statement_secured",
-  "positive_engagement",
-  "connected_with_dm",
-  "dm_unavailable",
-  "followup_requested",
-  "future_potential",
-  "low_probability",
-  "not_interested",
-  "wrong_number",
-  "closed_lost",
-];
-
 const emptyToUndefined = (v: unknown) =>
   v === "" || v === null || v === undefined ? undefined : v;
-
-const DISPOSITION_ENUM = [
-  "statement_secured",
-  "positive_engagement",
-  "connected_with_dm",
-  "dm_unavailable",
-  "followup_requested",
-  "future_potential",
-  "low_probability",
-  "not_interested",
-  "wrong_number",
-  "closed_lost",
-] as const;
 
 // Two schemas because the duration field's validation rules differ. Call /
 // Appointment require a positive integer; Email / Drop-In skip duration
@@ -162,7 +130,7 @@ const schemaWithDuration = z.object({
     emptyToUndefined,
     z.coerce.number().int().positive("Enter duration"),
   ),
-  disposition: z.enum(DISPOSITION_ENUM),
+  disposition: z.enum(DISPOSITION_VALUES),
   outcomeNotes: z.string().optional(),
 });
 
@@ -170,7 +138,7 @@ const schemaNoDuration = z.object({
   // Field stays in the shape so onSubmit can treat values uniformly, but
   // it's optional + ignored when serializing for these types.
   durationMinutes: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().optional()),
-  disposition: z.enum(DISPOSITION_ENUM),
+  disposition: z.enum(DISPOSITION_VALUES),
   outcomeNotes: z.string().optional(),
 });
 
@@ -275,6 +243,7 @@ function ActivityForm({
   const [showAll, setShowAll] = React.useState(false);
   const logActivity = useLogActivity();
   const cfg = TYPE_CONFIG[type];
+  const dispositionSet = DISPOSITIONS_BY_TYPE[type];
 
   const {
     register,
@@ -370,7 +339,7 @@ function ActivityForm({
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {(showAll ? ALL_DISPOSITIONS : TOP_DISPOSITIONS).map((d) => {
+                  {(showAll ? dispositionSet.all : dispositionSet.top).map((d) => {
                     const spec = DISPOSITIONS[d];
                     return (
                       <DispositionTile
@@ -393,7 +362,9 @@ function ActivityForm({
                   onClick={() => setShowAll((v) => !v)}
                   className="self-start"
                 >
-                  {showAll ? "Show top 4 dispositions" : "Show all 10 dispositions"}
+                  {showAll
+                    ? `Show top ${dispositionSet.top.length} dispositions`
+                    : `Show all ${dispositionSet.all.length} dispositions`}
                 </Button>
 
                 {errors.disposition && (

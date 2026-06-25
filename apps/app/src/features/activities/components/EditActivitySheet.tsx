@@ -29,31 +29,12 @@ import {
   Input,
   NotesFieldWithMic,
 } from "@/components/navigatr";
-import { DISPOSITIONS, type Disposition } from "@/lib/followUpScheduling";
+import { DISPOSITIONS } from "@/lib/followUpScheduling";
 import { useUpdateActivity } from "../hooks/useUpdateActivity";
 import { useDeleteActivity } from "../hooks/useDeleteActivity";
 import { useProfile } from "@/features/auth/useProfile";
 import type { Activity } from "../mockData";
-
-const TOP_DISPOSITIONS: Disposition[] = [
-  "statement_secured",
-  "positive_engagement",
-  "dm_unavailable",
-  "not_interested",
-];
-
-const ALL_DISPOSITIONS: Disposition[] = [
-  "statement_secured",
-  "positive_engagement",
-  "connected_with_dm",
-  "dm_unavailable",
-  "followup_requested",
-  "future_potential",
-  "low_probability",
-  "not_interested",
-  "wrong_number",
-  "closed_lost",
-];
+import { DISPOSITIONS_BY_TYPE, DISPOSITION_VALUES } from "../lib/dispositionSets";
 
 const emptyToUndefined = (v: unknown) =>
   v === "" || v === null || v === undefined ? undefined : v;
@@ -63,30 +44,7 @@ const editSchema = z.object({
     emptyToUndefined,
     z.coerce.number().int().positive("Enter call duration"),
   ),
-  disposition: z.enum([
-    "statement_secured",
-    "positive_engagement",
-    "connected_with_dm",
-    "dm_unavailable",
-    "followup_requested",
-    "future_potential",
-    "low_probability",
-    "not_interested",
-    "wrong_number",
-    "closed_lost",
-    // Path field drop-in outcomes (Slice 3) — accepted so an activity that
-    // already carries a field disposition can be loaded into this editor.
-    // The editable tile lists below stay call-scoped (Sprint 1 behavior).
-    "met_dm",
-    "gatekeeper",
-    "left_collateral",
-    "scheduled_callback",
-    "not_in_office",
-    "closed_locked",
-    "do_not_contact",
-    "out_of_business",
-    "other",
-  ]),
+  disposition: z.enum(DISPOSITION_VALUES),
   outcomeNotes: z.string().optional(),
   followUpDate: z.string().optional(),
 });
@@ -114,6 +72,14 @@ export function EditActivitySheet({ open, onOpenChange, activity }: EditActivity
 
   const [showAll, setShowAll] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
+
+  // Outcome options scoped to this activity's type. If the stored disposition
+  // is outside the type's set (legacy / cross-type data), include it so the
+  // editor never hides the current value.
+  const dispositionSet = DISPOSITIONS_BY_TYPE[activity.type];
+  const allOptions = dispositionSet.all.includes(activity.disposition)
+    ? dispositionSet.all
+    : [activity.disposition, ...dispositionSet.all];
   React.useEffect(() => {
     if (!confirmDelete) return;
     const t = window.setTimeout(() => setConfirmDelete(false), 4000);
@@ -146,9 +112,9 @@ export function EditActivitySheet({ open, onOpenChange, activity }: EditActivity
     if (open) {
       reset(defaultValues);
       setShowAll(
-        // If the current disposition isn't in TOP_DISPOSITIONS, expand
+        // If the current disposition isn't in the type's top tiles, expand
         // the picker so the user can see what they're editing.
-        !TOP_DISPOSITIONS.includes(activity.disposition),
+        !dispositionSet.top.includes(activity.disposition),
       );
       setConfirmDelete(false);
     }
@@ -275,7 +241,7 @@ export function EditActivitySheet({ open, onOpenChange, activity }: EditActivity
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      {(showAll ? ALL_DISPOSITIONS : TOP_DISPOSITIONS).map((d) => {
+                      {(showAll ? allOptions : dispositionSet.top).map((d) => {
                         const spec = DISPOSITIONS[d];
                         return (
                           <DispositionTile
@@ -298,7 +264,9 @@ export function EditActivitySheet({ open, onOpenChange, activity }: EditActivity
                       onClick={() => setShowAll((v) => !v)}
                       className="self-start"
                     >
-                      {showAll ? "Show top 4 dispositions" : "Show all 10 dispositions"}
+                      {showAll
+                        ? `Show top ${dispositionSet.top.length} dispositions`
+                        : `Show all ${allOptions.length} dispositions`}
                     </Button>
 
                     {errors.disposition && (
