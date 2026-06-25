@@ -178,3 +178,21 @@ describe("ActivitiesPage / shared type filter (above tabs)", () => {
     expect(screen.getByText("CallCo")).toBeInTheDocument();
   });
 });
+
+describe("ActivitiesPage / edit from History", () => {
+  it("tapping a History row opens the edit sheet prefilled with that activity", async () => {
+    const user = userEvent.setup();
+    renderWithSeed({
+      // History-only activity (no follow-up) so it lives on the History tab.
+      activities: [task("a-1", "d-1", null, "call")],
+      deals: [deal("d-1", "Acme")],
+    });
+
+    await user.click(screen.getByRole("tab", { name: /History/ }));
+    await user.click(screen.getByRole("button", { name: /Edit Call activity/i }));
+
+    // The reused EditActivitySheet opened, prefilled with this activity's notes.
+    expect(await screen.findByText("Edit activity")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("notes")).toBeInTheDocument();
+  });
+});
