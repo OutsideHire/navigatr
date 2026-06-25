@@ -74,6 +74,8 @@ export function CoverageWidget() {
   const b = band(latest.compositeCoverage, DEFAULT_COVERAGE_CONFIG.bandThresholds);
   const pres = bandPresentation(b);
   const qualifier = confidenceLabel(latest.confidenceLevel);
+  // Display-only estimate reconstructed from the stored coverage ratio × events;
+  // may differ by ±1 from the true logged count near rounding boundaries.
   const logged = Math.round((latest.callCoverage ?? 0) * latest.callEventCount);
   const maxComposite = Math.max(...series.map((s) => s.compositeCoverage), 0.01);
 
