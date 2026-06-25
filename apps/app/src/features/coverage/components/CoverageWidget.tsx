@@ -50,7 +50,7 @@ export function CoverageWidget() {
     return (
       <Card padding="lg" shadow="sm">
         <div className="flex items-center justify-between">
-          <h3 className="text-body-md font-semibold text-text-default">Logging coverage</h3>
+          <h2 className="text-heading-sm text-text-default">Logging coverage</h2>
           <span className="rounded-radius-full bg-surface-sunken px-2 py-0.5 text-caption text-text-subtle">
             No data yet
           </span>
@@ -80,7 +80,7 @@ export function CoverageWidget() {
   return (
     <Card padding="lg" shadow="sm">
       <div className="flex items-center justify-between">
-        <h3 className="text-body-md font-semibold text-text-default">Logging coverage</h3>
+        <h2 className="text-heading-sm text-text-default">Logging coverage</h2>
         <span className={cn("rounded-radius-full px-2 py-0.5 text-caption font-semibold", pres.pillClass)}>
           {pres.label}
         </span>
