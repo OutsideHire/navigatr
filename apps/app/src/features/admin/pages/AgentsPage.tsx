@@ -10,6 +10,9 @@ import { Button } from "@/components/navigatr";
 import { useTeamLeaderboard, type LeaderboardRow } from "../hooks/useTeamLeaderboard";
 import { useResendInvite } from "../hooks/useResendInvite";
 import { useRevokeMember } from "../hooks/useRevokeMember";
+import { useSetMemberRole } from "../hooks/useSetMemberRole";
+import type { UserRole } from "../lib/roleActions";
+import { useAuth } from "@/stores/auth";
 import { AgentListRow } from "../components/AgentListRow";
 import { AgentCard } from "../components/AgentCard";
 import { SeatUsageBadge } from "../components/SeatUsageBadge";
@@ -82,6 +85,11 @@ export function AgentsPage() {
   const { data: rows = [], isLoading } = useTeamLeaderboard(windowDays);
   const resend = useResendInvite();
   const revoke = useRevokeMember();
+  const setRole = useSetMemberRole();
+
+  const userId = useAuth((s) => s.user?.id);
+  const callerRole = rows.find((r) => r.agent_id === userId)?.role as UserRole | undefined;
+  const activeAdminCount = rows.filter((r) => r.role === "admin" && r.status === "active").length;
 
   const sorted = React.useMemo(
     () => sortRows(rows, sortKey, sortDir),
@@ -128,6 +136,22 @@ export function AgentsPage() {
       // Active profile — open the dialog so deals can be reassigned first.
       setRevokeDialogAgent(row);
     }
+  };
+
+  const handleSetRole = (row: LeaderboardRow, newRole: UserRole) => {
+    const who = row.full_name ?? row.email;
+    const message =
+      newRole === "admin"
+        ? `Make ${who} an admin? This gives them full control of the organization, including billing and member management.`
+        : `Change ${who}'s role to ${newRole}?`;
+    if (!window.confirm(message)) return;
+    setRole.mutate(
+      { profileId: row.agent_id, newRole },
+      {
+        onSuccess: () => toast.success("Role updated"),
+        onError: (e) => toast.error(e instanceof Error ? e.message : "Could not change role"),
+      },
+    );
   };
 
   return (
@@ -231,7 +255,10 @@ export function AgentsPage() {
                   onViewPipeline={(r) => navigate(`/pipeline?owner=${r.agent_id}`)}
                   onResend={handleResend}
                   onRevoke={handleRevoke}
-                  onPromote={() => toast("Promote — coming in v1.1")}
+                  onSetRole={handleSetRole}
+                  callerRole={callerRole}
+                  selfId={userId}
+                  activeAdminCount={activeAdminCount}
                 />
               ))}
             </tbody>
@@ -251,7 +278,10 @@ export function AgentsPage() {
               onViewPipeline={(r) => navigate(`/pipeline?owner=${r.agent_id}`)}
               onResend={handleResend}
               onRevoke={handleRevoke}
-              onPromote={() => toast("Promote — coming in v1.1")}
+              onSetRole={handleSetRole}
+              callerRole={callerRole}
+              selfId={userId}
+              activeAdminCount={activeAdminCount}
             />
           ))}
         </div>
