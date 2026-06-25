@@ -29,5 +29,10 @@
 
     "types": ["vite/client", "vite-plugin-pwa/client"]
   },
-  "include": ["src", "../../supabase/functions/_shared/industryTaxonomy.ts"]
+  "include": [
+    "src",
+    "../../supabase/functions/_shared/industryTaxonomy.ts",
+    "../../supabase/functions/_shared/coverage/config.ts",
+    "../../supabase/functions/_shared/coverage/score.ts"
+  ]
 }
