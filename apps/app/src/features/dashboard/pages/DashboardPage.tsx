@@ -64,6 +64,7 @@ import { MOCK, formatMoney } from "../mockData";
 import { useDashboardData, type DashboardData } from "../hooks/useDashboardData";
 import { STAGE_BADGE_KIND } from "@/features/pipeline/mockData";
 import { useTerm } from "@/features/profession/useTerm";
+import { CoverageWidget } from "@/features/coverage/components/CoverageWidget";
 
 // ───────────────────────────────────────────────────────────────────────
 // Empty state — copied from Session 11. Lives here so the page picks
@@ -713,6 +714,8 @@ function PopulatedDashboard({ firstName: _firstName }: { firstName: string }) {
           {/* LIVE (partial) — touches-before-win is real; the other
               two stats are explicitly marked comingSoon by the hook. */}
           <PersistenceIndex stats={data.persistenceIndex} />
+          {/* SP2a — rep logging-coverage widget (reads its own coverage_snapshot) */}
+          <CoverageWidget />
           {/* LIVE */}
           <TopPartners topPartners={data.topPartners} />
           {/* LIVE */}

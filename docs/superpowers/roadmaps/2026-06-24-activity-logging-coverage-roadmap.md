@@ -29,7 +29,8 @@ managers see only aggregates).
 |---|---|---|---|---|
 | **0** | **Call-coverage v0** | `coverage_signal` table; instrument click-to-call to emit a dial signal; match dials → dispositioned Call activities (4h rule); minimal call-logging widget + rep self-correction drill-down ("N calls without a disposition — tap to fix"); rep-only RLS | coverage_signal table only (reuses `PhoneWithClickToCall`, no telephony SDK) | existing Activities + dispositions |
 | **1** | **Snapshot + computation framework** | nightly job, `coverage_snapshot`, composite formula (1 channel), confidence levels, `org.coverage_config` (bands/minimums) | scheduling framework (pg_cron / scheduled Edge fn) — reusable by Persistence Index & Activity-to-Win | SP0 |
-| **2** | **Display maturity** | full dedicated widget (per-channel breakdown, confidence, "how calculated"), credibility-badge pattern on other widgets, red-band inline warning, trend chart, hierarchy rollup + `coverage_aggregate_snapshot` | — | SP1 |
+| **2a** | **Rep coverage widget** | dedicated rep dashboard widget (composite %, band color, confidence, per-channel breakdown, "how calculated", compact trend sparkline) reading the rep's own `coverage_snapshot`; instructional empty state | — (frontend + read hook + shared band helper) | SP1 |
+| **2b** | **Cross-cutting display + aggregates** | credibility-badge pattern on other widgets, red-band inline warning, full thresholds-overlay trend chart, hierarchy rollup + `coverage_aggregate_snapshot` + nightly aggregate job + RPC + manager/director/admin views | aggregate snapshot table + job + RPC | SP2a |
 | **3** | **Calendar channel** | OAuth connect + calendar sync → calendar signals → matching → into composite | Integrations/OAuth foundation (§6.9.2) | SP1 + Integrations |
 | **4** | **Email channel** | OAuth email metadata read + contact matching → email signals | shares SP3 OAuth foundation | SP3 |
 | **5** | **Location/visit channel** | background GPS + dwell detection + non-residential classification + opt-in/revocation | background-location infra + 3rd-party address classification | SP1 + mobile work |
@@ -58,5 +59,7 @@ through the app), not absolute phone activity. The PRD explicitly endorses this 
 ## Status
 
 - [x] Decomposition + sequencing approved (2026-06-24)
-- [ ] SP0 design (in progress — own spec → plan → implementation cycle)
-- [ ] SP1–5 (future cycles)
+- [x] **SP0 — Call-coverage v0** shipped to prod (unlogged-calls nudge on Activities page)
+- [x] **SP1 — Snapshot + computation framework** shipped to prod (nightly Edge job, `coverage_snapshot`, pg_cron schedule; Vault-auth pending operator step)
+- [~] **SP2 split** → **SP2a (rep coverage widget)** design approved, in implementation; **SP2b (cross-cutting badges/warning + hierarchy aggregates)** deferred to its own later cycle
+- [ ] SP3–5 (calendar / email / location channels — future cycles)
