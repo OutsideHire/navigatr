@@ -28,12 +28,14 @@ vi.mock("@/features/activities/hooks/useActivities", () => ({
 // Import after mocks are registered.
 import { DealDetailPage } from "./DealDetailPage";
 
-function makeActivity(id: string): Activity {
+function makeActivity(id: string, type: Activity["type"] = "call"): Activity {
   return {
     id,
     dealId: validDeal.id,
-    type: "call",
-    durationMinutes: 5,
+    type,
+    // Only calls carry a duration; others leave it null so the row title
+    // doesn't show a bogus "min" segment.
+    durationMinutes: type === "call" ? 5 : null,
     disposition: "positive_engagement",
     outcomeNotes: `Note ${id}`,
     occurredAt: new Date("2026-04-30T12:00:00Z").toISOString(),
@@ -74,7 +76,7 @@ describe("DealDetailPage / LatestActivityCard", () => {
   });
 
   it("renders at most 3 activity rows when more exist", () => {
-    const five = ["a1", "a2", "a3", "a4", "a5"].map(makeActivity);
+    const five = ["a1", "a2", "a3", "a4", "a5"].map((id) => makeActivity(id));
     activitiesMock.mockReturnValue({ data: five });
     renderPage();
 
@@ -92,5 +94,15 @@ describe("DealDetailPage / LatestActivityCard", () => {
 
     const card = latestActivityCard();
     expect(within(card).getByText(/No activity yet/i)).toBeInTheDocument();
+  });
+
+  it("renders a non-call activity with its real type label, not 'Call'", () => {
+    activitiesMock.mockReturnValue({ data: [makeActivity("e1", "email")] });
+    renderPage();
+
+    const card = latestActivityCard();
+    // Title now reads "Email · {disposition}" — no bogus duration, no "Call".
+    expect(within(card).getByText(/^Email ·/)).toBeInTheDocument();
+    expect(within(card).queryByText(/^Call ·/)).not.toBeInTheDocument();
   });
 });

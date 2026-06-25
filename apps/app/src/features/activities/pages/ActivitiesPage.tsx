@@ -26,8 +26,6 @@ import {
   Calendar,
   Check as CheckIcon,
   Clock,
-  Mail,
-  MapPin,
   Phone as PhoneIcon,
   PlusCircle,
 } from "lucide-react";
@@ -52,6 +50,11 @@ import { useActivitiesForOrg } from "../hooks/useActivities";
 import { useUpdateActivity } from "../hooks/useUpdateActivity";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { snoozeDate, SNOOZE_OPTIONS, type SnoozeOption } from "../lib/snoozeDate";
+import {
+  ACTIVITY_TYPE_ICON as TYPE_ICON,
+  ACTIVITY_TYPE_ACCENT as TYPE_ACCENT,
+  ACTIVITY_TYPE_LABEL as TYPE_LABEL,
+} from "../lib/activityTypeMeta";
 
 // ── Date helpers ──────────────────────────────────────────────────────
 
@@ -133,24 +136,6 @@ function deriveTasks(activities: Activity[], deals: Deal[]): DerivedTask[] {
 
 // ── Row components ────────────────────────────────────────────────────
 
-const TYPE_ICON: Record<ActivityType, typeof PhoneIcon> = {
-  call: PhoneIcon,
-  email: Mail,
-  drop_in: MapPin,
-  appointment: Calendar,
-};
-const TYPE_ACCENT: Record<ActivityType, { bg: string; fg: string }> = {
-  call:        { bg: "bg-accent-teal-20",   fg: "text-accent-teal"   },
-  email:       { bg: "bg-accent-blue-20",   fg: "text-accent-blue"   },
-  drop_in:     { bg: "bg-accent-violet-20", fg: "text-accent-violet" },
-  appointment: { bg: "bg-accent-orange-20", fg: "text-accent-orange" },
-};
-const TYPE_LABEL: Record<ActivityType, string> = {
-  call: "Call",
-  email: "Email",
-  drop_in: "Drop-in",
-  appointment: "Appointment",
-};
 
 function TaskRow({
   task,

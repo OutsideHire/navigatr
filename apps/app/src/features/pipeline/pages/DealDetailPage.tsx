@@ -72,6 +72,11 @@ import { useActivities } from "@/features/activities/hooks/useActivities";
 import { Select, type SelectOption } from "@/components/navigatr";
 import type { Activity } from "@/features/activities/mockData";
 import { DISPOSITIONS } from "@/lib/followUpScheduling";
+import {
+  ACTIVITY_TYPE_ICON,
+  ACTIVITY_TYPE_ACCENT,
+  ACTIVITY_TYPE_LABEL,
+} from "@/features/activities/lib/activityTypeMeta";
 import { LogActivitySheet } from "@/features/activities/components/LogActivitySheet";
 import { DealCallButton } from "@/features/activities/components/DealCallButton";
 import { EditDealSheet } from "../components/EditDealSheet";
@@ -509,16 +514,27 @@ function LatestActivityCard({
 
 function ActivityRow({ activity, onEdit }: { activity: Activity; onEdit?: (a: Activity) => void }) {
   const spec = DISPOSITIONS[activity.disposition];
+  const Icon = ACTIVITY_TYPE_ICON[activity.type];
+  const accent = ACTIVITY_TYPE_ACCENT[activity.type];
+  // Type-aware title: "Call · 12 min · {disposition}", "Email · {disposition}", etc.
+  // Duration only shows when set (calls), so non-call rows aren't mislabeled.
+  const title = [
+    ACTIVITY_TYPE_LABEL[activity.type],
+    activity.durationMinutes ? `${activity.durationMinutes} min` : null,
+    spec.label,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <div className="flex flex-col">
       <ListRow
         onClick={onEdit ? () => onEdit(activity) : undefined}
         leading={
-          <span className="flex h-9 w-9 items-center justify-center rounded-radius-full bg-accent-teal-20 text-accent-teal">
-            <PhoneIcon className="h-4 w-4" aria-hidden />
+          <span className={cn("flex h-9 w-9 items-center justify-center rounded-radius-full", accent.bg, accent.fg)}>
+            <Icon className="h-4 w-4" aria-hidden />
           </span>
         }
-        title={`Call · ${activity.durationMinutes ?? "—"} min · ${spec.label}`}
+        title={title}
         subtitle={activity.outcomeNotes || "No notes"}
         trailing={
           <span className="text-caption tabular-nums text-text-muted">
