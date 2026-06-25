@@ -16,6 +16,7 @@
  */
 
 import * as React from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   CalendarClock,
   Check,
@@ -25,8 +26,10 @@ import {
   LogOut,
   Moon,
   Monitor,
+  RefreshCw,
   Sun,
   Trash2,
+  X,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -43,6 +46,8 @@ import {
 import { useTheme, type Theme } from "@/stores/theme";
 import { supabase } from "@/lib/supabase";
 import { useOrganization } from "@/features/auth/useOrganization";
+import { useProfile } from "@/features/auth/useProfile";
+import { useRotateInviteCode } from "@/features/admin/hooks/useRotateInviteCode";
 import { DeleteAccountDialog } from "@/features/account/DeleteAccountDialog";
 
 // Debounce delay for text-input auto-save. 500ms is the standard "fast
@@ -397,8 +402,15 @@ type InviteShareMode = "link" | "code";
 
 function TeamSection() {
   const org = useOrganization();
+  const profile = useProfile();
   const [mode, setMode] = React.useState<InviteShareMode>("link");
   const [copied, setCopied] = React.useState(false);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+
+  // Rotation locks out everyone holding the old link — admins only,
+  // matching the Organization tab.
+  const canRotate = profile.data?.role === "admin";
+  const rotate = useRotateInviteCode();
 
   const inviteLink = org.data
     ? `${window.location.origin}/signup?code=${encodeURIComponent(org.data.inviteCode)}`
@@ -416,6 +428,16 @@ function TeamSection() {
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't copy to clipboard");
+    }
+  };
+
+  const handleRotate = async () => {
+    try {
+      await rotate.mutateAsync();
+      toast.success("Invite link regenerated");
+      setConfirmOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't regenerate the link. Try again.");
     }
   };
 
@@ -463,29 +485,86 @@ function TeamSection() {
               {copied ? "Copied" : "Copy"}
             </Button>
           </div>
-          {/* Soft helper row mirrors the mockup — no behavior yet on rotate
-              or email-invites links; they toast a "coming soon" message
-              instead of pretending to work. */}
+          {/* Helper row. Rotation is real (admin-only) and mirrors the
+              Organization tab; the email-invites link is an informational
+              pointer to the per-agent flow on the Agents page. */}
           <div className="mt-3 flex items-center justify-between gap-3 text-caption text-text-muted">
             <span>
               Anyone with this {mode} can join.{" "}
-              <button
-                type="button"
-                onClick={() => toast("Link expiry + rotation lands in v1.1")}
-                className="text-brand-primary hover:underline"
-              >
-                Rotate
-              </button>
+              {canRotate && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmOpen(true)}
+                  className="inline-flex items-center gap-1 text-brand-primary hover:underline"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Regenerate
+                </button>
+              )}
             </span>
             <button
               type="button"
-              onClick={() => toast("Per-agent email invites: see the Team page")}
+              onClick={() => toast("Per-agent email invites: see the Agents page")}
               className="text-brand-primary hover:underline"
             >
               Email invites instead →
             </button>
           </div>
         </>
+      )}
+
+      {canRotate && (
+        <Dialog.Root open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
+            <Dialog.Content
+              aria-describedby="settings-rotate-desc"
+              className={cn(
+                "fixed z-50 flex flex-col bg-surface-default shadow-card-hover",
+                "inset-x-0 bottom-0 max-h-[90dvh] rounded-t-radius-lg",
+                "sm:inset-auto sm:left-1/2 sm:top-1/2 sm:w-full sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-radius-lg",
+              )}
+            >
+              <div className="flex items-center justify-between px-5 py-4">
+                <Dialog.Title className="text-heading-sm">Regenerate invite link?</Dialog.Title>
+                <Dialog.Close asChild>
+                  <button
+                    type="button"
+                    aria-label="Close"
+                    className="h-8 w-8 rounded text-text-muted hover:bg-surface-sunken"
+                  >
+                    <X className="h-5 w-5 mx-auto" />
+                  </button>
+                </Dialog.Close>
+              </div>
+
+              <div className="flex flex-col gap-4 px-5 pb-5">
+                <p id="settings-rotate-desc" className="text-body-md text-text-default">
+                  This breaks the current link. Anyone you&rsquo;ve already shared it with will
+                  need the new one. Per-agent email invites are not affected.
+                </p>
+
+                <div className="mt-2 flex justify-end gap-2">
+                  <Dialog.Close asChild>
+                    <Button type="button" variant="tertiary" size="md">
+                      Cancel
+                    </Button>
+                  </Dialog.Close>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="md"
+                    loading={rotate.isPending}
+                    disabled={rotate.isPending}
+                    onClick={handleRotate}
+                  >
+                    Regenerate link
+                  </Button>
+                </div>
+              </div>
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
       )}
     </Card>
   );
