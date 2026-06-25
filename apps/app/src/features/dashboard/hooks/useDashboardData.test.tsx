@@ -12,9 +12,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 import { useDashboardData } from "./useDashboardData";
+import type { DateRange } from "../lib/dateRange";
 import type { Deal } from "@/features/pipeline/mockData";
 import type { Partner } from "@/features/partners/mockData";
 import type { Activity } from "@/features/activities/mockData";
+
+// All-time range with a far-future upper bound — preserves the original
+// all-data assertions without depending on the system clock. Flow tests
+// below use explicit narrower ranges.
+const ALL: DateRange = { fromIso: null, toIso: "2099-01-01T00:00:00.000Z" };
 
 // Mock the four composing hooks.
 let dealsData: Deal[];
@@ -78,12 +84,16 @@ function partner(id: string, name: string, dealIds: string[] = []): Partner {
   };
 }
 
-function activity(dealId: string, followUpDate: string | null): Activity {
+function activity(
+  dealId: string,
+  followUpDate: string | null,
+  occurredAt = "2026-05-19T10:00:00Z",
+): Activity {
   return {
     id: `a-${Math.random().toString(36).slice(2)}`,
     dealId, type: "call", disposition: "positive_engagement",
     durationMinutes: 10, outcomeNotes: "",
-    occurredAt: "2026-05-19T10:00:00Z", followUpDate,
+    occurredAt, followUpDate,
   };
 }
 
@@ -96,7 +106,7 @@ beforeEach(() => {
 
 describe("useDashboardData / KPIs", () => {
   it("zero deals → all KPIs zero", () => {
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     expect(result.current.kpis).toEqual({
       activeDealsCount: 0,
       pipelineValueCents: 0,
@@ -114,7 +124,7 @@ describe("useDashboardData / KPIs", () => {
       deal("c", "won", 500_000),
       deal("d", "won", 300_000),
     ];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     expect(result.current.kpis.activeDealsCount).toBe(2);
     expect(result.current.kpis.wonDealsCount).toBe(2);
     expect(result.current.kpis.wonRevenueCents).toBe(800_000);
@@ -128,7 +138,7 @@ describe("useDashboardData / KPIs", () => {
       deal("b", "qualified", 100_000, 55), // weighted 55_000
       deal("c", "won", 500_000, 100),    // EXCLUDED — closed
     ];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     expect(result.current.kpis.pipelineValueCents).toBe(200_000);
     // 100_000 * 0.20 + 100_000 * 0.55 = 75_000
     expect(result.current.kpis.weightedPipelineCents).toBe(75_000);
@@ -138,7 +148,7 @@ describe("useDashboardData / KPIs", () => {
 describe("useDashboardData / by-stage", () => {
   it("always returns all 5 stages, even when some are empty", () => {
     dealsData = [deal("a", "new", 100_000)];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     const stages = result.current.byStage.map((s) => s.stage);
     expect(stages).toEqual(["new", "contacted", "qualified", "proposal", "won"]);
     expect(result.current.byStage.find((s) => s.stage === "won")?.count).toBe(0);
@@ -151,7 +161,7 @@ describe("useDashboardData / by-stage", () => {
       deal("c", "qualified", 200_000),
       deal("d", "won", 100_000),
     ];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     const newRow = result.current.byStage.find((s) => s.stage === "new")!;
     expect(newRow.count).toBe(2);
     expect(newRow.valueCents).toBe(200_000);
@@ -173,7 +183,7 @@ describe("useDashboardData / top partners", () => {
       partner("p3", "Carol",   ["d1", "d3"]),   // 40K
       partner("p4", "Dave",    []),             // 0
     ];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     const ranks = result.current.topPartners.map((r) => ({ name: r.partner.name, revenue: r.revenueCents }));
     // Sorted by revenue desc — Bob (50K) > Carol (40K) > Alice (10K) > Dave (0)
     expect(ranks).toEqual([
@@ -190,7 +200,7 @@ describe("useDashboardData / top partners", () => {
     partnersData = [
       partner("p1", "Alice", ["d1", "d-deleted"]),  // d-deleted has been removed
     ];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     expect(result.current.topPartners[0].referrals).toBe(1);
     expect(result.current.topPartners[0].revenueCents).toBe(10_000_00);
   });
@@ -199,7 +209,7 @@ describe("useDashboardData / top partners", () => {
 describe("useDashboardData / lead sources", () => {
   it("returns empty array when there are no deals", () => {
     dealsData = [];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     expect(result.current.leadSources).toEqual([]);
   });
 
@@ -211,7 +221,7 @@ describe("useDashboardData / lead sources", () => {
       deal("d4", "new", 100, 20, "Cold outreach"),
       deal("d5", "new", 100, 20, "Inbound"),
     ];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     // Cold outreach (2) sorts before Partner referral (2) alphabetically when tied
     expect(result.current.leadSources.map((s) => s.label)).toEqual([
       "Cold outreach",
@@ -231,7 +241,7 @@ describe("useDashboardData / lead sources", () => {
       deal("d2", "new", 100, 20, "   "),
       deal("d3", "new", 100, 20, "Inbound"),
     ];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     const labels = result.current.leadSources.map((s) => s.label);
     expect(labels).toContain("Other");
     expect(labels).toContain("Inbound");
@@ -244,7 +254,7 @@ describe("useDashboardData / activities to win", () => {
   it("null ratio when no wins yet — UI shows the empty-state copy", () => {
     dealsData = [deal("a", "qualified", 100, 55)];
     activitiesData = [];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     expect(result.current.activitiesToWin.ratio).toBeNull();
     expect(result.current.activitiesToWin.wonDealsCount).toBe(0);
   });
@@ -263,7 +273,7 @@ describe("useDashboardData / activities to win", () => {
       durationMinutes: 10, outcomeNotes: "",
       occurredAt: "2026-05-19T10:00:00Z", followUpDate: null,
     }));
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     // 7 activities / 2 wins = 3.5
     expect(result.current.activitiesToWin.ratio).toBe(3.5);
     expect(result.current.activitiesToWin.totalActivities).toBe(7);
@@ -274,7 +284,7 @@ describe("useDashboardData / activities to win", () => {
 describe("useDashboardData / monthly performance", () => {
   it("always returns 4 trailing months, even with zero data", () => {
     dealsData = [];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     expect(result.current.monthlyPerformance).toHaveLength(4);
     for (const m of result.current.monthlyPerformance) {
       expect(m.deals).toBe(0);
@@ -288,7 +298,7 @@ describe("useDashboardData / monthly performance", () => {
       deal("won", "won", 100_000_00, 100, "", thisMonth),
       deal("open", "qualified", 50_000_00, 55, "", thisMonth),
     ];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     const currentMonth = result.current.monthlyPerformance[3]!; // last bucket = this month
     expect(currentMonth.deals).toBe(1);
     expect(currentMonth.valueCents).toBe(100_000_00);
@@ -299,14 +309,14 @@ describe("useDashboardData / monthly performance", () => {
     const longAgo = new Date();
     longAgo.setMonth(longAgo.getMonth() - 6);
     dealsData = [deal("old-win", "won", 50_000_00, 100, "", longAgo.toISOString())];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     const total = result.current.monthlyPerformance.reduce((s, m) => s + m.deals, 0);
     expect(total).toBe(0);
   });
 
   it("month buckets are in chronological order (oldest first, current last)", () => {
     dealsData = [];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     const keys = result.current.monthlyPerformance.map((m) => m.monthKey);
     const sorted = [...keys].sort();
     expect(keys).toEqual(sorted);
@@ -324,7 +334,7 @@ describe("useDashboardData / conversion funnel", () => {
 
   it("returns 4 stage pairs (new→contacted ... proposal→won) always", () => {
     stageHistoryData = [];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     expect(result.current.conversionFunnel).toHaveLength(4);
     expect(result.current.conversionFunnel.map((r) => `${r.from}->${r.to}`)).toEqual([
       "new->contacted",
@@ -336,7 +346,7 @@ describe("useDashboardData / conversion funnel", () => {
 
   it("0% rate when no transitions yet", () => {
     stageHistoryData = [];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     for (const step of result.current.conversionFunnel) {
       expect(step.rate).toBe(0);
       expect(step.fromCount).toBe(0);
@@ -356,7 +366,7 @@ describe("useDashboardData / conversion funnel", () => {
       transition("d3", "contacted", "new"),
       transition("d1", "qualified", "contacted"),
     ];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     const newToContacted = result.current.conversionFunnel.find((s) => s.from === "new")!;
     expect(newToContacted).toMatchObject({ fromCount: 4, toCount: 3, rate: 75 });
     const contactedToQualified = result.current.conversionFunnel.find((s) => s.from === "contacted")!;
@@ -372,7 +382,7 @@ describe("useDashboardData / conversion funnel", () => {
       transition("d1", "new", "contacted"),
       transition("d1", "contacted", "new"),
     ];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     const newToContacted = result.current.conversionFunnel.find((s) => s.from === "new")!;
     expect(newToContacted).toMatchObject({ fromCount: 1, toCount: 1, rate: 100 });
   });
@@ -380,7 +390,7 @@ describe("useDashboardData / conversion funnel", () => {
 
 describe("useDashboardData / persistence index", () => {
   it("returns 3 stats — first live, last two flagged comingSoon", () => {
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     const stats = result.current.persistenceIndex;
     expect(stats).toHaveLength(3);
     expect(stats[0].comingSoon).toBeFalsy();    // touches before win — live
@@ -399,7 +409,7 @@ describe("useDashboardData / persistence index", () => {
       durationMinutes: 10, outcomeNotes: "",
       occurredAt: "2026-05-19T10:00:00Z", followUpDate: null,
     }));
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     // 8 activities / 2 wins = 4.0
     expect(result.current.persistenceIndex[0].value).toBe("4.0");
     expect(result.current.persistenceIndex[0].caption).toMatch(/2 wins/);
@@ -407,7 +417,7 @@ describe("useDashboardData / persistence index", () => {
 
   it("touches-before-win shows em-dash when no wins yet", () => {
     dealsData = [deal("open", "qualified", 100)];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     expect(result.current.persistenceIndex[0].value).toBe("—");
   });
 });
@@ -423,7 +433,7 @@ describe("useDashboardData / today's snapshot", () => {
       activity("d3", tomorrow.toISOString()),   // future — does NOT count
       activity("d4", null),                     // no follow-up — does NOT count
     ];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     expect(result.current.todaysSnapshot.tasksDueToday).toBe(2);
   });
 
@@ -435,7 +445,57 @@ describe("useDashboardData / today's snapshot", () => {
       { ...partner("p2", "OnTrack"), nextFollowup: tomorrow },
       { ...partner("p3", "None"),    nextFollowup: null },
     ];
-    const { result } = renderHook(() => useDashboardData(), { wrapper });
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     expect(result.current.todaysSnapshot.partnersOverdue).toBe(1);
+  });
+});
+
+describe("useDashboardData / date-range scoping", () => {
+  // Flow metrics (activities, activities-to-win) honor the range; stock
+  // metrics (open pipeline) do not.
+  const NARROW: DateRange = {
+    fromIso: "2026-06-20T00:00:00.000Z",
+    toIso: "2026-06-25T00:00:00.000Z",
+  };
+
+  beforeEach(() => {
+    dealsData = [
+      deal("open", "qualified", 100_00, 50),
+      // Won inside the narrow window (updatedAt is the won-date proxy).
+      deal("won", "won", 500_00, 100, "", "2026-06-23T10:00:00.000Z"),
+    ];
+    activitiesData = [
+      activity("open", null, "2026-06-22T10:00:00.000Z"), // inside NARROW
+      activity("open", null, "2026-01-01T10:00:00.000Z"), // outside NARROW
+    ];
+  });
+
+  it("totalActivities counts only activities inside the range", () => {
+    const narrow = renderHook(() => useDashboardData(NARROW), { wrapper });
+    expect(narrow.result.current.totalActivities).toBe(1);
+
+    const all = renderHook(() => useDashboardData(ALL), { wrapper });
+    expect(all.result.current.totalActivities).toBe(2);
+  });
+
+  it("activitiesToWin re-scopes its ratio to the range", () => {
+    const narrow = renderHook(() => useDashboardData(NARROW), { wrapper });
+    // 1 in-range activity ÷ 1 in-range win = 1.0
+    expect(narrow.result.current.activitiesToWin).toEqual({
+      ratio: 1,
+      totalActivities: 1,
+      wonDealsCount: 1,
+    });
+
+    const all = renderHook(() => useDashboardData(ALL), { wrapper });
+    // 2 activities ÷ 1 win = 2.0
+    expect(all.result.current.activitiesToWin.ratio).toBe(2);
+  });
+
+  it("stock metrics (open pipeline) are identical regardless of range", () => {
+    const narrow = renderHook(() => useDashboardData(NARROW), { wrapper });
+    const all = renderHook(() => useDashboardData(ALL), { wrapper });
+    expect(narrow.result.current.kpis.pipelineValueCents).toBe(100_00);
+    expect(all.result.current.kpis.pipelineValueCents).toBe(100_00);
   });
 });

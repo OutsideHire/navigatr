@@ -25,17 +25,20 @@
  *   accent-colored icon containers, no gradient.
  */
 
+import * as React from "react";
+import { toast } from "sonner";
 import {
   AlertCircle,
   ArrowRight,
   Briefcase,
+  Check,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   Clock,
   Clock4,
   Compass,
   DollarSign,
-  Filter as FilterIcon,
   Handshake,
   MapPin,
   TrendingUp,
@@ -44,7 +47,6 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
 import {
   Avatar,
   Badge,
@@ -54,14 +56,26 @@ import {
   ListRow,
 } from "@/components/navigatr";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   canInviteTeam,
   getFirstName,
   hasDismissedOnboarding,
   useAuth,
 } from "@/stores/auth";
 import { cn } from "@/lib/utils";
-import { MOCK, formatMoney } from "../mockData";
+import { formatMoney } from "../mockData";
 import { useDashboardData, type DashboardData } from "../hooks/useDashboardData";
+import {
+  RANGE_OPTIONS,
+  rangeLabel,
+  resolveRange,
+  type RangeKey,
+} from "../lib/dateRange";
 import { STAGE_BADGE_KIND } from "@/features/pipeline/mockData";
 import { useTerm } from "@/features/profession/useTerm";
 import { CoverageWidget } from "@/features/coverage/components/CoverageWidget";
@@ -138,35 +152,50 @@ function SectionHeader({ title, action }: { title: string; action?: React.ReactN
   );
 }
 
-// Section 2: Page heading — matches Figma 234:541 / 238:23: heading-lg
-// "Dashboard" + body-md "Card processing pipeline · Wed Apr 30" + (desktop)
-// Last-30-days / Filter tertiary buttons right-aligned.
-function PageHeading({ firstName: _firstName }: { firstName: string }) {
+// Section 2: Page heading — heading-lg "Dashboard" + the active range label,
+// with a date-range selector (desktop). The range re-scopes the activity
+// (flow) metrics; pipeline/partner (stock) metrics show current totals, noted
+// in the caption so the mixed semantics are honest.
+function PageHeading({
+  rangeKey,
+  onRangeChange,
+}: {
+  rangeKey: RangeKey;
+  onRangeChange: (key: RangeKey) => void;
+}) {
   return (
     <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div className="flex flex-col gap-1">
         <h1 className="text-heading-lg text-text-default">Dashboard</h1>
         <p className="text-body-md text-text-muted">
-          Card processing pipeline · {MOCK.date.display}
+          Card processing pipeline · {rangeLabel(rangeKey)}
+        </p>
+        <p className="text-caption text-text-muted">
+          Activity metrics reflect the selected range. Pipeline, stage &amp; partner
+          metrics show current totals.
         </p>
       </div>
-      <div className="hidden gap-2 sm:flex">
-        <Button
-          variant="tertiary"
-          size="sm"
-          leadingIcon={Clock4}
-          onClick={() => toast("Custom date ranges land in Sprint 2")}
-        >
-          Last 30 days
-        </Button>
-        <Button
-          variant="tertiary"
-          size="sm"
-          leadingIcon={FilterIcon}
-          onClick={() => toast("Dashboard filters land in Sprint 2")}
-        >
-          Filter
-        </Button>
+      <div className="hidden sm:flex">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="tertiary" size="sm" leadingIcon={Clock4} trailingIcon={ChevronDown}>
+              {rangeLabel(rangeKey)}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {RANGE_OPTIONS.map((opt) => (
+              <DropdownMenuItem key={opt.key} onSelect={() => onRangeChange(opt.key)}>
+                <Check
+                  className={cn(
+                    "mr-2 h-4 w-4",
+                    opt.key === rangeKey ? "opacity-100" : "opacity-0",
+                  )}
+                />
+                {opt.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   );
@@ -682,18 +711,22 @@ function ConversionFunnel({ funnel }: { funnel: DashboardData["conversionFunnel"
 // ───────────────────────────────────────────────────────────────────────
 
 function PopulatedDashboard({ firstName: _firstName }: { firstName: string }) {
+  // Date-range selector scopes the flow metrics (activities, activities-to-win);
+  // stock metrics ignore it. resolveRange captures "now" per selection, not per
+  // render, via the rangeKey-keyed memo.
+  const [rangeKey, setRangeKey] = React.useState<RangeKey>("30d");
+  const range = React.useMemo(() => resolveRange(rangeKey, new Date()), [rangeKey]);
+
   // Single hook subscription — passed down to the sections that have
-  // been wired to live data. Sections still on MOCK are clearly noted
-  // below; they'll move over as the underlying data layer grows
-  // (stage transition history, monthly bucketing, etc.).
-  const data = useDashboardData();
+  // been wired to live data.
+  const data = useDashboardData(range);
 
   return (
     // Mobile: vertical stack, gap 12 (matches Figma 234:541 gap 16 ≈ space-3/4).
     // Desktop: heading + hero + KPI row are full-width, sections 5-11 fall
     // into a 2-column grid with the Conversion Funnel spanning both cols.
     <div className="mx-auto w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
-      <PageHeading firstName={_firstName} />
+      <PageHeading rangeKey={rangeKey} onRangeChange={setRangeKey} />
 
       <div className="mt-6 flex flex-col gap-4 lg:gap-6">
         {/* LIVE — avg activities-per-win, real ratio from live data */}

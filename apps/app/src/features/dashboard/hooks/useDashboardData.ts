@@ -26,6 +26,7 @@ import { useActivitiesForOrg } from "@/features/activities/hooks/useActivities";
 import { useStageHistory } from "@/features/pipeline/hooks/useStageHistory";
 import { STAGE_LABEL, type Deal, type DealStage } from "@/features/pipeline/mockData";
 import type { Partner } from "@/features/partners/mockData";
+import { withinRange, type DateRange } from "../lib/dateRange";
 
 export interface DashboardKpis {
   activeDealsCount: number;
@@ -143,7 +144,7 @@ function weightedContribution(d: Deal): number {
   return Math.round(d.valueCents * (d.probability / 100));
 }
 
-export function useDashboardData(): DashboardData {
+export function useDashboardData(range: DateRange): DashboardData {
   const dealsQ = useDeals();
   const partnersQ = usePartners();
   const activitiesQ = useActivitiesForOrg();
@@ -310,9 +311,23 @@ export function useDashboardData(): DashboardData {
     return buckets;
   }, [deals]);
 
+  // Flow metrics re-scope to the selected date range. Activities by their
+  // occurredAt; "wins in range" by the deal's updatedAt (the same won-date
+  // proxy the monthly chart uses). Stock metrics above ignore `range`.
+  const activitiesInRange = React.useMemo(
+    () => activities.filter((a) => withinRange(a.occurredAt, range)),
+    [activities, range],
+  );
+
+  const wonInRange = React.useMemo(
+    () =>
+      deals.filter((d) => d.stage === "won" && withinRange(d.updatedAt, range)).length,
+    [deals, range],
+  );
+
   const activitiesToWin = React.useMemo<ActivitiesToWin>(() => {
-    const totalActivities = activities.length;
-    const wonDealsCount = kpis.wonDealsCount;
+    const totalActivities = activitiesInRange.length;
+    const wonDealsCount = wonInRange;
     return {
       // Divide-by-zero guard. Null tells the UI to show an empty state
       // ("Close a deal to start tracking your touchpoint efficiency")
@@ -321,7 +336,7 @@ export function useDashboardData(): DashboardData {
       totalActivities,
       wonDealsCount,
     };
-  }, [activities, kpis.wonDealsCount]);
+  }, [activitiesInRange, wonInRange]);
 
   const conversionFunnel = React.useMemo<ConversionFunnelRow[]>(() => {
     // "Ever entered" set per stage: distinct deal_ids that ever
@@ -401,7 +416,7 @@ export function useDashboardData(): DashboardData {
     byStage,
     topPartners,
     todaysSnapshot,
-    totalActivities: activities.length,
+    totalActivities: activitiesInRange.length,
     leadSources,
     monthlyPerformance,
     activitiesToWin,
