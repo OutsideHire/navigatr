@@ -195,4 +195,19 @@ describe("ActivitiesPage / edit from History", () => {
     expect(await screen.findByText("Edit activity")).toBeInTheDocument();
     expect(screen.getByDisplayValue("notes")).toBeInTheDocument();
   });
+
+  it("tapping a Today task row's info area opens the edit sheet for the source activity", async () => {
+    const user = userEvent.setup();
+    // A due-today follow-up surfaces as a task on the default Today tab.
+    renderWithSeed({
+      activities: [task("a-1", "d-1", new Date().toISOString(), "call")],
+      deals: [deal("d-1", "Acme")],
+    });
+
+    // The info area is a button (Log activity + Snooze remain separate).
+    await user.click(screen.getByRole("button", { name: /Edit Call activity/i }));
+
+    expect(await screen.findByText("Edit activity")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("notes")).toBeInTheDocument();
+  });
 });

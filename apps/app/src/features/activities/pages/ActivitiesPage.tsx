@@ -157,11 +157,13 @@ function TaskRow({
   now,
   onLog,
   onSnooze,
+  onEdit,
 }: {
   task: DerivedTask;
   now: Date;
   onLog: (dealId: string) => void;
   onSnooze: (task: DerivedTask, opt: SnoozeOption) => void;
+  onEdit: (a: Activity) => void;
 }) {
   const overdue = daysBetween(now, new Date(task.dueAt)) < 0;
   const spec = DISPOSITIONS[task.fromActivity.disposition];
@@ -175,7 +177,14 @@ function TaskRow({
           : "border-border-subtle bg-surface-default",
       )}
     >
-      <div className="flex min-w-0 items-start gap-3">
+      {/* Info area is tap-to-edit (the source activity); Log/Snooze stay
+          as explicit actions. */}
+      <button
+        type="button"
+        onClick={() => onEdit(task.fromActivity)}
+        aria-label={`Edit ${TYPE_LABEL[task.fromActivity.type]} activity`}
+        className="group flex min-w-0 items-start gap-3 rounded-radius-sm text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+      >
         <span
           className={cn(
             "flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full",
@@ -186,7 +195,7 @@ function TaskRow({
           <Clock className="h-4 w-4" />
         </span>
         <div className="flex min-w-0 flex-col gap-0.5">
-          <p className="truncate text-body-strong text-text-default">{task.deal.companyName}</p>
+          <p className="truncate text-body-strong text-text-default group-hover:underline">{task.deal.companyName}</p>
           <p className="text-caption text-text-muted">
             <span className={overdue ? "font-medium text-status-danger" : "text-text-default"}>
               {formatRelativeShort(task.dueAt, now)}
@@ -194,7 +203,7 @@ function TaskRow({
             {" · "}from {spec.label}
           </p>
         </div>
-      </div>
+      </button>
       <div className="flex shrink-0 gap-2 self-stretch sm:self-auto">
         <Button
           variant="primary"
@@ -520,7 +529,7 @@ export function ActivitiesPage() {
                     <p className="text-eyebrow text-status-danger">Overdue · {overdue.length}</p>
                     <div className="flex flex-col gap-2">
                       {overdue.map((t) => (
-                        <TaskRow key={t.fromActivity.id} task={t} now={now} onLog={openLogSheet} onSnooze={handleSnooze} />
+                        <TaskRow key={t.fromActivity.id} task={t} now={now} onLog={openLogSheet} onSnooze={handleSnooze} onEdit={setEditingActivity} />
                       ))}
                     </div>
                   </section>
@@ -530,7 +539,7 @@ export function ActivitiesPage() {
                     <p className="text-eyebrow text-text-subtle">Due today · {today.length}</p>
                     <div className="flex flex-col gap-2">
                       {today.map((t) => (
-                        <TaskRow key={t.fromActivity.id} task={t} now={now} onLog={openLogSheet} onSnooze={handleSnooze} />
+                        <TaskRow key={t.fromActivity.id} task={t} now={now} onLog={openLogSheet} onSnooze={handleSnooze} onEdit={setEditingActivity} />
                       ))}
                     </div>
                   </section>
@@ -554,7 +563,7 @@ export function ActivitiesPage() {
                     <p className="text-eyebrow text-text-subtle">{dayHeading(items[0]!.dueAt, now)}</p>
                     <div className="flex flex-col gap-2">
                       {items.map((t) => (
-                        <TaskRow key={t.fromActivity.id} task={t} now={now} onLog={openLogSheet} onSnooze={handleSnooze} />
+                        <TaskRow key={t.fromActivity.id} task={t} now={now} onLog={openLogSheet} onSnooze={handleSnooze} onEdit={setEditingActivity} />
                       ))}
                     </div>
                   </section>
