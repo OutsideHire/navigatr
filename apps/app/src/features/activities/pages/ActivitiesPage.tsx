@@ -170,20 +170,26 @@ function TaskRow({
 
   return (
     <div
+      data-testid="task-row"
+      onClick={() => onEdit(task.fromActivity)}
       className={cn(
-        "flex flex-col gap-3 rounded-radius-md border p-4 sm:flex-row sm:items-center sm:justify-between",
+        "group flex cursor-pointer flex-col gap-3 rounded-radius-md border p-4 transition-colors sm:flex-row sm:items-center sm:justify-between",
         overdue
-          ? "border-status-danger/30 bg-status-danger-bg/50"
-          : "border-border-subtle bg-surface-default",
+          ? "border-status-danger/30 bg-status-danger-bg/50 hover:bg-status-danger-bg"
+          : "border-border-subtle bg-surface-default hover:bg-surface-sunken",
       )}
     >
-      {/* Info area is tap-to-edit (the source activity); Log/Snooze stay
-          as explicit actions. */}
+      {/* The whole row is click-to-edit; this inner button keeps a
+          keyboard-focusable edit target. Log/Snooze stop propagation so
+          they remain independent actions. */}
       <button
         type="button"
-        onClick={() => onEdit(task.fromActivity)}
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit(task.fromActivity);
+        }}
         aria-label={`Edit ${TYPE_LABEL[task.fromActivity.type]} activity`}
-        className="group flex min-w-0 items-start gap-3 rounded-radius-sm text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+        className="flex min-w-0 items-start gap-3 rounded-radius-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
       >
         <span
           className={cn(
@@ -209,14 +215,17 @@ function TaskRow({
           variant="primary"
           size="sm"
           leadingIcon={PlusCircle}
-          onClick={() => onLog(task.deal.id)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onLog(task.deal.id);
+          }}
           className="flex-1 sm:flex-none"
         >
           Log activity
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="tertiary" size="sm">
+            <Button variant="tertiary" size="sm" onClick={(e) => e.stopPropagation()}>
               Snooze
             </Button>
           </DropdownMenuTrigger>
