@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { LeaderboardRow } from "../hooks/useTeamLeaderboard";
+import { settableRoles, roleChangeLabel, type UserRole } from "../lib/roleActions";
 import { formatMoney } from "@/features/pipeline/mockData";
 
 const STATUS_BADGE: Record<LeaderboardRow["status"], { label: string; kind: BadgeKind }> = {
@@ -46,14 +47,20 @@ export function AgentCard({
   onViewPipeline,
   onResend,
   onRevoke,
-  onPromote,
+  onSetRole,
+  callerRole,
+  selfId,
+  activeAdminCount,
 }: {
   row: LeaderboardRow;
   onNameClick: (row: LeaderboardRow) => void;
   onViewPipeline: (row: LeaderboardRow) => void;
   onResend: (row: LeaderboardRow) => void;
   onRevoke: (row: LeaderboardRow) => void;
-  onPromote: (row: LeaderboardRow) => void;
+  onSetRole: (row: LeaderboardRow, newRole: UserRole) => void;
+  callerRole: UserRole | undefined;
+  selfId: string | undefined;
+  activeAdminCount: number;
 }) {
   const status = STATUS_BADGE[row.status];
   return (
@@ -95,11 +102,11 @@ export function AgentCard({
                 {row.status === "invited" ? "Revoke invite" : "Deactivate agent"}
               </DropdownMenuItem>
             )}
-            {row.status === "active" && row.role === "rep" && (
-              <DropdownMenuItem onSelect={() => onPromote(row)}>
-                Promote to manager
+            {settableRoles(callerRole, { id: row.agent_id, role: row.role, status: row.status }, { selfId, activeAdminCount }).map((r) => (
+              <DropdownMenuItem key={r} onSelect={() => onSetRole(row, r)}>
+                {roleChangeLabel(row.role, r)}
               </DropdownMenuItem>
-            )}
+            ))}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
