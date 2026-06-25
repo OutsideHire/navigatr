@@ -238,3 +238,27 @@ describe("ActivitiesPage / edit from History", () => {
     expect(screen.queryByText("Edit activity")).not.toBeInTheDocument();
   });
 });
+
+describe("ActivitiesPage / task row type indicator", () => {
+  // The badge's leading span is the activity-type icon container.
+  const badgeOf = (label: RegExp) =>
+    screen.getByRole("button", { name: label }).querySelector("span");
+
+  it("colors a (non-overdue) task row's icon by its activity type", () => {
+    renderWithSeed({
+      // Due today → not overdue → uses the email type accent.
+      activities: [task("a-1", "d-1", new Date().toISOString(), "email")],
+      deals: [deal("d-1", "Acme")],
+    });
+    expect(badgeOf(/Edit Email activity/i)?.className).toContain("bg-accent-blue-20");
+  });
+
+  it("keeps the red overdue treatment on the type icon when overdue", () => {
+    renderWithSeed({
+      // Past follow-up → overdue → red badge regardless of type.
+      activities: [task("a-1", "d-1", "2020-01-01T00:00:00.000Z", "email")],
+      deals: [deal("d-1", "Acme")],
+    });
+    expect(badgeOf(/Edit Email activity/i)?.className).toContain("bg-status-danger");
+  });
+});
