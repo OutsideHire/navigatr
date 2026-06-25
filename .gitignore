@@ -33,9 +33,10 @@ yarn-error.log*
 *.swp
 *.swo
 
-# Test coverage
-coverage/
-!supabase/functions/_shared/coverage/
+# Test coverage (vitest report output — anchored to the report dir, not a bare
+# `coverage/` which also shadowed the Activity-Logging-Coverage source trees in
+# supabase/functions/_shared/coverage/ and apps/app/src/features/coverage/).
+apps/app/coverage/
 .nyc_output/
 
 # .NET
