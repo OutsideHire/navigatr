@@ -32,6 +32,11 @@ vi.mock("../hooks/useTeamLeaderboard", () => ({
 vi.mock("../hooks/useResendInvite", () => ({ useResendInvite: () => ({ mutateAsync: vi.fn() }) }));
 vi.mock("../hooks/useRevokeMember", () => ({ useRevokeMember: () => ({ mutateAsync: vi.fn() }) }));
 vi.mock("../hooks/useSeatUsage", () => ({ useSeatUsage: () => ({ data: { used: 1, limit: 10, remaining: 9 }, isLoading: false }) }));
+// TeamCoverageCard mounts useCoverageRollup → supabase.rpc; mock it deterministically.
+// With rows: [] the card renders null, so existing assertions are unaffected.
+vi.mock("@/features/coverage/hooks/useCoverageRollup", () => ({
+  useCoverageRollup: () => ({ rows: [], isLoading: false }),
+}));
 
 describe("AgentsPage", () => {
   it("renders agent rows and seat usage", () => {

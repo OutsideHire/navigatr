@@ -15,6 +15,7 @@ import { AgentCard } from "../components/AgentCard";
 import { SeatUsageBadge } from "../components/SeatUsageBadge";
 import { InviteAgentModal } from "../components/InviteAgentModal";
 import { RevokeAgentDialog } from "../components/RevokeAgentDialog";
+import { TeamCoverageCard } from "@/features/coverage/components/TeamCoverageCard";
 
 type SortKey =
   | keyof Pick<
@@ -171,6 +172,9 @@ export function AgentsPage() {
           </div>
         </div>
       </header>
+
+      {/* SP2b — team logging-coverage rollup (manager/admin) */}
+      <TeamCoverageCard />
 
       {isLoading ? (
         <p className="text-body-md text-text-muted">Loading…</p>
