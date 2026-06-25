@@ -10,9 +10,17 @@
 // implementation: live cache → sort by revenue, filter chip narrows
 // the visible set, and a cache update is reflected in the next render.
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { render, screen, cleanup, within, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+
+// Radix DropdownMenu (Sort control) uses Pointer Capture + scrollIntoView; jsdom lacks both.
+beforeAll(() => {
+  if (!Element.prototype.hasPointerCapture) Element.prototype.hasPointerCapture = () => false;
+  if (!Element.prototype.setPointerCapture) Element.prototype.setPointerCapture = () => {};
+  if (!Element.prototype.releasePointerCapture) Element.prototype.releasePointerCapture = () => {};
+  if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
+});
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -97,6 +105,29 @@ describe("PartnersPage / sort + revenue regression", () => {
     const headings = screen.getAllByText(/./, { selector: "p.text-body-strong" });
     expect(headings.length).toBeGreaterThan(0);
     expect(headings[0]!.textContent).toBe("Helen High");
+  });
+
+  it("selecting 'Name' from the Sort dropdown reorders the list alphabetically", async () => {
+    const user = userEvent.setup();
+    // Revenue order: Helen High > Mike Mid > Aaron Low. Name order: Aaron, Helen, Mike.
+    const deals = [deal("d-low", 5_000_00), deal("d-mid", 10_000_00), deal("d-high", 50_000_00)];
+    const partners = [
+      partner({ id: "p-low",  name: "Aaron Low",   attributedDealIds: ["d-low"] }),
+      partner({ id: "p-mid",  name: "Mike Mid",    attributedDealIds: ["d-mid"] }),
+      partner({ id: "p-high", name: "Helen High",  attributedDealIds: ["d-high"] }),
+    ];
+    renderWithSeed({ partners, deals });
+
+    const order = () =>
+      screen.getAllByText(/./, { selector: "p.text-body-strong" }).map((el) => el.textContent);
+    // Default sort is by revenue.
+    expect(order()).toEqual(["Helen High", "Mike Mid", "Aaron Low"]);
+
+    await user.click(screen.getByRole("button", { name: /^Sort: Revenue$/ }));
+    await user.click(await screen.findByRole("menuitem", { name: /Name/ }));
+
+    expect(order()).toEqual(["Aaron Low", "Helen High", "Mike Mid"]);
+    expect(screen.getByRole("button", { name: /^Sort: Name$/ })).toBeTruthy();
   });
 
   it("filter chip 'Active' narrows to active partners only", async () => {
