@@ -322,6 +322,20 @@ function EmptyHistoryCard() {
   );
 }
 
+// Shown when an active type filter leaves a tab empty — distinct from the
+// natural "all caught up" empties, which would mislead under a filter.
+function FilteredEmptyCard({ typeLabel, onClear }: { typeLabel: string; onClear: () => void }) {
+  return (
+    <Card padding="lg" className="flex flex-col items-center gap-2 text-center">
+      <p className="text-body-strong text-text-default">No {typeLabel} here</p>
+      <p className="text-caption text-text-muted">Nothing matches this type filter.</p>
+      <Button variant="tertiary" size="sm" onClick={onClear}>
+        Clear filter
+      </Button>
+    </Card>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────
 
 const TYPE_FILTERS: Array<"all" | ActivityType> = ["all", "call", "email", "drop_in", "appointment"];
@@ -358,9 +372,16 @@ export function ActivitiesPage() {
     [activities, deals],
   );
 
+  // The shared type filter applies to Today/Upcoming too. A task's type is
+  // its source activity's type (i.e. "follow-ups from calls").
+  const visibleTasks = React.useMemo(
+    () => (typeFilter === "all" ? tasks : tasks.filter((t) => t.fromActivity.type === typeFilter)),
+    [tasks, typeFilter],
+  );
+
   const { overdue, today, upcoming } = React.useMemo(() => {
     const groups = { overdue: [] as DerivedTask[], today: [] as DerivedTask[], upcoming: [] as DerivedTask[] };
-    for (const t of tasks) {
+    for (const t of visibleTasks) {
       const delta = daysBetween(now, new Date(t.dueAt));
       if (delta < 0) groups.overdue.push(t);
       else if (delta === 0) groups.today.push(t);
@@ -368,7 +389,7 @@ export function ActivitiesPage() {
       // beyond 7 days = ignored (out of view for sprint 1)
     }
     return groups;
-  }, [tasks, now]);
+  }, [visibleTasks, now]);
 
   // Group upcoming by day so the UI renders day-headed buckets.
   const upcomingByDay = React.useMemo(() => {
@@ -390,17 +411,6 @@ export function ActivitiesPage() {
       : activities.filter((a) => a.type === typeFilter);
   }, [activities, typeFilter]);
 
-  // Per-type counts in a single pass — saves 4 unnecessary array.filter
-  // walks on every render.
-  const typeCounts = React.useMemo(() => {
-    const counts: Record<"all" | ActivityType, number> = {
-      all: activities.length,
-      call: 0, email: 0, drop_in: 0, appointment: 0,
-    };
-    for (const a of activities) counts[a.type]++;
-    return counts;
-  }, [activities]);
-
   const openLogSheet = (dealId: string) => {
     setLogSheetDealId(dealId);
     setLogSheetOpen(true);
@@ -420,7 +430,7 @@ export function ActivitiesPage() {
   // Tab counts so the header chips show real numbers.
   const todayCount = overdue.length + today.length;
   const upcomingCount = upcoming.length;
-  const historyCount = activities.length;
+  const historyCount = history.length;
 
   return (
     <div className="mx-auto w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
@@ -439,6 +449,24 @@ export function ActivitiesPage() {
         </header>
 
         <UnloggedCallsSection />
+
+        {/* Shared type filter — applies across all three tabs and persists
+            across tab switches. No per-type counts here (a single number
+            can't represent the three views); the tab triggers carry counts. */}
+        <div
+          className={cn(
+            "flex gap-2 overflow-x-auto pb-1",
+            "[&::-webkit-scrollbar]:hidden",
+            "[-ms-overflow-style:none] [scrollbar-width:none]",
+          )}
+          aria-label="Filter by activity type"
+        >
+          {TYPE_FILTERS.map((f) => (
+            <Chip key={f} active={typeFilter === f} onClick={() => setTypeFilter(f)}>
+              {typeFilterLabel(f)}
+            </Chip>
+          ))}
+        </div>
 
         <Tabs.Root value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
           <Tabs.List
@@ -478,7 +506,11 @@ export function ActivitiesPage() {
           {/* Today */}
           <Tabs.Content value="today" className="mt-4 focus-visible:outline-none">
             {todayCount === 0 ? (
-              <EmptyTodayCard />
+              typeFilter !== "all" ? (
+                <FilteredEmptyCard typeLabel={typeFilterLabel(typeFilter)} onClear={() => setTypeFilter("all")} />
+              ) : (
+                <EmptyTodayCard />
+              )
             ) : (
               <div className="flex flex-col gap-4">
                 {overdue.length > 0 && (
@@ -508,7 +540,11 @@ export function ActivitiesPage() {
           {/* Upcoming */}
           <Tabs.Content value="upcoming" className="mt-4 focus-visible:outline-none">
             {upcoming.length === 0 ? (
-              <EmptyUpcomingCard />
+              typeFilter !== "all" ? (
+                <FilteredEmptyCard typeLabel={typeFilterLabel(typeFilter)} onClear={() => setTypeFilter("all")} />
+              ) : (
+                <EmptyUpcomingCard />
+              )
             ) : (
               <div className="flex flex-col gap-4">
                 {upcomingByDay.map(([dateKey, items]) => (
@@ -528,31 +564,11 @@ export function ActivitiesPage() {
           {/* History */}
           <Tabs.Content value="history" className="mt-4 focus-visible:outline-none">
             <div className="flex flex-col gap-3">
-              <div
-                className={cn(
-                  "flex gap-2 overflow-x-auto pb-1",
-                  "[&::-webkit-scrollbar]:hidden",
-                  "[-ms-overflow-style:none] [scrollbar-width:none]",
-                )}
-              >
-                {TYPE_FILTERS.map((f) => (
-                  <Chip
-                    key={f}
-                    active={typeFilter === f}
-                    count={typeCounts[f]}
-                    onClick={() => setTypeFilter(f)}
-                  >
-                    {typeFilterLabel(f)}
-                  </Chip>
-                ))}
-              </div>
-
               {history.length === 0 ? (
-                activities.length === 0 ? <EmptyHistoryCard /> : (
-                  <Card padding="lg" className="flex flex-col items-center gap-2 text-center">
-                    <p className="text-body-strong text-text-default">No activities match</p>
-                    <p className="text-caption text-text-muted">Try a different type filter.</p>
-                  </Card>
+                activities.length === 0 ? (
+                  <EmptyHistoryCard />
+                ) : (
+                  <FilteredEmptyCard typeLabel={typeFilterLabel(typeFilter)} onClear={() => setTypeFilter("all")} />
                 )
               ) : (
                 <div className="flex flex-col gap-2">
