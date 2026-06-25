@@ -1,5 +1,5 @@
 // apps/app/src/features/admin/pages/AgentsPage.test.tsx
-import { describe, it, expect, vi, beforeAll } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -18,7 +18,7 @@ beforeAll(() => {
 // Default mock: a single rep row whose agent_id is NOT the signed-in user, so
 // `callerRole` is undefined → settableRoles returns [] → no role items render →
 // the existing assertions below are unaffected by the role-change feature.
-let leaderboardRows: Array<Record<string, unknown>> = [
+const DEFAULT_ROWS: Array<Record<string, unknown>> = [
   {
     agent_id: "p1",
     full_name: "Alice",
@@ -35,6 +35,7 @@ let leaderboardRows: Array<Record<string, unknown>> = [
     last_activity: null,
   },
 ];
+let leaderboardRows: Array<Record<string, unknown>> = DEFAULT_ROWS;
 
 vi.mock("../hooks/useTeamLeaderboard", () => ({
   useTeamLeaderboard: () => ({
@@ -62,6 +63,13 @@ vi.mock("@/features/coverage/hooks/useCoverageRollup", () => ({
 }));
 
 describe("AgentsPage", () => {
+  // Reset all mutable module-level state to its default after every test so
+  // tests stay order-independent regardless of which custom fixtures they set.
+  afterEach(() => {
+    leaderboardRows = DEFAULT_ROWS;
+    authUserId.current = "self";
+  });
+
   it("renders agent rows and seat usage", () => {
     render(
       <MemoryRouter>
@@ -187,8 +195,65 @@ describe("AgentsPage", () => {
     );
 
     confirmSpy.mockRestore();
-    // Reset shared fixtures for any later tests.
-    authUserId.current = "self";
-    leaderboardRows = [leaderboardRows[1]];
+  });
+
+  it("does not change the role when an admin cancels the confirm prompt", async () => {
+    // Same setup as the confirmed test: admin caller in rows + a rep row.
+    authUserId.current = "p_admin";
+    leaderboardRows = [
+      {
+        agent_id: "p_admin",
+        full_name: "Admin Adam",
+        email: "admin@x.com",
+        role: "admin",
+        status: "active",
+        open_deals: 0,
+        pipeline_cents: 0,
+        won_deals_window: 0,
+        won_cents_window: 0,
+        lost_deals_window: 0,
+        lost_cents_window: 0,
+        activities_window: 0,
+        last_activity: null,
+      },
+      {
+        agent_id: "p_rep",
+        full_name: "Rep Rita",
+        email: "rep@x.com",
+        role: "rep",
+        status: "active",
+        open_deals: 1,
+        pipeline_cents: 10_000,
+        won_deals_window: 0,
+        won_cents_window: 0,
+        lost_deals_window: 0,
+        lost_cents_window: 0,
+        activities_window: 0,
+        last_activity: null,
+      },
+    ];
+    setRoleMutate.mockClear();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <AgentsPage />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    // Open the rep row's action menu (scope to the desktop table).
+    const table = screen.getByRole("table");
+    const repRow = within(table).getByText("Rep Rita").closest("tr") as HTMLElement;
+    await user.click(within(repRow).getByRole("button", { name: "Row actions" }));
+
+    await user.click(await screen.findByText("Promote to manager"));
+
+    // Cancelling the confirm prompt must not trigger the mutation.
+    expect(setRoleMutate).not.toHaveBeenCalled();
+
+    confirmSpy.mockRestore();
   });
 });
