@@ -60,7 +60,7 @@ through the app), not absolute phone activity. The PRD explicitly endorses this 
 
 - [x] Decomposition + sequencing approved (2026-06-24)
 - [x] **SP0 — Call-coverage v0** shipped to prod (unlogged-calls nudge on Activities page)
-- [x] **SP1 — Snapshot + computation framework** shipped to prod (nightly Edge job, `coverage_snapshot`, pg_cron schedule; Vault-auth pending operator step)
+- [x] **SP1 — Snapshot + computation framework** shipped to prod (nightly Edge job, `coverage_snapshot`, pg_cron schedule; Vault auth configured + cron path verified end-to-end, HTTP 200)
 - [x] **SP2a — Rep coverage widget** shipped to prod (dashboard CoverageWidget reading the rep's coverage_snapshot)
-- [~] **SP2b scoped to the manager coverage rollup** (on-read `coverage_rollup` RPC + `TeamCoverageCard` on the Team page) — design approved, in implementation. **Deferred to later cycles:** the cross-cutting credibility badges + red-band warning and the full thresholds-overlay trend chart (gated on coverage being multi-channel/meaningful — still single tap-based channel, ~0 data), and the persisted `coverage_aggregate_snapshot` + nightly aggregate job (on-read RPC suffices until historical team-trend charts are needed)
+- [x] **SP2b — Manager coverage rollup** shipped to prod (on-read `coverage_rollup` RPC + `useCoverageRollup` + `teamCoverage` + `TeamCoverageCard` on the Team page; migration `20260625000001` applied). **Deferred to later cycles (gated on coverage being multi-channel/meaningful — still single tap-based channel, ~0 data):** the cross-cutting credibility badges + red-band warning, the full thresholds-overlay trend chart, and the persisted `coverage_aggregate_snapshot` + nightly aggregate job (on-read RPC suffices until historical team-trend charts are needed)
 - [ ] SP3–5 (calendar / email / location channels — future cycles)
