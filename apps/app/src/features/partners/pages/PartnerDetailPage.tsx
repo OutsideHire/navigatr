@@ -7,8 +7,8 @@
  *   Notes         : free-text from the partner record
  *   Referrals     : deals attributed to this partner, cross-referenced
  *                   from MOCK_DEALS. Each row links to /pipeline/:dealId.
- *   Touch history : (placeholder for Sprint 2 — needs activity-by-partner
- *                   linkage in the data model)
+ *   Touch history : per-partner interaction timeline (partner_activities) with
+ *                   an inline log-touch form — TouchTimelineCard.
  *
  * Sprint 1: client-side lookup against MOCK_PARTNERS. If id missing →
  * not-found state with a back CTA (same pattern as DealDetailPage).
