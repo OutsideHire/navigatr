@@ -9,9 +9,10 @@ describe("bandPresentation", () => {
     expect(bandPresentation("poor").tokenClass).toContain("warning");
     expect(bandPresentation("unreliable").tokenClass).toContain("danger");
   });
-  it("gives a human label per band", () => {
-    expect(bandPresentation("excellent").label).toBe("Excellent");
-    expect(bandPresentation("unreliable").label).toBe("Unreliable");
+  it("gives a human label per band (all five pinned)", () => {
+    expect(
+      (["excellent", "good", "adequate", "poor", "unreliable"] as const).map((b) => bandPresentation(b).label),
+    ).toEqual(["Excellent", "Good", "Adequate", "Poor", "Unreliable"]);
   });
   it("returns a pill class for each band", () => {
     expect(bandPresentation("good").pillClass).toBeTruthy();
