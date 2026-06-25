@@ -210,4 +210,31 @@ describe("ActivitiesPage / edit from History", () => {
     expect(await screen.findByText("Edit activity")).toBeInTheDocument();
     expect(screen.getByDisplayValue("notes")).toBeInTheDocument();
   });
+
+  it("clicking anywhere on a task row (not just the name) opens the edit sheet", async () => {
+    const user = userEvent.setup();
+    renderWithSeed({
+      activities: [task("a-1", "d-1", new Date().toISOString(), "call")],
+      deals: [deal("d-1", "Acme")],
+    });
+
+    // Click the row container itself, away from the inner edit button.
+    await user.click(screen.getByTestId("task-row"));
+
+    expect(await screen.findByText("Edit activity")).toBeInTheDocument();
+  });
+
+  it("clicking Snooze on a task row does NOT open the edit sheet (propagation stopped)", async () => {
+    const user = userEvent.setup();
+    renderWithSeed({
+      activities: [task("a-1", "d-1", new Date().toISOString(), "call")],
+      deals: [deal("d-1", "Acme")],
+    });
+
+    await user.click(screen.getByRole("button", { name: /Snooze/i }));
+
+    // The snooze menu opened; the edit sheet did not.
+    expect(screen.getByRole("menuitem", { name: /Tomorrow/i })).toBeInTheDocument();
+    expect(screen.queryByText("Edit activity")).not.toBeInTheDocument();
+  });
 });
