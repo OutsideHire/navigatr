@@ -50,11 +50,16 @@ function deal(id: string, company: string): Deal {
   };
 }
 
-function task(id: string, dealId: string, followUpDate: string): Activity {
+function task(
+  id: string,
+  dealId: string,
+  followUpDate: string | null,
+  type: Activity["type"] = "call",
+): Activity {
   return {
     id,
     dealId,
-    type: "call",
+    type,
     disposition: "positive_engagement",
     durationMinutes: 10,
     outcomeNotes: "notes",
@@ -112,5 +117,64 @@ describe("ActivitiesPage / Snooze menu on task rows", () => {
     expect(within(menu).getByRole("menuitem", { name: /Tomorrow/i })).toBeInTheDocument();
     expect(within(menu).getByRole("menuitem", { name: /In 3 days/i })).toBeInTheDocument();
     expect(within(menu).getByRole("menuitem", { name: /Next week/i })).toBeInTheDocument();
+  });
+});
+
+describe("ActivitiesPage / shared type filter (above tabs)", () => {
+  const todayIso = () => new Date().toISOString();
+
+  it("narrows the Today list by type and updates the Today tab count", async () => {
+    const user = userEvent.setup();
+    renderWithSeed({
+      activities: [
+        task("a-call", "d-call", todayIso(), "call"),
+        task("a-mail", "d-mail", todayIso(), "email"),
+      ],
+      deals: [deal("d-call", "CallCo"), deal("d-mail", "MailCo")],
+    });
+
+    // Default Today tab shows both tasks.
+    expect(screen.getByText("CallCo")).toBeInTheDocument();
+    expect(screen.getByText("MailCo")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Today/ }).textContent).toContain("2");
+
+    // Filter to Email — only the email-sourced task remains, count drops to 1.
+    await user.click(screen.getByRole("button", { name: "Email" }));
+    expect(screen.queryByText("CallCo")).not.toBeInTheDocument();
+    expect(screen.getByText("MailCo")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Today/ }).textContent).toContain("1");
+  });
+
+  it("persists the selected filter when switching to the History tab", async () => {
+    const user = userEvent.setup();
+    renderWithSeed({
+      // History-only activities (no follow-up) so they surface on History.
+      activities: [
+        task("h-call", "d-call", null, "call"),
+        task("h-mail", "d-mail", null, "email"),
+      ],
+      deals: [deal("d-call", "CallCo"), deal("d-mail", "MailCo")],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Email" }));
+    await user.click(screen.getByRole("tab", { name: /History/ }));
+
+    expect(screen.getByText(/MailCo/)).toBeInTheDocument();
+    expect(screen.queryByText(/CallCo/)).not.toBeInTheDocument();
+  });
+
+  it("shows a clear-filter empty state when the filter matches nothing, and restores on clear", async () => {
+    const user = userEvent.setup();
+    renderWithSeed({
+      activities: [task("a-call", "d-call", todayIso(), "call")],
+      deals: [deal("d-call", "CallCo")],
+    });
+
+    await user.click(screen.getByRole("button", { name: "Email" }));
+    expect(screen.getByText(/No Email here/)).toBeInTheDocument();
+    expect(screen.queryByText("CallCo")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Clear filter/i }));
+    expect(screen.getByText("CallCo")).toBeInTheDocument();
   });
 });
