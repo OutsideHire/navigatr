@@ -18,6 +18,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   ArrowRight,
+  Check,
   ChevronDown,
   ChevronRight,
   MapPin,
@@ -37,6 +38,12 @@ import {
   FormField,
   Input,
 } from "@/components/navigatr";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import {
   STATUS_BADGE_KIND,
@@ -149,11 +156,17 @@ function PartnerCard({ partner, revenue }: { partner: Partner; revenue: number }
 
 type SortMode = "revenue" | "name" | "last-touch";
 
+const SORT_OPTIONS: { mode: SortMode; label: string }[] = [
+  { mode: "revenue", label: "Revenue" },
+  { mode: "name", label: "Name" },
+  { mode: "last-touch", label: "Last touch" },
+];
+
 export function PartnersPage() {
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
   const [searchInput, setSearchInput] = React.useState("");
   const debouncedSearch = useDebounced(searchInput, 300);
-  const [sortMode] = React.useState<SortMode>("revenue");
+  const [sortMode, setSortMode] = React.useState<SortMode>("revenue");
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -276,18 +289,26 @@ export function PartnersPage() {
             >
               Filter
             </Button>
-            <Button
-              variant="tertiary"
-              size="md"
-              trailingIcon={ChevronDown}
-              onClick={() => toast("Sort options land in Sprint 2")}
-            >
-              {sortMode === "revenue"
-                ? "Sort: Revenue"
-                : sortMode === "name"
-                  ? "Sort: Name"
-                  : "Sort: Last touch"}
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="tertiary" size="md" trailingIcon={ChevronDown}>
+                  Sort: {SORT_OPTIONS.find((o) => o.mode === sortMode)?.label}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {SORT_OPTIONS.map((opt) => (
+                  <DropdownMenuItem key={opt.mode} onSelect={() => setSortMode(opt.mode)}>
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4",
+                        opt.mode === sortMode ? "opacity-100" : "opacity-0",
+                      )}
+                    />
+                    {opt.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="primary"
               size="md"
