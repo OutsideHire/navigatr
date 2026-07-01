@@ -7,7 +7,7 @@
  *   mode → search → results → review → saved
  */
 
-export type StepKey = "mode" | "search" | "results" | "review" | "saved";
+export type StepKey = "mode" | "search" | "results" | "review" | "schedule" | "saved";
 
 export interface Step {
   key: StepKey;
@@ -21,6 +21,7 @@ export const PLAN_STEPS: readonly Step[] = [
   { key: "search", title: "Search & filters" },
   { key: "results", title: "Add stops" },
   { key: "review", title: "Review path" },
+  { key: "schedule", title: "Schedule & remind" },
   { key: "saved", title: "Path saved" },
 ] as const;
 

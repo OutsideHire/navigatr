@@ -125,6 +125,31 @@ describe("usePathMutations.createPath", () => {
     expect(upsert?.opts).toEqual({ onConflict: "user_id,path_date" });
     expect(id).toBe("p1");
   });
+
+  it("includes name + reminder_at in the upsert when supplied (SP3 scheduling)", async () => {
+    nextSingle = { data: { id: "p2" }, error: null };
+    const { result } = renderHook(() => usePathMutations(), { wrapper });
+    await act(async () => {
+      await result.current.createPath.mutateAsync({
+        date: "2026-07-02",
+        originLabel: "Edmond, OK",
+        originLat: 35.65,
+        originLng: -97.47,
+        name: "Edmond, OK · Thu Jul 2",
+        reminderAt: "2026-07-02T13:30:00.000Z",
+      });
+    });
+    const upsert = calls.find((c) => c.table === "paths" && c.op === "upsert");
+    expect(upsert?.payload).toEqual({
+      user_id: "user-1",
+      path_date: "2026-07-02",
+      origin_label: "Edmond, OK",
+      origin_lat: 35.65,
+      origin_lng: -97.47,
+      name: "Edmond, OK · Thu Jul 2",
+      reminder_at: "2026-07-02T13:30:00.000Z",
+    });
+  });
 });
 
 describe("usePathMutations.addStops", () => {

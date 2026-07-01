@@ -14,6 +14,8 @@ export interface PlanSavedStepProps {
   /** Human name for the saved path (e.g. the origin label). */
   pathName: string;
   stopCount: number;
+  /** Formatted "{date · time}" reminder line, or null when no reminder is set. */
+  reminderLabel?: string | null;
   onViewUpcoming: () => void;
   onBuildAnother: () => void;
   onDone: () => void;
@@ -22,6 +24,7 @@ export interface PlanSavedStepProps {
 export function PlanSavedStep({
   pathName,
   stopCount,
+  reminderLabel,
   onViewUpcoming,
   onBuildAnother,
   onDone,
@@ -29,7 +32,8 @@ export function PlanSavedStep({
   const checklist = [
     `${stopCount} ${stopCount === 1 ? "stop" : "stops"} added`,
     "Route optimized for the shortest drive",
-    "Visible on mobile and web",
+    ...(reminderLabel ? [`Reminder set for ${reminderLabel}`] : []),
+    "Launch it from Upcoming anytime",
   ];
 
   return (
@@ -40,7 +44,9 @@ export function PlanSavedStep({
         </span>
         <div className="flex flex-col gap-1">
           <h2 className="text-heading-md text-text-default">{pathName} is ready</h2>
-          <p className="text-body-md text-text-muted">Your planned path is saved and ready to run.</p>
+          <p className="text-body-md text-text-muted">
+            Saved to Upcoming — launch it from there anytime.
+          </p>
         </div>
         <ul className="flex w-full max-w-sm flex-col gap-2 text-left">
           {checklist.map((item) => (

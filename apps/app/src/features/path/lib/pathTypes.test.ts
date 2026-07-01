@@ -4,14 +4,28 @@ import { rowToPath, rowToStop, type PathRow, type PathStopRow } from "./pathType
 describe("pathTypes mappers", () => {
   it("maps a path row to camelCase with a stop count", () => {
     const row: PathRow = {
-      id: "p1", path_date: "2026-06-03", origin_label: "Current location",
+      id: "p1", path_date: "2026-06-03", name: "Downtown · Wed Jun 3",
+      origin_label: "Current location",
       origin_lat: 30.27, origin_lng: -97.74, status: "planned",
+      reminder_at: "2026-06-03T13:30:00.000Z",
     };
     const p = rowToPath(row, 8);
     expect(p).toEqual({
-      id: "p1", date: "2026-06-03", originLabel: "Current location",
-      originLat: 30.27, originLng: -97.74, status: "planned", stopCount: 8,
+      id: "p1", date: "2026-06-03", name: "Downtown · Wed Jun 3",
+      originLabel: "Current location",
+      originLat: 30.27, originLng: -97.74, status: "planned",
+      reminderAt: "2026-06-03T13:30:00.000Z", stopCount: 8,
     });
+  });
+
+  it("defaults name + reminderAt to null when the row omits them", () => {
+    const row: PathRow = {
+      id: "p2", path_date: "2026-06-04", origin_label: null,
+      origin_lat: null, origin_lng: null, status: "planned",
+    };
+    const p = rowToPath(row, 0);
+    expect(p.name).toBeNull();
+    expect(p.reminderAt).toBeNull();
   });
 
   it("maps a stop row to camelCase preserving the display snapshot + state", () => {

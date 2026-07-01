@@ -13,9 +13,10 @@
  * The progress bar + "Step N of M" derive from PLAN_STEPS, so SP3 inserting a
  * `schedule` step before `saved` needs no shell rework.
  *
- * Save happens IMMEDIATELY on the review Continue (SP2): createPath(path_date =
- * today) + addStops in the reviewed order (route optimized on save via
- * orderStops). Scheduling / future-dated paths are SP3.
+ * Save happens on the Schedule step's Continue (SP3): createPath with the
+ * chosen (today-or-future) date + name + reminder_at, then addStops in the
+ * reviewed order (route optimized via orderStops). Review Continue advances to
+ * Schedule; the save runs once.
  */
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
@@ -30,7 +31,13 @@ import { type Merchant, type MerchantCategory } from "../mockData";
 import { usePathOrigin } from "../hooks/usePathOrigin";
 import { useMerchants } from "../hooks/useMerchants";
 import { usePathMutations, type StopSnapshot } from "../hooks/usePathMutations";
-import { todayISO } from "../lib/today";
+import { todayISO, addDaysISO } from "../lib/today";
+import {
+  composeReminderAt,
+  defaultPathName,
+  formatReminder,
+  isTodayOrFuture,
+} from "../lib/scheduleDate";
 import { orderStops } from "../lib/proposeRoute";
 import { selectedCategories, RECOMMENDED_SELECTION, type IndustrySelection } from "../lib/industrySelection";
 import type { MerchantWithDistance } from "../components/MerchantList";
@@ -47,9 +54,11 @@ import { ChoosePathMode, type PathMode } from "../components/plan/ChoosePathMode
 import { PlanSearchStep } from "../components/plan/PlanSearchStep";
 import { PlanResultsStep } from "../components/plan/PlanResultsStep";
 import { PlanReviewStep } from "../components/plan/PlanReviewStep";
+import { PlanScheduleStep, type DateQuickPick } from "../components/plan/PlanScheduleStep";
 import { PlanSavedStep } from "../components/plan/PlanSavedStep";
 
 const DEFAULT_RADIUS_M = 8047; // 5 mi
+const DEFAULT_REMINDER_TIME = "08:30"; // local wall-clock
 
 export function PlanPathWizard() {
   const navigate = useNavigate();
@@ -87,6 +96,38 @@ export function PlanPathWizard() {
   const [createdPathId, setCreatedPathId] = React.useState<string | null>(null);
   const { createPath, addStops } = usePathMutations();
   const [saving, setSaving] = React.useState(false);
+
+  // --- Schedule (SP3) -------------------------------------------------------
+  // Default = tomorrow ("prep tomorrow's route"). The name auto-derives from
+  // origin + date until the rep edits it (nameTouched latches the override).
+  const [scheduleDate, setScheduleDate] = React.useState<string>(() => addDaysISO(todayISO(), 1));
+  const [datePick, setDatePick] = React.useState<DateQuickPick>("tomorrow");
+  const [reminderTime, setReminderTime] = React.useState<string>(DEFAULT_REMINDER_TIME);
+  const [pathName, setPathName] = React.useState<string>("");
+  const [nameTouched, setNameTouched] = React.useState(false);
+
+  // Keep the auto-name in sync with origin + date until the rep overrides it.
+  const derivedName = React.useMemo(
+    () => defaultPathName(originLabel, scheduleDate),
+    [originLabel, scheduleDate],
+  );
+  const effectiveName = nameTouched ? pathName : derivedName;
+
+  const handleDateChange = React.useCallback((iso: string, pick: DateQuickPick) => {
+    setScheduleDate(iso);
+    setDatePick(pick);
+  }, []);
+
+  const handleNameChange = React.useCallback((next: string) => {
+    setNameTouched(true);
+    setPathName(next);
+  }, []);
+
+  const dateValid = React.useMemo(() => isTodayOrFuture(scheduleDate), [scheduleDate]);
+  const reminderAt = React.useMemo(
+    () => composeReminderAt(scheduleDate, reminderTime),
+    [scheduleDate, reminderTime],
+  );
 
   // --- Drop-in sheet --------------------------------------------------------
   const [dropInMerchant, setDropInMerchant] = React.useState<Merchant | null>(null);
@@ -162,14 +203,21 @@ export function PlanPathWizard() {
     setStopIds([]);
     setStopById(new Map());
     setCreatedPathId(null);
+    setScheduleDate(addDaysISO(todayISO(), 1));
+    setDatePick("tomorrow");
+    setReminderTime(DEFAULT_REMINDER_TIME);
+    setPathName("");
+    setNameTouched(false);
   }, []);
 
   const exitToPath = React.useCallback(() => navigate("/path"), [navigate]);
 
-  // Save the reviewed path: create today's path, then add stops in reviewed order
-  // (route-optimized via orderStops). Advances to `saved` on success.
+  // Save the scheduled path (SP3): create a path on the CHOSEN date with the name
+  // + reminder, then add stops in reviewed order (route-optimized via orderStops).
+  // Runs on the Schedule step's Continue. Advances to `saved` on success.
   const savePath = React.useCallback(async () => {
     if (saving || orderedStops.length === 0) return;
+    if (!dateValid) return; // guard: today-or-future date required
     // Already saved this run — jump straight to the confirmation instead of
     // creating a duplicate path.
     if (createdPathId) {
@@ -179,10 +227,12 @@ export function PlanPathWizard() {
     setSaving(true);
     try {
       const pathId = await createPath.mutateAsync({
-        date: todayISO(),
+        date: scheduleDate,
         originLabel: originLabel ?? null,
         originLat: origin?.lat ?? null,
         originLng: origin?.lng ?? null,
+        name: effectiveName,
+        reminderAt,
       });
       // Optimize the reviewed set from the origin (falls back to reviewed order
       // when there's no origin — shouldn't happen past the search gate).
@@ -205,7 +255,7 @@ export function PlanPathWizard() {
     } finally {
       setSaving(false);
     }
-  }, [saving, createdPathId, orderedStops, createPath, addStops, origin, originLabel, goTo]);
+  }, [saving, createdPathId, orderedStops, createPath, addStops, origin, originLabel, goTo, dateValid, scheduleDate, effectiveName, reminderAt]);
 
   // --- Footer wiring per step -----------------------------------------------
   const idx = stepIndex(stepKey);
@@ -220,7 +270,9 @@ export function PlanPathWizard() {
       case "results":
         return stopIds.length >= 1;
       case "review":
-        return orderedStops.length >= 1 && !saving;
+        return orderedStops.length >= 1;
+      case "schedule":
+        return orderedStops.length >= 1 && dateValid && !saving;
       default:
         return false;
     }
@@ -236,6 +288,9 @@ export function PlanPathWizard() {
         break;
       case "review":
         goTo("results");
+        break;
+      case "schedule":
+        goTo("review");
         break;
       default:
         break;
@@ -255,12 +310,17 @@ export function PlanPathWizard() {
         if (stopIds.length >= 1) goTo("review");
         break;
       case "review":
+        // SP3: review Continue advances to schedule (no save yet).
+        if (orderedStops.length >= 1) goTo("schedule");
+        break;
+      case "schedule":
+        // SP3: the save happens here (once), on schedule Continue.
         void savePath();
         break;
       default:
         break;
     }
-  }, [stepKey, mode, origin, stopIds.length, exitToPath, goTo, savePath]);
+  }, [stepKey, mode, origin, stopIds.length, orderedStops.length, exitToPath, goTo, savePath]);
 
   const continueLabel =
     stepKey === "mode"
@@ -270,10 +330,12 @@ export function PlanPathWizard() {
       : stepKey === "results"
         ? "Review path"
         : stepKey === "review"
-          ? saving
-            ? "Saving…"
-            : "Save path"
-          : "Continue";
+          ? "Schedule path"
+          : stepKey === "schedule"
+            ? saving
+              ? "Saving…"
+              : "Save path"
+            : "Continue";
 
   const showFooter = stepKey !== "saved";
   const showBack = stepKey !== "mode" && stepKey !== "saved";
@@ -354,10 +416,24 @@ export function PlanPathWizard() {
           />
         )}
 
+        {stepKey === "schedule" && (
+          <PlanScheduleStep
+            date={scheduleDate}
+            onDateChange={handleDateChange}
+            activePick={datePick}
+            reminderTime={reminderTime}
+            onReminderTimeChange={setReminderTime}
+            name={effectiveName}
+            onNameChange={handleNameChange}
+            dateValid={dateValid}
+          />
+        )}
+
         {stepKey === "saved" && (
           <PlanSavedStep
-            pathName={originLabel ?? "Your path"}
+            pathName={effectiveName || originLabel || "Your path"}
             stopCount={orderedStops.length}
+            reminderLabel={formatReminder(reminderAt)}
             onViewUpcoming={exitToPath}
             onBuildAnother={resetWizard}
             onDone={exitToPath}
@@ -383,9 +459,9 @@ export function PlanPathWizard() {
             )}
             <Button
               variant="primary"
-              trailingIcon={stepKey === "review" ? undefined : ArrowRight}
-              leadingIcon={stepKey === "review" && saving ? Loader2 : undefined}
-              loading={stepKey === "review" && saving}
+              trailingIcon={stepKey === "schedule" ? undefined : ArrowRight}
+              leadingIcon={stepKey === "schedule" && saving ? Loader2 : undefined}
+              loading={stepKey === "schedule" && saving}
               disabled={!canContinue}
               onClick={handleContinue}
             >

@@ -104,7 +104,7 @@ beforeEach(() => {
 describe("PlanPathWizard", () => {
   it("starts on the mode step with Step 1 of 5", () => {
     renderWizard();
-    expect(screen.getByText(/step 1 of 5/i)).toBeInTheDocument();
+    expect(screen.getByText(/step 1 of 6/i)).toBeInTheDocument();
     expect(screen.getByText("Create a Path")).toBeInTheDocument();
   });
 
@@ -133,7 +133,7 @@ describe("PlanPathWizard", () => {
     // Plan → search
     fireEvent.click(screen.getByText("Plan a Path"));
     fireEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/step 2 of 5/i)).toBeInTheDocument();
+    expect(screen.getByText(/step 2 of 6/i)).toBeInTheDocument();
     // No origin yet → Continue disabled.
     expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
     // Resolve an origin and re-render.
@@ -145,7 +145,7 @@ describe("PlanPathWizard", () => {
     );
   });
 
-  it("runs the Plan happy path: mode → search → results → review → saved", async () => {
+  it("runs the Plan happy path: mode → search → results → review → schedule → saved", async () => {
     originState.current = WITH_ORIGIN;
     merchantsState.current = {
       merchants: [m("a", "Alpha Cafe"), m("b", "Beta Bakery")],
@@ -160,21 +160,26 @@ describe("PlanPathWizard", () => {
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
 
     // Step 2: origin already resolved → continue to results.
-    expect(screen.getByText(/step 2 of 5/i)).toBeInTheDocument();
+    expect(screen.getByText(/step 2 of 6/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
 
     // Step 3: results — add a stop, then Review path.
-    expect(screen.getByText(/step 3 of 5/i)).toBeInTheDocument();
+    expect(screen.getByText(/step 3 of 6/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /review path/i })).toBeDisabled();
     fireEvent.click(screen.getAllByRole("button", { name: /add to today's path/i })[0]!);
     expect(screen.getByText(/1 stop added/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /review path/i }));
 
-    // Step 4: review — save.
-    expect(screen.getByText(/step 4 of 5/i)).toBeInTheDocument();
+    // Step 4: review — advance to schedule (no save yet).
+    expect(screen.getByText(/step 4 of 6/i)).toBeInTheDocument();
+    expect(createPathMutate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /schedule path/i }));
+
+    // Step 5: schedule — save.
+    expect(screen.getByText(/step 5 of 6/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /save path/i }));
 
-    // Save calls createPath (today) + addStops in order.
+    // Save calls createPath (scheduled date) + addStops in order.
     await waitFor(() => expect(createPathMutate).toHaveBeenCalled());
     expect(addStopsMutate).toHaveBeenCalled();
     const addArg = addStopsMutate.mock.calls[0]![0] as {
@@ -184,8 +189,8 @@ describe("PlanPathWizard", () => {
     expect(addArg.basePosition).toBe(0);
     expect(addArg.stops).toHaveLength(1);
 
-    // Step 5: saved confirmation.
-    await waitFor(() => expect(screen.getByText(/step 5 of 5/i)).toBeInTheDocument());
+    // Step 6: saved confirmation.
+    await waitFor(() => expect(screen.getByText(/step 6 of 6/i)).toBeInTheDocument());
     expect(screen.getByText(/is ready/i)).toBeInTheDocument();
   });
 
@@ -194,9 +199,9 @@ describe("PlanPathWizard", () => {
     renderWizard();
     fireEvent.click(screen.getByText("Plan a Path"));
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
-    expect(screen.getByText(/step 2 of 5/i)).toBeInTheDocument();
+    expect(screen.getByText(/step 2 of 6/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /back/i }));
-    expect(screen.getByText(/step 1 of 5/i)).toBeInTheDocument();
+    expect(screen.getByText(/step 1 of 6/i)).toBeInTheDocument();
   });
 
   it('"Build another" resets the wizard to mode', async () => {
@@ -213,9 +218,83 @@ describe("PlanPathWizard", () => {
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
     fireEvent.click(screen.getByRole("button", { name: /add to today's path/i }));
     fireEvent.click(screen.getByRole("button", { name: /review path/i }));
+    fireEvent.click(screen.getByRole("button", { name: /schedule path/i }));
     fireEvent.click(screen.getByRole("button", { name: /save path/i }));
-    await waitFor(() => expect(screen.getByText(/step 5 of 5/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/step 6 of 6/i)).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /build another/i }));
-    expect(screen.getByText(/step 1 of 5/i)).toBeInTheDocument();
+    expect(screen.getByText(/step 1 of 6/i)).toBeInTheDocument();
+  });
+
+  it("save uses the scheduled date + name + reminder_at, and runs exactly once", async () => {
+    originState.current = WITH_ORIGIN;
+    merchantsState.current = {
+      merchants: [m("a", "Alpha Cafe")],
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    };
+    renderWizard();
+    fireEvent.click(screen.getByText("Plan a Path"));
+    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add to today's path/i }));
+    fireEvent.click(screen.getByRole("button", { name: /review path/i }));
+    fireEvent.click(screen.getByRole("button", { name: /schedule path/i }));
+
+    // Default schedule = tomorrow, default reminder 08:30, auto name from origin.
+    fireEvent.click(screen.getByRole("button", { name: /save path/i }));
+    await waitFor(() => expect(createPathMutate).toHaveBeenCalledTimes(1));
+
+    const arg = createPathMutate.mock.calls[0]![0] as {
+      date: string;
+      name: string;
+      reminderAt: string | null;
+    };
+    // Tomorrow, not today.
+    const today = new Date();
+    const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    const y = tomorrow.getFullYear();
+    const mth = String(tomorrow.getMonth() + 1).padStart(2, "0");
+    const d = String(tomorrow.getDate()).padStart(2, "0");
+    expect(arg.date).toBe(`${y}-${mth}-${d}`);
+    expect(arg.name).toContain("Austin, TX");
+    expect(arg.reminderAt).toBeTruthy();
+
+    // Landed on saved; createPath was not called a second time.
+    await waitFor(() => expect(screen.getByText(/step 6 of 6/i)).toBeInTheDocument());
+    expect(createPathMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets the rep pick Today and derives + overrides the name", async () => {
+    originState.current = WITH_ORIGIN;
+    merchantsState.current = {
+      merchants: [m("a", "Alpha Cafe")],
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    };
+    renderWizard();
+    fireEvent.click(screen.getByText("Plan a Path"));
+    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add to today's path/i }));
+    fireEvent.click(screen.getByRole("button", { name: /review path/i }));
+    fireEvent.click(screen.getByRole("button", { name: /schedule path/i }));
+
+    // Name defaults from origin, then override it.
+    const nameInput = screen.getByLabelText(/name this path/i) as HTMLInputElement;
+    expect(nameInput.value).toContain("Austin, TX");
+    fireEvent.change(nameInput, { target: { value: "My custom run" } });
+
+    // Pick Today.
+    fireEvent.click(screen.getByRole("button", { name: /^today/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save path/i }));
+
+    await waitFor(() => expect(createPathMutate).toHaveBeenCalledTimes(1));
+    const arg = createPathMutate.mock.calls[0]![0] as { date: string; name: string };
+    const today = new Date();
+    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    expect(arg.date).toBe(iso);
+    expect(arg.name).toBe("My custom run");
   });
 });
