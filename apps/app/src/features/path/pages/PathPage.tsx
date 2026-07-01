@@ -49,6 +49,7 @@ import { MerchantMap } from "../components/MerchantMap";
 import { MerchantList, type MerchantWithDistance } from "../components/MerchantList";
 import { MerchantDetailSheet } from "../components/MerchantDetailSheet";
 import { CreatePathWizard } from "../components/CreatePathWizard";
+import { PlanPathWizard } from "./PlanPathWizard";
 import { PathEntry } from "../components/PathEntry";
 import { UpcomingPaths } from "../components/UpcomingPaths";
 import { PathSettings } from "../components/PathSettings";
@@ -121,6 +122,7 @@ export function PathPage() {
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [view, setView] = React.useState<ViewMode>("list"); // default to list until merchants are geocoded
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [planOpen, setPlanOpen] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
 
   // Path-first view state machine:
@@ -390,7 +392,7 @@ export function PathPage() {
                 variant="tertiary"
                 size="sm"
                 leadingIcon={MapPinned}
-                onClick={() => navigate("/path/plan")}
+                onClick={() => setPlanOpen(true)}
               >
                 Plan ahead
               </Button>
@@ -770,6 +772,12 @@ export function PathPage() {
         onIndustriesChange={setIngestIndustries}
         onAllIndustriesChange={setIngestAllIndustries}
         onStart={handleStartPath}
+      />
+
+      <PlanPathWizard
+        open={planOpen}
+        onOpenChange={setPlanOpen}
+        onChooseCreate={() => { setPlanOpen(false); setCreateOpen(true); }}
       />
 
       <PathSettings open={settingsOpen} onOpenChange={setSettingsOpen} />

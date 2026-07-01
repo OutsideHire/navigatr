@@ -1,23 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
 import type { PathOrigin } from "../hooks/usePathOrigin";
 import type { Merchant } from "../mockData";
 
-// --- jsdom polyfills for Radix (Select) portals/pointer -------------------
-if (!Element.prototype.hasPointerCapture) {
-  Element.prototype.hasPointerCapture = () => false;
-}
-if (!Element.prototype.scrollIntoView) {
-  Element.prototype.scrollIntoView = () => {};
-}
-
-// --- Router navigate spy --------------------------------------------------
-const navigateMock = vi.fn();
-vi.mock("react-router-dom", async (orig) => {
-  const actual = await orig<typeof import("react-router-dom")>();
-  return { ...actual, useNavigate: () => navigateMock };
-});
+// --- jsdom polyfills for Radix Dialog/Select portals + pointer ------------
+if (!Element.prototype.hasPointerCapture) Element.prototype.hasPointerCapture = () => false;
+if (!Element.prototype.setPointerCapture) Element.prototype.setPointerCapture = () => {};
+if (!Element.prototype.releasePointerCapture) Element.prototype.releasePointerCapture = () => {};
+if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
 
 // --- Origin layer ---------------------------------------------------------
 const originState = { current: {} as PathOrigin };
@@ -85,16 +75,18 @@ const WITH_ORIGIN: PathOrigin = {
   originLabel: "Austin, TX",
 };
 
+const onOpenChangeMock = vi.fn();
+const onChooseCreateMock = vi.fn();
+
 function renderWizard() {
   return render(
-    <MemoryRouter initialEntries={["/path/plan"]}>
-      <PlanPathWizard />
-    </MemoryRouter>,
+    <PlanPathWizard open onOpenChange={onOpenChangeMock} onChooseCreate={onChooseCreateMock} />,
   );
 }
 
 beforeEach(() => {
-  navigateMock.mockClear();
+  onOpenChangeMock.mockClear();
+  onChooseCreateMock.mockClear();
   createPathMutate.mockClear();
   addStopsMutate.mockClear();
   originState.current = NO_ORIGIN;
@@ -108,11 +100,11 @@ describe("PlanPathWizard", () => {
     expect(screen.getByText("Create a Path")).toBeInTheDocument();
   });
 
-  it("Create mode routes out to /path", () => {
+  it("Create mode hands off to the Create a Path slide-out", () => {
     renderWizard();
     fireEvent.click(screen.getByText("Create a Path"));
     fireEvent.click(screen.getByRole("button", { name: /go to create/i }));
-    expect(navigateMock).toHaveBeenCalledWith("/path");
+    expect(onChooseCreateMock).toHaveBeenCalled();
   });
 
   it("Continue is disabled on mode until a mode is picked", () => {
@@ -122,10 +114,10 @@ describe("PlanPathWizard", () => {
     expect(screen.getByRole("button", { name: /continue/i })).toBeEnabled();
   });
 
-  it("X closes to /path", () => {
+  it("X closes the slide-out", () => {
     renderWizard();
     fireEvent.click(screen.getByRole("button", { name: /close/i }));
-    expect(navigateMock).toHaveBeenCalledWith("/path");
+    expect(onOpenChangeMock).toHaveBeenCalledWith(false);
   });
 
   it("guards search Continue until an origin resolves", () => {
@@ -139,9 +131,7 @@ describe("PlanPathWizard", () => {
     // Resolve an origin and re-render.
     originState.current = WITH_ORIGIN;
     rerender(
-      <MemoryRouter initialEntries={["/path/plan"]}>
-        <PlanPathWizard />
-      </MemoryRouter>,
+      <PlanPathWizard open onOpenChange={onOpenChangeMock} onChooseCreate={onChooseCreateMock} />,
     );
   });
 
