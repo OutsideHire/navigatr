@@ -19,7 +19,7 @@
  * Schedule; the save runs once.
  */
 import * as React from "react";
-import { useNavigate } from "react-router-dom";
+import * as Dialog from "@radix-ui/react-dialog";
 import { ArrowLeft, ArrowRight, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -60,9 +60,15 @@ import { PlanSavedStep } from "../components/plan/PlanSavedStep";
 const DEFAULT_RADIUS_M = 8047; // 5 mi
 const DEFAULT_REMINDER_TIME = "08:30"; // local wall-clock
 
-export function PlanPathWizard() {
-  const navigate = useNavigate();
+export interface PlanPathWizardProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Fired when the rep picks "Create a Path" on the mode step — the parent
+   *  closes this slide-out and opens the Create a Path slide-out. */
+  onChooseCreate: () => void;
+}
 
+export function PlanPathWizard({ open, onOpenChange, onChooseCreate }: PlanPathWizardProps) {
   // --- Wizard step + mode ---------------------------------------------------
   const [stepKey, setStepKey] = React.useState<StepKey>("mode");
   const [mode, setMode] = React.useState<PathMode | null>(null);
@@ -210,7 +216,13 @@ export function PlanPathWizard() {
     setNameTouched(false);
   }, []);
 
-  const exitToPath = React.useCallback(() => navigate("/path"), [navigate]);
+  const exitToPath = React.useCallback(() => onOpenChange(false), [onOpenChange]);
+
+  // Reset to a clean wizard each time the slide-out (re)opens.
+  React.useEffect(() => {
+    if (open) resetWizard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // Save the scheduled path (SP3): create a path on the CHOSEN date with the name
   // + reminder, then add stops in reviewed order (route-optimized via orderStops).
@@ -300,7 +312,7 @@ export function PlanPathWizard() {
   const handleContinue = React.useCallback(() => {
     switch (stepKey) {
       case "mode":
-        if (mode === "create") exitToPath();
+        if (mode === "create") onChooseCreate();
         else if (mode === "plan") goTo("search");
         break;
       case "search":
@@ -320,7 +332,7 @@ export function PlanPathWizard() {
       default:
         break;
     }
-  }, [stepKey, mode, origin, stopIds.length, orderedStops.length, exitToPath, goTo, savePath]);
+  }, [stepKey, mode, origin, stopIds.length, orderedStops.length, onChooseCreate, goTo, savePath]);
 
   const continueLabel =
     stepKey === "mode"
@@ -341,27 +353,30 @@ export function PlanPathWizard() {
   const showBack = stepKey !== "mode" && stepKey !== "saved";
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-4rem)] w-full max-w-4xl flex-col px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 data-[state=open]:animate-in data-[state=open]:fade-in" />
+        <Dialog.Content
+          aria-describedby={undefined}
+          className="fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-md flex-col bg-surface-default shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right md:max-w-[28rem]"
+        >
       {/* Header */}
-      <header className="flex items-start justify-between gap-3 border-b border-border-default pb-4">
+      <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border-default px-5 py-4">
         <div className="flex flex-col gap-1">
-          <h1 className="text-heading-lg text-text-default">Plan a path</h1>
-          <p className="text-body-md text-text-muted">
+          <Dialog.Title className="text-heading-sm text-text-default">Plan a path</Dialog.Title>
+          <p className="text-caption text-text-muted">
             {stepLabel(stepKey)} · {step.title}
           </p>
         </div>
-        <Button
-          variant="tertiary"
-          size="sm"
-          iconOnly
-          leadingIcon={X}
-          aria-label="Close"
-          onClick={exitToPath}
-        />
-      </header>
+        <Dialog.Close asChild>
+          <button aria-label="Close" className="rounded-radius-sm p-1 text-text-muted hover:text-text-default">
+            <X className="h-5 w-5" aria-hidden />
+          </button>
+        </Dialog.Close>
+      </div>
 
       {/* Progress bar — derived from PLAN_STEPS. */}
-      <div className="mt-3 flex gap-1" aria-hidden>
+      <div className="mt-3 flex shrink-0 gap-1 px-5" aria-hidden>
         {PLAN_STEPS.map((s, i) => (
           <span
             key={s.key}
@@ -374,7 +389,7 @@ export function PlanPathWizard() {
       </div>
 
       {/* Body */}
-      <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
+      <div className="mt-4 min-h-0 flex-1 overflow-y-auto px-5">
         {stepKey === "mode" && <ChoosePathMode mode={mode} onSelect={setMode} />}
 
         {stepKey === "search" && (
@@ -443,7 +458,7 @@ export function PlanPathWizard() {
 
       {/* Footer */}
       {showFooter && (
-        <footer className="mt-4 flex items-center justify-between gap-3 border-t border-border-default pt-4">
+        <footer className="mt-4 flex shrink-0 items-center justify-between gap-3 border-t border-border-default px-5 py-4">
           {showBack ? (
             <Button variant="secondary" leadingIcon={ArrowLeft} onClick={handleBack} disabled={saving}>
               Back
@@ -472,7 +487,9 @@ export function PlanPathWizard() {
       )}
 
       <DropInSheet merchant={dropInMerchant} open={dropInOpen} onOpenChange={setDropInOpen} />
-    </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 

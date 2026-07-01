@@ -75,9 +75,6 @@ const PartnerDetailPage = lazy(() =>
 const PathPage = lazy(() =>
   import("@/features/path/pages/PathPage").then((m) => ({ default: m.PathPage })),
 );
-const PlanPathWizard = lazy(() =>
-  import("@/features/path/pages/PlanPathWizard").then((m) => ({ default: m.PlanPathWizard })),
-);
 const SettingsHubPage = lazy(() =>
   import("@/features/settings-hub/SettingsHubPage").then((m) => ({ default: m.SettingsHubPage })),
 );
@@ -290,14 +287,6 @@ export function App() {
             element={
               <ProtectedRoute>
                 <PathPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/path/plan"
-            element={
-              <ProtectedRoute>
-                <PlanPathWizard />
               </ProtectedRoute>
             }
           />
