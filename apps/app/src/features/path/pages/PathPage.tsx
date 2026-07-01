@@ -530,7 +530,11 @@ export function PathPage() {
           <UpcomingPaths onLaunch={() => navigate("/path")} />
         </>
       ) : pathView === "active" ? (
-        <ActivePathView origin={origin} onAddStops={enterDiscover} onStartRoute={() => setPathView("running")} />
+        <>
+          <ActivePathView origin={origin} onAddStops={enterDiscover} onStartRoute={() => setPathView("running")} />
+          {/* Future planned paths stay findable even while a path is active. */}
+          <UpcomingPaths onLaunch={() => navigate("/path")} />
+        </>
       ) : pathView === "running" ? (
         <RunningPath
           origin={origin}
