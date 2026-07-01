@@ -180,7 +180,10 @@ export function PathPage() {
   }, [prevUnfinished.data, closePreviousPath]);
 
   const handleCreate = React.useCallback(() => { if (!closePreviousPath.isPending) finalizePrevious(); setCreateOpen(true); }, [finalizePrevious, closePreviousPath.isPending]);
-  const handlePlan = React.useCallback(() => { if (!closePreviousPath.isPending) finalizePrevious(); enterDiscover(); }, [finalizePrevious, closePreviousPath.isPending, enterDiscover]);
+  // "Plan a Path" opens the stepped slide-out wizard (mode → search → results →
+  // review → schedule → saved). The in-page map/list discover view is still
+  // reachable via "Add stops" on an active path (ActivePathView.onAddStops).
+  const handlePlan = React.useCallback(() => { if (!closePreviousPath.isPending) finalizePrevious(); setPlanOpen(true); }, [finalizePrevious, closePreviousPath.isPending]);
 
   // One-time migration: an existing local queue -> today's server path. Runs once
   // per device when merchants are loaded (snapshots need their display fields).
