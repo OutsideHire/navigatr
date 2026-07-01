@@ -1,11 +1,12 @@
 /**
- * PlanPathWizard — the full-page "Plan a Path" wizard (SP2).
+ * PlanPathWizard — the "Plan a Path" slide-out wizard.
  *
  * A linear, data-driven stepper assembling existing path building blocks:
- *   mode → search → results → review → saved
+ *   search → results → review → schedule → saved
+ * (Mode choice — Create vs Plan — happens on the PathPage entry card.)
  *
  * The shell owns all wizard state (no global store): the current stepKey, the
- * chosen mode, the resolved origin (via usePathOrigin), the discovery filters
+ * resolved origin (via usePathOrigin), the discovery filters
  * (IndustrySelection / radiusM / minEmployees / allIndustries), the in-progress
  * ordered stop set, and the created pathId after save. Step components are
  * presentational — they receive state + callbacks and are independently testable.
@@ -50,7 +51,6 @@ import {
   stepLabel,
   type StepKey,
 } from "../components/plan/steps";
-import { ChoosePathMode, type PathMode } from "../components/plan/ChoosePathMode";
 import { PlanSearchStep } from "../components/plan/PlanSearchStep";
 import { PlanResultsStep } from "../components/plan/PlanResultsStep";
 import { PlanReviewStep } from "../components/plan/PlanReviewStep";
@@ -63,15 +63,13 @@ const DEFAULT_REMINDER_TIME = "08:30"; // local wall-clock
 export interface PlanPathWizardProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Fired when the rep picks "Create a Path" on the mode step — the parent
-   *  closes this slide-out and opens the Create a Path slide-out. */
-  onChooseCreate: () => void;
 }
 
-export function PlanPathWizard({ open, onOpenChange, onChooseCreate }: PlanPathWizardProps) {
-  // --- Wizard step + mode ---------------------------------------------------
-  const [stepKey, setStepKey] = React.useState<StepKey>("mode");
-  const [mode, setMode] = React.useState<PathMode | null>(null);
+export function PlanPathWizard({ open, onOpenChange }: PlanPathWizardProps) {
+  // --- Wizard step ----------------------------------------------------------
+  // Mode choice (Create vs Plan) lives on the PathPage entry card, so the
+  // wizard opens straight to the search step.
+  const [stepKey, setStepKey] = React.useState<StepKey>("search");
 
   // --- Origin (search-by-city) ----------------------------------------------
   const { origin, originLabel, searching, searchError, searchLocation } = usePathOrigin();
@@ -200,8 +198,7 @@ export function PlanPathWizard({ open, onOpenChange, onChooseCreate }: PlanPathW
   const goTo = React.useCallback((key: StepKey) => setStepKey(key), []);
 
   const resetWizard = React.useCallback(() => {
-    setStepKey("mode");
-    setMode(null);
+    setStepKey("search");
     setRadiusM(DEFAULT_RADIUS_M);
     setMinEmployees(0);
     setSelection(RECOMMENDED_SELECTION);
@@ -275,8 +272,6 @@ export function PlanPathWizard({ open, onOpenChange, onChooseCreate }: PlanPathW
 
   const canContinue = ((): boolean => {
     switch (stepKey) {
-      case "mode":
-        return mode !== null;
       case "search":
         return origin != null;
       case "results":
@@ -292,9 +287,6 @@ export function PlanPathWizard({ open, onOpenChange, onChooseCreate }: PlanPathW
 
   const handleBack = React.useCallback(() => {
     switch (stepKey) {
-      case "search":
-        goTo("mode");
-        break;
       case "results":
         goTo("search");
         break;
@@ -311,10 +303,6 @@ export function PlanPathWizard({ open, onOpenChange, onChooseCreate }: PlanPathW
 
   const handleContinue = React.useCallback(() => {
     switch (stepKey) {
-      case "mode":
-        if (mode === "create") onChooseCreate();
-        else if (mode === "plan") goTo("search");
-        break;
       case "search":
         if (origin) goTo("results");
         break;
@@ -332,25 +320,22 @@ export function PlanPathWizard({ open, onOpenChange, onChooseCreate }: PlanPathW
       default:
         break;
     }
-  }, [stepKey, mode, origin, stopIds.length, orderedStops.length, onChooseCreate, goTo, savePath]);
+  }, [stepKey, origin, stopIds.length, orderedStops.length, goTo, savePath]);
 
   const continueLabel =
-    stepKey === "mode"
-      ? mode === "create"
-        ? "Go to Create"
-        : "Continue"
-      : stepKey === "results"
-        ? "Review path"
-        : stepKey === "review"
-          ? "Schedule path"
-          : stepKey === "schedule"
-            ? saving
-              ? "Saving…"
-              : "Save path"
-            : "Continue";
+    stepKey === "results"
+      ? "Review path"
+      : stepKey === "review"
+        ? "Schedule path"
+        : stepKey === "schedule"
+          ? saving
+            ? "Saving…"
+            : "Save path"
+          : "Continue";
 
   const showFooter = stepKey !== "saved";
-  const showBack = stepKey !== "mode" && stepKey !== "saved";
+  // No Back on the first step (search) or the terminal saved step.
+  const showBack = stepKey !== "search" && stepKey !== "saved";
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -390,8 +375,6 @@ export function PlanPathWizard({ open, onOpenChange, onChooseCreate }: PlanPathW
 
       {/* Body */}
       <div className="mt-4 min-h-0 flex-1 overflow-y-auto px-5">
-        {stepKey === "mode" && <ChoosePathMode mode={mode} onSelect={setMode} />}
-
         {stepKey === "search" && (
           <PlanSearchStep
             originResolved={origin != null}

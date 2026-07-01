@@ -777,11 +777,7 @@ export function PathPage() {
         onStart={handleStartPath}
       />
 
-      <PlanPathWizard
-        open={planOpen}
-        onOpenChange={setPlanOpen}
-        onChooseCreate={() => { setPlanOpen(false); setCreateOpen(true); }}
-      />
+      <PlanPathWizard open={planOpen} onOpenChange={setPlanOpen} />
 
       <PathSettings open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>

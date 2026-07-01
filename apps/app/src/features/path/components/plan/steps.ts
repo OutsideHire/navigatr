@@ -2,12 +2,12 @@
  * Plan-a-Path wizard step descriptors.
  *
  * Data-driven stepper: the wizard shell derives its progress bar + "Step N of M"
- * label from this ordered array, so SP3 can insert a `schedule` step before
- * `saved` without touching the shell. SP2 ships 5 steps:
- *   mode → search → results → review → saved
+ * label from this ordered array. Mode choice (Create vs Plan) happens on the
+ * PathPage entry card, so the wizard opens straight to search:
+ *   search → results → review → schedule → saved
  */
 
-export type StepKey = "mode" | "search" | "results" | "review" | "schedule" | "saved";
+export type StepKey = "search" | "results" | "review" | "schedule" | "saved";
 
 export interface Step {
   key: StepKey;
@@ -15,10 +15,9 @@ export interface Step {
   title: string;
 }
 
-/** Ordered SP2 step list. Order here IS the wizard order. */
+/** Ordered step list. Order here IS the wizard order. */
 export const PLAN_STEPS: readonly Step[] = [
-  { key: "mode", title: "Choose how to build" },
-  { key: "search", title: "Search & filters" },
+  { key: "search", title: "Where do you want to prospect?" },
   { key: "results", title: "Add stops" },
   { key: "review", title: "Review path" },
   { key: "schedule", title: "Schedule & remind" },

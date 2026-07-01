@@ -221,8 +221,8 @@ describe("PathPage location states", () => {
     todayState.current = { ...todayState.current, stops: [] };
     render(<PathPage />, { wrapper });
     fireEvent.click(screen.getByRole("button", { name: /plan a path/i }));
-    // The Plan wizard slide-out mounts at its first step.
-    expect(screen.getByText(/step 1 of 6/i)).toBeInTheDocument();
+    // The Plan wizard slide-out mounts at its first step (search).
+    expect(screen.getByText(/step 1 of 5/i)).toBeInTheDocument();
   });
 });
 
