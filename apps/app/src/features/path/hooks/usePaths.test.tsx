@@ -23,8 +23,10 @@ describe("usePaths", () => {
   it("returns the rep's paths with a stop count derived from the joined stops", async () => {
     orderMock.mockResolvedValueOnce({
       data: [
-        { id: "p1", path_date: "2026-06-03", origin_label: "Current location",
+        { id: "p1", path_date: "2026-06-03", name: "Downtown · Wed Jun 3",
+          origin_label: "Current location",
           origin_lat: 30.27, origin_lng: -97.74, status: "planned",
+          reminder_at: "2026-06-03T13:30:00.000Z",
           path_stops: [{ count: 8 }] },
       ],
       error: null,
@@ -32,8 +34,10 @@ describe("usePaths", () => {
     const { result } = renderHook(() => usePaths(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([
-      { id: "p1", date: "2026-06-03", originLabel: "Current location",
-        originLat: 30.27, originLng: -97.74, status: "planned", stopCount: 8 },
+      { id: "p1", date: "2026-06-03", name: "Downtown · Wed Jun 3",
+        originLabel: "Current location",
+        originLat: 30.27, originLng: -97.74, status: "planned",
+        reminderAt: "2026-06-03T13:30:00.000Z", stopCount: 8 },
     ]);
   });
 

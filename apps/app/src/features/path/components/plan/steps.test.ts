@@ -10,12 +10,13 @@ import {
 } from "./steps";
 
 describe("plan wizard steps descriptor", () => {
-  it("ships the SP2 five-step order: mode → search → results → review → saved", () => {
+  it("ships the SP3 six-step order: mode → search → results → review → schedule → saved", () => {
     expect(PLAN_STEPS.map((s) => s.key)).toEqual([
       "mode",
       "search",
       "results",
       "review",
+      "schedule",
       "saved",
     ]);
   });
@@ -26,7 +27,8 @@ describe("plan wizard steps descriptor", () => {
 
   it("stepIndex returns the zero-based position, -1 for unknown", () => {
     expect(stepIndex("mode")).toBe(0);
-    expect(stepIndex("saved")).toBe(4);
+    expect(stepIndex("schedule")).toBe(4);
+    expect(stepIndex("saved")).toBe(5);
     expect(stepIndex("nope" as StepKey)).toBe(-1);
   });
 
@@ -36,17 +38,19 @@ describe("plan wizard steps descriptor", () => {
   });
 
   it('derives "Step N of M" (1-based N, M = total)', () => {
-    expect(stepLabel("mode")).toBe("Step 1 of 5");
-    expect(stepLabel("results")).toBe("Step 3 of 5");
-    expect(stepLabel("saved")).toBe("Step 5 of 5");
+    expect(stepLabel("mode")).toBe("Step 1 of 6");
+    expect(stepLabel("results")).toBe("Step 3 of 6");
+    expect(stepLabel("saved")).toBe("Step 6 of 6");
   });
 
   it("nextStep / prevStep walk the list and clamp at the ends", () => {
     expect(nextStep("mode")).toBe("search");
-    expect(nextStep("review")).toBe("saved");
+    expect(nextStep("review")).toBe("schedule");
+    expect(nextStep("schedule")).toBe("saved");
     expect(nextStep("saved")).toBeNull();
 
-    expect(prevStep("saved")).toBe("review");
+    expect(prevStep("saved")).toBe("schedule");
+    expect(prevStep("schedule")).toBe("review");
     expect(prevStep("search")).toBe("mode");
     expect(prevStep("mode")).toBeNull();
   });

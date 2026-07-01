@@ -11,10 +11,12 @@ export type StopStatus = "pending" | "visited" | "skipped";
 export interface Path {
   id: string;
   date: string;            // ISO date (yyyy-mm-dd)
+  name: string | null;     // optional human name (SP3 scheduling)
   originLabel: string | null;
   originLat: number | null;
   originLng: number | null;
   status: PathStatus;
+  reminderAt: string | null; // ISO timestamptz for the in-app reminder (SP3)
   stopCount: number;
 }
 
@@ -39,10 +41,12 @@ export interface PathStop {
 export interface PathRow {
   id: string;
   path_date: string;
+  name?: string | null;
   origin_label: string | null;
   origin_lat: number | null;
   origin_lng: number | null;
   status: PathStatus;
+  reminder_at?: string | null;
 }
 
 export interface PathStopRow {
@@ -67,10 +71,12 @@ export function rowToPath(row: PathRow, stopCount: number): Path {
   return {
     id: row.id,
     date: row.path_date,
+    name: row.name ?? null,
     originLabel: row.origin_label,
     originLat: row.origin_lat,
     originLng: row.origin_lng,
     status: row.status,
+    reminderAt: row.reminder_at ?? null,
     stopCount,
   };
 }

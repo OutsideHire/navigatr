@@ -19,6 +19,10 @@ export interface CreatePathInput {
   originLabel: string | null;
   originLat: number | null;
   originLng: number | null;
+  /** Optional human name for the path (SP3 scheduling). */
+  name?: string | null;
+  /** ISO timestamptz for the in-app reminder (SP3 scheduling). */
+  reminderAt?: string | null;
 }
 export interface StopSnapshot {
   prospectId: string;
@@ -44,13 +48,17 @@ export function usePathMutations() {
   const createPath = useMutation({
     mutationFn: async (input: CreatePathInput): Promise<string> => {
       if (!userId) throw new Error("Not signed in");
+      // Only spread name/reminder_at when the caller supplied them, so existing
+      // create sites (and their exact-payload tests) keep the same upsert shape.
+      const payload: Record<string, unknown> = {
+        user_id: userId, path_date: input.date, origin_label: input.originLabel,
+        origin_lat: input.originLat, origin_lng: input.originLng,
+      };
+      if (input.name !== undefined) payload.name = input.name;
+      if (input.reminderAt !== undefined) payload.reminder_at = input.reminderAt;
       const { data, error } = await supabase
         .from("paths")
-        .upsert(
-          { user_id: userId, path_date: input.date, origin_label: input.originLabel,
-            origin_lat: input.originLat, origin_lng: input.originLng },
-          { onConflict: "user_id,path_date" },
-        )
+        .upsert(payload, { onConflict: "user_id,path_date" })
         .select("id")
         .single();
       if (error) throw error;

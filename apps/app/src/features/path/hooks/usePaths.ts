@@ -21,7 +21,7 @@ export function usePaths() {
     queryFn: async (): Promise<Path[]> => {
       const { data, error } = await supabase
         .from("paths")
-        .select("id, path_date, origin_label, origin_lat, origin_lng, status, path_stops(count)")
+        .select("id, path_date, name, origin_label, origin_lat, origin_lng, status, reminder_at, path_stops(count)")
         .order("path_date", { ascending: false });
       if (error) throw error;
       return (data as PathListRow[] | null ?? []).map((r) =>

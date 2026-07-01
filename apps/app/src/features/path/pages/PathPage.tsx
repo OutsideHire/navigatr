@@ -50,6 +50,7 @@ import { MerchantList, type MerchantWithDistance } from "../components/MerchantL
 import { MerchantDetailSheet } from "../components/MerchantDetailSheet";
 import { CreatePathWizard } from "../components/CreatePathWizard";
 import { PathEntry } from "../components/PathEntry";
+import { UpcomingPaths } from "../components/UpcomingPaths";
 import { PathSettings } from "../components/PathSettings";
 import { ActivePathView } from "../components/ActivePathView";
 import { RunningPath } from "../components/RunningPath";
@@ -519,6 +520,9 @@ export function PathPage() {
             />
           )}
           <PathEntry onCreate={handleCreate} onPlan={handlePlan} />
+          {/* Upcoming (future-dated planned) paths — launch navigates to /path,
+              where the today-path/discover flow takes over. */}
+          <UpcomingPaths onLaunch={() => navigate("/path")} />
         </>
       ) : pathView === "active" ? (
         <ActivePathView origin={origin} onAddStops={enterDiscover} onStartRoute={() => setPathView("running")} />
