@@ -12,12 +12,20 @@
  * action cards so the per-card Add/Log affordances live on each row (MerchantList
  * stays unchanged / props-only).
  */
-import { Check, Loader2, MapPinOff, Plus, Radio } from "lucide-react";
+import { Calendar, Check, Loader2, MapPinOff, Phone, Plus, Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge, Button, Card } from "@/components/navigatr";
-import { labelForCategory, type Merchant } from "../../mockData";
+import { labelForCategory, STATUS_LABEL, STATUS_PILL_CLASS, type Merchant } from "../../mockData";
 import { formatDistance } from "@/lib/distance";
+import { formatPhoneDisplay } from "@/lib/phone";
 import type { MerchantWithDistance } from "../MerchantList";
+
+/** Last-activity display: a short date, or "Never contacted" when null. */
+function lastActivityLabel(iso: string | null): string {
+  return iso
+    ? `Last contact ${new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+    : "Never contacted";
+}
 
 export interface PlanResultsStepProps {
   merchants: MerchantWithDistance[];
@@ -93,6 +101,14 @@ export function PlanResultsStep({
               <div className="flex min-w-0 flex-col gap-0.5">
                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="text-body-strong text-text-default">{m.name}</span>
+                  <span
+                    className={cn(
+                      "rounded-radius-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                      STATUS_PILL_CLASS[m.status],
+                    )}
+                  >
+                    {STATUS_LABEL[m.status]}
+                  </span>
                   {m.isChain && (
                     <Badge kind="priority-low">
                       {m.chainBrandName ? `Chain · ${m.chainBrandName}` : "Chain"}
@@ -108,6 +124,21 @@ export function PlanResultsStep({
                 {formatDistance(m.distanceMeters)}
               </span>
             </div>
+
+            {/* Contact details — phone + last activity, matching the deal-card / detail-sheet read. */}
+            <div className="flex flex-col gap-1 text-caption text-text-muted">
+              {m.phone && (
+                <span className="flex items-center gap-1.5">
+                  <Phone className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  <span className="tabular-nums text-text-default">{formatPhoneDisplay(m.phone)}</span>
+                </span>
+              )}
+              <span className="flex items-center gap-1.5">
+                <Calendar className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                {lastActivityLabel(m.lastActivity)}
+              </span>
+            </div>
+
             <div className="flex gap-2">
               <Button
                 variant={added ? "secondary" : "primary"}

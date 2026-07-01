@@ -39,6 +39,26 @@ describe("PlanResultsStep", () => {
     expect(screen.getByText("Beta Bakery")).toBeInTheDocument();
   });
 
+  it("shows status, phone, and last-activity details on each card", () => {
+    renderStep({
+      merchants: [
+        {
+          ...merchant("a", "Alpha Cafe"),
+          status: "prospect",
+          phone: "+14055551234",
+          lastActivity: "2026-06-01T00:00:00Z",
+        },
+        { ...merchant("b", "Beta Bakery") }, // untouched, no phone, never contacted
+      ],
+    });
+    // Status pill + formatted phone + dated last-activity for the populated card.
+    expect(screen.getByText(/prospect/i)).toBeInTheDocument();
+    expect(screen.getByText(/\(405\) 555-1234/)).toBeInTheDocument();
+    expect(screen.getByText(/last contact/i)).toBeInTheDocument();
+    // Untouched card with no history reads "Never contacted".
+    expect(screen.getByText(/never contacted/i)).toBeInTheDocument();
+  });
+
   it('"Add to today\'s path" toggles the merchant into the stop set', () => {
     const onToggleStop = vi.fn();
     renderStep({ onToggleStop });
