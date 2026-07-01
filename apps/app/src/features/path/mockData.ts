@@ -150,7 +150,7 @@ export const CATEGORY_LABEL: Record<MerchantCategory, string> = {
   professional_services: "Professional Services",
   automotive: "Automotive",
   convenience_fuel: "Convenience & Fuel",
-  grocery_food_retail: "Grocery & Food Retail",
+  grocery_food_retail: "Grocery & Food",
   apparel_accessories: "Apparel & Accessories",
   home_hardware: "Home & Hardware",
   electronics_specialty: "Electronics & Specialty Retail",

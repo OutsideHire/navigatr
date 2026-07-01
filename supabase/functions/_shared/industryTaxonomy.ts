@@ -79,7 +79,7 @@ export const INDUSTRIES: Record<IndustryKey, IndustrySpec> = {
     includedTypes: ["gas_station", "convenience_store"],
   },
   grocery_food_retail: {
-    key: "grocery_food_retail", label: "Grocery & Food Retail", order: 8,
+    key: "grocery_food_retail", label: "Grocery & Food", order: 8,
     includedTypes: ["supermarket", "grocery_store", "butcher_shop", "liquor_store", "health_food_store", "asian_grocery_store", "hypermarket", "discount_supermarket", "food_store", "market", "tea_store"],
   },
   apparel_accessories: {
@@ -192,4 +192,64 @@ export function bucketForType(
     if (k) return k;
   }
   return "other";
+}
+
+// ─── Display grouping (UI only) ─────────────────────────────────────────────
+// Parent umbrellas that shorten the industry picker. Purely presentational:
+// ingest, searchNearby, and bucketForType never read these. Industries not
+// listed in any group render standalone.
+
+export interface IndustryGroup {
+  label: string;
+  keys: IndustryKey[];
+}
+
+export const INDUSTRY_GROUPS: IndustryGroup[] = [
+  {
+    label: "Retail",
+    keys: [
+      "grocery_food_retail",
+      "apparel_accessories",
+      "home_hardware",
+      "electronics_specialty",
+      "pharmacy_health_retail",
+      "general_merchandise",
+    ],
+  },
+  {
+    label: "Restaurants, Bars & Entertainment",
+    keys: ["food_beverage", "entertainment"],
+  },
+];
+
+export type IndustryDisplayNode =
+  | { kind: "group"; label: string; keys: IndustryKey[]; order: number }
+  | { kind: "industry"; key: IndustryKey; order: number };
+
+/**
+ * Ordered mix of group nodes and standalone-industry nodes for the picker.
+ * A group's order = the min `order` of its children; children keep taxonomy
+ * order. Excludes 'other'. Every fetchable industry appears exactly once,
+ * either inside its group or as a standalone node.
+ */
+export function industryDisplayNodes(): IndustryDisplayNode[] {
+  const grouped = new Map<IndustryKey, string>();
+  for (const g of INDUSTRY_GROUPS) {
+    for (const k of g.keys) grouped.set(k, g.label);
+  }
+
+  const nodes: IndustryDisplayNode[] = [];
+
+  for (const g of INDUSTRY_GROUPS) {
+    const keys = [...g.keys].sort((a, b) => INDUSTRIES[a].order - INDUSTRIES[b].order);
+    const order = Math.min(...keys.map((k) => INDUSTRIES[k].order));
+    nodes.push({ kind: "group", label: g.label, keys, order });
+  }
+
+  for (const k of ALL_FETCHABLE_KEYS) {
+    if (grouped.has(k)) continue;
+    nodes.push({ kind: "industry", key: k, order: INDUSTRIES[k].order });
+  }
+
+  return nodes.sort((a, b) => a.order - b.order);
 }
