@@ -57,10 +57,10 @@ describe("UpcomingPaths", () => {
     expect(screen.getByText("Keep")).toBeInTheDocument();
   });
 
-  it("highlights a path due today with a Launch action", () => {
+  it("excludes today's path (that's the active/entry path, not 'upcoming')", () => {
     pathsData = [makePath({ id: "t", name: "Today run", date: TODAY })];
-    render(<UpcomingPaths onLaunch={vi.fn()} todayIso={TODAY} />);
-    expect(screen.getByRole("button", { name: /launch/i })).toBeInTheDocument();
+    const { container } = render(<UpcomingPaths onLaunch={vi.fn()} todayIso={TODAY} />);
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("launches a path via the callback", () => {
