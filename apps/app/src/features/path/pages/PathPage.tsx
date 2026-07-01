@@ -32,7 +32,7 @@
 
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import { List, Loader2, LocateFixed, Lock, Map as MapIcon, MapPinOff, Route as RouteIcon, Settings } from "lucide-react";
+import { List, Loader2, LocateFixed, Lock, Map as MapIcon, MapPinned, MapPinOff, Route as RouteIcon, Settings } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button, Card, Chip } from "@/components/navigatr";
@@ -384,15 +384,25 @@ export function PathPage() {
         </div>
         <div className="flex items-center gap-2">
           {pathView !== "active" && pathView !== "running" && (
-            <Button
-              variant="secondary"
-              size="sm"
-              leadingIcon={RouteIcon}
-              onClick={() => setCreateOpen(true)}
-              disabled={!anyGeocoded}
-            >
-              Create path
-            </Button>
+            <>
+              <Button
+                variant="tertiary"
+                size="sm"
+                leadingIcon={MapPinned}
+                onClick={() => navigate("/path/plan")}
+              >
+                Plan ahead
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                leadingIcon={RouteIcon}
+                onClick={() => setCreateOpen(true)}
+                disabled={!anyGeocoded}
+              >
+                Create path
+              </Button>
+            </>
           )}
           <Button
             variant="secondary"
