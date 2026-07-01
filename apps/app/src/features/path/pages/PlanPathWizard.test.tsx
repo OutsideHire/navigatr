@@ -76,13 +76,15 @@ const WITH_ORIGIN: PathOrigin = {
 };
 
 const onOpenChangeMock = vi.fn();
+const onSavedMock = vi.fn();
 
 function renderWizard() {
-  return render(<PlanPathWizard open onOpenChange={onOpenChangeMock} />);
+  return render(<PlanPathWizard open onOpenChange={onOpenChangeMock} onSaved={onSavedMock} />);
 }
 
 beforeEach(() => {
   onOpenChangeMock.mockClear();
+  onSavedMock.mockClear();
   createPathMutate.mockClear();
   addStopsMutate.mockClear();
   originState.current = NO_ORIGIN;
@@ -185,6 +187,26 @@ describe("PlanPathWizard", () => {
     await waitFor(() => expect(screen.getByText(/step 5 of 5/i)).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /build another/i }));
     expect(screen.getByText(/step 1 of 5/i)).toBeInTheDocument();
+  });
+
+  it('finishing (Done) fires onSaved and closes so the parent can land on Upcoming', async () => {
+    originState.current = WITH_ORIGIN;
+    merchantsState.current = {
+      merchants: [m("a", "Alpha Cafe")],
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    };
+    renderWizard();
+    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add to today's path/i }));
+    fireEvent.click(screen.getByRole("button", { name: /review path/i }));
+    fireEvent.click(screen.getByRole("button", { name: /schedule path/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save path/i }));
+    await waitFor(() => expect(screen.getByText(/step 5 of 5/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /done/i }));
+    expect(onSavedMock).toHaveBeenCalledTimes(1);
+    expect(onOpenChangeMock).toHaveBeenCalledWith(false);
   });
 
   it("save uses the scheduled date + name + reminder_at, and runs exactly once", async () => {

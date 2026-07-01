@@ -63,9 +63,12 @@ const DEFAULT_REMINDER_TIME = "08:30"; // local wall-clock
 export interface PlanPathWizardProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Fired when the rep finishes a saved path (Done / View upcoming) — lets the
+   *  parent land on the entry/Upcoming screen rather than an active route view. */
+  onSaved?: () => void;
 }
 
-export function PlanPathWizard({ open, onOpenChange }: PlanPathWizardProps) {
+export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardProps) {
   // --- Wizard step ----------------------------------------------------------
   // Mode choice (Create vs Plan) lives on the PathPage entry card, so the
   // wizard opens straight to the search step.
@@ -213,7 +216,12 @@ export function PlanPathWizard({ open, onOpenChange }: PlanPathWizardProps) {
     setNameTouched(false);
   }, []);
 
-  const exitToPath = React.useCallback(() => onOpenChange(false), [onOpenChange]);
+  // Finishing a saved path (Done / View upcoming): notify the parent (so it can
+  // land on the entry/Upcoming screen) and close the slide-out.
+  const finishSaved = React.useCallback(() => {
+    onSaved?.();
+    onOpenChange(false);
+  }, [onSaved, onOpenChange]);
 
   // Reset to a clean wizard each time the slide-out (re)opens.
   React.useEffect(() => {
@@ -432,9 +440,9 @@ export function PlanPathWizard({ open, onOpenChange }: PlanPathWizardProps) {
             pathName={effectiveName || originLabel || "Your path"}
             stopCount={orderedStops.length}
             reminderLabel={formatReminder(reminderAt)}
-            onViewUpcoming={exitToPath}
+            onViewUpcoming={finishSaved}
             onBuildAnother={resetWizard}
-            onDone={exitToPath}
+            onDone={finishSaved}
           />
         )}
       </div>

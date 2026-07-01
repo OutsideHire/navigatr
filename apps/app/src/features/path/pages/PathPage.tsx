@@ -781,7 +781,11 @@ export function PathPage() {
         onStart={handleStartPath}
       />
 
-      <PlanPathWizard open={planOpen} onOpenChange={setPlanOpen} />
+      <PlanPathWizard
+        open={planOpen}
+        onOpenChange={setPlanOpen}
+        onSaved={() => setPathView("entry")}
+      />
 
       <PathSettings open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
