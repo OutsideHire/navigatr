@@ -43,7 +43,7 @@ function makeRow(overrides: Partial<ProspectRow> = {}): ProspectRow {
     id: "p-1",
     place_id: "ChIJ_test",
     name: "Pat's Family Diner",
-    category: "food_beverage",
+    category: "restaurants_bars_entertainment",
     address: "123 Congress Ave",
     lat: 30.2672,
     lng: -97.7431,
@@ -77,8 +77,8 @@ describe("categoryFromPlaces", () => {
       "healthcare",
       "professional_services",
       "automotive",
-      "general_merchandise",
-      "food_beverage",
+      "retail",
+      "restaurants_bars_entertainment",
       "hospitality",
       "education",
       "finance_banking",
@@ -102,7 +102,7 @@ describe("categoryFromPlaces", () => {
     expect(categoryFromPlaces(undefined)).toBe("other");
   });
   it("is case-insensitive and trims", () => {
-    expect(categoryFromPlaces("  Food_Beverage  ")).toBe("food_beverage");
+    expect(categoryFromPlaces("  Retail  ")).toBe("retail");
   });
 });
 

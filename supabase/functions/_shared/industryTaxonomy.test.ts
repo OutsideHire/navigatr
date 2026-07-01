@@ -5,9 +5,9 @@ import {
 } from "./industryTaxonomy";
 
 describe("industryTaxonomy (revised mapping)", () => {
-  it("has 23 fetchable buckets + the 'other' fallback", () => {
+  it("has 17 fetchable buckets + the 'other' fallback", () => {
     expect(INDUSTRY_KEYS).toContain("other");
-    expect(ALL_FETCHABLE_KEYS).toHaveLength(23);
+    expect(ALL_FETCHABLE_KEYS).toHaveLength(17);
     expect(ALL_FETCHABLE_KEYS).not.toContain("other");
   });
   it("is one-to-one: no place type appears in more than one fetchable bucket", () => {
@@ -21,17 +21,27 @@ describe("industryTaxonomy (revised mapping)", () => {
   });
   it("RECOMMENDED_KEYS is exactly the 7 payments buckets", () => {
     expect([...RECOMMENDED_KEYS].sort()).toEqual(
-      ["automotive","convenience_fuel","food_beverage","grocery_food_retail","healthcare","personal_services","professional_services"],
+      ["automotive","convenience_fuel","healthcare","personal_services","professional_services","restaurants_bars_entertainment","retail"],
     );
   });
   it("buckets relocated types to their new home", () => {
     expect(bucketForType(["gas_station"])).toBe("convenience_fuel");
     expect(bucketForType(["accounting"])).toBe("finance_banking");
     expect(bucketForType(["veterinary_care"])).toBe("veterinary_pet");
-    expect(bucketForType(["pharmacy"])).toBe("pharmacy_health_retail");
-    expect(bucketForType(["hardware_store"])).toBe("home_hardware");
+    expect(bucketForType(["pharmacy"])).toBe("retail");
+    expect(bucketForType(["hardware_store"])).toBe("retail");
     expect(bucketForType(["wholesaler"])).toBe("manufacturing_wholesale");
-    expect(bucketForType(["pizza_restaurant"])).toBe("food_beverage");
+    expect(bucketForType(["pizza_restaurant"])).toBe("restaurants_bars_entertainment");
+  });
+  it("merges the retail buckets and the restaurants/bars/entertainment buckets", () => {
+    expect(bucketForType(["supermarket"])).toBe("retail");
+    expect(bucketForType(["clothing_store"])).toBe("retail");
+    expect(bucketForType(["electronics_store"])).toBe("retail");
+    expect(bucketForType(["department_store"])).toBe("retail");
+    expect(bucketForType(["restaurant"])).toBe("restaurants_bars_entertainment");
+    expect(bucketForType(["movie_theater"])).toBe("restaurants_bars_entertainment");
+    expect(INDUSTRIES.retail.order).toBe(8);
+    expect(INDUSTRIES.restaurants_bars_entertainment.order).toBe(14);
   });
   it("strips general_contractor from searchable types but keeps it for bucketing", () => {
     expect(SEARCH_UNSUPPORTED_TYPES.has("general_contractor")).toBe(true);

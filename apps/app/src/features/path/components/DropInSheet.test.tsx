@@ -39,7 +39,7 @@ import type { Merchant } from "../mockData";
 const merchant: Merchant = {
   id: "m-1",
   name: "Bluewater",
-  category: "food_beverage",
+  category: "restaurants_bars_entertainment",
   address: "123 Main St",
   lat: 40,
   lng: -74,

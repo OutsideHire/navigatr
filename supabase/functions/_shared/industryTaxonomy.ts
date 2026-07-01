@@ -22,19 +22,13 @@ export type IndustryKey =
   | "professional_services"
   | "automotive"
   | "convenience_fuel"
-  | "grocery_food_retail"
-  | "apparel_accessories"
-  | "home_hardware"
-  | "electronics_specialty"
-  | "pharmacy_health_retail"
-  | "general_merchandise"
-  | "food_beverage"
+  | "retail"
+  | "restaurants_bars_entertainment"
   | "hospitality"
   | "education"
   | "finance_banking"
   | "fitness_wellness"
   | "personal_services"
-  | "entertainment"
   | "sports_recreation"
   | "transportation"
   | "non_profit"
@@ -78,33 +72,13 @@ export const INDUSTRIES: Record<IndustryKey, IndustrySpec> = {
     key: "convenience_fuel", label: "Convenience & Fuel", order: 7,
     includedTypes: ["gas_station", "convenience_store"],
   },
-  grocery_food_retail: {
-    key: "grocery_food_retail", label: "Grocery & Food", order: 8,
-    includedTypes: ["supermarket", "grocery_store", "butcher_shop", "liquor_store", "health_food_store", "asian_grocery_store", "hypermarket", "discount_supermarket", "food_store", "market", "tea_store"],
+  retail: {
+    key: "retail", label: "Retail", order: 8,
+    includedTypes: ["supermarket", "grocery_store", "butcher_shop", "liquor_store", "health_food_store", "asian_grocery_store", "hypermarket", "discount_supermarket", "food_store", "market", "tea_store", "clothing_store", "womens_clothing_store", "shoe_store", "sportswear_store", "jewelry_store", "cosmetics_store", "furniture_store", "home_goods_store", "home_improvement_store", "hardware_store", "building_materials_store", "garden_center", "electronics_store", "cell_phone_store", "book_store", "toy_store", "bicycle_store", "sporting_goods_store", "gift_shop", "pharmacy", "drugstore", "department_store", "warehouse_store", "shopping_mall", "store", "general_store", "discount_store", "thrift_store"],
   },
-  apparel_accessories: {
-    key: "apparel_accessories", label: "Apparel & Accessories", order: 9,
-    includedTypes: ["clothing_store", "womens_clothing_store", "shoe_store", "sportswear_store", "jewelry_store", "cosmetics_store"],
-  },
-  home_hardware: {
-    key: "home_hardware", label: "Home & Hardware", order: 10,
-    includedTypes: ["furniture_store", "home_goods_store", "home_improvement_store", "hardware_store", "building_materials_store", "garden_center"],
-  },
-  electronics_specialty: {
-    key: "electronics_specialty", label: "Electronics & Specialty Retail", order: 11,
-    includedTypes: ["electronics_store", "cell_phone_store", "book_store", "toy_store", "bicycle_store", "sporting_goods_store", "gift_shop"],
-  },
-  pharmacy_health_retail: {
-    key: "pharmacy_health_retail", label: "Pharmacy & Health Retail", order: 12,
-    includedTypes: ["pharmacy", "drugstore"],
-  },
-  general_merchandise: {
-    key: "general_merchandise", label: "General Merchandise", order: 13,
-    includedTypes: ["department_store", "warehouse_store", "shopping_mall", "store", "general_store", "discount_store", "thrift_store"],
-  },
-  food_beverage: {
-    key: "food_beverage", label: "Food & Beverage", order: 14,
-    includedTypes: ["restaurant", "cafe", "bar", "brewery", "fast_food_restaurant", "fine_dining_restaurant", "acai_shop", "afghani_restaurant", "african_restaurant", "american_restaurant", "asian_restaurant", "bagel_shop", "bakery", "bar_and_grill", "barbecue_restaurant", "brazilian_restaurant", "breakfast_restaurant", "brunch_restaurant", "buffet_restaurant", "cafeteria", "candy_store", "cat_cafe", "chinese_restaurant", "chocolate_factory", "chocolate_shop", "coffee_shop", "confectionery", "deli", "dessert_restaurant", "dessert_shop", "diner", "dog_cafe", "donut_shop", "food_court", "french_restaurant", "greek_restaurant", "hamburger_restaurant", "ice_cream_shop", "indian_restaurant", "indonesian_restaurant", "italian_restaurant", "japanese_restaurant", "juice_shop", "korean_restaurant", "lebanese_restaurant", "meal_delivery", "meal_takeaway", "mediterranean_restaurant", "mexican_restaurant", "middle_eastern_restaurant", "pizza_restaurant", "pub", "ramen_restaurant", "sandwich_shop", "seafood_restaurant", "spanish_restaurant", "steak_house", "sushi_restaurant", "tea_house", "thai_restaurant", "turkish_restaurant", "vegan_restaurant", "vegetarian_restaurant", "vietnamese_restaurant", "wine_bar", "argentinian_restaurant", "asian_fusion_restaurant", "australian_restaurant", "austrian_restaurant", "bangladeshi_restaurant", "basque_restaurant", "bavarian_restaurant", "beer_garden", "belgian_restaurant", "bistro", "brewpub", "british_restaurant", "burmese_restaurant", "burrito_restaurant", "cajun_restaurant", "cake_shop", "californian_restaurant", "cambodian_restaurant", "cantonese_restaurant", "caribbean_restaurant", "chicken_restaurant", "chicken_wings_restaurant", "chilean_restaurant", "chinese_noodle_restaurant", "cocktail_bar", "coffee_roastery", "coffee_stand", "colombian_restaurant", "croatian_restaurant", "cuban_restaurant", "czech_restaurant", "danish_restaurant", "dim_sum_restaurant", "dumpling_restaurant", "dutch_restaurant", "eastern_european_restaurant", "ethiopian_restaurant", "european_restaurant", "falafel_restaurant", "family_restaurant", "filipino_restaurant", "fish_and_chips_restaurant", "fondue_restaurant", "fusion_restaurant", "gastropub", "german_restaurant", "gyro_restaurant", "halal_restaurant", "hawaiian_restaurant", "hookah_bar", "hot_dog_restaurant", "hot_dog_stand", "hot_pot_restaurant", "hungarian_restaurant", "irish_pub", "irish_restaurant", "israeli_restaurant", "japanese_curry_restaurant", "japanese_izakaya_restaurant", "kebab_shop", "korean_barbecue_restaurant", "latin_american_restaurant", "lounge_bar", "malaysian_restaurant", "mongolian_barbecue_restaurant", "moroccan_restaurant", "noodle_shop", "north_indian_restaurant", "oyster_bar_restaurant", "pakistani_restaurant", "pastry_shop", "persian_restaurant", "peruvian_restaurant", "pizza_delivery", "polish_restaurant", "portuguese_restaurant", "romanian_restaurant", "russian_restaurant", "salad_shop", "scandinavian_restaurant", "shawarma_restaurant", "snack_bar", "soul_food_restaurant", "soup_restaurant", "south_american_restaurant", "south_indian_restaurant", "southwestern_us_restaurant", "sports_bar", "sri_lankan_restaurant", "swiss_restaurant", "taco_restaurant", "taiwanese_restaurant", "tapas_restaurant", "tex_mex_restaurant", "tibetan_restaurant", "tonkatsu_restaurant", "ukrainian_restaurant", "western_restaurant", "winery", "yakiniku_restaurant", "yakitori_restaurant", "vineyard"],
+  restaurants_bars_entertainment: {
+    key: "restaurants_bars_entertainment", label: "Restaurants, Bars & Entertainment", order: 14,
+    includedTypes: ["restaurant", "cafe", "bar", "brewery", "fast_food_restaurant", "fine_dining_restaurant", "acai_shop", "afghani_restaurant", "african_restaurant", "american_restaurant", "asian_restaurant", "bagel_shop", "bakery", "bar_and_grill", "barbecue_restaurant", "brazilian_restaurant", "breakfast_restaurant", "brunch_restaurant", "buffet_restaurant", "cafeteria", "candy_store", "cat_cafe", "chinese_restaurant", "chocolate_factory", "chocolate_shop", "coffee_shop", "confectionery", "deli", "dessert_restaurant", "dessert_shop", "diner", "dog_cafe", "donut_shop", "food_court", "french_restaurant", "greek_restaurant", "hamburger_restaurant", "ice_cream_shop", "indian_restaurant", "indonesian_restaurant", "italian_restaurant", "japanese_restaurant", "juice_shop", "korean_restaurant", "lebanese_restaurant", "meal_delivery", "meal_takeaway", "mediterranean_restaurant", "mexican_restaurant", "middle_eastern_restaurant", "pizza_restaurant", "pub", "ramen_restaurant", "sandwich_shop", "seafood_restaurant", "spanish_restaurant", "steak_house", "sushi_restaurant", "tea_house", "thai_restaurant", "turkish_restaurant", "vegan_restaurant", "vegetarian_restaurant", "vietnamese_restaurant", "wine_bar", "argentinian_restaurant", "asian_fusion_restaurant", "australian_restaurant", "austrian_restaurant", "bangladeshi_restaurant", "basque_restaurant", "bavarian_restaurant", "beer_garden", "belgian_restaurant", "bistro", "brewpub", "british_restaurant", "burmese_restaurant", "burrito_restaurant", "cajun_restaurant", "cake_shop", "californian_restaurant", "cambodian_restaurant", "cantonese_restaurant", "caribbean_restaurant", "chicken_restaurant", "chicken_wings_restaurant", "chilean_restaurant", "chinese_noodle_restaurant", "cocktail_bar", "coffee_roastery", "coffee_stand", "colombian_restaurant", "croatian_restaurant", "cuban_restaurant", "czech_restaurant", "danish_restaurant", "dim_sum_restaurant", "dumpling_restaurant", "dutch_restaurant", "eastern_european_restaurant", "ethiopian_restaurant", "european_restaurant", "falafel_restaurant", "family_restaurant", "filipino_restaurant", "fish_and_chips_restaurant", "fondue_restaurant", "fusion_restaurant", "gastropub", "german_restaurant", "gyro_restaurant", "halal_restaurant", "hawaiian_restaurant", "hookah_bar", "hot_dog_restaurant", "hot_dog_stand", "hot_pot_restaurant", "hungarian_restaurant", "irish_pub", "irish_restaurant", "israeli_restaurant", "japanese_curry_restaurant", "japanese_izakaya_restaurant", "kebab_shop", "korean_barbecue_restaurant", "latin_american_restaurant", "lounge_bar", "malaysian_restaurant", "mongolian_barbecue_restaurant", "moroccan_restaurant", "noodle_shop", "north_indian_restaurant", "oyster_bar_restaurant", "pakistani_restaurant", "pastry_shop", "persian_restaurant", "peruvian_restaurant", "pizza_delivery", "polish_restaurant", "portuguese_restaurant", "romanian_restaurant", "russian_restaurant", "salad_shop", "scandinavian_restaurant", "shawarma_restaurant", "snack_bar", "soul_food_restaurant", "soup_restaurant", "south_american_restaurant", "south_indian_restaurant", "southwestern_us_restaurant", "sports_bar", "sri_lankan_restaurant", "swiss_restaurant", "taco_restaurant", "taiwanese_restaurant", "tapas_restaurant", "tex_mex_restaurant", "tibetan_restaurant", "tonkatsu_restaurant", "ukrainian_restaurant", "western_restaurant", "winery", "yakiniku_restaurant", "yakitori_restaurant", "vineyard", "movie_theater", "night_club", "comedy_club", "bowling_alley", "amusement_park", "amusement_center", "amphitheatre", "aquarium", "banquet_hall", "barbecue_area", "concert_hall", "convention_center", "cycling_park", "dance_hall", "event_venue", "ferris_wheel", "internet_cafe", "karaoke", "marina", "movie_rental", "opera_house", "philharmonic_hall", "planetarium", "roller_coaster", "video_arcade", "water_park", "wedding_venue", "zoo", "go_karting_venue", "live_music_venue", "miniature_golf_course", "paintball_center", "adventure_sports_center"],
   },
   hospitality: {
     key: "hospitality", label: "Hospitality", order: 15,
@@ -125,10 +99,6 @@ export const INDUSTRIES: Record<IndustryKey, IndustrySpec> = {
   personal_services: {
     key: "personal_services", label: "Personal Services", order: 19,
     includedTypes: ["barber_shop", "beauty_salon", "hair_salon", "nail_salon", "beautician", "makeup_artist", "hair_care", "foot_care", "body_art_service", "laundry", "locksmith", "funeral_home", "florist", "tailor", "storage", "moving_company", "catering_service", "service"],
-  },
-  entertainment: {
-    key: "entertainment", label: "Entertainment", order: 20,
-    includedTypes: ["movie_theater", "night_club", "comedy_club", "bowling_alley", "amusement_park", "amusement_center", "amphitheatre", "aquarium", "banquet_hall", "barbecue_area", "concert_hall", "convention_center", "cycling_park", "dance_hall", "event_venue", "ferris_wheel", "internet_cafe", "karaoke", "marina", "movie_rental", "opera_house", "philharmonic_hall", "planetarium", "roller_coaster", "video_arcade", "water_park", "wedding_venue", "zoo", "go_karting_venue", "live_music_venue", "miniature_golf_course", "paintball_center", "adventure_sports_center"],
   },
   sports_recreation: {
     key: "sports_recreation", label: "Sports & Recreation", order: 21,
@@ -157,7 +127,7 @@ export const ALL_FETCHABLE_KEYS: IndustryKey[] = INDUSTRY_KEYS
 
 /** Default pre-selection (payments / merchant-services ICP). */
 export const RECOMMENDED_KEYS: IndustryKey[] = [
-  "food_beverage", "grocery_food_retail", "convenience_fuel",
+  "restaurants_bars_entertainment", "retail", "convenience_fuel",
   "healthcare", "professional_services", "automotive", "personal_services",
 ];
 
@@ -192,64 +162,4 @@ export function bucketForType(
     if (k) return k;
   }
   return "other";
-}
-
-// ─── Display grouping (UI only) ─────────────────────────────────────────────
-// Parent umbrellas that shorten the industry picker. Purely presentational:
-// ingest, searchNearby, and bucketForType never read these. Industries not
-// listed in any group render standalone.
-
-export interface IndustryGroup {
-  label: string;
-  keys: IndustryKey[];
-}
-
-export const INDUSTRY_GROUPS: IndustryGroup[] = [
-  {
-    label: "Retail",
-    keys: [
-      "grocery_food_retail",
-      "apparel_accessories",
-      "home_hardware",
-      "electronics_specialty",
-      "pharmacy_health_retail",
-      "general_merchandise",
-    ],
-  },
-  {
-    label: "Restaurants, Bars & Entertainment",
-    keys: ["food_beverage", "entertainment"],
-  },
-];
-
-export type IndustryDisplayNode =
-  | { kind: "group"; label: string; keys: IndustryKey[]; order: number }
-  | { kind: "industry"; key: IndustryKey; order: number };
-
-/**
- * Ordered mix of group nodes and standalone-industry nodes for the picker.
- * A group's order = the min `order` of its children; children keep taxonomy
- * order. Excludes 'other'. Every fetchable industry appears exactly once,
- * either inside its group or as a standalone node.
- */
-export function industryDisplayNodes(): IndustryDisplayNode[] {
-  const grouped = new Map<IndustryKey, string>();
-  for (const g of INDUSTRY_GROUPS) {
-    for (const k of g.keys) grouped.set(k, g.label);
-  }
-
-  const nodes: IndustryDisplayNode[] = [];
-
-  for (const g of INDUSTRY_GROUPS) {
-    const keys = [...g.keys].sort((a, b) => INDUSTRIES[a].order - INDUSTRIES[b].order);
-    const order = Math.min(...keys.map((k) => INDUSTRIES[k].order));
-    nodes.push({ kind: "group", label: g.label, keys, order });
-  }
-
-  for (const k of ALL_FETCHABLE_KEYS) {
-    if (grouped.has(k)) continue;
-    nodes.push({ kind: "industry", key: k, order: INDUSTRIES[k].order });
-  }
-
-  return nodes.sort((a, b) => a.order - b.order);
 }

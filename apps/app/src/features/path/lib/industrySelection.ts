@@ -9,6 +9,20 @@ import type { MerchantCategory } from "../mockData";
 
 export type IndustrySelection = Partial<Record<MerchantCategory, string[]>>;
 
+/** Retired taxonomy keys → the merged key they now fold into. Lets a rep's saved
+ *  selection auto-migrate after the retail / restaurants-bars-entertainment merge
+ *  instead of being dropped as unknown. */
+export const LEGACY_KEY_MAP: Record<string, MerchantCategory> = {
+  grocery_food_retail: "retail",
+  apparel_accessories: "retail",
+  home_hardware: "retail",
+  electronics_specialty: "retail",
+  pharmacy_health_retail: "retail",
+  general_merchandise: "retail",
+  food_beverage: "restaurants_bars_entertainment",
+  entertainment: "restaurants_bars_entertainment",
+};
+
 export function allSubtypes(category: MerchantCategory): string[] {
   return INDUSTRIES[category as keyof typeof INDUSTRIES]?.includedTypes ?? [];
 }
@@ -30,12 +44,24 @@ export function selectedCategories(sel: IndustrySelection): MerchantCategory[] {
   return (Object.keys(sel) as MerchantCategory[]).filter((c) => (sel[c]?.length ?? 0) > 0 && isKnownCategory(c));
 }
 
-/** Drop entries whose key is not a current taxonomy key — e.g. stale keys in a
- *  saved selection from before a taxonomy migration. */
+/** Normalize a saved selection: fold retired keys into their merged key (unioning
+ *  the sub-type arrays, deduped) and drop keys that are neither a current taxonomy
+ *  key nor a known legacy key. */
 export function pruneToKnownCategories(sel: IndustrySelection): IndustrySelection {
   const out: IndustrySelection = {};
+  const addSubtypes = (target: MerchantCategory, subs: string[] | undefined) => {
+    const existing = out[target] ?? [];
+    const merged = [...existing];
+    for (const s of subs ?? []) if (!merged.includes(s)) merged.push(s);
+    out[target] = merged;
+  };
   for (const key of Object.keys(sel) as MerchantCategory[]) {
-    if (isKnownCategory(key)) out[key] = sel[key];
+    const legacy = LEGACY_KEY_MAP[key];
+    if (legacy) {
+      addSubtypes(legacy, sel[key]);
+    } else if (isKnownCategory(key)) {
+      addSubtypes(key, sel[key]);
+    }
   }
   return out;
 }
