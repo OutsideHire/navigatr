@@ -6,6 +6,12 @@ import type { ReactNode } from "react";
 import { PathPage } from "./PathPage";
 import type { PathOrigin } from "../hooks/usePathOrigin";
 
+// The Plan a Path slide-out is a Radix Dialog; jsdom lacks these.
+if (!Element.prototype.hasPointerCapture) Element.prototype.hasPointerCapture = () => false;
+if (!Element.prototype.setPointerCapture) Element.prototype.setPointerCapture = () => {};
+if (!Element.prototype.releasePointerCapture) Element.prototype.releasePointerCapture = () => {};
+if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
+
 // Control the origin layer.
 const originState = { current: {} as PathOrigin };
 vi.mock("../hooks/usePathOrigin", () => ({
@@ -48,7 +54,17 @@ vi.mock("../components/CreatePathWizard", () => ({
     return null;
   },
 }));
-vi.mock("../components/ActivePathView", () => ({ ActivePathView: () => <div data-testid="active-path" /> }));
+// Stub ActivePathView, but expose the real onAddStops wiring: clicking "Add stops"
+// calls the prop, which is PathPage's enterDiscover — the same UI path a rep takes
+// from an active path into the discover view. (The real component is a MapLibre-heavy
+// surface; the button is all the discover-entry test needs.)
+vi.mock("../components/ActivePathView", () => ({
+  ActivePathView: (props: { onAddStops?: () => void }) => (
+    <div data-testid="active-path">
+      <button type="button" onClick={() => props.onAddStops?.()}>Add stops</button>
+    </div>
+  ),
+}));
 
 // No prospects unless origin is set; keep the discovery hook quiet.
 const merchantsState = {
@@ -200,13 +216,13 @@ describe("PathPage location states", () => {
     expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
   });
 
-  it("entering discover via Plan shows the discovery loading state", () => {
+  it("Plan a Path opens the stepped slide-out wizard", () => {
     originState.current = { ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready" };
     todayState.current = { ...todayState.current, stops: [] };
-    merchantsState.current = { merchants: [], isLoading: true, isError: false, refetch: vi.fn() };
     render(<PathPage />, { wrapper });
     fireEvent.click(screen.getByRole("button", { name: /plan a path/i }));
-    expect(screen.getByText(/discovering businesses/i)).toBeInTheDocument();
+    // The Plan wizard slide-out mounts at its first step.
+    expect(screen.getByText(/step 1 of 6/i)).toBeInTheDocument();
   });
 });
 
@@ -302,13 +318,15 @@ describe("PathPage route memos — discover-only", () => {
 
   it("still builds the route polyline for the discover map (no regression)", () => {
     originState.current = readyOrigin;
+    // A live geocoded merchant so the discover branch renders the map (anyGeocoded).
     merchantsState.current = { merchants: liveMerchant, isLoading: false, isError: false, refetch: vi.fn() } as typeof merchantsState.current;
-    todayState.current = { ...todayState.current, stops: [] };
-    const { rerender } = render(<PathPage />, { wrapper });
-    // Enter discover from the entry view, then stops arrive (sticky discover).
-    fireEvent.click(screen.getByRole("button", { name: /plan a path/i }));
+    // Active path with pending geocoded stops → lands on the active home, whose
+    // "Add stops" button (onAddStops === enterDiscover) transitions to discover.
     todayState.current = { ...todayState.current, stops: geoStops as unknown as typeof todayState.current.stops };
-    rerender(<PathPage />);
+    render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /add stops/i }));
+    // In discover, the route memo runs nearest-neighbor over the queued stops and
+    // hands the polyline to the map.
     const map = screen.getByTestId("map");
     expect(map).toHaveAttribute("data-has-route", "yes");
     expect(nearestNeighborSpy).toHaveBeenCalled();
