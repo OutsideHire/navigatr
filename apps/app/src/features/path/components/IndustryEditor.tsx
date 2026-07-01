@@ -7,7 +7,9 @@ import {
   RECOMMENDED_SELECTION, allSubtypes, selectedCategories, subtypeCount,
   humanizeSubtype, type IndustrySelection,
 } from "../lib/industrySelection";
-import { industryDisplayNodes } from "../../../../../../supabase/functions/_shared/industryTaxonomy";
+
+/** All addable industries in a flat list (everything except the 'other' fallback). */
+const ALL_CATEGORIES = (Object.keys(CATEGORY_LABEL) as MerchantCategory[]).filter((c) => c !== "other");
 
 interface IndustryEditorProps {
   value: IndustrySelection;
@@ -27,6 +29,7 @@ export function IndustryEditor({ value, scope, onUseForPath, onSaveDefault }: In
   const [expanded, setExpanded] = React.useState<MerchantCategory | null>(null);
 
   const chosen = selectedCategories(sel);
+  const addable = ALL_CATEGORIES.filter((c) => !chosen.includes(c));
 
   const addCategory = (c: MerchantCategory) => {
     setSel((s) => ({ ...s, [c]: allSubtypes(c) }));
@@ -96,31 +99,12 @@ export function IndustryEditor({ value, scope, onUseForPath, onSaveDefault }: In
       {adding ? (
         <div className="flex flex-col gap-1 rounded-radius-md border border-border-default p-2">
           <span className="px-1 text-caption font-medium text-text-muted">Add an industry</span>
-          {industryDisplayNodes().map((node) => {
-            const addBtn = (c: MerchantCategory, indented: boolean) => (
-              <button key={c} type="button" onClick={() => addCategory(c)}
-                className={cn(
-                  "flex min-h-[44px] items-center rounded-radius-sm px-2 py-2.5 text-left text-body-md text-text-default hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas",
-                  indented && "pl-4",
-                )}>
-                {CATEGORY_LABEL[c]}
-              </button>
-            );
-            if (node.kind === "group") {
-              const addableKeys = node.keys.filter((k) => !chosen.includes(k as MerchantCategory));
-              if (addableKeys.length === 0) return null;
-              return (
-                <div key={node.label} className="flex flex-col">
-                  <span className="px-1 pt-2 text-caption font-semibold uppercase tracking-wide text-text-subtle">
-                    {node.label}
-                  </span>
-                  {addableKeys.map((k) => addBtn(k as MerchantCategory, true))}
-                </div>
-              );
-            }
-            if (chosen.includes(node.key as MerchantCategory)) return null;
-            return addBtn(node.key as MerchantCategory, false);
-          })}
+          {addable.map((c) => (
+            <button key={c} type="button" onClick={() => addCategory(c)}
+              className="flex min-h-[44px] items-center rounded-radius-sm px-2 py-2.5 text-left text-body-md text-text-default hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas">
+              {CATEGORY_LABEL[c]}
+            </button>
+          ))}
         </div>
       ) : (
         <Button variant="secondary" size="sm" leadingIcon={Plus} onClick={() => setAdding(true)} className="self-start">

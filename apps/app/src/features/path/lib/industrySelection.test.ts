@@ -8,7 +8,7 @@ import {
 describe("industrySelection", () => {
   it("RECOMMENDED_SELECTION is the 7 payments buckets, each fully selected", () => {
     const cats = selectedCategories(RECOMMENDED_SELECTION).sort();
-    expect(cats).toEqual(["automotive", "convenience_fuel", "food_beverage", "grocery_food_retail", "healthcare", "personal_services", "professional_services"].sort());
+    expect(cats).toEqual(["automotive", "convenience_fuel", "healthcare", "personal_services", "professional_services", "restaurants_bars_entertainment", "retail"].sort());
     expect(isFullySelected(RECOMMENDED_SELECTION, "convenience_fuel")).toBe(true);
   });
 
@@ -43,7 +43,7 @@ describe("industrySelection", () => {
   it("matchesSelection: null primary_type → matches its (selected) category, not dropped", () => {
     const sel: IndustrySelection = { automotive: ["car_repair"] };
     expect(matchesSelection(null, "automotive", sel)).toBe(true);
-    expect(matchesSelection(null, "general_merchandise", sel)).toBe(false);
+    expect(matchesSelection(null, "retail", sel)).toBe(false);
   });
 
   it("humanizeSubtype turns a raw type into a label", () => {
@@ -52,13 +52,43 @@ describe("industrySelection", () => {
   });
 
   it("selectedCategories excludes stale (non-taxonomy) keys", () => {
-    const sel = { retail: ["x"], food_beverage: ["y"] } as IndustrySelection;
-    expect(selectedCategories(sel)).toEqual(["food_beverage"]);
+    const sel = { totally_unknown: ["x"], retail: ["y"] } as IndustrySelection;
+    expect(selectedCategories(sel)).toEqual(["retail"]);
   });
 
-  it("pruneToKnownCategories drops stale keys, preserves known ones", () => {
-    const sel = { retail: ["x"], food_beverage: ["y"] } as IndustrySelection;
-    expect(pruneToKnownCategories(sel)).toEqual({ food_beverage: ["y"] });
+  it("pruneToKnownCategories drops truly-unknown keys, preserves known ones", () => {
+    const sel = { totally_unknown: ["x"], retail: ["y"] } as IndustrySelection;
+    expect(pruneToKnownCategories(sel)).toEqual({ retail: ["y"] });
+  });
+
+  it("pruneToKnownCategories folds retired retail keys into retail, unioning sub-types", () => {
+    const sel = {
+      grocery_food_retail: ["supermarket", "grocery_store"],
+      apparel_accessories: ["clothing_store", "supermarket"],
+    } as IndustrySelection;
+    expect(pruneToKnownCategories(sel)).toEqual({
+      retail: ["supermarket", "grocery_store", "clothing_store"],
+    });
+  });
+
+  it("pruneToKnownCategories folds food_beverage + entertainment into restaurants_bars_entertainment", () => {
+    const sel = {
+      food_beverage: ["restaurant", "cafe"],
+      entertainment: ["movie_theater"],
+    } as IndustrySelection;
+    expect(pruneToKnownCategories(sel)).toEqual({
+      restaurants_bars_entertainment: ["restaurant", "cafe", "movie_theater"],
+    });
+  });
+
+  it("pruneToKnownCategories merges a retired key into an already-present new key", () => {
+    const sel = {
+      retail: ["supermarket"],
+      apparel_accessories: ["clothing_store", "supermarket"],
+    } as IndustrySelection;
+    expect(pruneToKnownCategories(sel)).toEqual({
+      retail: ["supermarket", "clothing_store"],
+    });
   });
 
   it("pruneToKnownCategories on empty selection returns {}", () => {

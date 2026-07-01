@@ -165,7 +165,7 @@ interface BucketPullResult {
  * caller dedups the union before counting). Otherwise hits Google Places (New).
  */
 /** Google searchNearby caps includedTypes at 50 per request. Buckets can exceed
- *  that (food_beverage has 167), so we split into ≤50-type batches and merge.
+ *  that (restaurants_bars_entertainment has ~200), so we split into ≤50-type batches and merge.
  *  `chunk`/`dedupeById` live in _shared (Deno-free, vitest-covered). */
 const INCLUDED_TYPES_CAP = 50;
 
@@ -303,7 +303,7 @@ Deno.serve(async (req) => {
   // Industries to cold-fill. Validate against the known fetchable set; unknown
   // values are dropped. "All industries" (or an empty/absent list) → every
   // fetchable bucket; the per-bucket pulls are chunked so big buckets (e.g.
-  // food_beverage's 167 types) stay under the Google includedTypes cap.
+  // restaurants_bars_entertainment's ~200 types) stay under the Google includedTypes cap.
   const requested = Array.isArray(body?.industries)
     ? (body!.industries.filter((s) => (ALL_FETCHABLE_KEYS as string[]).includes(s)) as IndustryKey[])
     : [];

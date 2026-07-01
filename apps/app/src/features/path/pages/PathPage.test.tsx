@@ -283,11 +283,11 @@ describe("PathPage route memos — discover-only", () => {
     ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
   };
   const geoStops = [
-    { merchantId: "a", name: "Alpha", address: "1 A St", lat: 30.05, lng: -97.05, category: "general_merchandise", status: "pending" },
-    { merchantId: "b", name: "Bravo", address: "2 B St", lat: 30.06, lng: -97.06, category: "general_merchandise", status: "pending" },
+    { merchantId: "a", name: "Alpha", address: "1 A St", lat: 30.05, lng: -97.05, category: "retail", status: "pending" },
+    { merchantId: "b", name: "Bravo", address: "2 B St", lat: 30.06, lng: -97.06, category: "retail", status: "pending" },
   ];
   const liveMerchant = [
-    { id: "x", name: "Xray", address: "9 X St", phone: null, lat: 30.04, lng: -97.04, category: "general_merchandise", primaryType: null },
+    { id: "x", name: "Xray", address: "9 X St", phone: null, lat: 30.04, lng: -97.04, category: "retail", primaryType: null },
   ] as unknown as typeof merchantsState.current.merchants;
 
   it("does NOT run nearest-neighbor ordering outside the discover view (active view with stops)", () => {
@@ -321,8 +321,8 @@ describe("PathPage handleStartPath — dropped stops", () => {
   };
   // Minimal live merchants — only the fields handleStartPath snapshots.
   const liveMerchants = [
-    { id: "a", name: "Alpha", address: "1 A St", phone: null, lat: 30.1, lng: -97.1, category: "general_merchandise", primaryType: null },
-    { id: "b", name: "Bravo", address: "2 B St", phone: null, lat: 30.2, lng: -97.2, category: "general_merchandise", primaryType: null },
+    { id: "a", name: "Alpha", address: "1 A St", phone: null, lat: 30.1, lng: -97.1, category: "retail", primaryType: null },
+    { id: "b", name: "Bravo", address: "2 B St", phone: null, lat: 30.2, lng: -97.2, category: "retail", primaryType: null },
   ] as unknown as typeof merchantsState.current.merchants;
 
   beforeEach(() => {

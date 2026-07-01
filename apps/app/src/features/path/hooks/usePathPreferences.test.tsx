@@ -26,10 +26,10 @@ beforeEach(() => { maybeSingle.mockReset(); upsert.mockClear(); upsertSingle.moc
 
 describe("usePathPreferences", () => {
   it("returns the saved default industries", async () => {
-    maybeSingle.mockResolvedValueOnce({ data: { default_industries: { apparel_accessories: ["clothing_store"] } }, error: null });
+    maybeSingle.mockResolvedValueOnce({ data: { default_industries: { retail: ["clothing_store"] } }, error: null });
     const { result } = renderHook(() => usePathPreferences(), { wrapper: wrap(makeClient()) });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual({ apparel_accessories: ["clothing_store"] });
+    expect(result.current.data).toEqual({ retail: ["clothing_store"] });
   });
   it("falls back to RECOMMENDED_SELECTION when there is no row", async () => {
     maybeSingle.mockResolvedValueOnce({ data: null, error: null });
@@ -37,11 +37,11 @@ describe("usePathPreferences", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(RECOMMENDED_SELECTION);
   });
-  it("prunes stale (post-migration) keys from the saved selection", async () => {
-    maybeSingle.mockResolvedValueOnce({ data: { default_industries: { retail: ["x"], food_beverage: ["y"] } }, error: null });
+  it("folds retired keys into the merged key and drops truly-unknown ones", async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { default_industries: { totally_unknown: ["x"], food_beverage: ["restaurant"] } }, error: null });
     const { result } = renderHook(() => usePathPreferences(), { wrapper: wrap(makeClient()) });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(Object.keys(result.current.data ?? {})).toEqual(["food_beverage"]);
+    expect(result.current.data).toEqual({ restaurants_bars_entertainment: ["restaurant"] });
   });
   it("falls back to RECOMMENDED_SELECTION when default_industries is empty", async () => {
     maybeSingle.mockResolvedValueOnce({ data: { default_industries: {} }, error: null });
@@ -55,9 +55,9 @@ describe("useUpdateDefaultIndustries", () => {
   it("upserts the selection keyed on the user", async () => {
     upsertSingle.mockResolvedValueOnce({ data: { user_id: "user-1" }, error: null });
     const { result } = renderHook(() => useUpdateDefaultIndustries(), { wrapper: wrap(makeClient()) });
-    await result.current.mutateAsync({ apparel_accessories: ["clothing_store"] });
+    await result.current.mutateAsync({ retail: ["clothing_store"] });
     expect(upsert).toHaveBeenCalledWith(
-      { user_id: "user-1", default_industries: { apparel_accessories: ["clothing_store"] }, updated_at: expect.any(String) },
+      { user_id: "user-1", default_industries: { retail: ["clothing_store"] }, updated_at: expect.any(String) },
       { onConflict: "user_id" },
     );
   });

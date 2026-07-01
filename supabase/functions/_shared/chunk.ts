@@ -3,7 +3,7 @@
 
 /** Split `arr` into batches of at most `size` (order preserved). Used to keep a
  *  bucket's includedTypes under Google searchNearby's 50-type-per-request cap
- *  (food_beverage has 167). An empty input yields a single empty batch. */
+ *  (restaurants_bars_entertainment has ~200). An empty input yields a single empty batch. */
 export function chunk<T>(arr: T[], size: number): T[][] {
   if (size < 1) throw new Error("chunk size must be >= 1");
   if (arr.length <= size) return [arr];

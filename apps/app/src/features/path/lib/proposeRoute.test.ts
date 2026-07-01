@@ -43,7 +43,7 @@ describe("candidatePool sub-type + rating filters", () => {
   it("drops a merchant whose category is not in the selection", () => {
     const sel: IndustrySelection = { automotive: ["car_repair"] };
     const out = candidatePool(
-      [m({ id: "off", category: "apparel_accessories", primaryType: "clothing_store" })],
+      [m({ id: "off", category: "retail", primaryType: "clothing_store" })],
       { industries: ["automotive"], selection: sel, sortMode: "distance" },
     );
     expect(out).toEqual([]);
@@ -59,7 +59,7 @@ describe("candidatePool sub-type + rating filters", () => {
 
   it("without a selection, falls back to the category-bucket filter (backward compatible)", () => {
     const out = candidatePool(
-      [m({ id: "auto", category: "automotive" }), m({ id: "ret", category: "general_merchandise" })],
+      [m({ id: "auto", category: "automotive" }), m({ id: "ret", category: "retail" })],
       { industries: ["automotive"], sortMode: "distance" },
     );
     expect(out.map((x) => x.id)).toEqual(["auto"]);

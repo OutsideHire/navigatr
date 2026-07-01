@@ -58,11 +58,11 @@ describe("CreatePathWizard step 1 — default-industries-first", () => {
   });
 
   it("seeds 'Your industries' from saved preferences and lifts the categories", () => {
-    mockPrefs = { general_merchandise: allSubtypes("general_merchandise"), automotive: allSubtypes("automotive") };
+    mockPrefs = { retail: allSubtypes("retail"), automotive: allSubtypes("automotive") };
     const onIndustriesChange = vi.fn();
     renderWizard({ onIndustriesChange });
     expect(screen.getByText(/your industries/i)).toBeInTheDocument();
-    expect(screen.getByText(/general merchandise/i)).toBeInTheDocument();
+    expect(screen.getByText(/retail/i)).toBeInTheDocument();
     expect(screen.getByText(/automotive/i)).toBeInTheDocument();
     expect(onIndustriesChange).toHaveBeenCalledWith(
       expect.arrayContaining(selectedCategories(mockPrefs)),
@@ -94,7 +94,7 @@ describe("CreatePathWizard step 1 — default-industries-first", () => {
   });
 
   it("Edit opens the IndustryEditor; Use for this path applies the selection", () => {
-    mockPrefs = { general_merchandise: allSubtypes("general_merchandise") };
+    mockPrefs = { retail: allSubtypes("retail") };
     const onIndustriesChange = vi.fn();
     renderWizard({ onIndustriesChange });
     fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
@@ -107,7 +107,7 @@ describe("CreatePathWizard step 1 — default-industries-first", () => {
   });
 
   it("Save as default persists via the mutation", () => {
-    mockPrefs = { general_merchandise: allSubtypes("general_merchandise") };
+    mockPrefs = { retail: allSubtypes("retail") };
     renderWizard();
     fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
     fireEvent.click(screen.getByRole("button", { name: /save as default/i }));
@@ -115,7 +115,7 @@ describe("CreatePathWizard step 1 — default-industries-first", () => {
   });
 
   it("shows a toast if saving the default fails", () => {
-    mockPrefs = { general_merchandise: allSubtypes("general_merchandise") };
+    mockPrefs = { retail: allSubtypes("retail") };
     renderWizard();
     fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
     fireEvent.click(screen.getByRole("button", { name: /save as default/i }));
@@ -142,7 +142,7 @@ describe("CreatePathWizard radius + max stops + select stops", () => {
   });
 
   it("advances from filters to the Select stops step", () => {
-    mockPrefs = { general_merchandise: allSubtypes("general_merchandise") };
+    mockPrefs = { retail: allSubtypes("retail") };
     renderWizard({ merchants: [] });
     fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
     expect(screen.getByRole("button", { name: /review route/i })).toBeInTheDocument();

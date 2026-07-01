@@ -3,14 +3,14 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { IndustryEditor } from "./IndustryEditor";
 import { allSubtypes, humanizeSubtype, type IndustrySelection } from "../lib/industrySelection";
 
-const RETAIL_FULL: IndustrySelection = { general_merchandise: allSubtypes("general_merchandise") };
-const RETAIL_PARTIAL: IndustrySelection = { general_merchandise: allSubtypes("general_merchandise").slice(0, 1) };
+const RETAIL_FULL: IndustrySelection = { retail: allSubtypes("retail") };
+const RETAIL_PARTIAL: IndustrySelection = { retail: allSubtypes("retail").slice(0, 1) };
 
 describe("IndustryEditor", () => {
   it("shows the selected industries with sub-type counts", () => {
     render(<IndustryEditor value={RETAIL_FULL} scope="path" onUseForPath={vi.fn()} onSaveDefault={vi.fn()} />);
-    expect(screen.getByText(/general merchandise/i)).toBeInTheDocument();
-    const total = allSubtypes("general_merchandise").length;
+    expect(screen.getByText(/retail/i)).toBeInTheDocument();
+    const total = allSubtypes("retail").length;
     expect(screen.getByText(new RegExp(`${total} of ${total}`, "i"))).toBeInTheDocument();
   });
 
@@ -36,16 +36,16 @@ describe("IndustryEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: /use for this path/i }));
     const arg = onUseForPath.mock.calls[0][0] as IndustrySelection;
     expect(arg.automotive).toEqual(allSubtypes("automotive"));
-    expect(arg.general_merchandise).toEqual(allSubtypes("general_merchandise"));
+    expect(arg.retail).toEqual(allSubtypes("retail"));
   });
 
-  it("Add picker groups retail industries under a 'Retail' umbrella header", () => {
+  it("Add picker offers Retail as a single flat, selectable industry", () => {
     render(<IndustryEditor value={{}} scope="path" onUseForPath={vi.fn()} onSaveDefault={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /add industries/i }));
-    // Parent umbrella header (exact match — not the "…Retail" industry labels).
-    expect(screen.getByText(/^Retail$/)).toBeInTheDocument();
-    // A retail child is offered under it, and a standalone industry inline.
-    expect(screen.getByRole("button", { name: /^apparel & accessories$/i })).toBeInTheDocument();
+    // "Retail" is one selectable industry button (no umbrella grouping / no old sub-industries).
+    expect(screen.getByRole("button", { name: /^Retail$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Restaurants, Bars & Entertainment$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^apparel & accessories$/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^healthcare$/i })).toBeInTheDocument();
   });
 
@@ -65,7 +65,7 @@ describe("IndustryEditor", () => {
   it("X button removes a category from the selection", () => {
     const onUseForPath = vi.fn();
     render(<IndustryEditor value={RETAIL_FULL} scope="path" onUseForPath={onUseForPath} onSaveDefault={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: /remove general merchandise/i }));
+    fireEvent.click(screen.getByRole("button", { name: /remove retail/i }));
     fireEvent.click(screen.getByRole("button", { name: /use for this path/i }));
     expect(onUseForPath).toHaveBeenCalledWith({});
   });
@@ -73,22 +73,22 @@ describe("IndustryEditor", () => {
   it("expanding a partial category and checking a sub-type adds it and updates the count", () => {
     const onUseForPath = vi.fn();
     render(<IndustryEditor value={RETAIL_PARTIAL} scope="path" onUseForPath={onUseForPath} onSaveDefault={vi.fn()} />);
-    const total = allSubtypes("general_merchandise").length;
-    fireEvent.click(screen.getByRole("button", { name: /toggle general merchandise sub-types/i }));
+    const total = allSubtypes("retail").length;
+    fireEvent.click(screen.getByRole("button", { name: /toggle retail sub-types/i }));
     // check a sub-type that is not the first (the unchecked add branch)
-    const second = allSubtypes("general_merchandise")[1];
+    const second = allSubtypes("retail")[1];
     fireEvent.click(screen.getByLabelText(new RegExp(`^${humanizeSubtype(second)}$`, "i")));
     expect(screen.getByText(new RegExp(`2 of ${total}`, "i"))).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /use for this path/i }));
     const arg = onUseForPath.mock.calls[0][0];
-    expect(arg.general_merchandise).toContain(second);
+    expect(arg.retail).toContain(second);
   });
 
   it("unchecking the last sub-type removes the category", () => {
     const onSaveDefault = vi.fn();
     render(<IndustryEditor value={RETAIL_PARTIAL} scope="default" onUseForPath={vi.fn()} onSaveDefault={onSaveDefault} />);
-    fireEvent.click(screen.getByRole("button", { name: /toggle general merchandise sub-types/i }));
-    const first = allSubtypes("general_merchandise")[0];
+    fireEvent.click(screen.getByRole("button", { name: /toggle retail sub-types/i }));
+    const first = allSubtypes("retail")[0];
     fireEvent.click(screen.getByLabelText(new RegExp(`^${humanizeSubtype(first)}$`, "i")));
     // category card gone → empty state appears
     expect(screen.getByRole("button", { name: /use recommended/i })).toBeInTheDocument();
