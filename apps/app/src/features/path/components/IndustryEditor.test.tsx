@@ -39,6 +39,16 @@ describe("IndustryEditor", () => {
     expect(arg.general_merchandise).toEqual(allSubtypes("general_merchandise"));
   });
 
+  it("Add picker groups retail industries under a 'Retail' umbrella header", () => {
+    render(<IndustryEditor value={{}} scope="path" onUseForPath={vi.fn()} onSaveDefault={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /add industries/i }));
+    // Parent umbrella header (exact match — not the "…Retail" industry labels).
+    expect(screen.getByText(/^Retail$/)).toBeInTheDocument();
+    // A retail child is offered under it, and a standalone industry inline.
+    expect(screen.getByRole("button", { name: /^apparel & accessories$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^healthcare$/i })).toBeInTheDocument();
+  });
+
   it("default scope: shows a single Save action", () => {
     const onSaveDefault = vi.fn();
     render(<IndustryEditor value={RETAIL_FULL} scope="default" onUseForPath={vi.fn()} onSaveDefault={onSaveDefault} />);
