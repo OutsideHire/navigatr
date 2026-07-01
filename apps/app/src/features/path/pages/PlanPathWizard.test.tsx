@@ -76,17 +76,13 @@ const WITH_ORIGIN: PathOrigin = {
 };
 
 const onOpenChangeMock = vi.fn();
-const onChooseCreateMock = vi.fn();
 
 function renderWizard() {
-  return render(
-    <PlanPathWizard open onOpenChange={onOpenChangeMock} onChooseCreate={onChooseCreateMock} />,
-  );
+  return render(<PlanPathWizard open onOpenChange={onOpenChangeMock} />);
 }
 
 beforeEach(() => {
   onOpenChangeMock.mockClear();
-  onChooseCreateMock.mockClear();
   createPathMutate.mockClear();
   addStopsMutate.mockClear();
   originState.current = NO_ORIGIN;
@@ -94,24 +90,10 @@ beforeEach(() => {
 });
 
 describe("PlanPathWizard", () => {
-  it("starts on the mode step with Step 1 of 5", () => {
+  it("starts on the search step at Step 1 of 5", () => {
     renderWizard();
-    expect(screen.getByText(/step 1 of 6/i)).toBeInTheDocument();
-    expect(screen.getByText("Create a Path")).toBeInTheDocument();
-  });
-
-  it("Create mode hands off to the Create a Path slide-out", () => {
-    renderWizard();
-    fireEvent.click(screen.getByText("Create a Path"));
-    fireEvent.click(screen.getByRole("button", { name: /go to create/i }));
-    expect(onChooseCreateMock).toHaveBeenCalled();
-  });
-
-  it("Continue is disabled on mode until a mode is picked", () => {
-    renderWizard();
-    expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
-    fireEvent.click(screen.getByText("Plan a Path"));
-    expect(screen.getByRole("button", { name: /continue/i })).toBeEnabled();
+    expect(screen.getByText(/step 1 of 5/i)).toBeInTheDocument();
+    expect(screen.getByText("Where do you want to prospect?")).toBeInTheDocument();
   });
 
   it("X closes the slide-out", () => {
@@ -122,20 +104,15 @@ describe("PlanPathWizard", () => {
 
   it("guards search Continue until an origin resolves", () => {
     const { rerender } = renderWizard();
-    // Plan → search
-    fireEvent.click(screen.getByText("Plan a Path"));
-    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/step 2 of 6/i)).toBeInTheDocument();
-    // No origin yet → Continue disabled.
+    // First step is search — no origin yet → Continue disabled.
+    expect(screen.getByText(/step 1 of 5/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
     // Resolve an origin and re-render.
     originState.current = WITH_ORIGIN;
-    rerender(
-      <PlanPathWizard open onOpenChange={onOpenChangeMock} onChooseCreate={onChooseCreateMock} />,
-    );
+    rerender(<PlanPathWizard open onOpenChange={onOpenChangeMock} />);
   });
 
-  it("runs the Plan happy path: mode → search → results → review → schedule → saved", async () => {
+  it("runs the Plan happy path: search → results → review → schedule → saved", async () => {
     originState.current = WITH_ORIGIN;
     merchantsState.current = {
       merchants: [m("a", "Alpha Cafe"), m("b", "Beta Bakery")],
@@ -145,28 +122,24 @@ describe("PlanPathWizard", () => {
     };
     renderWizard();
 
-    // Step 1: pick Plan, continue.
-    fireEvent.click(screen.getByText("Plan a Path"));
+    // Step 1: search — origin already resolved → continue to results.
+    expect(screen.getByText(/step 1 of 5/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
 
-    // Step 2: origin already resolved → continue to results.
-    expect(screen.getByText(/step 2 of 6/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
-
-    // Step 3: results — add a stop, then Review path.
-    expect(screen.getByText(/step 3 of 6/i)).toBeInTheDocument();
+    // Step 2: results — add a stop, then Review path.
+    expect(screen.getByText(/step 2 of 5/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /review path/i })).toBeDisabled();
     fireEvent.click(screen.getAllByRole("button", { name: /add to today's path/i })[0]!);
     expect(screen.getByText(/1 stop added/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /review path/i }));
 
-    // Step 4: review — advance to schedule (no save yet).
-    expect(screen.getByText(/step 4 of 6/i)).toBeInTheDocument();
+    // Step 3: review — advance to schedule (no save yet).
+    expect(screen.getByText(/step 3 of 5/i)).toBeInTheDocument();
     expect(createPathMutate).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /schedule path/i }));
 
-    // Step 5: schedule — save.
-    expect(screen.getByText(/step 5 of 6/i)).toBeInTheDocument();
+    // Step 4: schedule — save.
+    expect(screen.getByText(/step 4 of 5/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /save path/i }));
 
     // Save calls createPath (scheduled date) + addStops in order.
@@ -179,22 +152,23 @@ describe("PlanPathWizard", () => {
     expect(addArg.basePosition).toBe(0);
     expect(addArg.stops).toHaveLength(1);
 
-    // Step 6: saved confirmation.
-    await waitFor(() => expect(screen.getByText(/step 6 of 6/i)).toBeInTheDocument());
+    // Step 5: saved confirmation.
+    await waitFor(() => expect(screen.getByText(/step 5 of 5/i)).toBeInTheDocument());
     expect(screen.getByText(/is ready/i)).toBeInTheDocument();
   });
 
   it("Back navigates to the previous step", () => {
     originState.current = WITH_ORIGIN;
     renderWizard();
-    fireEvent.click(screen.getByText("Plan a Path"));
+    // Search (step 1) has no Back; advance to results, then Back returns to search.
+    expect(screen.getByText(/step 1 of 5/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
-    expect(screen.getByText(/step 2 of 6/i)).toBeInTheDocument();
+    expect(screen.getByText(/step 2 of 5/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /back/i }));
-    expect(screen.getByText(/step 1 of 6/i)).toBeInTheDocument();
+    expect(screen.getByText(/step 1 of 5/i)).toBeInTheDocument();
   });
 
-  it('"Build another" resets the wizard to mode', async () => {
+  it('"Build another" resets the wizard to search', async () => {
     originState.current = WITH_ORIGIN;
     merchantsState.current = {
       merchants: [m("a", "Alpha Cafe")],
@@ -203,16 +177,14 @@ describe("PlanPathWizard", () => {
       refetch: vi.fn(),
     };
     renderWizard();
-    fireEvent.click(screen.getByText("Plan a Path"));
-    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
     fireEvent.click(screen.getByRole("button", { name: /add to today's path/i }));
     fireEvent.click(screen.getByRole("button", { name: /review path/i }));
     fireEvent.click(screen.getByRole("button", { name: /schedule path/i }));
     fireEvent.click(screen.getByRole("button", { name: /save path/i }));
-    await waitFor(() => expect(screen.getByText(/step 6 of 6/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/step 5 of 5/i)).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /build another/i }));
-    expect(screen.getByText(/step 1 of 6/i)).toBeInTheDocument();
+    expect(screen.getByText(/step 1 of 5/i)).toBeInTheDocument();
   });
 
   it("save uses the scheduled date + name + reminder_at, and runs exactly once", async () => {
@@ -224,8 +196,6 @@ describe("PlanPathWizard", () => {
       refetch: vi.fn(),
     };
     renderWizard();
-    fireEvent.click(screen.getByText("Plan a Path"));
-    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
     fireEvent.click(screen.getByRole("button", { name: /add to today's path/i }));
     fireEvent.click(screen.getByRole("button", { name: /review path/i }));
@@ -251,7 +221,7 @@ describe("PlanPathWizard", () => {
     expect(arg.reminderAt).toBeTruthy();
 
     // Landed on saved; createPath was not called a second time.
-    await waitFor(() => expect(screen.getByText(/step 6 of 6/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/step 5 of 5/i)).toBeInTheDocument());
     expect(createPathMutate).toHaveBeenCalledTimes(1);
   });
 
@@ -264,8 +234,6 @@ describe("PlanPathWizard", () => {
       refetch: vi.fn(),
     };
     renderWizard();
-    fireEvent.click(screen.getByText("Plan a Path"));
-    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
     fireEvent.click(screen.getByRole("button", { name: /add to today's path/i }));
     fireEvent.click(screen.getByRole("button", { name: /review path/i }));
