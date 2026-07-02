@@ -20,6 +20,7 @@ function makePath(overrides: Partial<Path> = {}): Path {
     originLng: -97,
     status: "planned",
     reminderAt: null,
+    startedAt: null,
     stopCount: 3,
     ...overrides,
   };

@@ -13,6 +13,7 @@ import { PathSummary } from "./PathSummary";
 import { usePathMutations } from "../hooks/usePathMutations";
 import { todayISO } from "../lib/today";
 import { DISPOSITIONS, type Disposition } from "@/lib/followUpScheduling";
+import { firstPendingIndex } from "../lib/pathTypes";
 
 export interface RunningPathProps {
   origin: { lat: number; lng: number };
@@ -64,8 +65,11 @@ function computePathSummaryStats(
 export function RunningPath({ origin, onPause, onViewPipeline, onExit }: RunningPathProps) {
   const { stops, setStatus, clear, pathId, pendingCount } = useTodayPath();
   const { carryToTomorrow, finalizeCurrentPath } = usePathMutations();
-  const firstPending = Math.max(0, stops.findIndex((s) => s.status === "pending"));
-  const [index, setIndex] = React.useState(firstPending);
+  // stops arrive position-ordered (useActivePath sorts, useTodayPath preserves it),
+  // so array index == position order. Seek to the first pending stop; -1 (all done)
+  // falls back to 0 — that case renders the summary anyway, index is unused.
+  const fpi = firstPendingIndex(stops.map((s, i) => ({ position: i, status: s.status })));
+  const [index, setIndex] = React.useState(Math.max(0, fpi));
   const [logOpen, setLogOpen] = React.useState(false);
   const [endOpen, setEndOpen] = React.useState(false);
   const [completed, setCompleted] = React.useState<PathSummaryStats | null>(null);

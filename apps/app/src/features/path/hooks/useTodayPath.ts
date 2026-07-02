@@ -58,8 +58,13 @@ export function useTodayPath() {
   // just-deleted row) until invalidation refetches — short-circuiting there would
   // addStops onto a deleted path_id and FK-fail. The extra upsert per add is the
   // accepted cost of that safety. Do NOT "optimize" this to `path?.id ?? ...`.
-  const ensurePathId = async (): Promise<string> =>
-    await m.createPath.mutateAsync({ date, originLabel: null, originLat: null, originLng: null });
+  const ensurePathId = async (opts?: { startedAt?: string }): Promise<string> =>
+    await m.createPath.mutateAsync({
+      date, originLabel: null, originLat: null, originLng: null,
+      // Only pass startedAt when the caller wants to auto-start (Create flow); the
+      // createPath upsert leaves the column untouched otherwise (Planned paths).
+      ...(opts?.startedAt !== undefined ? { startedAt: opts.startedAt } : {}),
+    });
 
   const add = async (snapshot: StopSnapshot): Promise<void> => {
     const pathId = await ensurePathId();
@@ -72,10 +77,18 @@ export function useTodayPath() {
   // upsert + one addStops insert for ALL stops — NOT a per-stop loop, which would
   // be ~2N sequential round-trips and gate the caller's UI (e.g. the wizard close)
   // behind every write. addStops assigns position = basePosition + index.
-  const addMany = async (snapshots: StopSnapshot[]): Promise<void> => {
+  // `opts.start` (Create a Path auto-start) stamps started_at = now() on the path
+  // upsert so the page lands the rep straight in the Run tab at stop 1. Plan a Path
+  // omits it, leaving the path Planned. Snapshots-only adds (Add stops) omit it too.
+  const addMany = async (snapshots: StopSnapshot[], opts?: { start?: boolean }): Promise<void> => {
     if (snapshots.length === 0) return;
-    const pathId = await ensurePathId();
+    const pathId = await ensurePathId(opts?.start ? { startedAt: new Date().toISOString() } : undefined);
     await m.addStops.mutateAsync({ pathId, basePosition: rawStops.length, stops: snapshots });
+  };
+  // Stamp started_at on the current path without adding stops — "start a planned
+  // path" from Upcoming. No-op if there's no path yet.
+  const start = async (): Promise<void> => {
+    if (path?.id) await m.markStarted.mutateAsync(path.id);
   };
   const remove = async (merchantId: string): Promise<void> => {
     const id = stopIdFor(merchantId);
@@ -103,5 +116,5 @@ export function useTodayPath() {
   const isComplete = (): boolean => rawStops.length > 0 && rawStops.every((s) => s.status !== "pending");
   const pendingCount = (): number => rawStops.filter((s) => s.status === "pending").length;
 
-  return { pathId: path?.id ?? null, isLoading, stops, add, addMany, remove, setStatus, logVisit, markDealCreated, clear, has, isComplete, pendingCount };
+  return { pathId: path?.id ?? null, startedAt: path?.startedAt ?? null, isLoading, stops, add, addMany, start, remove, setStatus, logVisit, markDealCreated, clear, has, isComplete, pendingCount };
 }

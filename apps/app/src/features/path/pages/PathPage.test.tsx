@@ -59,11 +59,17 @@ vi.mock("../components/CreatePathWizard", () => ({
 // from an active path into the discover view. (The real component is a MapLibre-heavy
 // surface; the button is all the discover-entry test needs.)
 vi.mock("../components/ActivePathView", () => ({
-  ActivePathView: (props: { onAddStops?: () => void }) => (
+  ActivePathView: (props: { onAddStops?: () => void; onStartRoute?: () => void }) => (
     <div data-testid="active-path">
       <button type="button" onClick={() => props.onAddStops?.()}>Add stops</button>
+      <button type="button" onClick={() => props.onStartRoute?.()}>Start route</button>
     </div>
   ),
+}));
+// Stub RunningPath — the guided run has its own tests; here we only assert the
+// two-tab surface renders it as the default (Run) tab for a started path.
+vi.mock("../components/RunningPath", () => ({
+  RunningPath: () => <div data-testid="running-path" />,
 }));
 
 // No prospects unless origin is set; keep the discovery hook quiet.
@@ -91,6 +97,8 @@ const todayState = {
     logVisit: vi.fn(),
     markDealCreated: vi.fn(),
     pathId: null,
+    startedAt: null as string | null,
+    start: vi.fn(),
     isLoading: false,
     pendingCount: () => 0,
   },
@@ -129,7 +137,7 @@ const base: PathOrigin = {
 beforeEach(() => {
   originState.current = base;
   merchantsState.current = { merchants: [], isLoading: false, isError: false, refetch: vi.fn() } as typeof merchantsState.current;
-  todayState.current = { ...todayState.current, stops: [], addMany: vi.fn(), clear: vi.fn() };
+  todayState.current = { ...todayState.current, stops: [], addMany: vi.fn(), clear: vi.fn(), startedAt: null, start: vi.fn() };
   toastMock.mockClear();
   toastMock.success.mockClear();
   toastMock.error.mockClear();
@@ -333,6 +341,73 @@ describe("PathPage route memos — discover-only", () => {
   });
 });
 
+describe("PathPage active-path surface — Run | Stops tabs", () => {
+  const readyOrigin: PathOrigin = {
+    ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
+  };
+  const geoStops = [
+    { merchantId: "a", name: "Alpha", address: "1 A St", lat: 30.05, lng: -97.05, category: "retail", status: "pending" },
+    { merchantId: "b", name: "Bravo", address: "2 B St", lat: 30.06, lng: -97.06, category: "retail", status: "pending" },
+  ];
+
+  it("a STARTED path (started_at set) shows Run|Stops tabs and defaults to the Run tab", () => {
+    originState.current = readyOrigin;
+    todayState.current = {
+      ...todayState.current,
+      startedAt: "2026-07-02T15:00:00.000Z",
+      stops: geoStops as unknown as typeof todayState.current.stops,
+    };
+    render(<PathPage />, { wrapper });
+    expect(screen.getByRole("tab", { name: /run/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /stops/i })).toBeInTheDocument();
+    // Default tab is Run (resume-in-place) → the guided run renders, not the list.
+    expect(screen.getByTestId("running-path")).toBeInTheDocument();
+    expect(screen.queryByTestId("active-path")).not.toBeInTheDocument();
+  });
+
+  it("switching to the Stops tab shows the overview; back to Run shows the guided run", () => {
+    originState.current = readyOrigin;
+    todayState.current = {
+      ...todayState.current,
+      startedAt: "2026-07-02T15:00:00.000Z",
+      stops: geoStops as unknown as typeof todayState.current.stops,
+    };
+    render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("tab", { name: /stops/i }));
+    expect(screen.getByTestId("active-path")).toBeInTheDocument();
+    expect(screen.queryByTestId("running-path")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /run/i }));
+    expect(screen.getByTestId("running-path")).toBeInTheDocument();
+  });
+
+  it("a PLANNED path (started_at null) shows the overview only — no tabs, no auto-run", () => {
+    originState.current = readyOrigin;
+    todayState.current = {
+      ...todayState.current,
+      startedAt: null,
+      stops: geoStops as unknown as typeof todayState.current.stops,
+    };
+    render(<PathPage />, { wrapper });
+    expect(screen.queryByRole("tab", { name: /run/i })).not.toBeInTheDocument();
+    expect(screen.getByTestId("active-path")).toBeInTheDocument();
+    expect(screen.queryByTestId("running-path")).not.toBeInTheDocument();
+  });
+
+  it("'Start route' on a planned path stamps started_at (start()) and switches to the Run tab", () => {
+    originState.current = readyOrigin;
+    const start = vi.fn();
+    todayState.current = {
+      ...todayState.current,
+      startedAt: null,
+      start,
+      stops: geoStops as unknown as typeof todayState.current.stops,
+    };
+    render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /start route/i }));
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("PathPage handleStartPath — dropped stops", () => {
   const readyOrigin: PathOrigin = {
     ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
@@ -360,6 +435,9 @@ describe("PathPage handleStartPath — dropped stops", () => {
         expect.objectContaining({ prospectId: "a" }),
         expect.objectContaining({ prospectId: "b" }),
       ]),
+      // Create a Path auto-starts: addMany is called with { start: true } so the
+      // page lands the rep straight in the Run tab.
+      { start: true },
     );
     expect((todayState.current.addMany as ReturnType<typeof vi.fn>).mock.calls[0][0]).toHaveLength(2);
     expect(toastMock).toHaveBeenCalledWith(expect.stringMatching(/1 stop.*couldn't be added/i));

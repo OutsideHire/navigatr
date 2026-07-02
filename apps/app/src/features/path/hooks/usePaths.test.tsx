@@ -37,7 +37,7 @@ describe("usePaths", () => {
       { id: "p1", date: "2026-06-03", name: "Downtown · Wed Jun 3",
         originLabel: "Current location",
         originLat: 30.27, originLng: -97.74, status: "planned",
-        reminderAt: "2026-06-03T13:30:00.000Z", stopCount: 8 },
+        reminderAt: "2026-06-03T13:30:00.000Z", startedAt: null, stopCount: 8 },
     ]);
   });
 
