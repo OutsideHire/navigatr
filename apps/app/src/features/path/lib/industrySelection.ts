@@ -80,10 +80,17 @@ export function matchesSelection(
   category: MerchantCategory,
   sel: IndustrySelection,
 ): boolean {
-  const subs = sel[category];
+  // Fold pre-merge category labels into the merged key they now live under, so a
+  // selection keyed on the merged category ("retail", "restaurants_bars_entertainment")
+  // still matches rows stored under a legacy label (e.g. "food_beverage",
+  // "apparel_accessories"). Without this the client-side pool filter drops every
+  // legacy-labeled row and a retail/restaurants path returns almost nothing —
+  // mirrors the server read's categoriesForIndustries expansion.
+  const key = (LEGACY_KEY_MAP[category] ?? category) as MerchantCategory;
+  const subs = sel[key];
   if (!subs || subs.length === 0) return false;
   if (primaryType == null) return true;
-  if (isFullySelected(sel, category)) return true;
+  if (isFullySelected(sel, key)) return true;
   return subs.includes(primaryType);
 }
 

@@ -46,6 +46,25 @@ describe("industrySelection", () => {
     expect(matchesSelection(null, "retail", sel)).toBe(false);
   });
 
+  it("matchesSelection: legacy category labels fold into their merged key (retail/restaurants regression)", () => {
+    // Rows ingested before the merge are stored under legacy labels; a selection
+    // keyed on the merged category must still match them (else a retail/restaurants
+    // path returns almost nothing — the reported single-stop bug).
+    const retail: IndustrySelection = { retail: allSubtypes("retail") };
+    expect(matchesSelection("grocery_store", "grocery_food_retail" as never, retail)).toBe(true);
+    expect(matchesSelection("clothing_store", "apparel_accessories" as never, retail)).toBe(true);
+    expect(matchesSelection(null, "home_hardware" as never, retail)).toBe(true);
+
+    const dining: IndustrySelection = {
+      restaurants_bars_entertainment: allSubtypes("restaurants_bars_entertainment"),
+    };
+    expect(matchesSelection("restaurant", "food_beverage" as never, dining)).toBe(true);
+    expect(matchesSelection("movie_theater", "entertainment" as never, dining)).toBe(true);
+
+    // A legacy label whose merged key is NOT selected still does not match.
+    expect(matchesSelection("grocery_store", "grocery_food_retail" as never, dining)).toBe(false);
+  });
+
   it("humanizeSubtype turns a raw type into a label", () => {
     expect(humanizeSubtype("car_repair")).toBe("Car repair");
     expect(humanizeSubtype("fast_food_restaurant")).toBe("Fast food restaurant");
