@@ -26,7 +26,7 @@ export function useActivePath(date: string) {
       const { data, error } = await supabase
         .from("paths")
         .select(
-          "id, path_date, origin_label, origin_lat, origin_lng, status, " +
+          "id, path_date, origin_label, origin_lat, origin_lng, status, started_at, " +
           "path_stops(id, path_id, prospect_id, name, address, phone, lat, lng, category, primary_type, position, status, disposition, deal_created, added_at)",
         )
         .eq("path_date", date)

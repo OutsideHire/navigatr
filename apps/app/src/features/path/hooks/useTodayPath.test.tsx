@@ -10,13 +10,14 @@ vi.mock("./useActivePath", () => ({
   ACTIVE_PATH_QUERY_KEY: ["paths", "active"],
 }));
 
-const createPath = vi.fn(async () => "p1");
+const createPath = vi.fn(async (_input?: { startedAt?: string }) => "p1");
 const addStops = vi.fn(async () => {});
 const removeStop = vi.fn(async () => {});
 const setStopStatus = vi.fn(async () => {});
 const setStopDisposition = vi.fn(async () => {});
 const markDealCreatedM = vi.fn(async () => {});
 const deletePath = vi.fn(async () => {});
+const markStarted = vi.fn(async () => {});
 vi.mock("./usePathMutations", () => ({
   usePathMutations: () => ({
     createPath: { mutateAsync: createPath },
@@ -26,13 +27,14 @@ vi.mock("./usePathMutations", () => ({
     setStopDisposition: { mutateAsync: setStopDisposition },
     markDealCreated: { mutateAsync: markDealCreatedM },
     deletePath: { mutateAsync: deletePath },
+    markStarted: { mutateAsync: markStarted },
   }),
 }));
 
 const SNAP: StopSnapshot = { prospectId: "m1", name: "A", address: null, phone: null, lat: 1, lng: 2, category: "manufacturing_wholesale", primaryType: null };
 
 beforeEach(() => {
-  [createPath, addStops, removeStop, setStopStatus, setStopDisposition, markDealCreatedM, deletePath].forEach((m) => m.mockClear());
+  [createPath, addStops, removeStop, setStopStatus, setStopDisposition, markDealCreatedM, deletePath, markStarted].forEach((m) => m.mockClear());
   activeState.current = { data: { path: null, stops: [] }, isLoading: false };
 });
 
@@ -116,5 +118,42 @@ describe("useTodayPath", () => {
     await act(async () => { await result.current.addMany([]); });
     expect(createPath).not.toHaveBeenCalled();
     expect(addStops).not.toHaveBeenCalled();
+  });
+
+  it("addMany with { start: true } stamps started_at on the created path (auto-start)", async () => {
+    activeState.current = { data: { path: { id: "p1" }, stops: [] }, isLoading: false };
+    const { result } = renderHook(() => useTodayPath());
+    await act(async () => { await result.current.addMany([SNAP], { start: true }); });
+    expect(createPath).toHaveBeenCalledTimes(1);
+    const arg = createPath.mock.calls[0][0] as { startedAt?: string };
+    expect(typeof arg.startedAt).toBe("string");
+    expect(Number.isNaN(Date.parse(arg.startedAt!))).toBe(false);
+  });
+
+  it("addMany WITHOUT start does not pass startedAt (Add stops / Plan stay Planned)", async () => {
+    activeState.current = { data: { path: { id: "p1" }, stops: [] }, isLoading: false };
+    const { result } = renderHook(() => useTodayPath());
+    await act(async () => { await result.current.addMany([SNAP]); });
+    expect(createPath).toHaveBeenCalledWith({ date: todayISO(), originLabel: null, originLat: null, originLng: null });
+  });
+
+  it("exposes startedAt from the fetched path", () => {
+    activeState.current = { data: { path: { id: "p1", startedAt: "2026-07-02T10:00:00Z" }, stops: [] }, isLoading: false };
+    const { result } = renderHook(() => useTodayPath());
+    expect(result.current.startedAt).toBe("2026-07-02T10:00:00Z");
+  });
+
+  it("start() stamps started_at on the current path via markStarted", async () => {
+    activeState.current = { data: { path: { id: "p1" }, stops: [] }, isLoading: false };
+    const { result } = renderHook(() => useTodayPath());
+    await act(async () => { await result.current.start(); });
+    expect(markStarted).toHaveBeenCalledWith("p1");
+  });
+
+  it("start() no-ops when there's no path yet", async () => {
+    activeState.current = { data: { path: null, stops: [] }, isLoading: false };
+    const { result } = renderHook(() => useTodayPath());
+    await act(async () => { await result.current.start(); });
+    expect(markStarted).not.toHaveBeenCalled();
   });
 });

@@ -17,6 +17,10 @@ export interface Path {
   originLng: number | null;
   status: PathStatus;
   reminderAt: string | null; // ISO timestamptz for the in-app reminder (SP3)
+  // ISO timestamptz stamped when the rep actually starts running the path
+  // (Create a Path). Null = Planned (not yet started). Drives the lifecycle
+  // landing rule (see pathLanding). Nullable so legacy paths stay Planned.
+  startedAt: string | null;
   stopCount: number;
 }
 
@@ -47,6 +51,7 @@ export interface PathRow {
   origin_lng: number | null;
   status: PathStatus;
   reminder_at?: string | null;
+  started_at?: string | null;
 }
 
 export interface PathStopRow {
@@ -77,8 +82,51 @@ export function rowToPath(row: PathRow, stopCount: number): Path {
     originLng: row.origin_lng,
     status: row.status,
     reminderAt: row.reminder_at ?? null,
+    startedAt: row.started_at ?? null,
     stopCount,
   };
+}
+
+// ─── Lifecycle helpers ────────────────────────────────────────────────
+//
+// The "current stop" is derived, never stored: it's the first stop by position
+// whose status is still 'pending'. Marking stops visited/skipped advances it
+// naturally, so there's no pointer column to drift out of sync.
+
+/** A stop shape carrying just position + status — all the lifecycle math needs. */
+export interface StopLike {
+  position: number;
+  status: StopStatus;
+}
+
+/**
+ * Index (into the by-position order) of the first pending stop, or -1 if none.
+ * The returned index is into the position-sorted stop list — RunningPath renders
+ * stops in that same order, so it can seek straight to this index.
+ */
+export function firstPendingIndex(stops: StopLike[]): number {
+  const ordered = [...stops].sort((a, b) => a.position - b.position);
+  return ordered.findIndex((s) => s.status === "pending");
+}
+
+export type PathLanding = "run" | "summary" | "entry";
+
+/**
+ * The lifecycle landing rule (see the design's lifecycle table):
+ *   started_at null                -> 'entry'   (Planned; Entry / Upcoming)
+ *   started_at set + pending stops  -> 'run'     (In progress; Run @ first pending)
+ *   started_at set + no pending     -> 'summary' (Completed)
+ * Pure so it's unit-testable without mounting the page.
+ */
+export function pathLanding({
+  startedAt,
+  hasPendingStops,
+}: {
+  startedAt: string | null | undefined;
+  hasPendingStops: boolean;
+}): PathLanding {
+  if (!startedAt) return "entry";
+  return hasPendingStops ? "run" : "summary";
 }
 
 export function rowToStop(row: PathStopRow): PathStop {

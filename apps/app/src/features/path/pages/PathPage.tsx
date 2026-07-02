@@ -32,7 +32,7 @@
 
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import { List, Loader2, LocateFixed, Lock, Map as MapIcon, MapPinned, MapPinOff, Route as RouteIcon, Settings } from "lucide-react";
+import { List, ListChecks, Loader2, LocateFixed, Lock, Map as MapIcon, MapPinned, MapPinOff, Navigation, Route as RouteIcon, Settings } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button, Card, Chip } from "@/components/navigatr";
@@ -60,6 +60,7 @@ import { usePathQueue } from "../hooks/usePathQueue";
 import { useTodayPath } from "../hooks/useTodayPath";
 import { usePreviousUnfinishedPath } from "../hooks/usePreviousUnfinishedPath";
 import { usePathMutations } from "../hooks/usePathMutations";
+import { pathLanding } from "../lib/pathTypes";
 import { toast } from "sonner";
 import { planQueueMigration } from "../lib/migrateLocalQueue";
 import { useMerchants } from "../hooks/useMerchants";
@@ -130,34 +131,57 @@ export function PathPage() {
 
   // Path-first view state machine:
   //   "entry"    — no active path, show two-card prompt (create / plan)
-  //   "active"   — path has stops, show ActivePathView as main content
+  //   "path"     — a path with stops: the two-tab (Run | Stops) surface when it's
+  //                in progress/completed (started_at set), or the Stops overview
+  //                when it's Planned (started_at null — legacy or not-yet-started).
   //   "discover" — add-stops mode: map+list discovery, demoted from default
-  //   "running"  — turn-by-turn route mode (RunningPath)
-  const [pathView, setPathView] = React.useState<"entry" | "active" | "discover" | "running">("entry");
+  const [pathView, setPathView] = React.useState<"entry" | "path" | "discover">("entry");
+  // Which tab of the two-tab active-path surface is showing. TRANSIENT UI state —
+  // deliberately NOT persisted across reload/return: re-entry always re-derives
+  // Run @ first pending (resume-in-place). Within a session a manual switch to
+  // Stops sticks until the rep leaves the Path tab.
+  const [activeTab, setActiveTab] = React.useState<"run" | "stops">("run");
 
   // Server-backed today's path. queueStops keeps the same name so all
   // downstream route math, badge counts, etc. keep working unchanged.
   const todayPath = useTodayPath();
   const queueStops = todayPath.stops;
+  const startedAt = todayPath.startedAt;
+  const hasPending = queueStops.some((s) => s.status === "pending");
   const prevUnfinished = usePreviousUnfinishedPath();
   const { continuePreviousPath, closePreviousPath } = usePathMutations();
 
-  // Sync default view from stops. Never override an explicit "discover" — the
-  // rep is in the middle of adding stops and we shouldn't yank them back.
+  // Lifecycle landing rule (design's lifecycle table). Derives where the rep
+  // lands from started_at + pending stops, uniformly across tab switch, reopen,
+  // and full reload. Never override an explicit "discover" — the rep is in the
+  // middle of adding stops and we shouldn't yank them back.
+  const landing = pathLanding({ startedAt, hasPendingStops: hasPending });
   React.useEffect(() => {
-    setPathView((v) =>
-      v === "discover" || (v === "running" && queueStops.length > 0)
-        ? v
-        : queueStops.length > 0
-          ? "active"
-          : "entry",
-    );
-  }, [queueStops.length]);
+    setPathView((v) => {
+      if (v === "discover") return v;
+      if (queueStops.length === 0) return "entry";
+      // Stops exist:
+      //  - startedAt null (Planned / legacy) → the overview ("path" w/ Stops), no
+      //    auto-jump into a run.
+      //  - startedAt set → the two-tab surface (also "path"); the tab is derived
+      //    below.
+      return "path";
+    });
+  }, [queueStops.length, startedAt]);
+
+  // Resume-in-place: whenever we're on the path surface for a STARTED path, the
+  // default tab is Run (RunningPath seeks the first pending stop itself; Summary
+  // when complete). This effect only sets the default on entry to the surface and
+  // when the lifecycle materially changes — a manual switch to Stops (setActiveTab)
+  // is not clobbered because we key it on startedAt + landing, not every render.
+  React.useEffect(() => {
+    if (startedAt) setActiveTab("run");
+  }, [startedAt, pathView === "path"]);
 
   // Handlers for transitioning between views.
   const enterDiscover = React.useCallback(() => setPathView("discover"), []);
   // Leave discover → "entry"; the queueStops sync effect immediately upgrades to
-  // "active" when stops exist. Avoids a stale queueStops.length read right after
+  // "path" when stops exist. Avoids a stale queueStops.length read right after
   // an async add.
   const handleDoneDiscovering = React.useCallback(() => setPathView("entry"), []);
 
@@ -362,7 +386,9 @@ export function PathPage() {
       // panel) if the write fails.
       try {
         await todayPath.clear();
-        await todayPath.addMany(snapshots);
+        // { start: true } stamps started_at = now() so the page lands the rep
+        // straight in the Run tab at stop 1 (Create a Path auto-start).
+        await todayPath.addMany(snapshots, { start: true });
         setCreateOpen(false);
         // A selected stop can fall out of liveMerchants if the rep tightened the
         // radius/category filter mid-wizard. Those IDs are dropped above — tell
@@ -392,7 +418,7 @@ export function PathPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {pathView !== "active" && pathView !== "running" && (
+          {pathView !== "path" && (
             <>
               <Button
                 variant="tertiary"
@@ -464,7 +490,8 @@ export function PathPage() {
              of pathView so a rep without a location still sees the right empty state.
           2. Origin set → switch on pathView:
              - "entry":    two-card prompt (create / plan a path)
-             - "active":   ActivePathView as the main content
+             - "path":     the active path — two-tab Run | Stops surface when
+                           started (started_at set), else the Stops overview
              - "discover": filter controls + map+list discovery ladder
           Filter chips, radius/sort/hideChains controls are discovery-only and live
           exclusively inside the "discover" branch. Header + location bar are always above. */}
@@ -532,19 +559,65 @@ export function PathPage() {
               where the today-path/discover flow takes over. */}
           <UpcomingPaths onLaunch={() => navigate("/path")} />
         </>
-      ) : pathView === "active" ? (
-        <>
-          <ActivePathView origin={origin} onAddStops={enterDiscover} onStartRoute={() => setPathView("running")} />
-          {/* Future planned paths stay findable even while a path is active. */}
-          <UpcomingPaths onLaunch={() => navigate("/path")} />
-        </>
-      ) : pathView === "running" ? (
-        <RunningPath
-          origin={origin}
-          onPause={() => setPathView("active")}
-          onViewPipeline={() => navigate("/pipeline")}
-          onExit={() => setPathView("entry")}
-        />
+      ) : pathView === "path" ? (
+        landing === "entry" ? (
+          /* Planned / legacy (started_at null): the Stops overview only — no
+             auto-run. "Start route" stamps started_at and flips to the Run tab
+             (same landing as Create's auto-start). */
+          <>
+            <ActivePathView
+              origin={origin}
+              onAddStops={enterDiscover}
+              onStartRoute={() => { void todayPath.start(); setActiveTab("run"); }}
+            />
+            <UpcomingPaths onLaunch={() => navigate("/path")} />
+          </>
+        ) : (
+          /* In progress / completed (started_at set): the two-tab Run | Stops
+             surface. Default tab is Run (resume-in-place); a manual switch to
+             Stops sticks until the rep leaves the Path tab. */
+          <>
+            <div
+              role="tablist"
+              aria-label="Path view"
+              className="mt-3 flex gap-1 self-start rounded-radius-md bg-surface-sunken p-0.5"
+            >
+              {([["run", "Run", Navigation], ["stops", "Stops", ListChecks]] as const).map(
+                ([key, label, Icon]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === key}
+                    onClick={() => setActiveTab(key)}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-radius-sm px-4 py-1.5 text-caption font-medium transition-colors",
+                      activeTab === key
+                        ? "bg-surface-default text-text-default shadow-sm"
+                        : "text-text-muted hover:text-text-default",
+                    )}
+                  >
+                    <Icon className="size-4" />
+                    {label}
+                  </button>
+                ),
+              )}
+            </div>
+            {activeTab === "run" ? (
+              <RunningPath
+                origin={origin}
+                onPause={() => setActiveTab("stops")}
+                onViewPipeline={() => navigate("/pipeline")}
+                onExit={() => setPathView("entry")}
+              />
+            ) : (
+              <>
+                <ActivePathView origin={origin} onAddStops={enterDiscover} onStartRoute={() => setActiveTab("run")} />
+                <UpcomingPaths onLaunch={() => navigate("/path")} />
+              </>
+            )}
+          </>
+        )
       ) : (
         /* pathView === "discover": filter controls + map+list discovery ladder */
         <>

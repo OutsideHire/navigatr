@@ -23,6 +23,12 @@ export interface CreatePathInput {
   name?: string | null;
   /** ISO timestamptz for the in-app reminder (SP3 scheduling). */
   reminderAt?: string | null;
+  /**
+   * ISO timestamptz marking the path as started (Create a Path auto-start).
+   * Only spread into the upsert when supplied, so Plan a Path and other create
+   * sites keep leaving it null (Planned). Omit for a not-yet-started path.
+   */
+  startedAt?: string | null;
 }
 export interface StopSnapshot {
   prospectId: string;
@@ -56,6 +62,7 @@ export function usePathMutations() {
       };
       if (input.name !== undefined) payload.name = input.name;
       if (input.reminderAt !== undefined) payload.reminder_at = input.reminderAt;
+      if (input.startedAt !== undefined) payload.started_at = input.startedAt;
       const { data, error } = await supabase
         .from("paths")
         .upsert(payload, { onConflict: "user_id,path_date" })
@@ -235,6 +242,22 @@ export function usePathMutations() {
     onSuccess: invalidate,
   });
 
+  // Stamp started_at on an existing (planned) path — "start a planned path" from
+  // the Upcoming screen. Only sets the marker if it isn't already set (idempotent;
+  // never resets an in-progress path's start time). Derived current-stop then
+  // drives the Run landing.
+  const markStarted = useMutation({
+    mutationFn: async (pathId: string): Promise<void> => {
+      const { error } = await supabase
+        .from("paths")
+        .update({ started_at: new Date().toISOString() })
+        .eq("id", pathId)
+        .is("started_at", null);
+      if (error) throw error;
+    },
+    onSuccess: invalidate,
+  });
+
   const closePreviousPath = useMutation({
     mutationFn: async (input: { prevPathId: string; prevPathDate: string }): Promise<void> => {
       await finalizeSingle(input.prevPathId);
@@ -243,5 +266,5 @@ export function usePathMutations() {
     onSuccess: invalidate,
   });
 
-  return { createPath, addStops, removeStop, reorderStops, setStopStatus, setStopDisposition, markDealCreated, deletePath, continuePreviousPath, carryToTomorrow, closePreviousPath, finalizeCurrentPath };
+  return { createPath, addStops, removeStop, reorderStops, setStopStatus, setStopDisposition, markDealCreated, deletePath, continuePreviousPath, carryToTomorrow, closePreviousPath, finalizeCurrentPath, markStarted };
 }
