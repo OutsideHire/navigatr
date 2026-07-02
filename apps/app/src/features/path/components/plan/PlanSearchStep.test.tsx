@@ -18,6 +18,8 @@ function renderStep(props: Partial<React.ComponentProps<typeof PlanSearchStep>> 
     onSelectionChange: vi.fn(),
     allIndustries: false,
     onAllIndustriesChange: vi.fn(),
+    resultsCount: 25,
+    onResultsCountChange: vi.fn(),
   };
   const merged = { ...defaults, ...props };
   return { ...render(<PlanSearchStep {...merged} />), props: merged };
@@ -57,5 +59,20 @@ describe("PlanSearchStep", () => {
   it("shows the every-business message when allIndustries is on", () => {
     renderStep({ allIndustries: true });
     expect(screen.getByText(/every business type nearby is included/i)).toBeInTheDocument();
+  });
+
+  it("renders the results-count field reflecting the prop", () => {
+    renderStep({ resultsCount: 40 });
+    expect(screen.getByLabelText(/^results$/i)).toHaveValue(40);
+  });
+
+  it("changing the results count lifts the clamped value", () => {
+    const onResultsCountChange = vi.fn();
+    renderStep({ resultsCount: 25, onResultsCountChange });
+    const results = screen.getByLabelText(/^results$/i);
+    fireEvent.change(results, { target: { value: "40" } });
+    expect(onResultsCountChange).toHaveBeenCalledWith(40);
+    fireEvent.change(results, { target: { value: "99" } });
+    expect(onResultsCountChange).toHaveBeenCalledWith(50);
   });
 });

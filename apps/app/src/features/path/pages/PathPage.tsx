@@ -109,12 +109,15 @@ export function PathPage() {
   // (fetch every bucket); otherwise the selected categories scope the ingest.
   const [ingestIndustries, setIngestIndustries] = React.useState<MerchantCategory[]>([]);
   const [ingestAllIndustries, setIngestAllIndustries] = React.useState(false);
+  // Results count — how many nearby businesses the discovery fetch returns/shows
+  // (the pool size, NOT the stop cap). Default 25, clamped to [1, 50] in the hook.
+  const [discoverLimit, setDiscoverLimit] = React.useState(25);
   const {
     merchants: liveMerchants,
     isLoading: merchantsLoading,
     isError: merchantsError,
     refetch: refetchMerchants,
-  } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, allIndustries: ingestAllIndustries, includeChains: true });
+  } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, allIndustries: ingestAllIndustries, includeChains: true, limit: discoverLimit });
   const [categoryFilter, setCategoryFilter] = React.useState<CategoryFilter>("all");
   const [sortMode, setSortMode] = React.useState<PathSortMode>(DEFAULT_SORT_MODE);
   const [hideChains, setHideChains] = React.useState(false);
@@ -776,6 +779,8 @@ export function PathPage() {
         merchants={withinRadius}
         radiusM={displayRadiusM}
         onRadiusChange={setDisplayRadiusM}
+        resultsCount={discoverLimit}
+        onResultsCountChange={setDiscoverLimit}
         onIndustriesChange={setIngestIndustries}
         onAllIndustriesChange={setIngestAllIndustries}
         onStart={handleStartPath}

@@ -81,12 +81,14 @@ const TTL_MS = CELL_TTL_DAYS * 24 * 60 * 60 * 1000;
 const MAX_CELLS = 130;
 const CELL_CONCURRENCY = 6;
 
-// Read-path cap: return the nearest 25 prospects (distance-sorted by
+// Read-path cap: return the nearest N prospects (distance-sorted by
 // prospects_nearby). A path is a day's worth of stops (~25), so the Path page's
-// nearby view, Create a Path, and Plan a Path all work off this 25 rather than
-// a 500-row pull. (prospects_nearby still maxes at 500 server-side; ingest is
-// unchanged — this only bounds what's returned to the client.)
-const READ_LIMIT = 25;
+// nearby view, Create a Path, and Plan a Path all work off this small window
+// rather than a 500-row pull. The rep can bump it via `body.limit` (default 25,
+// clamped to MAX_LIMIT). (prospects_nearby still maxes at 500 server-side;
+// ingest is unchanged — this only bounds what's returned to the client.)
+const DEFAULT_LIMIT = 25;
+const MAX_LIMIT = 50;
 // Margin on a cell's half-diagonal so the per-cell search circle fully covers
 // the square cell (corners included) with a little slack.
 const CELL_COVER_MARGIN = 1.1;
@@ -144,6 +146,9 @@ interface RequestBody {
   all_industries?: boolean;
   force_refresh?: boolean;
   include_chains?: boolean;
+  /** Number of nearest prospects to return (results count). Default 25, clamped
+   *  server-side to [1, MAX_LIMIT]. */
+  limit?: number;
 }
 
 /** One bucket's Places pull, kept paired with its bucket for per-bucket cache
@@ -302,6 +307,9 @@ Deno.serve(async (req) => {
   // Find Near Me opts in to see chains (flagged in the UI); Create stays
   // chain-free client-side. Default false → prospects_nearby excludes chains.
   const includeChains = body?.include_chains === true;
+  // Results count: how many nearest prospects to return. Default 25, clamped to
+  // [1, MAX_LIMIT] so a rep can widen the pool up to 50 without a 500-row pull.
+  const readLimit = Math.min(MAX_LIMIT, Math.max(1, Math.floor(Number(body?.limit)) || DEFAULT_LIMIT));
 
   // Industries to cold-fill. Validate against the known fetchable set; unknown
   // values are dropped. "All industries" (or an empty/absent list) → every
@@ -563,14 +571,15 @@ Deno.serve(async (req) => {
 
   // ---- Read path: servable prospects, nearest first -----------------------
   // Goes through the user's JWT so the SECURITY DEFINER grant + RLS apply.
-  // p_limit READ_LIMIT (500): a wide radius across many tiles can legitimately
-  // surface far more than the old single-cell 30.
+  // p_limit readLimit (default 25, max 50): the rep-configurable results count.
+  // A wide radius across many tiles can legitimately surface far more, so we
+  // bound what's returned to the client here.
   const { data: nearby, error: rpcErr } = await userClient.rpc("prospects_nearby", {
     p_lat: lat,
     p_lng: lng,
     p_radius_m: radiusM,
     p_profession: profession,
-    p_limit: READ_LIMIT,
+    p_limit: readLimit,
     p_include_chains: includeChains,
     p_categories: readCategories,
   });

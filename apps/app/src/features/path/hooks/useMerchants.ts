@@ -162,7 +162,15 @@ export interface UseMerchantsOptions {
   /** When true, the read includes chains (flagged via isChain) so browse can
    *  show + badge them. Create stays chain-free via candidatePool. Default off. */
   includeChains?: boolean;
+  /** Results count — how many nearest businesses to fetch/show. Default 25,
+   *  clamped client-side to [1, MAX_RESULTS_LIMIT] (the Edge clamps again). */
+  limit?: number;
 }
+
+/** Default + max for the rep-configurable results count. Mirrors the Edge
+ *  function's DEFAULT_LIMIT / MAX_LIMIT. */
+export const DEFAULT_RESULTS_LIMIT = 25;
+export const MAX_RESULTS_LIMIT = 50;
 
 /** Round to ~110m so GPS jitter doesn't refire the query (and Google) on
  *  every sub-meter drift. The geohash cell is ~4.9km, so this is plenty
@@ -187,6 +195,12 @@ export function useMerchants(
   // as-is; the Edge treats an empty/all request as "fetch everything".
   const industries = allIndustries ? [] : (opts.industries ?? []);
   const includeChains = opts.includeChains ?? false;
+  // Results count: default 25, clamped to [1, 50] before it hits the query key
+  // + invoke body (the Edge clamps again as a backstop).
+  const limit = Math.min(
+    MAX_RESULTS_LIMIT,
+    Math.max(1, Math.floor(opts.limit ?? DEFAULT_RESULTS_LIMIT) || DEFAULT_RESULTS_LIMIT),
+  );
   const user = useAuth((s) => s.user);
   const profession = getProfession(user);
 
@@ -194,13 +208,13 @@ export function useMerchants(
   const lng = origin ? roundCoord(origin.lng) : null;
 
   const query = useQuery({
-    queryKey: ["path", "prospects", lat, lng, radiusM, profession, industries, allIndustries, includeChains],
+    queryKey: ["path", "prospects", lat, lng, radiusM, profession, industries, allIndustries, includeChains, limit],
     enabled: origin != null,
     staleTime: 5 * 60_000, // 5 min — the server-side cache is the real TTL
     queryFn: async (): Promise<Merchant[]> => {
       const { data, error } = await supabase.functions.invoke<DiscoverResponse>(
         "discover_prospects",
-        { body: { lat: origin!.lat, lng: origin!.lng, radius_m: radiusM, profession, industries, all_industries: allIndustries, include_chains: includeChains } },
+        { body: { lat: origin!.lat, lng: origin!.lng, radius_m: radiusM, profession, industries, all_industries: allIndustries, include_chains: includeChains, limit } },
       );
       if (error) throw error;
       // Returns the server's nearest-first order. Ordering for display lives in
