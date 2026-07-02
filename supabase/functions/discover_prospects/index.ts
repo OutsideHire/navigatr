@@ -80,10 +80,12 @@ const TTL_MS = CELL_TTL_DAYS * 24 * 60 * 60 * 1000;
 const MAX_CELLS = 130;
 const CELL_CONCURRENCY = 6;
 
-// Read-path cap (prospects_nearby maxes at 500 server-side; see migration
-// 20260602000001). Merchant-services reps work dense territories where the
-// nearest 100 within radius wasn't enough coverage.
-const READ_LIMIT = 500;
+// Read-path cap: return the nearest 25 prospects (distance-sorted by
+// prospects_nearby). A path is a day's worth of stops (~25), so the Path page's
+// nearby view, Create a Path, and Plan a Path all work off this 25 rather than
+// a 500-row pull. (prospects_nearby still maxes at 500 server-side; ingest is
+// unchanged — this only bounds what's returned to the client.)
+const READ_LIMIT = 25;
 // Margin on a cell's half-diagonal so the per-cell search circle fully covers
 // the square cell (corners included) with a little slack.
 const CELL_COVER_MARGIN = 1.1;
