@@ -22,6 +22,7 @@ import { CATEGORY_LABEL, type MerchantCategory } from "../../mockData";
 import { LocationSearch } from "../LocationSearch";
 import { IndustryEditor } from "../IndustryEditor";
 import { selectedCategories, type IndustrySelection } from "../../lib/industrySelection";
+import { ResultsCountField } from "../ResultsCountField";
 
 /** Radius options (label → meters), matching PathPage / CreatePathWizard. */
 const PLAN_RADIUS_OPTIONS: Array<{ label: string; meters: number }> = [
@@ -59,6 +60,10 @@ export interface PlanSearchStepProps {
   onSelectionChange: (sel: IndustrySelection) => void;
   allIndustries: boolean;
   onAllIndustriesChange: (all: boolean) => void;
+
+  /** Results count — how many nearby businesses to fetch/show (pool size). */
+  resultsCount: number;
+  onResultsCountChange: (count: number) => void;
 }
 
 export function PlanSearchStep({
@@ -75,6 +80,8 @@ export function PlanSearchStep({
   onSelectionChange,
   allIndustries,
   onAllIndustriesChange,
+  resultsCount,
+  onResultsCountChange,
 }: PlanSearchStepProps) {
   const [editing, setEditing] = React.useState(false);
   const chosen = React.useMemo(() => selectedCategories(selection), [selection]);
@@ -135,6 +142,15 @@ export function PlanSearchStep({
             options={MIN_EMPLOYEES_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }))}
           />
         </div>
+      </div>
+
+      {/* Results count — pool size (how many nearby businesses to show), max 50. */}
+      <div className="w-40">
+        <ResultsCountField
+          id="plan-results-count"
+          value={resultsCount}
+          onChange={onResultsCountChange}
+        />
       </div>
 
       {/* Industry selection */}

@@ -82,6 +82,9 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
   const [minEmployees, setMinEmployees] = React.useState<number>(0);
   const [selection, setSelection] = React.useState<IndustrySelection>(RECOMMENDED_SELECTION);
   const [allIndustries, setAllIndustries] = React.useState(false);
+  // Results count — how many nearby businesses to fetch/show. Default 25,
+  // clamped to [1, 50] in useMerchants.
+  const [resultsCount, setResultsCount] = React.useState(25);
 
   const industries = React.useMemo(
     () => selectedCategories(selection) as unknown as MerchantCategory[],
@@ -146,7 +149,7 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
     isLoading: merchantsLoading,
     isError: merchantsError,
     refetch: refetchMerchants,
-  } = useMerchants(origin, { radiusM, industries, allIndustries, includeChains: true });
+  } = useMerchants(origin, { radiusM, industries, allIndustries, includeChains: true, limit: resultsCount });
 
   // Distance-annotate + sort nearest-first for the results list.
   const resultMerchants: MerchantWithDistance[] = React.useMemo(() => {
@@ -229,6 +232,7 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
     setMinEmployees(0);
     setSelection(RECOMMENDED_SELECTION);
     setAllIndustries(false);
+    setResultsCount(25);
     setStopIds([]);
     setStopById(new Map());
     setCreatedPathId(null);
@@ -421,6 +425,8 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
             onSelectionChange={setSelection}
             allIndustries={allIndustries}
             onAllIndustriesChange={setAllIndustries}
+            resultsCount={resultsCount}
+            onResultsCountChange={setResultsCount}
           />
         )}
 

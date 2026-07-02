@@ -30,6 +30,7 @@ import { type PathSortMode } from "../lib/sortMerchants";
 import { candidatePool, orderStops } from "../lib/proposeRoute";
 import { routeStats } from "../lib/routeStats";
 import { RoutePreview } from "./RoutePreview";
+import { ResultsCountField } from "./ResultsCountField";
 
 export interface CreatePathWizardProps {
   open: boolean;
@@ -41,6 +42,10 @@ export interface CreatePathWizardProps {
   /** Current ingest radius (meters); the radius Select reflects + drives it. */
   radiusM: number;
   onRadiusChange: (meters: number) => void;
+  /** Results count — how many nearby businesses to fetch/show (the pool size,
+   *  SEPARATE from the Max-stops cap). Drives PathPage's useMerchants limit. */
+  resultsCount: number;
+  onResultsCountChange: (count: number) => void;
   /** Push the rep's industry scope up so PathPage re-ingests (like radius). */
   onIndustriesChange: (industries: MerchantCategory[]) => void;
   /** Push the "All industries" toggle up so PathPage ingests every bucket. */
@@ -84,6 +89,8 @@ export function CreatePathWizard({
   merchants,
   radiusM,
   onRadiusChange,
+  resultsCount,
+  onResultsCountChange,
   onIndustriesChange,
   onAllIndustriesChange,
   onStart,
@@ -336,6 +343,10 @@ export function CreatePathWizard({
                       placeholder={String(DEFAULT_STOP_CAP)}
                     />
                   </label>
+                  {/* Results count — how many nearby businesses to fetch/show
+                      (the pool size). SEPARATE from Max stops: this widens the
+                      pool the rep curates from, up to 50. */}
+                  <ResultsCountField value={resultsCount} onChange={onResultsCountChange} />
                 </div>
               </div>
               <div className="shrink-0 border-t border-border-default px-5 py-4">

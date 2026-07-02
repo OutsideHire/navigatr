@@ -41,6 +41,8 @@ function renderWizard(
       merchants={[]}
       radiusM={16093}
       onRadiusChange={() => {}}
+      resultsCount={25}
+      onResultsCountChange={vi.fn()}
       onIndustriesChange={vi.fn()}
       onAllIndustriesChange={vi.fn()}
       onStart={vi.fn()}
@@ -139,6 +141,24 @@ describe("CreatePathWizard radius + max stops + select stops", () => {
   it("has a Max stops field defaulting to 25", () => {
     renderWizard();
     expect(screen.getByLabelText(/max stops/i)).toHaveValue(25);
+  });
+
+  it("renders a Results count field (separate from Max stops) reflecting the prop", () => {
+    renderWizard({ resultsCount: 40 });
+    const results = screen.getByLabelText(/^results$/i);
+    expect(results).toHaveValue(40);
+    // The stop cap is a distinct control that stays at its own default.
+    expect(screen.getByLabelText(/max stops/i)).toHaveValue(25);
+  });
+
+  it("calls onResultsCountChange (clamped to 50) when the results count changes", () => {
+    const onResultsCountChange = vi.fn();
+    renderWizard({ resultsCount: 25, onResultsCountChange });
+    const results = screen.getByLabelText(/^results$/i);
+    fireEvent.change(results, { target: { value: "40" } });
+    expect(onResultsCountChange).toHaveBeenCalledWith(40);
+    fireEvent.change(results, { target: { value: "99" } });
+    expect(onResultsCountChange).toHaveBeenCalledWith(50);
   });
 
   it("advances from filters to the Select stops step", () => {
