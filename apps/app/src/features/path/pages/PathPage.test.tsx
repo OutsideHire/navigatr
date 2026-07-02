@@ -78,9 +78,18 @@ const merchantsState = {
     typeof import("../hooks/useMerchants")["useMerchants"]
   >,
 };
+// Records every useMerchants(origin, opts) call so tests can assert PathPage
+// requests both a chains-included browse fetch AND a chain-free Create fetch.
+const useMerchantsSpy = vi.fn();
 vi.mock("../hooks/useMerchants", async (orig) => {
   const actual = await orig<typeof import("../hooks/useMerchants")>();
-  return { ...actual, useMerchants: () => merchantsState.current };
+  return {
+    ...actual,
+    useMerchants: (...args: unknown[]) => {
+      useMerchantsSpy(...args);
+      return merchantsState.current;
+    },
+  };
 });
 
 // Control todayPath / stops for path-first view tests.
@@ -143,6 +152,7 @@ beforeEach(() => {
   toastMock.error.mockClear();
   capturedOnStart = null;
   nearestNeighborSpy.mockClear();
+  useMerchantsSpy.mockClear();
   prevUnfinishedState.current = { data: null };
   continueMutate.mockReset();
   closeMutate.mockReset();
@@ -338,6 +348,27 @@ describe("PathPage route memos — discover-only", () => {
     const map = screen.getByTestId("map");
     expect(map).toHaveAttribute("data-has-route", "yes");
     expect(nearestNeighborSpy).toHaveBeenCalled();
+  });
+});
+
+describe("PathPage discovery fetches — chain-free Create pool", () => {
+  const readyOrigin: PathOrigin = {
+    ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
+  };
+
+  it("fetches a chains-included browse pool AND a chain-free pool for Create", () => {
+    originState.current = readyOrigin;
+    render(<PathPage />, { wrapper });
+    const includeChainsFlags = useMerchantsSpy.mock.calls.map(
+      (call) => (call[1] as { includeChains?: boolean } | undefined)?.includeChains,
+    );
+    // Two discovery fetches: browse keeps chains (badged in discover), Create
+    // excludes them so the results count = usable (non-chain) stops.
+    expect(includeChainsFlags).toContain(true);
+    expect(includeChainsFlags).toContain(false);
+    // Both honor the same results-count limit.
+    const limits = useMerchantsSpy.mock.calls.map((call) => (call[1] as { limit?: number } | undefined)?.limit);
+    expect(limits.filter((l) => l === 25).length).toBeGreaterThanOrEqual(2);
   });
 });
 
