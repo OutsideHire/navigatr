@@ -163,3 +163,36 @@ export function bucketForType(
   }
   return "other";
 }
+
+/**
+ * Pre-merge category keys that a merged industry absorbed. The Retail /
+ * Restaurants-Bars-Entertainment merge relabels existing prospect rows lazily
+ * (no rewrite), so a category filter must match both the merged key and the
+ * legacy split keys still stored on older rows.
+ */
+const LEGACY_CATEGORY_MEMBERS: Partial<Record<IndustryKey, string[]>> = {
+  retail: [
+    "grocery_food_retail",
+    "apparel_accessories",
+    "home_hardware",
+    "electronics_specialty",
+    "pharmacy_health_retail",
+    "general_merchandise",
+  ],
+  restaurants_bars_entertainment: ["food_beverage", "entertainment"],
+};
+
+/**
+ * All `category` strings that count as "in" the given industries — each key
+ * plus any legacy split keys it absorbed. Feeds prospects_nearby's p_categories
+ * so the read filter matches both freshly-ingested (merged) and older (legacy)
+ * rows. Returns [] for an empty input (caller should treat that as "no filter").
+ */
+export function categoriesForIndustries(keys: IndustryKey[]): string[] {
+  const out = new Set<string>();
+  for (const k of keys) {
+    out.add(k);
+    for (const legacy of LEGACY_CATEGORY_MEMBERS[k] ?? []) out.add(legacy);
+  }
+  return [...out];
+}
