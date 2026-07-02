@@ -4,6 +4,7 @@ import {
   INDUSTRIES,
   INDUSTRY_KEYS,
   bucketForType,
+  categoriesForIndustries,
 } from "../../../../../supabase/functions/_shared/industryTaxonomy";
 
 describe("frontend taxonomy mirrors the shared industry config", () => {
@@ -71,5 +72,27 @@ describe("merged retail / restaurants-bars-entertainment taxonomy", () => {
         seen.set(t, k);
       }
     }
+  });
+});
+
+describe("categoriesForIndustries (prospects_nearby read filter)", () => {
+  it("expands a merged industry to its key + legacy split keys", () => {
+    const retail = categoriesForIndustries(["retail"]);
+    expect(retail).toContain("retail");
+    // Pre-merge retail buckets still carried by older, not-yet-re-ingested rows.
+    for (const legacy of ["grocery_food_retail", "apparel_accessories", "home_hardware",
+      "electronics_specialty", "pharmacy_health_retail", "general_merchandise"]) {
+      expect(retail).toContain(legacy);
+    }
+
+    const rbe = categoriesForIndustries(["restaurants_bars_entertainment"]);
+    expect(rbe).toEqual(expect.arrayContaining([
+      "restaurants_bars_entertainment", "food_beverage", "entertainment",
+    ]));
+  });
+
+  it("leaves un-merged industries as just their own key", () => {
+    expect(categoriesForIndustries(["healthcare"])).toEqual(["healthcare"]);
+    expect(categoriesForIndustries([])).toEqual([]);
   });
 });

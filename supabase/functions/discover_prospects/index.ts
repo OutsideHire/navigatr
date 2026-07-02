@@ -42,6 +42,7 @@ import { chunk, dedupeById } from "../_shared/chunk.ts";
 import {
   ALL_FETCHABLE_KEYS,
   bucketForType,
+  categoriesForIndustries,
   searchableTypes,
   type IndustryKey,
 } from "../_shared/industryTaxonomy.ts";
@@ -312,6 +313,11 @@ Deno.serve(async (req) => {
   const allIndustries = body?.all_industries === true;
   const scopeIndustries: IndustryKey[] =
     allIndustries || requested.length === 0 ? [...ALL_FETCHABLE_KEYS] : requested;
+  // Read-side category filter: only when a specific selection is made. "All"
+  // (or no selection) → null → return every type in radius. Expands to legacy
+  // category keys so older, not-yet-re-ingested rows still match.
+  const readCategories: string[] | null =
+    allIndustries || requested.length === 0 ? null : categoriesForIndustries(requested);
 
   // Verify the caller is a real authenticated user (don't trust a raw header).
   const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -566,6 +572,7 @@ Deno.serve(async (req) => {
     p_profession: profession,
     p_limit: READ_LIMIT,
     p_include_chains: includeChains,
+    p_categories: readCategories,
   });
   if (rpcErr) {
     return json({ error: "nearby_query_failed", detail: rpcErr.message }, 500);
