@@ -28,6 +28,8 @@ function renderStep(props: Partial<React.ComponentProps<typeof PlanResultsStep>>
     addedIds: new Set<string>(),
     onToggleStop: vi.fn(),
     onLogDropIn: vi.fn(),
+    onAddAll: vi.fn(),
+    onRemoveAll: vi.fn(),
   };
   return render(<PlanResultsStep {...defaults} {...props} />);
 }
@@ -57,6 +59,32 @@ describe("PlanResultsStep", () => {
     expect(screen.getByText(/last contact/i)).toBeInTheDocument();
     // Untouched card with no history reads "Never contacted".
     expect(screen.getByText(/never contacted/i)).toBeInTheDocument();
+  });
+
+  it('"Add all" adds every shown result, then flips to "Remove all"', () => {
+    const onAddAll = vi.fn();
+    const onRemoveAll = vi.fn();
+    // None added yet → "Add all (2)".
+    const { rerender } = renderStep({ onAddAll, onRemoveAll, addedIds: new Set() });
+    fireEvent.click(screen.getByRole("button", { name: /add all \(2\)/i }));
+    expect(onAddAll).toHaveBeenCalledTimes(1);
+
+    // All added → the control becomes "Remove all".
+    rerender(
+      <PlanResultsStep
+        merchants={[merchant("a", "Alpha Cafe"), merchant("b", "Beta Bakery")]}
+        isLoading={false}
+        isError={false}
+        onRetry={vi.fn()}
+        addedIds={new Set(["a", "b"])}
+        onToggleStop={vi.fn()}
+        onLogDropIn={vi.fn()}
+        onAddAll={onAddAll}
+        onRemoveAll={onRemoveAll}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /remove all/i }));
+    expect(onRemoveAll).toHaveBeenCalledTimes(1);
   });
 
   it('"Add to today\'s path" toggles the merchant into the stop set', () => {

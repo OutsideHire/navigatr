@@ -182,6 +182,29 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
     });
   }, []);
 
+  // Bulk add/remove over the current results (see PlanResultsStep's "Add all").
+  const addAll = React.useCallback((ms: Merchant[]) => {
+    setStopIds((prev) => {
+      const have = new Set(prev);
+      return [...prev, ...ms.map((m) => m.id).filter((id) => !have.has(id))];
+    });
+    setStopById((prev) => {
+      const next = new Map(prev);
+      ms.forEach((m) => next.set(m.id, m));
+      return next;
+    });
+  }, []);
+
+  const removeAll = React.useCallback((ms: Merchant[]) => {
+    const ids = new Set(ms.map((m) => m.id));
+    setStopIds((prev) => prev.filter((id) => !ids.has(id)));
+    setStopById((prev) => {
+      const next = new Map(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
+  }, []);
+
   const moveStop = React.useCallback((index: number, direction: "up" | "down") => {
     setStopIds((prev) => {
       const target = direction === "up" ? index - 1 : index + 1;
@@ -410,6 +433,8 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
             addedIds={addedIdSet}
             onToggleStop={toggleStop}
             onLogDropIn={openDropIn}
+            onAddAll={() => addAll(resultMerchants)}
+            onRemoveAll={() => removeAll(resultMerchants)}
           />
         )}
 

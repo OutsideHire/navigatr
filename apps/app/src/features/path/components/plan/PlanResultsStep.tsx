@@ -12,7 +12,7 @@
  * action cards so the per-card Add/Log affordances live on each row (MerchantList
  * stays unchanged / props-only).
  */
-import { Calendar, Check, Loader2, MapPinOff, Phone, Plus, Radio } from "lucide-react";
+import { Calendar, Check, Loader2, MapPinOff, Phone, Plus, Radio, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge, Button, Card } from "@/components/navigatr";
 import { labelForCategory, STATUS_LABEL, STATUS_PILL_CLASS, type Merchant } from "../../mockData";
@@ -36,6 +36,10 @@ export interface PlanResultsStepProps {
   addedIds: Set<string>;
   onToggleStop: (merchant: Merchant) => void;
   onLogDropIn: (merchant: Merchant) => void;
+  /** Add every shown result to the path. */
+  onAddAll: () => void;
+  /** Remove every shown result from the path. */
+  onRemoveAll: () => void;
 }
 
 export function PlanResultsStep({
@@ -46,6 +50,8 @@ export function PlanResultsStep({
   addedIds,
   onToggleStop,
   onLogDropIn,
+  onAddAll,
+  onRemoveAll,
 }: PlanResultsStepProps) {
   if (isLoading) {
     return (
@@ -91,8 +97,25 @@ export function PlanResultsStep({
     );
   }
 
+  const allAdded = merchants.every((m) => addedIds.has(m.id));
+
   return (
     <div className="flex flex-col gap-2 md:mx-auto md:w-full md:max-w-2xl">
+      {/* Bulk add/remove — with the ~25 result cap this is a fast way to build
+          or clear the whole path in one tap. */}
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-caption text-text-muted">
+          {merchants.length} {merchants.length === 1 ? "result" : "results"}
+        </span>
+        <Button
+          variant="tertiary"
+          size="sm"
+          leadingIcon={allAdded ? X : Plus}
+          onClick={allAdded ? onRemoveAll : onAddAll}
+        >
+          {allAdded ? "Remove all" : `Add all (${merchants.length})`}
+        </Button>
+      </div>
       {merchants.map((m) => {
         const added = addedIds.has(m.id);
         return (
