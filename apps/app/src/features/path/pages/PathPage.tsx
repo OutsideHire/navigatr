@@ -119,6 +119,13 @@ export function PathPage() {
     isError: merchantsError,
     refetch: refetchMerchants,
   } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, allIndustries: ingestAllIndustries, includeChains: true, limit: discoverLimit });
+  // Create a Path pulls its OWN chain-free discovery: the wizard's candidatePool
+  // excludes chains, so if Create read the chains-included browse fetch above, the
+  // usable pool would be `limit` minus however many chains happened to rank in —
+  // the rep would ask for 25 and get fewer stops. Fetching chain-free here means
+  // `limit` non-chain results, so the results count = usable stops. The browse
+  // fetch above keeps chains (it badges them in the discover map/list).
+  const { merchants: createMerchants } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, allIndustries: ingestAllIndustries, includeChains: false, limit: discoverLimit });
   const [categoryFilter, setCategoryFilter] = React.useState<CategoryFilter>("all");
   const [sortMode, setSortMode] = React.useState<PathSortMode>(DEFAULT_SORT_MODE);
   const [hideChains, setHideChains] = React.useState(false);
@@ -275,6 +282,22 @@ export function PathPage() {
     return merchantsWithDistance.filter((m) => m.distanceMeters <= displayRadiusM);
   }, [merchantsWithDistance, anyGeocoded, displayRadiusM]);
 
+  // Same distance-annotate + radius gate as withinRadius, but over the chain-free
+  // createMerchants set — this is what the Create wizard curates from, so the
+  // results count maps to usable (non-chain) stops.
+  const createWithinRadius = React.useMemo<MerchantWithDistance[]>(() => {
+    const anyGeo = createMerchants.some((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng));
+    const enriched = createMerchants.map((m) => ({
+      ...m,
+      distanceMeters:
+        origin && Number.isFinite(m.lat) && Number.isFinite(m.lng)
+          ? haversineMeters(origin, { lat: m.lat, lng: m.lng })
+          : Number.POSITIVE_INFINITY,
+    }));
+    const sorted = enriched.sort((a, b) => a.distanceMeters - b.distanceMeters);
+    return anyGeo ? sorted.filter((m) => m.distanceMeters <= displayRadiusM) : sorted;
+  }, [createMerchants, origin, displayRadiusM]);
+
   const filtered = React.useMemo(
     () =>
       categoryFilter === "all"
@@ -371,7 +394,11 @@ export function PathPage() {
   // stops-sync effect then moves the view to the active home on its own.
   const handleStartPath = React.useCallback(
     async (orderedIds: string[]) => {
-      const byId = new Map(liveMerchants.map((m) => [m.id, m]));
+      // Resolve against createMerchants — the same chain-free set the wizard
+      // selected from. A non-chain stop can rank into createMerchants without
+      // being in the chains-included liveMerchants (chains took nearer slots), so
+      // resolving via liveMerchants would silently drop it.
+      const byId = new Map(createMerchants.map((m) => [m.id, m]));
       const snapshots = orderedIds
         .map((id) => byId.get(id))
         .filter((m): m is NonNullable<typeof m> => Boolean(m))
@@ -390,7 +417,7 @@ export function PathPage() {
         // straight in the Run tab at stop 1 (Create a Path auto-start).
         await todayPath.addMany(snapshots, { start: true });
         setCreateOpen(false);
-        // A selected stop can fall out of liveMerchants if the rep tightened the
+        // A selected stop can fall out of createMerchants if the rep tightened the
         // radius/category filter mid-wizard. Those IDs are dropped above — tell
         // the rep how many, rather than silently starting a shorter path.
         const dropped = orderedIds.length - snapshots.length;
@@ -401,7 +428,7 @@ export function PathPage() {
         toast.error("Couldn't start the path. Please try again.");
       }
     },
-    [liveMerchants, todayPath],
+    [createMerchants, todayPath],
   );
 
   return (
@@ -849,7 +876,7 @@ export function PathPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         origin={origin ?? { lat: 0, lng: 0 }}
-        merchants={withinRadius}
+        merchants={createWithinRadius}
         radiusM={displayRadiusM}
         onRadiusChange={setDisplayRadiusM}
         resultsCount={discoverLimit}
