@@ -75,31 +75,33 @@ describe("SettingsHubPage — desktop layout", () => {
     expect(screen.getByTestId("tab-content")).toHaveTextContent("BRANDING_TAB_CONTENT");
   });
 
-  it("shows all 5 tabs to an admin in the rail", () => {
+  it("shows all 6 tabs to an admin in the rail", () => {
     profileShape = { data: { role: "admin" } };
     renderAt("/settings");
     const tablist = screen.getByRole("tablist", { name: /settings sections/i });
     const tabs = tablist.querySelectorAll('[role="tab"]');
-    expect(tabs).toHaveLength(5);
+    expect(tabs).toHaveLength(6);
     const labels = Array.from(tabs).map((t) => t.textContent);
     expect(labels).toEqual([
       "Personal",
       "Organization",
+      "Integrations",
       "Branding",
       "Profession",
       "Danger zone",
     ]);
   });
 
-  it("shows only 2 tabs to a rep", () => {
+  it("shows only 3 tabs to a rep", () => {
     profileShape = { data: { role: "rep" } };
     renderAt("/settings");
     const tablist = screen.getByRole("tablist");
     const tabs = tablist.querySelectorAll('[role="tab"]');
-    expect(tabs).toHaveLength(2);
+    expect(tabs).toHaveLength(3);
     expect(Array.from(tabs).map((t) => t.textContent)).toEqual([
       "Personal",
       "Organization",
+      "Integrations",
     ]);
   });
 

@@ -10,7 +10,7 @@ import { visibleTabs, resolveTab, SETTINGS_TABS } from "./tabs";
 describe("visibleTabs", () => {
   it("returns only rep+everyone tabs for a rep", () => {
     const result = visibleTabs("rep");
-    expect(result.map((t) => t.id)).toEqual(["personal", "organization"]);
+    expect(result.map((t) => t.id)).toEqual(["personal", "organization", "integrations"]);
   });
 
   it("returns rep+manager tabs for a manager (no danger zone)", () => {
@@ -18,6 +18,7 @@ describe("visibleTabs", () => {
     expect(result.map((t) => t.id)).toEqual([
       "personal",
       "organization",
+      "integrations",
       "branding",
       "profession",
     ]);
@@ -28,6 +29,7 @@ describe("visibleTabs", () => {
     expect(result.map((t) => t.id)).toEqual([
       "personal",
       "organization",
+      "integrations",
       "branding",
       "profession",
       "danger",
@@ -36,7 +38,7 @@ describe("visibleTabs", () => {
 
   it("defaults to rep-visible tabs when role is undefined (pre-load state)", () => {
     const result = visibleTabs(undefined);
-    expect(result.map((t) => t.id)).toEqual(["personal", "organization"]);
+    expect(result.map((t) => t.id)).toEqual(["personal", "organization", "integrations"]);
   });
 
   it("preserves the canonical tab order", () => {
