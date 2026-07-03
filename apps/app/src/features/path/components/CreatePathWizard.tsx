@@ -52,6 +52,11 @@ export interface CreatePathWizardProps {
   onAllIndustriesChange: (allIndustries: boolean) => void;
   /** Called with the ordered merchant IDs when the rep starts the path. */
   onStart: (orderedIds: string[]) => void;
+  /** OPTIONAL — the rep's day time-window, as ISO datetimes for today in their
+   *  local timezone. Emitted on mount and whenever Start/End change. A later
+   *  task lifts this to PathPage to drive the calendar read; the wizard owns the
+   *  local window state and works fine without this callback. */
+  onWindowChange?: (window: { start: string; end: string }) => void;
 }
 
 /** Same options + segmented style as PathPage's "Within" control — the wizard
@@ -80,6 +85,28 @@ const RATING_OPTIONS: Array<{ label: string; value: number }> = [
 const DEFAULT_STOP_CAP = 25;
 const MAX_STOP_CAP = 100;
 
+/** Default day time-window shown in the "When" control. */
+const DEFAULT_WINDOW_START = "08:00";
+const DEFAULT_WINDOW_END = "18:00";
+
+/** Convert an `HH:MM` value into an ISO datetime for TODAY in the rep's local
+ *  timezone (today's date at that local time). new Date() is local-today;
+ *  setHours sets the local wall-clock time; toISOString normalizes to UTC. */
+function hhmmToIsoToday(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d.toISOString();
+}
+
+/** Add one hour to an `HH:MM` value, wrapping at 24h (used to clamp End to
+ *  Start + 1h when End <= Start). */
+function addHour(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const next = (h + 1) % 24;
+  return `${String(next).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 type Step = "filters" | "select" | "preview";
 
 export function CreatePathWizard({
@@ -94,6 +121,7 @@ export function CreatePathWizard({
   onIndustriesChange,
   onAllIndustriesChange,
   onStart,
+  onWindowChange,
 }: CreatePathWizardProps) {
   const { data: prefs } = usePathPreferences();
   const updateDefaults = useUpdateDefaultIndustries();
@@ -105,6 +133,32 @@ export function CreatePathWizard({
   const [minRating, setMinRating] = React.useState(0);
   const [stopCapText, setStopCapText] = React.useState<string>(String(DEFAULT_STOP_CAP));
   const [sortMode, setSortMode] = React.useState<PathSortMode>("opportunity");
+
+  // "When" — the rep's day time-window. Local state; emitted up (if a callback
+  // is passed) as ISO datetimes for today on mount and on every change.
+  const [windowStart, setWindowStart] = React.useState(DEFAULT_WINDOW_START);
+  const [windowEnd, setWindowEnd] = React.useState(DEFAULT_WINDOW_END);
+
+  // Keep onWindowChange in a ref so the emit effect fires on start/end changes
+  // (and mount) without re-firing when the parent recreates the callback.
+  const onWindowChangeRef = React.useRef(onWindowChange);
+  React.useEffect(() => { onWindowChangeRef.current = onWindowChange; });
+  React.useEffect(() => {
+    onWindowChangeRef.current?.({
+      start: hhmmToIsoToday(windowStart),
+      end: hhmmToIsoToday(windowEnd),
+    });
+  }, [windowStart, windowEnd]);
+
+  const handleStartChange = React.useCallback((value: string) => {
+    setWindowStart(value);
+    // If end is now <= start, clamp end to start + 1h.
+    setWindowEnd((prev) => (prev <= value ? addHour(value) : prev));
+  }, []);
+  const handleEndChange = React.useCallback((value: string) => {
+    // Clamp end to start + 1h when end <= start.
+    setWindowEnd(value <= windowStart ? addHour(windowStart) : value);
+  }, [windowStart]);
 
   // Free-entry stop cap → a clamped number. Blank/garbage falls back to the
   // default; over the server cap clamps down. Kept as text so the field can be
@@ -135,6 +189,8 @@ export function CreatePathWizard({
       onAllIndustriesChange(false);
       setStopCapText(String(DEFAULT_STOP_CAP));
       setSortMode("opportunity");
+      setWindowStart(DEFAULT_WINDOW_START);
+      setWindowEnd(DEFAULT_WINDOW_END);
       setSelectedIds(new Set());
     }
     // onAllIndustriesChange is PathPage's stable useState setter — safe in deps.
@@ -347,6 +403,32 @@ export function CreatePathWizard({
                       (the pool size). SEPARATE from Max stops: this widens the
                       pool the rep curates from, up to 50. */}
                   <ResultsCountField value={resultsCount} onChange={onResultsCountChange} />
+                </div>
+
+                {/* When — the rep's day time-window. Feeds the calendar read
+                    (later task) so we can surface free windows in the day. */}
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-caption font-medium text-text-muted">When</span>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label htmlFor="window-start" className="flex flex-col gap-1.5">
+                      <span className="text-caption text-text-muted">Start</span>
+                      <Input
+                        id="window-start"
+                        type="time"
+                        value={windowStart}
+                        onChange={(e) => handleStartChange(e.target.value)}
+                      />
+                    </label>
+                    <label htmlFor="window-end" className="flex flex-col gap-1.5">
+                      <span className="text-caption text-text-muted">End</span>
+                      <Input
+                        id="window-end"
+                        type="time"
+                        value={windowEnd}
+                        onChange={(e) => handleEndChange(e.target.value)}
+                      />
+                    </label>
+                  </div>
                 </div>
               </div>
               <div className="shrink-0 border-t border-border-default px-5 py-4">
