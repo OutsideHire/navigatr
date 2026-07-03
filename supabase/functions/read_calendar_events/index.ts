@@ -63,6 +63,7 @@ Deno.serve(async (req) => {
     .from("oauth_connections")
     .select("status, config")
     .eq("provider", "google")
+    .eq("user_id", userData.user.id)
     .maybeSingle();
 
   if (!CALENDAR_MOCK && (!conn || conn.status !== "active")) {

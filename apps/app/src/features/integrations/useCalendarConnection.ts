@@ -23,6 +23,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/stores/auth";
 
 export type CalendarConnectionStatus = "connected" | "pending" | "disconnected";
 
@@ -61,14 +62,22 @@ export interface UseCalendarConnectionResult {
 
 export function useCalendarConnection(): UseCalendarConnectionResult {
   const queryClient = useQueryClient();
+  const userId = useAuth((s) => s.user?.id);
 
   const query = useQuery({
-    queryKey: CALENDAR_CONNECTION_KEY,
+    queryKey: [...CALENDAR_CONNECTION_KEY, userId],
+    enabled: !!userId,
     queryFn: async (): Promise<CalendarConnectionStatus> => {
+      // Scope to the current user's row explicitly. The oauth_connections SELECT
+      // RLS policy lets managers/admins see every org connection, so filtering
+      // only on provider would return multiple rows for those roles and
+      // maybeSingle() would throw (or pick an arbitrary rep's row — a privacy
+      // leak once real tokens exist). eq("user_id", …) guarantees one row.
       const { data, error } = await supabase
         .from("oauth_connections")
         .select("status")
         .eq("provider", PROVIDER)
+        .eq("user_id", userId)
         .maybeSingle();
       if (error) throw error;
       return toStatus(data?.status);
@@ -76,6 +85,11 @@ export function useCalendarConnection(): UseCalendarConnectionResult {
   });
 
   const disconnectMutation = useMutation({
+    // NOTE: inert until the calendar_oauth Edge function lands (Task 5).
+    // oauth_connections is SELECT-only under RLS — client writes affect 0 rows
+    // with no error. Disconnect must be routed through calendar_oauth (service
+    // role), same as connect(). Until then this is a no-op; the Integrations tab
+    // is not shipped to prod until that task.
     mutationFn: async (): Promise<void> => {
       // TODO(calendar-oauth-task): also revoke the Google token via the OAuth
       // Edge function so the grant is torn down upstream, not just locally.

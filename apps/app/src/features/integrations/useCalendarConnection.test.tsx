@@ -4,16 +4,26 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useCalendarConnection } from "./useCalendarConnection";
 
-// supabase.from("oauth_connections").select("status").eq("provider","google").maybeSingle()
-// and .update({...}).eq("provider","google"). eq is the last call in the update
-// chain, so it resolves the update; in the read chain it returns { maybeSingle }.
+// supabase.from("oauth_connections").select("status").eq("provider","google")
+//   .eq("user_id", userId).maybeSingle()
+// and .update({...}).eq("provider","google"). The read chain now filters on
+// provider AND user_id, so select().eq() must itself return an object with a
+// further { eq } that resolves to { maybeSingle }.
 const maybeSingle = vi.fn();
 const updateEq = vi.fn();
 const update = vi.fn(() => ({ eq: updateEq }));
-const selectEq = vi.fn(() => ({ maybeSingle }));
+const selectUserEq = vi.fn(() => ({ maybeSingle }));
+const selectEq = vi.fn(() => ({ eq: selectUserEq, maybeSingle }));
 const select = vi.fn(() => ({ eq: selectEq }));
 vi.mock("@/lib/supabase", () => ({
   supabase: { from: () => ({ select, update }) },
+}));
+
+// useCalendarConnection scopes the read to the current auth user, so the query
+// only runs once useAuth exposes a user id.
+vi.mock("@/stores/auth", () => ({
+  useAuth: (selector: (s: { user: { id: string } }) => unknown) =>
+    selector({ user: { id: "user-1" } }),
 }));
 
 function wrap(client: QueryClient) {
@@ -33,6 +43,7 @@ beforeEach(() => {
   update.mockClear();
   select.mockClear();
   selectEq.mockClear();
+  selectUserEq.mockClear();
 });
 
 describe("useCalendarConnection", () => {
@@ -40,6 +51,9 @@ describe("useCalendarConnection", () => {
     maybeSingle.mockResolvedValueOnce({ data: { status: "active" }, error: null });
     const { result } = renderHook(() => useCalendarConnection(), { wrapper: wrap(makeClient()) });
     await waitFor(() => expect(result.current.status).toBe("connected"));
+    // Read is scoped to provider AND the current auth user's id.
+    expect(selectEq).toHaveBeenCalledWith("provider", "google");
+    expect(selectUserEq).toHaveBeenCalledWith("user_id", "user-1");
   });
 
   it("reports disconnected when there is no row", async () => {
