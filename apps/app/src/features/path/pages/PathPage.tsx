@@ -65,6 +65,8 @@ import { toast } from "sonner";
 import { planQueueMigration } from "../lib/migrateLocalQueue";
 import { useMerchants } from "../hooks/useMerchants";
 import { sortMerchants, type PathSortMode } from "../lib/sortMerchants";
+import { useCalendarEvents } from "../hooks/useCalendarEvents";
+import { computeFreeWindows } from "../lib/freeWindows";
 
 // Phase 2: discovered prospects are all cold leads, so the old deal-lifecycle
 // status chips (prospect/active/won/cooled) don't apply. Filter by business
@@ -133,6 +135,28 @@ export function PathPage() {
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [view, setView] = React.useState<ViewMode>("list"); // default to list until merchants are geocoded
   const [createOpen, setCreateOpen] = React.useState(false);
+
+  // Calendar-Aware Path (Slice 1): ephemeral planning overlay. The wizard emits
+  // its day time-window; we read the rep's calendar for that window and derive
+  // the free gaps. Nothing here persists or touches the running path.
+  const [calWindow, setCalWindow] = React.useState<{ start: string; end: string } | null>(null);
+  const {
+    waypoints: calWaypoints,
+    timeBlocks: calTimeBlocks,
+    status: calStatus,
+    refetch: refetchCalendar,
+  } = useCalendarEvents(calWindow);
+  const calFreeWindows = React.useMemo(
+    () =>
+      calWindow
+        ? computeFreeWindows(
+            calWindow.start,
+            calWindow.end,
+            [...calWaypoints, ...calTimeBlocks].map((e) => ({ start: e.start, end: e.end })),
+          )
+        : [],
+    [calWindow, calWaypoints, calTimeBlocks],
+  );
   const [planOpen, setPlanOpen] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
 
@@ -884,6 +908,12 @@ export function PathPage() {
         onIndustriesChange={setIngestIndustries}
         onAllIndustriesChange={setIngestAllIndustries}
         onStart={handleStartPath}
+        onWindowChange={setCalWindow}
+        calendarWaypoints={calWaypoints}
+        calendarTimeBlocks={calTimeBlocks}
+        calendarFreeWindows={calFreeWindows}
+        calendarStatus={calStatus}
+        onRefreshCalendar={refetchCalendar}
       />
 
       <PlanPathWizard

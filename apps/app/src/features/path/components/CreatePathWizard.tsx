@@ -23,6 +23,13 @@ import { Button, Checkbox, Input, Select } from "@/components/navigatr";
 import { CATEGORY_LABEL, type MerchantCategory } from "../mockData";
 import { IndustryEditor } from "./IndustryEditor";
 import { SelectStops } from "./SelectStops";
+import { CalendarOverlay } from "./CalendarOverlay";
+import type {
+  CalendarStatus,
+  CalendarTimeBlock,
+  CalendarWaypoint,
+} from "../hooks/useCalendarEvents";
+import type { Interval } from "../lib/freeWindows";
 import { usePathPreferences, useUpdateDefaultIndustries } from "../hooks/usePathPreferences";
 import { selectedCategories, type IndustrySelection } from "../lib/industrySelection";
 import type { MerchantWithDistance } from "./MerchantList";
@@ -57,6 +64,17 @@ export interface CreatePathWizardProps {
    *  task lifts this to PathPage to drive the calendar read; the wizard owns the
    *  local window state and works fine without this callback. */
   onWindowChange?: (window: { start: string; end: string }) => void;
+  /** OPTIONAL — Calendar-Aware Path (Slice 1). Mappable calendar appointments,
+   *  shown as read-only waypoints atop the Select-stops step. Default empty. */
+  calendarWaypoints?: CalendarWaypoint[];
+  /** OPTIONAL — unmappable calendar events (time blocks) for the day view. */
+  calendarTimeBlocks?: CalendarTimeBlock[];
+  /** OPTIONAL — free gaps in the day derived from the window minus meetings. */
+  calendarFreeWindows?: Interval[];
+  /** OPTIONAL — the rep's calendar connection state. Default "not_connected". */
+  calendarStatus?: CalendarStatus;
+  /** OPTIONAL — re-pull the calendar read. Default no-op. */
+  onRefreshCalendar?: () => void;
 }
 
 /** Same options + segmented style as PathPage's "Within" control — the wizard
@@ -122,6 +140,11 @@ export function CreatePathWizard({
   onAllIndustriesChange,
   onStart,
   onWindowChange,
+  calendarWaypoints = [],
+  calendarTimeBlocks = [],
+  calendarFreeWindows = [],
+  calendarStatus = "not_connected",
+  onRefreshCalendar,
 }: CreatePathWizardProps) {
   const { data: prefs } = usePathPreferences();
   const updateDefaults = useUpdateDefaultIndustries();
@@ -449,6 +472,16 @@ export function CreatePathWizard({
               onToggle={toggleStop}
               onBack={() => setStep("filters")}
               onReview={() => setStep("preview")}
+              calendarOverlay={
+                <CalendarOverlay
+                  waypoints={calendarWaypoints}
+                  timeBlocks={calendarTimeBlocks}
+                  freeWindows={calendarFreeWindows}
+                  status={calendarStatus}
+                  onRefresh={onRefreshCalendar ?? (() => {})}
+                />
+              }
+              calendarPins={calendarWaypoints}
             />
           )}
 

@@ -26,6 +26,11 @@ export interface SelectStopsProps {
   onToggle: (id: string) => void;
   onBack: () => void;
   onReview: () => void;
+  /** OPTIONAL — Calendar-Aware Path overlay rendered above the route map so the
+   *  rep sees their meetings + free windows while curating stops. */
+  calendarOverlay?: React.ReactNode;
+  /** OPTIONAL — read-only calendar meeting pins for the route map (not stops). */
+  calendarPins?: Array<{ id: string; lat: number; lng: number; title: string; start: string }>;
 }
 
 function metaLine(m: MerchantWithDistance): string {
@@ -55,7 +60,7 @@ const sectionBar =
  * logic lives in the wizard.
  */
 export function SelectStops({
-  pool, origin, sortMode, onSortChange, selectedIds, onToggle, onBack, onReview,
+  pool, origin, sortMode, onSortChange, selectedIds, onToggle, onBack, onReview, calendarOverlay, calendarPins,
 }: SelectStopsProps) {
   const selected = React.useMemo(() => pool.filter((m) => selectedIds.has(m.id)), [pool, selectedIds]);
   const ordered = React.useMemo(() => orderStops(origin, selected), [origin, selected]);
@@ -81,10 +86,12 @@ export function SelectStops({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-3">
+        {calendarOverlay}
         <MerchantMap
           position={origin}
           merchants={ordered}
           routePath={[origin, ...ordered.map((m) => ({ lat: m.lat, lng: m.lng }))]}
+          calendarPins={calendarPins}
           className="h-56 w-full shrink-0 overflow-hidden rounded-radius-md"
         />
 
