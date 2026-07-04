@@ -12,13 +12,12 @@
  *   - "pending"      — row.status === "pending" (OAuth started, not finished)
  *   - "disconnected" — no row, or status revoked/expired/error/anything else
  *
- * connect(): full-page navigate to the OAuth start endpoint on the Supabase
- * Edge Functions host. The endpoint (`calendar_oauth?action=start`) doesn't
- * exist yet — building it is the follow-up OAuth task — so this won't complete
- * the round-trip today. That's expected for Slice 1.
+ * connect(): invokes the `calendar_oauth/start` Edge sub-route (authenticated),
+ * which returns a signed Google auth URL, then full-page navigates to it.
  *
- * disconnect(): flips the row to "revoked" and re-reads. Actual token
- * revocation with Google happens in the OAuth function later.
+ * disconnect(): invokes the `calendar_oauth/disconnect` Edge sub-route (service
+ * role), which flips the row to "revoked" and best-effort revokes the Google
+ * grant, then re-reads.
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -53,9 +52,9 @@ function toStatus(rowStatus: string | null | undefined): CalendarConnectionStatu
 export interface UseCalendarConnectionResult {
   status: CalendarConnectionStatus;
   isLoading: boolean;
-  /** Full-page navigate to the OAuth start endpoint. */
+  /** Fetch a signed Google auth URL and navigate to it. */
   connect: () => void;
-  /** Flip the connection to revoked, then re-read. */
+  /** Revoke the connection via the Edge function, then re-read. */
   disconnect: () => void;
   isDisconnecting: boolean;
 }
@@ -85,18 +84,11 @@ export function useCalendarConnection(): UseCalendarConnectionResult {
   });
 
   const disconnectMutation = useMutation({
-    // NOTE: inert until the calendar_oauth Edge function lands (Task 5).
-    // oauth_connections is SELECT-only under RLS — client writes affect 0 rows
-    // with no error. Disconnect must be routed through calendar_oauth (service
-    // role), same as connect(). Until then this is a no-op; the Integrations tab
-    // is not shipped to prod until that task.
+    // Routed through the calendar_oauth Edge function (service role): the client
+    // can't write oauth_connections directly (SELECT-only RLS). The function
+    // flips status to revoked and best-effort revokes the grant with Google.
     mutationFn: async (): Promise<void> => {
-      // TODO(calendar-oauth-task): also revoke the Google token via the OAuth
-      // Edge function so the grant is torn down upstream, not just locally.
-      const { error } = await supabase
-        .from("oauth_connections")
-        .update({ status: "revoked" })
-        .eq("provider", PROVIDER);
+      const { error } = await supabase.functions.invoke("calendar_oauth/disconnect");
       if (error) throw error;
     },
     onSuccess: () => {
@@ -104,17 +96,23 @@ export function useCalendarConnection(): UseCalendarConnectionResult {
     },
   });
 
-  const connect = () => {
-    const url = `${SUPABASE_FUNCTIONS_URL}/calendar_oauth?action=start`;
-    // Full-page navigation hands off to the OAuth flow (redirects to Google,
-    // then back to the app). This endpoint is built in the follow-up task.
-    window.location.assign(url);
-  };
+  const connectMutation = useMutation({
+    // Authenticated invoke to the `start` sub-route returns a signed Google auth
+    // URL; a full-page navigation hands off to Google, which redirects back to
+    // the app via the callback sub-route.
+    mutationFn: async (): Promise<void> => {
+      const { data, error } = await supabase.functions.invoke<{ authUrl: string }>(
+        "calendar_oauth/start",
+      );
+      if (error || !data?.authUrl) throw error ?? new Error("no authUrl returned");
+      window.location.assign(data.authUrl);
+    },
+  });
 
   return {
     status: query.data ?? "disconnected",
     isLoading: query.isLoading,
-    connect,
+    connect: () => connectMutation.mutate(),
     disconnect: () => disconnectMutation.mutate(),
     isDisconnecting: disconnectMutation.isPending,
   };

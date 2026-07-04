@@ -5,18 +5,21 @@ import type { ReactNode } from "react";
 import { useCalendarConnection } from "./useCalendarConnection";
 
 // supabase.from("oauth_connections").select("status").eq("provider","google")
-//   .eq("user_id", userId).maybeSingle()
-// and .update({...}).eq("provider","google"). The read chain now filters on
-// provider AND user_id, so select().eq() must itself return an object with a
-// further { eq } that resolves to { maybeSingle }.
+//   .eq("user_id", userId).maybeSingle() for the status read. connect() and
+// disconnect() route through supabase.functions.invoke("calendar_oauth/start" |
+// "calendar_oauth/disconnect") — the direct client write was removed once the
+// Edge function landed. The read chain filters on provider AND user_id, so
+// select().eq() returns an object with a further { eq } that resolves to
+// { maybeSingle }.
 const maybeSingle = vi.fn();
-const updateEq = vi.fn();
-const update = vi.fn(() => ({ eq: updateEq }));
 const selectUserEq = vi.fn(() => ({ maybeSingle }));
 const selectEq = vi.fn(() => ({ eq: selectUserEq, maybeSingle }));
 const select = vi.fn(() => ({ eq: selectEq }));
+// vi.hoisted lifts the invoke spy above the hoisted vi.mock factory so the
+// factory can reference it without a temporal-dead-zone error.
+const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@/lib/supabase", () => ({
-  supabase: { from: () => ({ select, update }) },
+  supabase: { from: () => ({ select }), functions: { invoke } },
 }));
 
 // useCalendarConnection scopes the read to the current auth user, so the query
@@ -39,8 +42,7 @@ function makeClient() {
 
 beforeEach(() => {
   maybeSingle.mockReset();
-  updateEq.mockReset();
-  update.mockClear();
+  invoke.mockReset();
   select.mockClear();
   selectEq.mockClear();
   selectUserEq.mockClear();
@@ -77,20 +79,23 @@ describe("useCalendarConnection", () => {
     expect(result.current.status).toBe("disconnected");
   });
 
-  it("disconnect() updates the row status to revoked for provider google", async () => {
+  it("disconnect() invokes the calendar_oauth/disconnect Edge sub-route", async () => {
     maybeSingle.mockResolvedValue({ data: { status: "active" }, error: null });
-    updateEq.mockResolvedValueOnce({ error: null });
+    invoke.mockResolvedValueOnce({ data: { ok: true }, error: null });
     const { result } = renderHook(() => useCalendarConnection(), { wrapper: wrap(makeClient()) });
     await waitFor(() => expect(result.current.status).toBe("connected"));
 
     result.current.disconnect();
 
-    await waitFor(() => expect(update).toHaveBeenCalledWith({ status: "revoked" }));
-    expect(updateEq).toHaveBeenCalledWith("provider", "google");
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("calendar_oauth/disconnect"));
   });
 
-  it("connect() navigates to the OAuth start URL", async () => {
+  it("connect() invokes the start sub-route and navigates to the returned authUrl", async () => {
     maybeSingle.mockResolvedValueOnce({ data: null, error: null });
+    invoke.mockResolvedValueOnce({
+      data: { authUrl: "https://accounts.google.com/o/oauth2/v2/auth?state=abc" },
+      error: null,
+    });
     const assign = vi.fn();
     const original = window.location;
     Object.defineProperty(window, "location", {
@@ -103,10 +108,11 @@ describe("useCalendarConnection", () => {
 
     result.current.connect();
 
-    expect(assign).toHaveBeenCalledTimes(1);
-    const url = assign.mock.calls[0][0] as string;
-    expect(url).toContain("calendar_oauth");
-    expect(url).toContain("action=start");
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("calendar_oauth/start"));
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+    expect(assign.mock.calls[0][0]).toBe(
+      "https://accounts.google.com/o/oauth2/v2/auth?state=abc",
+    );
 
     Object.defineProperty(window, "location", { configurable: true, value: original });
   });

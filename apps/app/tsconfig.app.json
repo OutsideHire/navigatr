@@ -33,6 +33,7 @@
     "src",
     "../../supabase/functions/_shared/industryTaxonomy.ts",
     "../../supabase/functions/_shared/calendarQualify.ts",
+    "../../supabase/functions/_shared/googleToken.ts",
     "../../supabase/functions/_shared/coverage/config.ts",
     "../../supabase/functions/_shared/coverage/score.ts"
   ]
