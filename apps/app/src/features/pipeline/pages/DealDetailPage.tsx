@@ -86,6 +86,7 @@ import { RelatedCard } from "../components/RelatedCard";
 import { QualificationTab } from "../components/QualificationTab";
 import { QualificationEditSheet } from "../components/QualificationEditSheet";
 import { SendReferralSheet } from "../components/SendReferralSheet";
+import { ScheduleAppointmentSheet } from "../components/ScheduleAppointmentSheet";
 import { ContactsTab } from "../components/ContactsTab";
 import { NotesAndFilesTab } from "../components/NotesAndFilesTab";
 
@@ -615,6 +616,7 @@ export function DealDetailPage() {
   const [lostOpen, setLostOpen] = React.useState(false);
   const [qualOpen, setQualOpen] = React.useState(false);
   const [referralOpen, setReferralOpen] = React.useState(false);
+  const [apptOpen, setApptOpen] = React.useState(false);
 
   const handlePageLostSubmit = async (category: LostReasonCategory, notes: string | null) => {
     if (!deal) return;
@@ -692,6 +694,7 @@ export function DealDetailPage() {
             />
             <QuickActionsCard
               onSendReferral={() => setReferralOpen(true)}
+              onScheduleAppointment={() => setApptOpen(true)}
               onMarkLost={() => setLostOpen(true)}
             />
             <RelatedCard deal={deal} />
@@ -732,6 +735,12 @@ export function DealDetailPage() {
       <SendReferralSheet
         open={referralOpen}
         onOpenChange={setReferralOpen}
+        deal={deal}
+      />
+
+      <ScheduleAppointmentSheet
+        open={apptOpen}
+        onOpenChange={setApptOpen}
         deal={deal}
       />
 

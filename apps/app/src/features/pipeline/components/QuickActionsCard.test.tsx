@@ -10,12 +10,13 @@ describe("QuickActionsCard", () => {
     expect(screen.getByRole("button", { name: /schedule appointment/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /mark as lost/i })).toBeInTheDocument();
   });
-  it("disables actions with no integration (Send to CRM, Schedule appointment)", () => {
+  it("disables Send to CRM (no integration yet)", () => {
     render(<QuickActionsCard />);
     expect(screen.getByRole("button", { name: /send to crm/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /schedule appointment/i })).toBeDisabled();
-    // Send as referral / Mark as lost are disabled only when no handler is passed:
+    // Send as referral / Schedule appointment / Mark as lost are disabled only
+    // when no handler is passed:
     expect(screen.getByRole("button", { name: /send as referral/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /schedule appointment/i })).toBeDisabled();
   });
   it("disables Mark as lost when no handler is provided", () => {
     render(<QuickActionsCard />);
@@ -37,5 +38,14 @@ describe("QuickActionsCard", () => {
     expect(btn).not.toBeDisabled();
     fireEvent.click(btn);
     expect(onSendReferral).toHaveBeenCalledTimes(1);
+  });
+
+  it("enables Schedule appointment and fires the handler when provided", () => {
+    const onScheduleAppointment = vi.fn();
+    render(<QuickActionsCard onScheduleAppointment={onScheduleAppointment} />);
+    const btn = screen.getByRole("button", { name: /schedule appointment/i });
+    expect(btn).not.toBeDisabled();
+    fireEvent.click(btn);
+    expect(onScheduleAppointment).toHaveBeenCalledTimes(1);
   });
 });
