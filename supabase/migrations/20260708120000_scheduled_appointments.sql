@@ -48,9 +48,10 @@ create policy scheduled_appointments_select on scheduled_appointments
 create policy scheduled_appointments_insert on scheduled_appointments
   for insert with check (owner_id = auth.uid());
 
--- Reps edit only their own appointments.
+-- Reps edit only their own appointments (WITH CHECK mirrors deals_update so an
+-- owner can't reassign a row to someone else).
 create policy scheduled_appointments_update on scheduled_appointments
-  for update using (owner_id = auth.uid());
+  for update using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 
 -- Shared updated_at auto-bump helper (defined in 20260519000001_deals.sql).
 create trigger scheduled_appointments_set_updated_at
