@@ -5,8 +5,7 @@
  * A rep books a future appointment FROM a deal: title / date / start time /
  * duration / location / notes. On submit we compose start/end ISO timestamps,
  * geocode the location string (best-effort, same `geocode` Edge function Path
- * uses via usePathOrigin), gather attendee emails (the deal's primary email +
- * any deal-contact emails), and call useScheduleAppointment().mutate(...).
+ * uses via usePathOrigin), and call useScheduleAppointment().mutate(...).
  *
  * Same Radix Dialog shell + navigatr primitives as SendReferralSheet.
  */
@@ -24,7 +23,6 @@ import {
   type SelectOption,
 } from "@/components/navigatr";
 import { useScheduleAppointment } from "@/features/appointments/useAppointments";
-import { useDealContacts } from "../hooks/useDealContacts";
 
 /** Minimal deal shape this sheet needs — a full Deal satisfies it. */
 export interface ScheduleAppointmentDeal {
@@ -50,24 +48,6 @@ const DURATION_OPTIONS: SelectOption[] = [
 
 interface GeocodeResponse {
   result: { lat: number; lng: number; label: string } | null;
-}
-
-/**
- * Attendee emails for the appointment: the deal's primary contact email plus
- * any deal-contact emails. Deduplicated, trimmed, empties dropped. Milestone 1
- * collects these; the sync_appointment function attaches them to the event.
- */
-export function collectAttendeeEmails(
-  primaryEmail: string | null | undefined,
-  contactEmails: Array<string | null | undefined>,
-): string[] {
-  return Array.from(
-    new Set(
-      [primaryEmail, ...contactEmails]
-        .map((e) => (e ?? "").trim())
-        .filter(Boolean),
-    ),
-  );
 }
 
 /**
@@ -103,7 +83,6 @@ export function ScheduleAppointmentSheet({
   deal,
 }: ScheduleAppointmentSheetProps) {
   const schedule = useScheduleAppointment();
-  const { data: contacts = [] } = useDealContacts(deal.id);
 
   const defaultTitle = `Appointment — ${deal.companyName}`;
 
@@ -143,21 +122,6 @@ export function ScheduleAppointmentSheet({
 
     const { lat, lng } = await geocodeLocation(location);
 
-    // Attendee emails: the deal's primary contact + any deal-contact emails.
-    // useScheduleAppointment doesn't carry attendees yet (Milestone 1 scope),
-    // so we fold them into the notes so nothing is lost on the persisted row.
-    const attendees = collectAttendeeEmails(
-      deal.email,
-      contacts.map((c) => c.email),
-    );
-    const baseNotes = notes.trim();
-    const composedNotes =
-      attendees.length > 0
-        ? [baseNotes, `Attendees: ${attendees.join(", ")}`]
-            .filter(Boolean)
-            .join("\n\n")
-        : baseNotes;
-
     try {
       await schedule.mutateAsync({
         dealId: deal.id,
@@ -167,7 +131,7 @@ export function ScheduleAppointmentSheet({
         locationAddress: location.trim() || null,
         locationLat: lat,
         locationLng: lng,
-        notes: composedNotes || null,
+        notes: notes.trim() || null,
       });
       toast.success("Appointment scheduled");
       onOpenChange(false);

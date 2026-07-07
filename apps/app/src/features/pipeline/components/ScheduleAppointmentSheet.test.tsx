@@ -1,20 +1,19 @@
 // Coverage for ScheduleAppointmentSheet ("Two-way calendar sync, Milestone 1").
 //
 // The sheet composes a booking form (title/date/time/duration/location/notes),
-// geocodes the location via the `geocode` Edge function (best-effort), gathers
-// attendee emails (deal primary + deal-contact emails), and calls
-// useScheduleAppointment().mutateAsync with the composed fields.
+// geocodes the location via the `geocode` Edge function (best-effort), and calls
+// useScheduleAppointment().mutateAsync with the composed fields. Attendees are
+// derived server-side at push time (sync_appointment), not here.
 //
-// We mock useScheduleAppointment + useDealContacts + sonner, and stub the
-// supabase geocode invoke. The Duration select is a Radix Select (portal), so
-// we polyfill the jsdom-missing pointer/scroll APIs like SendReferralSheet.
+// We mock useScheduleAppointment + sonner, and stub the supabase geocode invoke.
+// The Duration select is a Radix Select (portal), so we polyfill the
+// jsdom-missing pointer/scroll APIs like SendReferralSheet.
 
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 import {
   ScheduleAppointmentSheet,
-  collectAttendeeEmails,
   type ScheduleAppointmentDeal,
 } from "./ScheduleAppointmentSheet";
 
@@ -37,12 +36,6 @@ beforeAll(() => {
 const mutateAsyncSpy = vi.fn().mockResolvedValue({ id: "appt-1" });
 vi.mock("@/features/appointments/useAppointments", () => ({
   useScheduleAppointment: () => ({ mutateAsync: mutateAsyncSpy, isPending: false }),
-}));
-
-// Deal-contact emails contributed as attendees.
-let contactsData: Array<{ email: string | null }> = [];
-vi.mock("../hooks/useDealContacts", () => ({
-  useDealContacts: () => ({ data: contactsData }),
 }));
 
 // Geocode Edge function stub.
@@ -68,18 +61,6 @@ function renderSheet(d: ScheduleAppointmentDeal = deal) {
   );
 }
 
-describe("collectAttendeeEmails", () => {
-  it("dedups, trims, and drops empties; includes the primary first", () => {
-    expect(
-      collectAttendeeEmails("  a@x.com ", ["b@x.com", "", null, "a@x.com"]),
-    ).toEqual(["a@x.com", "b@x.com"]);
-  });
-
-  it("returns [] when nothing is present", () => {
-    expect(collectAttendeeEmails(null, [undefined, ""])).toEqual([]);
-  });
-});
-
 describe("ScheduleAppointmentSheet", () => {
   beforeEach(() => {
     mutateAsyncSpy.mockClear();
@@ -88,7 +69,6 @@ describe("ScheduleAppointmentSheet", () => {
       data: { result: { lat: 37.77, lng: -122.42, label: "123 Main St" } },
       error: null,
     });
-    contactsData = [];
   });
 
   it("defaults the title to the deal company and prefills the location", () => {
@@ -114,9 +94,8 @@ describe("ScheduleAppointmentSheet", () => {
     expect(submit).toBeEnabled();
   });
 
-  it("submits composed ISO start/end, geocoded coords, and attendee emails in notes", async () => {
+  it("submits composed ISO start/end + geocoded coords, with notes = only the rep's typed notes", async () => {
     const user = userEvent.setup();
-    contactsData = [{ email: "cfo@acmehardware.com" }];
     renderSheet();
 
     await user.type(screen.getByLabelText(/date/i), "2026-07-10");
@@ -141,10 +120,22 @@ describe("ScheduleAppointmentSheet", () => {
     const start = new Date(arg.startAt).getTime();
     const end = new Date(arg.endAt).getTime();
     expect(end - start).toBe(30 * 60_000);
-    // Attendee emails (deal primary + deal contact) folded into notes.
-    expect(arg.notes).toContain("Bring the demo terminal");
-    expect(arg.notes).toContain("marcus@acmehardware.com");
-    expect(arg.notes).toContain("cfo@acmehardware.com");
+    // Notes carry ONLY the rep's typed text — attendees are derived server-side
+    // at push time (sync_appointment), never folded into notes here.
+    expect(arg.notes).toBe("Bring the demo terminal");
+    expect(arg.notes).not.toContain("marcus@acmehardware.com");
+  });
+
+  it("submits notes = null when the rep leaves notes empty", async () => {
+    const user = userEvent.setup();
+    renderSheet();
+
+    await user.type(screen.getByLabelText(/date/i), "2026-07-10");
+    await user.type(screen.getByLabelText(/start time/i), "15:00");
+    await user.click(screen.getByRole("button", { name: /^schedule$/i }));
+
+    await waitFor(() => expect(mutateAsyncSpy).toHaveBeenCalledTimes(1));
+    expect(mutateAsyncSpy.mock.calls[0][0].notes).toBeNull();
   });
 
   it("geocodes via the `geocode` Edge function", async () => {
