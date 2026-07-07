@@ -15,11 +15,17 @@ export interface RawCalendarEvent {
   visibility: string | null;     // 'default' | 'public' | 'private' | 'confidential'
   responseStatus: string | null; // rep's own: 'accepted' | 'declined' | 'tentative' | 'needsAction'
   location: string | null;       // free-text address; may be empty
+  // Set from the Google event's extendedProperties.private.navigatr_appointment_id;
+  // identifies events navigatr itself pushed to the calendar.
+  navigatrAppointmentId?: string | null;
 }
 
 export type EventClass = "located" | "time_block" | "excluded";
 
 export function classifyEvent(ev: RawCalendarEvent, personalCalendarIds: string[]): EventClass {
+  // Dedup: events navigatr pushed to the calendar (tagged with our appointment id)
+  // are already represented natively — never re-surface them as waypoints.
+  if (ev.navigatrAppointmentId) return "excluded";
   if (personalCalendarIds.includes(ev.calendarId)) return "excluded";
   if (ev.isAllDay) return "excluded";
   if (ev.status === "cancelled") return "excluded";

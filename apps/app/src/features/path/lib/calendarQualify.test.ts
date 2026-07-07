@@ -35,4 +35,7 @@ describe("classifyEvent", () => {
   it("keeps tentative events as candidates (Class A default)", () => {
     expect(classifyEvent(ev({ status: "tentative" }), [])).toBe("located");
   });
+  it("excludes events navigatr itself pushed (tagged with an appointment id)", () => {
+    expect(classifyEvent(ev({ navigatrAppointmentId: "ap1" }), [])).toBe("excluded");
+  });
 });

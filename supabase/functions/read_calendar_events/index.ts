@@ -52,6 +52,7 @@ interface GoogleEventItem {
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
   attendees?: Array<{ self?: boolean; responseStatus?: string }>;
+  extendedProperties?: { private?: Record<string, string> };
 }
 
 /**
@@ -119,6 +120,7 @@ async function readGoogle(
           visibility: item.visibility ?? null,
           responseStatus: self?.responseStatus ?? null,
           location: item.location ?? null,
+          navigatrAppointmentId: item.extendedProperties?.private?.navigatr_appointment_id ?? null,
         };
       });
     }),
