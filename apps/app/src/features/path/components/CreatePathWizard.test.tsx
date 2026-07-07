@@ -247,6 +247,75 @@ describe("CreatePathWizard radius + max stops + select stops", () => {
   });
 });
 
+describe("CreatePathWizard step 1 — When (time-window) picker", () => {
+  // Derive the local "today" the same way the component does, so the date
+  // assertions are tz-agnostic (no faked timers needed).
+  function isoForToday(hhmm: string): string {
+    const [h, m] = hhmm.split(":").map(Number);
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    return d.toISOString();
+  }
+  function localHHMM(iso: string): string {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+  function localDateKey(iso: string): string {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  }
+  const todayKey = localDateKey(isoForToday("08:00"));
+
+  it("renders Start and End time inputs defaulting to 08:00 / 18:00", () => {
+    renderWizard();
+    expect(screen.getByLabelText(/^start$/i)).toHaveValue("08:00");
+    expect(screen.getByLabelText(/^end$/i)).toHaveValue("18:00");
+  });
+
+  it("emits ISO start/end for today on mount", () => {
+    const onWindowChange = vi.fn();
+    renderWizard({ onWindowChange });
+    expect(onWindowChange).toHaveBeenCalled();
+    const { start, end } = onWindowChange.mock.calls.at(-1)![0];
+    expect(localHHMM(start)).toBe("08:00");
+    expect(localHHMM(end)).toBe("18:00");
+    expect(localDateKey(start)).toBe(todayKey);
+    expect(localDateKey(end)).toBe(todayKey);
+  });
+
+  it("changing a time calls onWindowChange with ISO strings matching the inputs and today's date", () => {
+    const onWindowChange = vi.fn();
+    renderWizard({ onWindowChange });
+    fireEvent.change(screen.getByLabelText(/^start$/i), { target: { value: "09:30" } });
+    const { start, end } = onWindowChange.mock.calls.at(-1)![0];
+    expect(localHHMM(start)).toBe("09:30");
+    expect(localHHMM(end)).toBe("18:00");
+    expect(localDateKey(start)).toBe(todayKey);
+    expect(localDateKey(end)).toBe(todayKey);
+  });
+
+  it("clamps end to start + 1h when end <= start (and updates the field)", () => {
+    const onWindowChange = vi.fn();
+    renderWizard({ onWindowChange });
+    fireEvent.change(screen.getByLabelText(/^end$/i), { target: { value: "07:00" } });
+    // Start is 08:00 → end clamps to 09:00 in the field.
+    expect(screen.getByLabelText(/^end$/i)).toHaveValue("09:00");
+    const { start, end } = onWindowChange.mock.calls.at(-1)![0];
+    expect(localHHMM(start)).toBe("08:00");
+    expect(localHHMM(end)).toBe("09:00");
+    // Emitted end is exactly one hour after start.
+    expect(new Date(end).getTime() - new Date(start).getTime()).toBe(60 * 60 * 1000);
+  });
+
+  it("renders and works without onWindowChange", () => {
+    expect(() => renderWizard()).not.toThrow();
+    expect(() =>
+      fireEvent.change(screen.getByLabelText(/^start$/i), { target: { value: "10:00" } }),
+    ).not.toThrow();
+    expect(screen.getByLabelText(/^start$/i)).toHaveValue("10:00");
+  });
+});
+
 // A geocoded, non-chain automotive merchant whose category + primaryType satisfy
 // a full "automotive" selection (allSubtypes includes "car_repair"). Deterministic
 // distinct lat per index keeps nearest-neighbor ordering stable.

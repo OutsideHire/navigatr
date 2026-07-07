@@ -45,6 +45,10 @@ export interface MerchantMapProps {
   /** Optional route line — draws a dashed polyline through these points
    *  in order. Used to visualize the queued drop-in path on the map. */
   routePath?: Array<{ lat: number; lng: number }>;
+  /** OPTIONAL — Calendar-Aware Path (Slice 1): read-only calendar meeting pins,
+   *  drawn as distinct purple, time-labeled markers. NOT added to the route
+   *  polyline — they're fixed context, not curated stops. */
+  calendarPins?: Array<{ id: string; lat: number; lng: number; title: string; start: string }>;
   className?: string;
 }
 
@@ -58,6 +62,7 @@ const COLOR = {
 } as const;
 
 const REP_COLOR = "#2456E6"; // signal blue — "you are here" + route line
+const CALENDAR_COLOR = "#8b5cf6"; // accent-violet — calendar meeting pins
 
 // OpenMapTiles vector source + glyphs. Keyless OpenFreeMap by default; override
 // for MapTiler/self-host without touching the palette.
@@ -246,18 +251,43 @@ function makePinElement(color: string, focused: boolean): HTMLDivElement {
   return el;
 }
 
+/** Build a purple, time-labeled DOM element for a calendar meeting pin. */
+function makeCalendarPinElement(label: string): HTMLDivElement {
+  const el = document.createElement("div");
+  el.style.cssText = [
+    "display:flex",
+    "align-items:center",
+    "gap:4px",
+    "padding:2px 6px",
+    "border-radius:9999px",
+    `background:${CALENDAR_COLOR}`,
+    "border:2px solid #ffffff",
+    "box-shadow:0 0 0 1px rgba(0,0,0,.2)",
+    "color:#ffffff",
+    "font-size:10px",
+    "font-weight:600",
+    "line-height:1",
+    "white-space:nowrap",
+    "box-sizing:border-box",
+  ].join(";");
+  el.textContent = label;
+  return el;
+}
+
 export function MerchantMap({
   position,
   merchants,
   focusedMerchantId,
   onMerchantClick,
   routePath,
+  calendarPins,
   className,
 }: MerchantMapProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
   const userMarkerRef = React.useRef<maplibregl.Marker | null>(null);
   const merchantMarkersRef = React.useRef<maplibregl.Marker[]>([]);
+  const calendarMarkersRef = React.useRef<maplibregl.Marker[]>([]);
   const popupRef = React.useRef<maplibregl.Popup | null>(null);
   const lastPosRef = React.useRef<{ lat: number; lng: number } | null>(null);
   const [styleLoaded, setStyleLoaded] = React.useState(false);
@@ -353,6 +383,31 @@ export function MerchantMap({
       merchantMarkersRef.current.push(marker);
     }
   }, [merchants, focusedMerchantId, styleLoaded]);
+
+  // ── Calendar meeting pins (read-only, purple, time-labeled) ───────
+  // Mirrors the merchant-pin effect but in its own marker ref so it never
+  // touches the merchant set or the route polyline.
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleLoaded) return;
+    for (const m of calendarMarkersRef.current) m.remove();
+    calendarMarkersRef.current = [];
+    for (const pin of calendarPins ?? []) {
+      if (!Number.isFinite(pin.lat) || !Number.isFinite(pin.lng)) continue;
+      const time = new Date(pin.start).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      const el = makeCalendarPinElement(time);
+      el.addEventListener("mouseenter", () => {
+        const popup = popupRef.current;
+        if (!popup) return;
+        popup.setLngLat([pin.lng, pin.lat]).setText(pin.title).addTo(map);
+      });
+      el.addEventListener("mouseleave", () => popupRef.current?.remove());
+      const marker = new maplibregl.Marker({ element: el })
+        .setLngLat([pin.lng, pin.lat])
+        .addTo(map);
+      calendarMarkersRef.current.push(marker);
+    }
+  }, [calendarPins, styleLoaded]);
 
   // ── Fly to the focused merchant ──────────────────────────────────
   React.useEffect(() => {

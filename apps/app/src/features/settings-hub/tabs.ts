@@ -25,6 +25,7 @@ export type UserRole = "rep" | "manager" | "admin";
 export type SettingsTabId =
   | "personal"
   | "organization"
+  | "integrations"
   | "branding"
   | "profession"
   | "danger";
@@ -62,6 +63,7 @@ export interface SettingsTabDef {
 export const SETTINGS_TABS: SettingsTabDef[] = [
   { id: "personal",     label: "Personal",     roles: ["rep", "manager", "admin"], group: "account"   },
   { id: "organization", label: "Organization", roles: ["rep", "manager", "admin"], group: "account"   },
+  { id: "integrations", label: "Integrations", roles: ["rep", "manager", "admin"], group: "account"   },
   { id: "branding",     label: "Branding",     roles: ["manager", "admin"],        group: "workspace" },
   { id: "profession",   label: "Profession",   roles: ["manager", "admin"],        group: "workspace" },
   { id: "danger",       label: "Danger zone",  roles: ["admin"],                   group: "advanced"  },
