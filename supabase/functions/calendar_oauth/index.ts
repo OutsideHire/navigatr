@@ -31,10 +31,11 @@ const APP_URL = Deno.env.get("APP_URL") ?? "";
 
 const CALLBACK_URL = `${SUPABASE_URL}/functions/v1/calendar_oauth/callback`;
 
-// Two read-only calendar scopes: calendar list + events read.
+// Calendar scopes: calendar list (read-only) + events (read/write).
+// Read/WRITE calendar.events: needed to push navigatr appointments (M6). The consent screen must include this scope, and any user connected under the old read-only scope must reconnect once to grant write.
 const SCOPES = [
   "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
-  "https://www.googleapis.com/auth/calendar.events.readonly",
+  "https://www.googleapis.com/auth/calendar.events",
 ];
 
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes to complete the round-trip.
