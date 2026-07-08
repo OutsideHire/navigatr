@@ -34,6 +34,12 @@ vi.mock("../hooks/usePathMutations", () => ({
   }),
 }));
 
+// --- Calendar sync (Milestone 3) — Plan-a-Path save is the only create site.
+const syncPathMock = vi.fn(async (_pathId: string) => undefined);
+vi.mock("../hooks/usePathCalendarSync", () => ({
+  usePathCalendarSync: () => ({ syncPath: syncPathMock }),
+}));
+
 // DropInSheet reaches into useTodayPath / pipeline hooks — stub it out.
 vi.mock("../components/DropInSheet", () => ({ DropInSheet: () => null }));
 
@@ -87,6 +93,7 @@ beforeEach(() => {
   onSavedMock.mockClear();
   createPathMutate.mockClear();
   addStopsMutate.mockClear();
+  syncPathMock.mockClear();
   originState.current = NO_ORIGIN;
   merchantsState.current = { merchants: [], isLoading: false, isError: false, refetch: vi.fn() };
 });
@@ -157,6 +164,11 @@ describe("PlanPathWizard", () => {
     // Step 5: saved confirmation.
     await waitFor(() => expect(screen.getByText(/step 5 of 5/i)).toBeInTheDocument());
     expect(screen.getByText(/is ready/i)).toBeInTheDocument();
+
+    // Milestone 3: the save creates the planned path's calendar block, keyed by
+    // the created path id. This is the ONLY create trigger.
+    expect(syncPathMock).toHaveBeenCalledWith("path-123");
+    expect(syncPathMock).toHaveBeenCalledTimes(1);
   });
 
   it("Back navigates to the previous step", () => {

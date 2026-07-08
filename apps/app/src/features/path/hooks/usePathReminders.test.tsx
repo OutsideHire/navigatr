@@ -30,6 +30,7 @@ function makePath(overrides: Partial<Path> = {}): Path {
     reminderAt: null,
     startedAt: null,
     stopCount: 3,
+    pathCalendarSyncStatus: null,
     ...overrides,
   };
 }

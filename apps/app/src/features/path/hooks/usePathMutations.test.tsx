@@ -21,6 +21,7 @@ function builder(table: string) {
     update: (p: unknown) => typeof api;
     delete: () => typeof api;
     eq: (c: string, v: unknown) => typeof api;
+    is: (c: string, v: unknown) => typeof api;
     lt: (c: string, v: unknown) => typeof api;
     neq: (c: string, v: unknown) => typeof api;
     in: (c: string, v: unknown) => typeof api;
@@ -47,6 +48,10 @@ function builder(table: string) {
       return api;
     },
     eq(c: string, v: unknown) {
+      rec.filters.push([c, v]);
+      return api;
+    },
+    is(c: string, v: unknown) {
       rec.filters.push([c, v]);
       return api;
     },
@@ -89,6 +94,14 @@ vi.mock("@/stores/auth", () => ({
 }));
 vi.mock("../lib/today", () => ({ todayISO: () => "2026-06-08", formatPathDate: () => "x", addDaysISO: () => "2026-06-13" }));
 
+// Milestone 3: usePathMutations composes usePathCalendarSync and fires syncPath
+// (fire-and-forget) from markStarted/finalizeCurrentPath onSuccess to reconcile
+// (delete) the planned path's calendar block once it starts / completes.
+const syncPathMock = vi.fn(async (_pathId: string) => undefined);
+vi.mock("./usePathCalendarSync", () => ({
+  usePathCalendarSync: () => ({ syncPath: syncPathMock }),
+}));
+
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
@@ -99,6 +112,7 @@ beforeEach(() => {
   olderPaths = [];
   nextSingle = { data: { id: "today-1" }, error: null };
   upsertResult = { data: null, error: null };
+  syncPathMock.mockClear();
 });
 
 describe("usePathMutations.createPath", () => {
@@ -235,6 +249,18 @@ describe("continuePreviousPath", () => {
       ),
     ).toBe(true);
   });
+
+  it("fires syncPath for the prev path and every finalizeOlderThan-swept id (reconcile deletes lapsed blocks)", async () => {
+    // continuePreviousPath completes p7 AND sweeps older non-completed paths.
+    olderPaths = [{ id: "old-1" }, { id: "old-2" }];
+    const { result } = renderHook(() => usePathMutations(), { wrapper });
+    await act(async () => {
+      await result.current.continuePreviousPath.mutateAsync({ prevPathId: "p7", prevPathDate: "2026-06-07" });
+    });
+    expect(syncPathMock).toHaveBeenCalledWith("p7");
+    expect(syncPathMock).toHaveBeenCalledWith("old-1");
+    expect(syncPathMock).toHaveBeenCalledWith("old-2");
+  });
 });
 
 describe("carryToTomorrow", () => {
@@ -281,6 +307,38 @@ describe("finalizeCurrentPath", () => {
       ),
     ).toBe(true);
   });
+
+  it("fires syncPath with the completed path id (reconcile deletes its block)", async () => {
+    const { result } = renderHook(() => usePathMutations(), { wrapper });
+    await act(async () => {
+      await result.current.finalizeCurrentPath.mutateAsync("p7");
+    });
+    expect(syncPathMock).toHaveBeenCalledWith("p7");
+  });
+});
+
+describe("markStarted", () => {
+  it("stamps started_at only when null and idempotent by id", async () => {
+    const { result } = renderHook(() => usePathMutations(), { wrapper });
+    await act(async () => {
+      await result.current.markStarted.mutateAsync("p9");
+    });
+    const upd = calls.find(
+      (c) => c.table === "paths" && c.op === "update" && "started_at" in (c.payload as object),
+    );
+    expect(upd).toBeTruthy();
+    expect(upd?.filters).toContainEqual(["id", "p9"]);
+    // Guarded by .is("started_at", null) — recorded as an eq-style filter.
+    expect(upd?.filters).toContainEqual(["started_at", null]);
+  });
+
+  it("fires syncPath with the started path id (reconcile deletes its block)", async () => {
+    const { result } = renderHook(() => usePathMutations(), { wrapper });
+    await act(async () => {
+      await result.current.markStarted.mutateAsync("p9");
+    });
+    expect(syncPathMock).toHaveBeenCalledWith("p9");
+  });
 });
 
 describe("closePreviousPath", () => {
@@ -299,5 +357,27 @@ describe("closePreviousPath", () => {
         (c) => c.table === "paths" && c.op === "update" && (c.payload as { status?: string }).status === "completed",
       ),
     ).toBe(true);
+  });
+
+  it("fires syncPath for the prev path and every finalizeOlderThan-swept id (reconcile deletes lapsed blocks)", async () => {
+    // closePreviousPath completes prevPathId AND sweeps older non-completed paths.
+    olderPaths = [{ id: "old-1" }, { id: "old-2" }];
+    const { result } = renderHook(() => usePathMutations(), { wrapper });
+    await act(async () => {
+      await result.current.closePreviousPath.mutateAsync({ prevPathId: "p7", prevPathDate: "2026-06-07" });
+    });
+    expect(syncPathMock).toHaveBeenCalledWith("p7");
+    expect(syncPathMock).toHaveBeenCalledWith("old-1");
+    expect(syncPathMock).toHaveBeenCalledWith("old-2");
+  });
+
+  it("still fires syncPath for the prev path when there are no older paths to sweep", async () => {
+    olderPaths = [];
+    const { result } = renderHook(() => usePathMutations(), { wrapper });
+    await act(async () => {
+      await result.current.closePreviousPath.mutateAsync({ prevPathId: "p7", prevPathDate: "2026-06-07" });
+    });
+    expect(syncPathMock).toHaveBeenCalledWith("p7");
+    expect(syncPathMock).toHaveBeenCalledTimes(1);
   });
 });

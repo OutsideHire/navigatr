@@ -17,6 +17,7 @@ import { usePaths } from "../hooks/usePaths";
 import { todayISO, formatPathDate } from "../lib/today";
 import { formatReminder } from "../lib/scheduleDate";
 import type { Path } from "../lib/pathTypes";
+import { PathBlockSyncIndicator } from "./PathBlockSyncIndicator";
 
 export interface UpcomingPathsProps {
   /** Launch/open a planned path. */
@@ -70,6 +71,7 @@ export function UpcomingPaths({ onLaunch, todayIso = todayISO() }: UpcomingPaths
                     {` · ${p.stopCount} ${p.stopCount === 1 ? "stop" : "stops"}`}
                   </span>
                 </div>
+                <PathBlockSyncIndicator pathId={p.id} status={p.pathCalendarSyncStatus} />
                 <Button
                   variant="secondary"
                   size="sm"

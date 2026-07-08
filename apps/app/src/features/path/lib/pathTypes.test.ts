@@ -17,6 +17,7 @@ describe("pathTypes mappers", () => {
       origin_lat: 30.27, origin_lng: -97.74, status: "planned",
       reminder_at: "2026-06-03T13:30:00.000Z",
       started_at: "2026-06-03T14:00:00.000Z",
+      path_calendar_sync_status: "synced",
     };
     const p = rowToPath(row, 8);
     expect(p).toEqual({
@@ -25,6 +26,7 @@ describe("pathTypes mappers", () => {
       originLat: 30.27, originLng: -97.74, status: "planned",
       reminderAt: "2026-06-03T13:30:00.000Z",
       startedAt: "2026-06-03T14:00:00.000Z", stopCount: 8,
+      pathCalendarSyncStatus: "synced",
     });
   });
 
@@ -37,6 +39,7 @@ describe("pathTypes mappers", () => {
     expect(p.name).toBeNull();
     expect(p.reminderAt).toBeNull();
     expect(p.startedAt).toBeNull();
+    expect(p.pathCalendarSyncStatus).toBeNull();
   });
 
   it("maps a stop row to camelCase preserving the display snapshot + state", () => {
