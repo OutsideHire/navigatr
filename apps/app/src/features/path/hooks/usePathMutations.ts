@@ -146,17 +146,21 @@ export function usePathMutations() {
 
   // Mark every still-unfinished path older than `beforeDate` completed and skip
   // its leftover pending stops. RLS scopes all of this to the current user.
-  const finalizeOlderThan = async (beforeDate: string): Promise<void> => {
+  // Returns the ids of the paths it swept to `completed` so callers can fire
+  // `syncPath` on each — reconcile then deletes any lapsed planned path's
+  // calendar block (Milestone 3).
+  const finalizeOlderThan = async (beforeDate: string): Promise<string[]> => {
     const { data, error } = await supabase
       .from("paths").select("id").lt("path_date", beforeDate).neq("status", "completed");
     if (error) throw error;
     const ids = ((data ?? []) as { id: string }[]).map((r) => r.id);
-    if (ids.length === 0) return;
+    if (ids.length === 0) return ids;
     const { error: e1 } = await supabase
       .from("path_stops").update({ status: "skipped" }).in("path_id", ids).eq("status", "pending");
     if (e1) throw e1;
     const { error: e2 } = await supabase.from("paths").update({ status: "completed" }).in("id", ids);
     if (e2) throw e2;
+    return ids;
   };
 
   // Finalize a single path: skip its pending stops, mark it completed.
@@ -169,7 +173,7 @@ export function usePathMutations() {
   };
 
   const continuePreviousPath = useMutation({
-    mutationFn: async (input: { prevPathId: string; prevPathDate: string }): Promise<void> => {
+    mutationFn: async (input: { prevPathId: string; prevPathDate: string }): Promise<string[]> => {
       if (!userId) throw new Error("Not signed in");
       const { data: todayRow, error: e0 } = await supabase
         .from("paths")
@@ -202,9 +206,16 @@ export function usePathMutations() {
       }
       const { error: e2 } = await supabase.from("paths").update({ status: "completed" }).eq("id", input.prevPathId);
       if (e2) throw e2;
-      await finalizeOlderThan(input.prevPathDate);
+      // Return the swept ids so onSuccess can reconcile each completed path's
+      // calendar block alongside the prev path's.
+      return finalizeOlderThan(input.prevPathDate);
     },
-    onSuccess: invalidate,
+    onSuccess: (sweptIds, input) => {
+      invalidate();
+      // Completed paths: reconcile deletes any lapsed planned block. Fire-and-forget.
+      void syncPath(input.prevPathId);
+      for (const id of sweptIds) void syncPath(id);
+    },
   });
 
   const carryToTomorrow = useMutation({
@@ -272,11 +283,18 @@ export function usePathMutations() {
   });
 
   const closePreviousPath = useMutation({
-    mutationFn: async (input: { prevPathId: string; prevPathDate: string }): Promise<void> => {
+    mutationFn: async (input: { prevPathId: string; prevPathDate: string }): Promise<string[]> => {
       await finalizeSingle(input.prevPathId);
-      await finalizeOlderThan(input.prevPathDate);
+      // Return the swept ids so onSuccess can reconcile each completed path's
+      // calendar block alongside the prev path's.
+      return finalizeOlderThan(input.prevPathDate);
     },
-    onSuccess: invalidate,
+    onSuccess: (sweptIds, input) => {
+      invalidate();
+      // Completed paths: reconcile deletes any lapsed planned block. Fire-and-forget.
+      void syncPath(input.prevPathId);
+      for (const id of sweptIds) void syncPath(id);
+    },
   });
 
   return { createPath, addStops, removeStop, reorderStops, setStopStatus, setStopDisposition, markDealCreated, deletePath, continuePreviousPath, carryToTomorrow, closePreviousPath, finalizeCurrentPath, markStarted };

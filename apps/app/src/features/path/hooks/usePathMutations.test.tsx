@@ -249,6 +249,18 @@ describe("continuePreviousPath", () => {
       ),
     ).toBe(true);
   });
+
+  it("fires syncPath for the prev path and every finalizeOlderThan-swept id (reconcile deletes lapsed blocks)", async () => {
+    // continuePreviousPath completes p7 AND sweeps older non-completed paths.
+    olderPaths = [{ id: "old-1" }, { id: "old-2" }];
+    const { result } = renderHook(() => usePathMutations(), { wrapper });
+    await act(async () => {
+      await result.current.continuePreviousPath.mutateAsync({ prevPathId: "p7", prevPathDate: "2026-06-07" });
+    });
+    expect(syncPathMock).toHaveBeenCalledWith("p7");
+    expect(syncPathMock).toHaveBeenCalledWith("old-1");
+    expect(syncPathMock).toHaveBeenCalledWith("old-2");
+  });
 });
 
 describe("carryToTomorrow", () => {
@@ -345,5 +357,27 @@ describe("closePreviousPath", () => {
         (c) => c.table === "paths" && c.op === "update" && (c.payload as { status?: string }).status === "completed",
       ),
     ).toBe(true);
+  });
+
+  it("fires syncPath for the prev path and every finalizeOlderThan-swept id (reconcile deletes lapsed blocks)", async () => {
+    // closePreviousPath completes prevPathId AND sweeps older non-completed paths.
+    olderPaths = [{ id: "old-1" }, { id: "old-2" }];
+    const { result } = renderHook(() => usePathMutations(), { wrapper });
+    await act(async () => {
+      await result.current.closePreviousPath.mutateAsync({ prevPathId: "p7", prevPathDate: "2026-06-07" });
+    });
+    expect(syncPathMock).toHaveBeenCalledWith("p7");
+    expect(syncPathMock).toHaveBeenCalledWith("old-1");
+    expect(syncPathMock).toHaveBeenCalledWith("old-2");
+  });
+
+  it("still fires syncPath for the prev path when there are no older paths to sweep", async () => {
+    olderPaths = [];
+    const { result } = renderHook(() => usePathMutations(), { wrapper });
+    await act(async () => {
+      await result.current.closePreviousPath.mutateAsync({ prevPathId: "p7", prevPathDate: "2026-06-07" });
+    });
+    expect(syncPathMock).toHaveBeenCalledWith("p7");
+    expect(syncPathMock).toHaveBeenCalledTimes(1);
   });
 });
