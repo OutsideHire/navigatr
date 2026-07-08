@@ -20,6 +20,14 @@ vi.mock("@/stores/auth", () => ({
     selector({ user: authUserId ? { id: authUserId } : null }),
 }));
 
+// next_followup_at is DERIVED: deleting an activity can move the parent deal's
+// follow-up (or clear it), so onSuccess must reconcile the calendar event.
+// Fire-and-forget; mock it so we can assert it's called with the deal id.
+const syncFollowupMock = vi.fn().mockResolvedValue(undefined);
+vi.mock("@/features/appointments/useFollowupSync", () => ({
+  useFollowupSync: () => ({ syncFollowup: syncFollowupMock }),
+}));
+
 function makeWrapper(client: QueryClient) {
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
@@ -29,6 +37,7 @@ function makeWrapper(client: QueryClient) {
 beforeEach(() => {
   deleteMock.mockClear();
   eqMock.mockReset();
+  syncFollowupMock.mockClear();
   authUserId = "user-1";
 });
 
@@ -60,6 +69,17 @@ describe("useDeleteActivity", () => {
     expect(invalidatedKeys).toContainEqual(["activities", "byDeal", "user-1", "deal-1"]);
     expect(invalidatedKeys).toContainEqual(["activities", "list", "user-1"]);
     expect(invalidatedKeys).toContainEqual(["deals", "list", "user-1"]);
+  });
+
+  it("fires the calendar follow-up sync with the deal id on success", async () => {
+    eqMock.mockResolvedValueOnce({ error: null });
+    const { result } = renderHook(() => useDeleteActivity(), {
+      wrapper: makeWrapper(new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })),
+    });
+    await result.current.mutateAsync({ id: "act-1", dealId: "deal-1" });
+    await waitFor(() => expect(syncFollowupMock).toHaveBeenCalledWith("deal-1"));
   });
 
   it("refuses when not signed in", async () => {
