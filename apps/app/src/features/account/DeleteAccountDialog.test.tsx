@@ -75,9 +75,9 @@ describe("DeleteAccountDialog", () => {
     expect(mutateAsyncMock).not.toHaveBeenCalled();
   });
 
-  it("links to privacy@outsidehire.com for recovery / hard-delete requests", () => {
+  it("links to privacy@getnavigatr.io for recovery / hard-delete requests", () => {
     renderDialog();
-    const link = screen.getByRole("link", { name: /privacy@outsidehire/i });
-    expect(link).toHaveAttribute("href", "mailto:privacy@outsidehire.com");
+    const link = screen.getByRole("link", { name: /privacy@getnavigatr/i });
+    expect(link).toHaveAttribute("href", "mailto:privacy@getnavigatr.io");
   });
 });

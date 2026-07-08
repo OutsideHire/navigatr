@@ -115,10 +115,10 @@ export function DeleteAccountDialog({ open, onOpenChange }: Props) {
                 <li>
                   This cannot be undone. Contact{" "}
                   <a
-                    href="mailto:privacy@outsidehire.com"
+                    href="mailto:privacy@getnavigatr.io"
                     className="text-brand-primary hover:underline"
                   >
-                    privacy@outsidehire.com
+                    privacy@getnavigatr.io
                   </a>{" "}
                   for hard-delete requests or to recover before submitting.
                 </li>

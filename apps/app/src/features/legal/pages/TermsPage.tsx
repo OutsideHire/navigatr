@@ -118,7 +118,7 @@ export function TermsPage() {
         <h2>11. Contact</h2>
         <p>
           Questions about these Terms? Email{" "}
-          <a href="mailto:legal@outsidehire.com">legal@outsidehire.com</a>.
+          <a href="mailto:privacy@getnavigatr.io">privacy@getnavigatr.io</a>.
         </p>
       </section>
     </LegalPageShell>

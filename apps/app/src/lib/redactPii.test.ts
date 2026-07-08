@@ -23,7 +23,7 @@ import { redactString, redactPii } from "./observability";
 
 describe("redactString", () => {
   it("masks a single email address", () => {
-    expect(redactString("error from ceo@outsidehire.com")).toBe("error from [email]");
+    expect(redactString("error from user@example.com")).toBe("error from [email]");
   });
 
   it("masks multiple emails in one string", () => {
@@ -54,14 +54,14 @@ describe("redactString", () => {
   });
 
   it("redacts email + phone together in one message", () => {
-    const out = redactString("contact ceo@outsidehire.com or +15551234567");
+    const out = redactString("contact user@example.com or +15551234567");
     expect(out).toBe("contact [email] or [phone]");
   });
 });
 
 describe("redactPii", () => {
   it("masks message field", () => {
-    const event = { message: "User ceo@outsidehire.com missing" };
+    const event = { message: "User user@example.com missing" };
     const out = redactPii(event);
     expect(out.message).toBe("User [email] missing");
   });

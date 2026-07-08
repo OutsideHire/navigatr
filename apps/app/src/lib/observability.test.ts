@@ -111,14 +111,14 @@ describe("observability", () => {
       beforeSend: (e: Record<string, unknown>) => Record<string, unknown>;
     };
     const event = {
-      message: "User ceo@outsidehire.com hit error at +15551234567",
+      message: "User user@example.com hit error at +15551234567",
       exception: {
         values: [{ value: "deal owner alice@acme.com (555) 123-4567 not found" }],
       },
       extra: { customer_email: "lead@example.com" },
     };
     const out = initArg.beforeSend(event);
-    expect((out.message as string)).not.toContain("ceo@outsidehire.com");
+    expect((out.message as string)).not.toContain("user@example.com");
     expect((out.message as string)).toContain("[email]");
     expect((out.message as string)).not.toContain("+15551234567");
     expect((out.message as string)).toContain("[phone]");
