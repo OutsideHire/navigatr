@@ -1,5 +1,5 @@
-import type { RawCalendarEvent } from "../calendarQualify";
-import type { TokenBundle } from "../googleToken";
+import type { RawCalendarEvent } from "../calendarQualify.ts";
+import type { TokenBundle } from "../googleToken.ts";
 
 export type CalendarProviderId = "google" | "microsoft";
 
@@ -27,6 +27,17 @@ export interface CalendarProvider {
   oauth: OAuthConfig;
   /** Valid token, refreshing via the provider's refresh grant when needed. */
   refreshAccessToken(bundle: TokenBundle, deps: RefreshDeps): Promise<RefreshResult>;
-  /** List events in [windowStart,windowEnd] (ISO) as normalized RawCalendarEvent[]. */
-  listEvents(accessToken: string, windowStart: string, windowEnd: string): Promise<RawCalendarEvent[]>;
+  /**
+   * List events in [windowStart,windowEnd] (ISO) as normalized RawCalendarEvent[].
+   * `options.excludeCalendarIds` names calendars that must NEVER be queried (Google
+   * filters these out of the calendarList before issuing any events.list request, so
+   * a personal/shared calendar's 403/404 can't drop the whole read and its event
+   * bodies are never fetched). Providers without a calendar-list concept ignore it.
+   */
+  listEvents(
+    accessToken: string,
+    windowStart: string,
+    windowEnd: string,
+    options?: { excludeCalendarIds?: string[] },
+  ): Promise<RawCalendarEvent[]>;
 }

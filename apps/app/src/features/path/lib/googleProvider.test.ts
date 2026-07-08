@@ -142,6 +142,41 @@ describe("googleProvider.listEvents", () => {
     });
   });
 
+  it("never queries a calendar whose id is in excludeCalendarIds", async () => {
+    // Two calendars in the list; one is the rep's personal calendar. The
+    // provider must filter it out of the calendarList BEFORE issuing any
+    // events.list request, so its event bodies are never fetched (privacy) and
+    // a personal-cal 403/404 can't drop the whole Google read.
+    const TWO_CALENDARS = {
+      items: [{ id: "work@example.com" }, { id: "personal@example.com" }],
+    };
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/users/me/calendarList")) {
+        return { ok: true, json: async () => TWO_CALENDARS } as unknown as Response;
+      }
+      if (url.includes("/calendars/") && url.includes("/events")) {
+        return { ok: true, json: async () => EVENTS } as unknown as Response;
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await googleProvider.listEvents(
+      "abc",
+      "2026-07-15T00:00:00Z",
+      "2026-07-16T00:00:00Z",
+      { excludeCalendarIds: ["personal@example.com"] },
+    );
+
+    const eventUrls = fetchMock.mock.calls
+      .map((c) => String(c[0]))
+      .filter((u) => u.includes("/events"));
+    // The excluded personal calendar's events endpoint is NEVER hit.
+    expect(eventUrls.some((u) => u.includes("personal%40example.com"))).toBe(false);
+    // The work calendar's events ARE fetched.
+    expect(eventUrls.some((u) => u.includes("work%40example.com"))).toBe(true);
+  });
+
   it("throws when calendarList responds non-ok", async () => {
     vi.stubGlobal(
       "fetch",

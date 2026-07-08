@@ -4,7 +4,7 @@
 // response status. Kept Deno-free so vitest unit-tests it from the app the same
 // way it imports calendarQualify.ts; the Edge index imports it with the .ts
 // extension.
-import type { RawCalendarEvent } from "./calendarQualify";
+import type { RawCalendarEvent } from "./calendarQualify.ts";
 
 /**
  * Drop events that belong to one of the connection's personal calendars. The net

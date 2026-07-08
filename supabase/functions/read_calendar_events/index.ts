@@ -83,7 +83,13 @@ async function readConnection(
       .update({ last_refreshed_at: new Date().toISOString() })
       .eq("id", conn.id);
   }
-  return provider.listEvents(fresh.accessToken, windowStart, windowEnd);
+  // Exclude the connection's personal calendars at the source: Google filters
+  // them out of the calendarList before querying (so a personal-cal 403 can't
+  // drop the whole read and personal event bodies are never fetched). The
+  // caller's applyPersonalFilter stays as a belt-and-suspenders / generic guard.
+  return provider.listEvents(fresh.accessToken, windowStart, windowEnd, {
+    excludeCalendarIds: conn.config?.personalCalendarIds ?? [],
+  });
 }
 
 Deno.serve(async (req) => {

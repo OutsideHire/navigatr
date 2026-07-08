@@ -1,6 +1,6 @@
-import type { RawCalendarEvent } from "../calendarQualify";
-import { getFreshAccessToken } from "../googleToken";
-import type { CalendarProvider } from "./types";
+import type { RawCalendarEvent } from "../calendarQualify.ts";
+import { getFreshAccessToken } from "../googleToken.ts";
+import type { CalendarProvider } from "./types.ts";
 
 interface GoogleCalendarListItem { id: string }
 interface GoogleEventItem {
@@ -28,13 +28,19 @@ export const googleProvider: CalendarProvider = {
     // getFreshAccessToken already defaults to Google's token URL + grant.
     return getFreshAccessToken(bundle, deps);
   },
-  async listEvents(accessToken, windowStart, windowEnd) {
+  async listEvents(accessToken, windowStart, windowEnd, options) {
+    const excludeCalendarIds = options?.excludeCalendarIds ?? [];
     const authFetch = (url: string) => fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
     const listRes = await authFetch("https://www.googleapis.com/calendar/v3/users/me/calendarList");
     if (!listRes.ok) throw new Error(`calendarList http ${listRes.status}`);
     const listData = (await listRes.json()) as { items?: GoogleCalendarListItem[] };
+    // Drop the connection's personal calendars from the calendarList BEFORE issuing
+    // any events.list request — exactly like the old readGoogle. This keeps a
+    // personal/shared calendar's 403/404 from throwing and dropping the whole Google
+    // read, and never fetches personal event bodies (privacy).
+    const calendars = (listData.items ?? []).filter((cal) => !excludeCalendarIds.includes(cal.id));
     const perCal = await Promise.all(
-      (listData.items ?? []).map(async (cal): Promise<RawCalendarEvent[]> => {
+      calendars.map(async (cal): Promise<RawCalendarEvent[]> => {
         const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.id)}/events`);
         url.searchParams.set("timeMin", windowStart);
         url.searchParams.set("timeMax", windowEnd);

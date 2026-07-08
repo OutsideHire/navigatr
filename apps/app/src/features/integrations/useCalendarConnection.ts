@@ -41,12 +41,6 @@ export function calendarConnectionKey(provider: CalendarProviderId) {
 }
 
 /**
- * TanStack Query key for the Google calendar connection row. Retained for
- * backwards compatibility; equivalent to `calendarConnectionKey("google")`.
- */
-export const CALENDAR_CONNECTION_KEY = calendarConnectionKey("google");
-
-/**
  * Base URL for Supabase Edge Functions. The app derives its Supabase project
  * URL from `VITE_SUPABASE_URL` (see src/lib/supabase.ts); Edge Functions live
  * under `<project-url>/functions/v1`. We fall back to the same localhost value

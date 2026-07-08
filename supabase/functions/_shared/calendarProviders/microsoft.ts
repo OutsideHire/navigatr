@@ -1,7 +1,7 @@
-import type { RawCalendarEvent } from "../calendarQualify";
-import type { TokenBundle } from "../googleToken";
-import { isExpired } from "../googleToken";
-import type { CalendarProvider, RefreshDeps, RefreshResult } from "./types";
+import type { RawCalendarEvent } from "../calendarQualify.ts";
+import type { TokenBundle } from "../googleToken.ts";
+import { isExpired } from "../googleToken.ts";
+import type { CalendarProvider, RefreshDeps, RefreshResult } from "./types.ts";
 
 const AUTHORITY = "https://login.microsoftonline.com/organizations/oauth2/v2.0";
 
@@ -65,7 +65,10 @@ export const microsoftProvider: CalendarProvider = {
     const bundleOut: TokenBundle = { ...refreshed, refresh_token: refreshed.refresh_token || bundle.refresh_token };
     return { accessToken: bundleOut.access_token, bundle: bundleOut, refreshed: true };
   },
-  async listEvents(accessToken, windowStart, windowEnd) {
+  // Graph's /me/calendarView reads the primary calendar directly — there is no
+  // calendar-list to filter — so `_options.excludeCalendarIds` is accepted (to keep
+  // the CalendarProvider signature uniform) but has nothing to act on here.
+  async listEvents(accessToken, windowStart, windowEnd, _options) {
     const url = new URL("https://graph.microsoft.com/v1.0/me/calendarView");
     url.searchParams.set("startDateTime", windowStart);
     url.searchParams.set("endDateTime", windowEnd);
