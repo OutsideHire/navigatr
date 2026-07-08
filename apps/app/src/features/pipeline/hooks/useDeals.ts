@@ -39,6 +39,7 @@ interface DealRow {
   lost_reason_category: LostReasonCategory | null;
   lost_reason_notes: string | null;
   profession_data?: Record<string, unknown> | null;
+  followup_calendar_sync_status?: "pending" | "synced" | "error" | null;
 }
 
 /**
@@ -72,6 +73,7 @@ function toDeal(row: DealRow): Deal {
     lostReasonCategory: row.lost_reason_category,
     lostReasonNotes: row.lost_reason_notes,
     professionData: row.profession_data ?? null,
+    followupCalendarSyncStatus: row.followup_calendar_sync_status ?? null,
   };
 }
 
@@ -91,7 +93,7 @@ export function useDeals() {
             "value_cents, stage, probability, last_activity_at, " +
             "next_followup_at, address, employee_count_range, lead_source, " +
             "updated_at, owner_id, lost_reason_category, lost_reason_notes, " +
-            "profession_data",
+            "profession_data, followup_calendar_sync_status",
         )
         .order("updated_at", { ascending: false });
       if (error) throw error;

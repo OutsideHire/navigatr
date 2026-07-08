@@ -86,8 +86,39 @@ describe("useDeals", () => {
         updatedAt: "2026-05-19T08:00:00Z",
         owner_id: null,
         professionData: null,
+        // Absent on the row → mapper defaults it to null (not undefined),
+        // so toEqual needs it spelled out explicitly here.
+        followupCalendarSyncStatus: null,
       },
     ]);
+  });
+
+  it("maps followup_calendar_sync_status through to followupCalendarSyncStatus", async () => {
+    orderMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: "deal-3",
+          company_name: "Synced Co",
+          contact_name: "S",
+          contact_phone: "+12025550001",
+          contact_email: "s@c.co",
+          value_cents: 500_000,
+          stage: "proposal",
+          probability: 75,
+          last_activity_at: "2026-05-18T12:00:00Z",
+          next_followup_at: "2026-05-25T12:00:00Z",
+          employee_count_range: "1-10",
+          lead_source: "Cold call",
+          updated_at: "2026-05-19T08:00:00Z",
+          owner_id: null,
+          followup_calendar_sync_status: "error",
+        },
+      ],
+      error: null,
+    });
+    const { result } = renderHook(() => useDeals(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0].followupCalendarSyncStatus).toBe("error");
   });
 
   it("returns an empty array when there are no deals", async () => {

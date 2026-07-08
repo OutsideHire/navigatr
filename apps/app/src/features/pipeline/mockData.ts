@@ -79,6 +79,11 @@ export interface Deal {
   /** Profession-specific qualification payload (FR-PIPE-08). Read defensively
    *  via lib/merchantQualification. JSONB column; null for older rows. */
   professionData?: Record<string, unknown> | null;
+  /** Calendar-sync state of this deal's follow-up (Milestone 2). The
+   *  `sync_followup` Edge fn reconciles `next_followup_at` to an all-day
+   *  Google Calendar event and stamps this column. Null when the deal has
+   *  no follow-up to sync or the column isn't populated yet (older rows). */
+  followupCalendarSyncStatus?: "pending" | "synced" | "error" | null;
 }
 
 // Static "today" so subsequent renders don't shift cards' relative dates.

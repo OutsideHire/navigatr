@@ -90,6 +90,7 @@ import { ScheduleAppointmentSheet } from "../components/ScheduleAppointmentSheet
 import { UpcomingAppointments } from "@/features/appointments/UpcomingAppointments";
 import { ContactsTab } from "../components/ContactsTab";
 import { NotesAndFilesTab } from "../components/NotesAndFilesTab";
+import { FollowupSyncIndicator } from "../components/FollowupSyncIndicator";
 
 // ───────────────────────────────────────────────────────────────────────
 // Not-found state
@@ -271,10 +272,16 @@ function HeroCard({ deal, onLogActivity, onEdit }: { deal: Deal; onLogActivity: 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
           <Metric eyebrow="VALUE" value={formatMoney(deal.valueCents)} />
           <Metric eyebrow="PROBABILITY" value={`${deal.probability}%`} />
-          <Metric
-            eyebrow="EXPECTED CLOSE"
-            value={deal.nextFollowup ? formatShortDate(deal.nextFollowup) : "—"}
-          />
+          <div className="flex flex-col gap-1.5">
+            <Metric
+              eyebrow="EXPECTED CLOSE"
+              value={deal.nextFollowup ? formatShortDate(deal.nextFollowup) : "—"}
+            />
+            <FollowupSyncIndicator
+              dealId={deal.id}
+              status={deal.followupCalendarSyncStatus}
+            />
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
