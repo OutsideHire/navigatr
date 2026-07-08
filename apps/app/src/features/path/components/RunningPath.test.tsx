@@ -267,4 +267,31 @@ describe("RunningPath", () => {
     expect(screen.queryByText(/Acme sync/)).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
+
+  it("hides the overlay when Prev peeks a non-current (visited) stop", () => {
+    // First stop visited, second pending → the run starts on the pending stop (B),
+    // which IS the current (first-pending) stop, so the overlay renders. Navigating
+    // Prev onto the visited stop A (not the current stop) must hide the overlay so
+    // it never names a meeting/ETA under a stop the rep is only peeking at.
+    stops = [stop("A", { status: "visited" }), stop("B")];
+    render(
+      <RunningPath
+        origin={ORIGIN}
+        onPause={vi.fn()}
+        onViewPipeline={vi.fn()}
+        onExit={vi.fn()}
+        runOverlay={{ ...OVERLAY, fits: false }}
+      />,
+    );
+    // Starts at the first pending stop (B) → overlay + fit warning visible.
+    // (With fits:false the title appears in both the banner and the alert.)
+    expect(screen.getByRole("heading", { name: "B" })).toBeInTheDocument();
+    expect(screen.getAllByText(/Acme sync/).length).toBeGreaterThan(0);
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    // Prev peeks the visited, non-current stop A → overlay must not follow.
+    fireEvent.click(screen.getByRole("button", { name: /prev/i }));
+    expect(screen.getByRole("heading", { name: "A" })).toBeInTheDocument();
+    expect(screen.queryByText(/Acme sync/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });

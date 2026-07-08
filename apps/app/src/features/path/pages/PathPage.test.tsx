@@ -67,9 +67,15 @@ vi.mock("../components/ActivePathView", () => ({
   ),
 }));
 // Stub RunningPath — the guided run has its own tests; here we only assert the
-// two-tab surface renders it as the default (Run) tab for a started path.
+// two-tab surface renders it as the default (Run) tab for a started path, and
+// capture the runOverlay prop so the calendar-glue test can assert PathPage
+// computed + handed down a non-null overlay.
+let capturedRunOverlay: unknown = null;
 vi.mock("../components/RunningPath", () => ({
-  RunningPath: () => <div data-testid="running-path" />,
+  RunningPath: (props: { runOverlay?: unknown }) => {
+    capturedRunOverlay = props.runOverlay ?? null;
+    return <div data-testid="running-path" />;
+  },
 }));
 
 // No prospects unless origin is set; keep the discovery hook quiet.
@@ -133,15 +139,18 @@ vi.mock("../hooks/usePathMutations", () => ({
 // (which never touch the calendar) are unaffected. RunningPath is stubbed above,
 // so nothing renders the overlay here anyway — these mocks just keep PathPage's
 // new live read from firing a real Edge Function / geolocation request in jsdom.
-vi.mock("../hooks/useCalendarEvents", () => ({
-  useCalendarEvents: () => ({
-    waypoints: [],
-    timeBlocks: [],
-    status: "not_connected",
+const calendarState = {
+  current: {
+    waypoints: [] as unknown[],
+    timeBlocks: [] as unknown[],
+    status: "not_connected" as string,
     isLoading: false,
     isError: false,
     refetch: vi.fn(),
-  }),
+  },
+};
+vi.mock("../hooks/useCalendarEvents", () => ({
+  useCalendarEvents: () => calendarState.current,
 }));
 vi.mock("../hooks/useGeolocation", () => ({
   useGeolocation: () => ({ coords: null, status: "denied", error: null, retry: vi.fn() }),
@@ -174,6 +183,11 @@ beforeEach(() => {
   prevUnfinishedState.current = { data: null };
   continueMutate.mockReset();
   closeMutate.mockReset();
+  capturedRunOverlay = null;
+  calendarState.current = {
+    waypoints: [], timeBlocks: [], status: "not_connected",
+    isLoading: false, isError: false, refetch: vi.fn(),
+  };
 });
 
 describe("PathPage location states", () => {
@@ -412,6 +426,37 @@ describe("PathPage active-path surface — Run | Stops tabs", () => {
     // Default tab is Run (resume-in-place) → the guided run renders, not the list.
     expect(screen.getByTestId("running-path")).toBeInTheDocument();
     expect(screen.queryByTestId("active-path")).not.toBeInTheDocument();
+  });
+
+  it("hands RunningPath a non-null runOverlay when the calendar is connected with a future located meeting", () => {
+    originState.current = readyOrigin;
+    todayState.current = {
+      ...todayState.current,
+      startedAt: "2026-07-02T15:00:00.000Z",
+      stops: geoStops as unknown as typeof todayState.current.stops,
+    };
+    // Calendar connected ("ok") with one FUTURE located meeting. Far-future date
+    // so annotateRunSchedule (which drops meetings whose end <= now) keeps it
+    // regardless of the wall-clock time the suite runs at.
+    calendarState.current = {
+      waypoints: [
+        {
+          id: "cal1", title: "Acme sync",
+          start: "2099-01-01T15:00:00.000Z", end: "2099-01-01T16:00:00.000Z",
+          address: "1 Main", lat: 30.01, lng: -97.01, source: "calendar",
+        },
+      ],
+      timeBlocks: [],
+      status: "ok",
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    };
+    render(<PathPage />, { wrapper });
+    // RunningPath renders on the default Run tab and receives a non-null overlay.
+    expect(screen.getByTestId("running-path")).toBeInTheDocument();
+    expect(capturedRunOverlay).not.toBeNull();
+    expect((capturedRunOverlay as { nextMeeting: { title: string } | null }).nextMeeting?.title).toBe("Acme sync");
   });
 
   it("switching to the Stops tab shows the overview; back to Run shows the guided run", () => {

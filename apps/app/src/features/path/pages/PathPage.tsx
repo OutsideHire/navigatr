@@ -200,21 +200,21 @@ export function PathPage() {
     e.setHours(23, 59, 59, 999);
     return { start: s.toISOString(), end: e.toISOString() };
   }, []);
+  // Gate the read: only fire `read_calendar_events` for a STARTED path that
+  // still has pending stops — the only state where the overlay can render.
+  // `useCalendarEvents(null)` is a no-op (its query is `enabled` only when the
+  // window is set), so a fresh/planned/finished path never touches the calendar.
+  const runWindow = startedAt && hasPending ? runTodayWindow : null;
   const {
     waypoints: runWaypoints,
     timeBlocks: runTimeBlocks,
     status: runCalStatus,
-  } = useCalendarEvents(runTodayWindow);
+  } = useCalendarEvents(runWindow);
   const runGeo = useGeolocation();
   const runOverlay = React.useMemo(() => {
     const pending = queueStops.filter((s) => s.status === "pending");
     const startLoc = runGeo.coords ?? origin;
-    if (
-      runCalStatus !== "ok" ||
-      (runWaypoints.length === 0 && runTimeBlocks.length === 0) ||
-      pending.length === 0 ||
-      !startLoc
-    ) {
+    if (runCalStatus !== "ok" || pending.length === 0 || !startLoc) {
       return null;
     }
     const result = annotateRunSchedule({
@@ -231,6 +231,12 @@ export function PathPage() {
       })),
       timeBlocks: runTimeBlocks.map((b) => ({ id: b.id, title: b.title, start: b.start, end: b.end })),
     });
+    // Guard on the POST-drop result: annotateRunSchedule drops meetings that
+    // already ended, so an afternoon rep whose only meeting is over ends up with
+    // zero FUTURE meetings — no overlay (matches spec). This subsumes both the
+    // "no meetings at all" and "all meetings already ended" cases, so the raw
+    // runWaypoints/runTimeBlocks emptiness check is no longer needed.
+    if (result.meetings.length === 0) return null;
     const current = result.stops[0];
     if (!current) return null;
     const nextMeeting = result.meetings.find((m) => m.id === current.nextMeetingId) ?? null;

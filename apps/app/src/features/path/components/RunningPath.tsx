@@ -139,6 +139,13 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit, runOverla
   const cur = stops[index];
   if (!cur) return null;
 
+  // The run overlay describes the CURRENT (first-pending) stop — the one
+  // RunningPath seeks to on entry and the one PathPage computed the schedule
+  // for. Prev/Next let the rep peek other stops; the overlay must not follow
+  // onto them (it would name the wrong stop's ETA / meeting fit), so gate it to
+  // the first-pending stop by merchantId.
+  const firstPending = stops.find((s) => s.status === "pending");
+
   const advance = () => {
     const after = stops.findIndex((s, i) => i > index && s.status === "pending");
     if (after !== -1) { setIndex(after); return; }
@@ -209,7 +216,9 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit, runOverla
             {cur.address ? `${cur.address} · ` : ""}{labelForCategory(cur.category)}
           </p>
         </div>
-        {runOverlay && <RunScheduleOverlay {...runOverlay} />}
+        {runOverlay && firstPending && cur.merchantId === firstPending.merchantId && (
+          <RunScheduleOverlay {...runOverlay} />
+        )}
         <div className="flex flex-wrap gap-2">
           {cur.phone && (
             <a href={`tel:${cur.phone}`}

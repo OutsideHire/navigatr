@@ -67,8 +67,15 @@ export function annotateRunSchedule(input: RunScheduleInput): RunScheduleResult 
     for (const m of meetings) {
       if (attended.has(m.id)) continue;
       if (Date.parse(m.start) <= Date.parse(cursor)) {
-        cursor = m.end;
-        if (m.loc) cursorLoc = m.loc;
+        // Monotonic: only advance the clock (and move to the meeting's location)
+        // when the meeting actually extends past the current cursor. A meeting
+        // whose end is already behind the cursor — overlapping/nested events, or
+        // one the rep is already late past — is marked attended without regressing
+        // time or teleporting the rep's location.
+        if (Date.parse(m.end) > Date.parse(cursor)) {
+          cursor = m.end;
+          if (m.loc) cursorLoc = m.loc;
+        }
         attended.add(m.id);
       } else {
         break;
