@@ -69,6 +69,8 @@ import { useCalendarEvents } from "../hooks/useCalendarEvents";
 import { useGeolocation } from "../hooks/useGeolocation";
 import { computeFreeWindows } from "../lib/freeWindows";
 import { annotateRunSchedule } from "../lib/runSchedule";
+import { pickNextMeeting, fitsBeforeMeeting } from "../lib/discoverFit";
+import { DiscoverMeetingBanner } from "../components/DiscoverMeetingBanner";
 
 // Phase 2: discovered prospects are all cold leads, so the old deal-lifecycle
 // status chips (prospect/active/won/cooled) don't apply. Filter by business
@@ -200,11 +202,14 @@ export function PathPage() {
     e.setHours(23, 59, 59, 999);
     return { start: s.toISOString(), end: e.toISOString() };
   }, []);
-  // Gate the read: only fire `read_calendar_events` for a STARTED path that
-  // still has pending stops — the only state where the overlay can render.
-  // `useCalendarEvents(null)` is a no-op (its query is `enabled` only when the
-  // window is set), so a fresh/planned/finished path never touches the calendar.
-  const runWindow = startedAt && hasPending ? runTodayWindow : null;
+  // Gate the read: fire `read_calendar_events` for a STARTED path that still
+  // has pending stops (the run overlay) OR whenever the discover view is active
+  // (the meeting-aware banner + fit flags). Both reads use the SAME today window,
+  // so TanStack dedupes them to one cached fetch. `useCalendarEvents(null)` is a
+  // no-op (its query is `enabled` only when the window is set), so entry / planned
+  // / finished paths that never open discover still never touch the calendar.
+  const calNeeded = pathView === "discover" || (startedAt && hasPending);
+  const runWindow = calNeeded ? runTodayWindow : null;
   const {
     waypoints: runWaypoints,
     timeBlocks: runTimeBlocks,
@@ -486,6 +491,30 @@ export function PathPage() {
     ];
   }, [orderedQueue, origin]);
 
+  // Meeting-aware discover (F3): the rep's next fixed meeting today, if any, and
+  // the set of nearby merchants a drop-in couldn't finish before it. Null / empty
+  // unless the discover view is active, the calendar is connected ("ok"), there's
+  // an origin, and pickNextMeeting finds a still-future meeting today — so with no
+  // calendar / no upcoming meeting / a different view, nothing new renders. The
+  // fit set is computed over `sorted` — the SAME array the list below renders —
+  // so every flagged id maps to a visible row.
+  const discoverNextMeeting = React.useMemo(() => {
+    if (pathView !== "discover" || runCalStatus !== "ok" || !origin) return null;
+    return pickNextMeeting(new Date().toISOString(), runWaypoints, runTimeBlocks);
+  }, [pathView, runCalStatus, origin, runWaypoints, runTimeBlocks]);
+
+  const discoverUnfit = React.useMemo(() => {
+    if (!discoverNextMeeting || !origin) return { ids: new Set<string>(), label: "" };
+    const now = new Date().toISOString();
+    const ids = new Set(
+      sorted
+        .filter((m) => !fitsBeforeMeeting(now, origin, { lat: m.lat, lng: m.lng }, discoverNextMeeting))
+        .map((m) => m.id),
+    );
+    const label = "won't fit before " + new Date(discoverNextMeeting.start).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return { ids, label };
+  }, [discoverNextMeeting, origin, sorted]);
+
   // Start a fresh path from the wizard: clear the existing server path, build
   // snapshots from the merchant records, write them, and close the wizard. The
   // stops-sync effect then moves the view to the active home on its own.
@@ -755,6 +784,17 @@ export function PathPage() {
             {queueStops.length > 0 ? "Back to path" : "Done"}
           </Button>
 
+          {/* Meeting-aware header — renders only when the calendar is connected and
+              there's a still-upcoming fixed meeting today; otherwise nothing shows
+              (no empty spacer). Placed above the filters so it stays visible in both
+              the map and list mobile panes (it's context for the whole discover
+              surface). */}
+          {discoverNextMeeting && (
+            <div className="mt-3">
+              <DiscoverMeetingBanner meeting={discoverNextMeeting} now={new Date().toISOString()} />
+            </div>
+          )}
+
           {/* Filter chips */}
           <div
             className={cn(
@@ -944,6 +984,11 @@ export function PathPage() {
                 merchants={sorted}
                 selectedId={selectedId}
                 onSelect={handleSelect}
+                // Meeting-aware fit flags: ids of merchants a drop-in couldn't
+                // finish before the next meeting, computed over this SAME `sorted`
+                // array (see discoverUnfit). Empty when no upcoming meeting.
+                unfitIds={discoverUnfit.ids}
+                unfitLabel={discoverUnfit.label}
                 // Show the empty-state CTA when a category OR a tighter-than-max
                 // radius is hiding rows — resetting both is what un-hides them.
                 // (When the whole discovery came back empty, PathPage renders the

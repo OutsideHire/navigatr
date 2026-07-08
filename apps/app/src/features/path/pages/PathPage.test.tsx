@@ -502,6 +502,67 @@ describe("PathPage active-path surface — Run | Stops tabs", () => {
   });
 });
 
+describe("PathPage discover — meeting-aware banner + fit flags", () => {
+  const readyOrigin: PathOrigin = {
+    ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
+  };
+  // A nearby geocoded live merchant so the discover list renders it (and the map,
+  // via anyGeocoded). The fit flags are computed over this `sorted` list.
+  const nearbyMerchant = [
+    { id: "x", name: "Xray", address: "9 X St", phone: null, lat: 30.02, lng: -97.02, category: "retail", primaryType: null },
+  ] as unknown as typeof merchantsState.current.merchants;
+  // An active (planned) path with a pending geocoded stop → lands on the active
+  // home whose "Add stops" button (onAddStops === enterDiscover) enters discover.
+  const geoStops = [
+    { merchantId: "a", name: "Alpha", address: "1 A St", lat: 30.05, lng: -97.05, category: "retail", status: "pending" },
+  ];
+
+  function enterDiscover() {
+    render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /add stops/i }));
+  }
+
+  it("renders the banner + 'won't fit' flag when the calendar is connected with a soon, far meeting", () => {
+    originState.current = readyOrigin;
+    merchantsState.current = { merchants: nearbyMerchant, isLoading: false, isError: false, refetch: vi.fn() } as typeof merchantsState.current;
+    todayState.current = { ...todayState.current, stops: geoStops as unknown as typeof todayState.current.stops };
+    // ONE future located meeting ~40 min out, far from the nearby merchant: the
+    // merchant→meeting drive (hundreds of miles at 30mph) blows past the 40-min
+    // window, so the drop-in can't fit. Relative-to-now start keeps it future
+    // regardless of the wall-clock time the suite runs at.
+    calendarState.current = {
+      waypoints: [
+        {
+          id: "cal1", title: "Acme sync",
+          start: new Date(Date.now() + 40 * 60000).toISOString(),
+          end: new Date(Date.now() + 100 * 60000).toISOString(),
+          address: "Far Away", lat: 31.5, lng: -98.5, source: "calendar",
+        },
+      ],
+      timeBlocks: [],
+      status: "ok",
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    };
+    enterDiscover();
+    // Banner (real DiscoverMeetingBanner) shows the meeting title.
+    expect(screen.getByText(/Acme sync/)).toBeInTheDocument();
+    // The nearby merchant's row (real MerchantList) carries the unfit flag.
+    expect(screen.getByText(/won't fit before/i)).toBeInTheDocument();
+  });
+
+  it("shows no banner and no fit flag when the calendar is not connected (default)", () => {
+    originState.current = readyOrigin;
+    merchantsState.current = { merchants: nearbyMerchant, isLoading: false, isError: false, refetch: vi.fn() } as typeof merchantsState.current;
+    todayState.current = { ...todayState.current, stops: geoStops as unknown as typeof todayState.current.stops };
+    // calendarState stays at the beforeEach default: status "not_connected".
+    enterDiscover();
+    expect(screen.queryByText(/min until/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/won't fit before/i)).not.toBeInTheDocument();
+  });
+});
+
 describe("PathPage handleStartPath — dropped stops", () => {
   const readyOrigin: PathOrigin = {
     ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
