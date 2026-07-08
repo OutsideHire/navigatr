@@ -1,5 +1,6 @@
 /**
- * useCalendarConnection — the rep's Google Calendar connection state + actions.
+ * useCalendarConnection — a rep's calendar connection state + actions for one
+ * provider (Google or Microsoft/Outlook).
  *
  * Slice 1 of "Calendar-Aware Path": connect / disconnect / status only. The
  * per-calendar "personal" toggle UI is deferred until the OAuth Edge function
@@ -7,17 +8,22 @@
  * IntegrationsTab.tsx.
  *
  * Data source: the `oauth_connections` table, one row per (rep, provider). We
- * read the Google row's `status` and fold it into a small UI-facing status:
+ * read the row's `status` for the requested provider and fold it into a small
+ * UI-facing status:
  *   - "connected"    — row.status === "active"
  *   - "pending"      — row.status === "pending" (OAuth started, not finished)
  *   - "disconnected" — no row, or status revoked/expired/error/anything else
  *
- * connect(): invokes the `calendar_oauth/start` Edge sub-route (authenticated),
- * which returns a signed Google auth URL, then full-page navigates to it.
+ * The provider defaults to "google" so existing callers (and the query-key /
+ * request shape they relied on) are unchanged.
+ *
+ * connect(): invokes the `calendar_oauth/start` Edge sub-route (authenticated)
+ * with `{ provider }`, which returns a signed provider auth URL, then full-page
+ * navigates to it.
  *
  * disconnect(): invokes the `calendar_oauth/disconnect` Edge sub-route (service
- * role), which flips the row to "revoked" and best-effort revokes the Google
- * grant, then re-reads.
+ * role) with `{ provider }`, which flips the row to "revoked" and best-effort
+ * revokes the grant (providers that expose a revoke endpoint), then re-reads.
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -26,10 +32,19 @@ import { useAuth } from "@/stores/auth";
 
 export type CalendarConnectionStatus = "connected" | "pending" | "disconnected";
 
-/** TanStack Query key for the Google calendar connection row. */
-export const CALENDAR_CONNECTION_KEY = ["integrations", "calendar", "google"] as const;
+/** The calendar providers a rep can connect. */
+export type CalendarProviderId = "google" | "microsoft";
 
-const PROVIDER = "google";
+/** Build the TanStack Query key for a provider's calendar connection row. */
+export function calendarConnectionKey(provider: CalendarProviderId) {
+  return ["integrations", "calendar", provider] as const;
+}
+
+/**
+ * TanStack Query key for the Google calendar connection row. Retained for
+ * backwards compatibility; equivalent to `calendarConnectionKey("google")`.
+ */
+export const CALENDAR_CONNECTION_KEY = calendarConnectionKey("google");
 
 /**
  * Base URL for Supabase Edge Functions. The app derives its Supabase project
@@ -52,19 +67,23 @@ function toStatus(rowStatus: string | null | undefined): CalendarConnectionStatu
 export interface UseCalendarConnectionResult {
   status: CalendarConnectionStatus;
   isLoading: boolean;
-  /** Fetch a signed Google auth URL and navigate to it. */
+  /** Fetch a signed provider auth URL and navigate to it. */
   connect: () => void;
   /** Revoke the connection via the Edge function, then re-read. */
   disconnect: () => void;
   isDisconnecting: boolean;
 }
 
-export function useCalendarConnection(): UseCalendarConnectionResult {
+export function useCalendarConnection(
+  provider: CalendarProviderId = "google",
+): UseCalendarConnectionResult {
   const queryClient = useQueryClient();
   const userId = useAuth((s) => s.user?.id);
 
+  const connectionKey = calendarConnectionKey(provider);
+
   const query = useQuery({
-    queryKey: [...CALENDAR_CONNECTION_KEY, userId],
+    queryKey: [...connectionKey, userId],
     enabled: !!userId,
     queryFn: async (): Promise<CalendarConnectionStatus> => {
       // Scope to the current user's row explicitly. The oauth_connections SELECT
@@ -75,7 +94,7 @@ export function useCalendarConnection(): UseCalendarConnectionResult {
       const { data, error } = await supabase
         .from("oauth_connections")
         .select("status")
-        .eq("provider", PROVIDER)
+        .eq("provider", provider)
         .eq("user_id", userId)
         .maybeSingle();
       if (error) throw error;
@@ -86,23 +105,27 @@ export function useCalendarConnection(): UseCalendarConnectionResult {
   const disconnectMutation = useMutation({
     // Routed through the calendar_oauth Edge function (service role): the client
     // can't write oauth_connections directly (SELECT-only RLS). The function
-    // flips status to revoked and best-effort revokes the grant with Google.
+    // flips status to revoked and best-effort revokes the grant with the
+    // provider.
     mutationFn: async (): Promise<void> => {
-      const { error } = await supabase.functions.invoke("calendar_oauth/disconnect");
+      const { error } = await supabase.functions.invoke("calendar_oauth/disconnect", {
+        body: { provider },
+      });
       if (error) throw error;
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: CALENDAR_CONNECTION_KEY });
+      void queryClient.invalidateQueries({ queryKey: connectionKey });
     },
   });
 
   const connectMutation = useMutation({
-    // Authenticated invoke to the `start` sub-route returns a signed Google auth
-    // URL; a full-page navigation hands off to Google, which redirects back to
-    // the app via the callback sub-route.
+    // Authenticated invoke to the `start` sub-route returns a signed provider
+    // auth URL; a full-page navigation hands off to the provider, which
+    // redirects back to the app via the callback sub-route.
     mutationFn: async (): Promise<void> => {
       const { data, error } = await supabase.functions.invoke<{ authUrl: string }>(
         "calendar_oauth/start",
+        { body: { provider } },
       );
       if (error || !data?.authUrl) throw error ?? new Error("no authUrl returned");
       window.location.assign(data.authUrl);

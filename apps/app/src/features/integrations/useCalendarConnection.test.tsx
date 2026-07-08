@@ -4,13 +4,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useCalendarConnection } from "./useCalendarConnection";
 
-// supabase.from("oauth_connections").select("status").eq("provider","google")
+// supabase.from("oauth_connections").select("status").eq("provider", <provider>)
 //   .eq("user_id", userId).maybeSingle() for the status read. connect() and
 // disconnect() route through supabase.functions.invoke("calendar_oauth/start" |
-// "calendar_oauth/disconnect") — the direct client write was removed once the
-// Edge function landed. The read chain filters on provider AND user_id, so
-// select().eq() returns an object with a further { eq } that resolves to
-// { maybeSingle }.
+// "calendar_oauth/disconnect", { body: { provider } }) — the direct client write
+// was removed once the Edge function landed. The read chain filters on provider
+// AND user_id, so select().eq() returns an object with a further { eq } that
+// resolves to { maybeSingle }.
 const maybeSingle = vi.fn();
 const selectUserEq = vi.fn(() => ({ maybeSingle }));
 const selectEq = vi.fn(() => ({ eq: selectUserEq, maybeSingle }));
@@ -49,7 +49,7 @@ beforeEach(() => {
 });
 
 describe("useCalendarConnection", () => {
-  it("reports connected when the row status is active", async () => {
+  it("reports connected when the row status is active (default google)", async () => {
     maybeSingle.mockResolvedValueOnce({ data: { status: "active" }, error: null });
     const { result } = renderHook(() => useCalendarConnection(), { wrapper: wrap(makeClient()) });
     await waitFor(() => expect(result.current.status).toBe("connected"));
@@ -79,7 +79,35 @@ describe("useCalendarConnection", () => {
     expect(result.current.status).toBe("disconnected");
   });
 
-  it("disconnect() invokes the calendar_oauth/disconnect Edge sub-route", async () => {
+  it("queries the microsoft row when the provider is microsoft", async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { status: "active" }, error: null });
+    const { result } = renderHook(() => useCalendarConnection("microsoft"), {
+      wrapper: wrap(makeClient()),
+    });
+    await waitFor(() => expect(result.current.status).toBe("connected"));
+    expect(selectEq).toHaveBeenCalledWith("provider", "microsoft");
+    expect(selectUserEq).toHaveBeenCalledWith("user_id", "user-1");
+  });
+
+  it("keys the query per provider (independent cache entries)", async () => {
+    // A single shared client: google and microsoft must not collide, so each
+    // triggers its own read. The mock returns a value per call.
+    const client = makeClient();
+    maybeSingle
+      .mockResolvedValueOnce({ data: { status: "active" }, error: null }) // google
+      .mockResolvedValueOnce({ data: { status: "pending" }, error: null }); // microsoft
+    const google = renderHook(() => useCalendarConnection("google"), { wrapper: wrap(client) });
+    const microsoft = renderHook(() => useCalendarConnection("microsoft"), {
+      wrapper: wrap(client),
+    });
+    await waitFor(() => expect(google.result.current.status).toBe("connected"));
+    await waitFor(() => expect(microsoft.result.current.status).toBe("pending"));
+    // Two distinct provider filters → two independent queries fired.
+    expect(selectEq).toHaveBeenCalledWith("provider", "google");
+    expect(selectEq).toHaveBeenCalledWith("provider", "microsoft");
+  });
+
+  it("disconnect() invokes calendar_oauth/disconnect with the provider body (default google)", async () => {
     maybeSingle.mockResolvedValue({ data: { status: "active" }, error: null });
     invoke.mockResolvedValueOnce({ data: { ok: true }, error: null });
     const { result } = renderHook(() => useCalendarConnection(), { wrapper: wrap(makeClient()) });
@@ -87,10 +115,31 @@ describe("useCalendarConnection", () => {
 
     result.current.disconnect();
 
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith("calendar_oauth/disconnect"));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("calendar_oauth/disconnect", {
+        body: { provider: "google" },
+      }),
+    );
   });
 
-  it("connect() invokes the start sub-route and navigates to the returned authUrl", async () => {
+  it("disconnect() sends the microsoft provider when provider is microsoft", async () => {
+    maybeSingle.mockResolvedValue({ data: { status: "active" }, error: null });
+    invoke.mockResolvedValueOnce({ data: { ok: true }, error: null });
+    const { result } = renderHook(() => useCalendarConnection("microsoft"), {
+      wrapper: wrap(makeClient()),
+    });
+    await waitFor(() => expect(result.current.status).toBe("connected"));
+
+    result.current.disconnect();
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("calendar_oauth/disconnect", {
+        body: { provider: "microsoft" },
+      }),
+    );
+  });
+
+  it("connect() invokes start with the provider body and navigates to the returned authUrl", async () => {
     maybeSingle.mockResolvedValueOnce({ data: null, error: null });
     invoke.mockResolvedValueOnce({
       data: { authUrl: "https://accounts.google.com/o/oauth2/v2/auth?state=abc" },
@@ -108,10 +157,43 @@ describe("useCalendarConnection", () => {
 
     result.current.connect();
 
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith("calendar_oauth/start"));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("calendar_oauth/start", {
+        body: { provider: "google" },
+      }),
+    );
     await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
     expect(assign.mock.calls[0][0]).toBe(
       "https://accounts.google.com/o/oauth2/v2/auth?state=abc",
+    );
+
+    Object.defineProperty(window, "location", { configurable: true, value: original });
+  });
+
+  it("connect() sends the microsoft provider when provider is microsoft", async () => {
+    maybeSingle.mockResolvedValueOnce({ data: null, error: null });
+    invoke.mockResolvedValueOnce({
+      data: { authUrl: "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?state=xyz" },
+      error: null,
+    });
+    const assign = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...original, assign },
+    });
+
+    const { result } = renderHook(() => useCalendarConnection("microsoft"), {
+      wrapper: wrap(makeClient()),
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    result.current.connect();
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("calendar_oauth/start", {
+        body: { provider: "microsoft" },
+      }),
     );
 
     Object.defineProperty(window, "location", { configurable: true, value: original });
