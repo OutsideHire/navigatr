@@ -10,12 +10,10 @@
  *  - etaMinutes:       drive time at AVG_SPEED_MPH + DWELL_MIN per stop, rounded
  */
 import { haversineMeters, type LatLng } from "@/lib/distance";
+import { driveMinutesBetween } from "./driveTime";
 
-/** Conservative urban/suburban field-rep driving average. */
-const AVG_SPEED_MPH = 30;
 /** Time spent per stop (walk in, pitch, log). */
 const DWELL_MIN = 15;
-const METERS_PER_MILE = 1609.344;
 
 export interface RouteStats {
   stopCount: number;
@@ -41,13 +39,14 @@ export function routeStats(origin: LatLng, orderedStops: LatLng[]): RouteStats {
   const furthestMeters = Math.max(...fromOrigin);
 
   let totalRouteMeters = 0;
+  let driveMinutes = 0;
   let prev = origin;
   for (const s of orderedStops) {
     totalRouteMeters += haversineMeters(prev, s);
+    driveMinutes += driveMinutesBetween(prev, s);
     prev = s;
   }
 
-  const driveMinutes = (totalRouteMeters / METERS_PER_MILE / AVG_SPEED_MPH) * 60;
   const etaMinutes = Math.round(driveMinutes + DWELL_MIN * orderedStops.length);
 
   return {
