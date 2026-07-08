@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildGoogleEventPayload, type AppointmentForEvent, buildFollowupEvent } from "../../../../../supabase/functions/_shared/googleEvent";
+import { buildGoogleEventPayload, type AppointmentForEvent, buildFollowupEvent, buildPathBlockEvent } from "../../../../../supabase/functions/_shared/googleEvent";
 
 const appt: AppointmentForEvent = {
   id: "ap1", title: "Appointment — Acme Co",
@@ -42,5 +42,22 @@ describe("buildFollowupEvent", () => {
   it("rolls across a year boundary", () => {
     const e = buildFollowupEvent({ id: "d3", companyName: "Y" }, "2026-12-31T00:00:00.000Z");
     expect(e.end).toEqual({ date: "2027-01-01" });
+  });
+});
+
+describe("buildPathBlockEvent", () => {
+  it("all-day block: start=date, exclusive end=+1 day, path tag", () => {
+    const e = buildPathBlockEvent({ id: "p1", name: "Downtown Wed", pathDate: "2026-07-15" });
+    expect(e.summary).toBe("Prospecting: Downtown Wed");
+    expect(e.start).toEqual({ date: "2026-07-15" });
+    expect(e.end).toEqual({ date: "2026-07-16" });
+    expect(e.extendedProperties.private.navigatr_path_id).toBe("p1");
+  });
+  it("rolls exclusive end across month + year boundaries", () => {
+    expect(buildPathBlockEvent({ id: "p2", name: "X", pathDate: "2026-07-31" }).end).toEqual({ date: "2026-08-01" });
+    expect(buildPathBlockEvent({ id: "p3", name: "Y", pathDate: "2026-12-31" }).end).toEqual({ date: "2027-01-01" });
+  });
+  it("falls back to 'Prospecting' when name is empty", () => {
+    expect(buildPathBlockEvent({ id: "p4", name: "", pathDate: "2026-07-15" }).summary).toBe("Prospecting");
   });
 });
