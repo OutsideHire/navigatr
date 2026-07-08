@@ -247,6 +247,60 @@ describe("CreatePathWizard radius + max stops + select stops", () => {
   });
 });
 
+describe("CreatePathWizard preview — time-aware timeline", () => {
+  // A mappable calendar meeting for today. scheduleDay clamps to the day window
+  // (08:00–18:00 local), so pick a mid-day local time and build ISO from it.
+  function isoForToday(hhmm: string): string {
+    const [h, m] = hhmm.split(":").map(Number);
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    return d.toISOString();
+  }
+
+  function calendarWaypoint() {
+    return {
+      id: "wp-1",
+      title: "Acme HQ demo",
+      start: isoForToday("13:00"),
+      end: isoForToday("14:00"),
+      address: "1 Acme Way",
+      lat: 35.05,
+      lng: -97,
+      source: "calendar" as const,
+    };
+  }
+
+  it("shows the time-aware timeline in preview when the day has calendar meetings", () => {
+    mockPrefs = { automotive: allSubtypes("automotive") };
+    // One selected prospect + one fixed meeting → the optimizer schedules the
+    // prospect around the meeting and PathTimeline renders both rows.
+    renderWizard({
+      merchants: [mkAutoMerchant("a", 0)],
+      calendarWaypoints: [calendarWaypoint()],
+    });
+    fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
+    fireEvent.click(screen.getByRole("button", { name: /review route/i }));
+    expect(screen.getByRole("heading", { name: /optimized route preview/i })).toBeInTheDocument();
+    // The fixed meeting row (waypoint) and its "Meeting" tag from PathTimeline.
+    expect(screen.getByText("Acme HQ demo")).toBeInTheDocument();
+    expect(screen.getByText("Meeting")).toBeInTheDocument();
+    // The selected prospect ("a") appears as a scheduled timeline row.
+    expect(screen.getByText("a")).toBeInTheDocument();
+  });
+
+  it("shows the plain ordered list (no timeline) when there are no calendar meetings", () => {
+    mockPrefs = { automotive: allSubtypes("automotive") };
+    // Default: calendarWaypoints/calendarTimeBlocks both empty → existing preview.
+    renderWizard({ merchants: [mkAutoMerchant("a", 0)] });
+    fireEvent.click(screen.getByRole("button", { name: /select stops/i }));
+    fireEvent.click(screen.getByRole("button", { name: /review route/i }));
+    expect(screen.getByRole("heading", { name: /optimized route preview/i })).toBeInTheDocument();
+    // The prospect is listed as a plain numbered stop; no "Meeting" timeline tag.
+    expect(screen.getByText("a")).toBeInTheDocument();
+    expect(screen.queryByText("Meeting")).not.toBeInTheDocument();
+  });
+});
+
 describe("CreatePathWizard step 1 — When (time-window) picker", () => {
   // Derive the local "today" the same way the component does, so the date
   // assertions are tz-agnostic (no faked timers needed).

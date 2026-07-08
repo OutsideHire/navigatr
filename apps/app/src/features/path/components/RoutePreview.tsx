@@ -10,6 +10,8 @@ import { Button } from "@/components/navigatr";
 import { formatDistance } from "@/lib/distance";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { formatEta, type RouteStats } from "../lib/routeStats";
+import type { ScheduleResult } from "../lib/scheduleDay";
+import { PathTimeline } from "./PathTimeline";
 import type { MerchantWithDistance } from "./MerchantList";
 
 /** Stops listed before collapsing into a "+N more stops" line. */
@@ -24,9 +26,16 @@ export interface RoutePreviewProps {
   onBack: () => void;
   /** Commit and start the path. */
   onStart: () => void;
+  /** OPTIONAL — Route-around optimizer (Slice 1). When the rep's day has calendar
+   *  meetings, the wizard passes the time-aware day schedule; the body then shows
+   *  the integrated timeline (drop-ins packed AROUND the meetings) IN PLACE OF the
+   *  plain ordered-stop list. Undefined → the existing ordered list. The summary
+   *  header + Back/Start footer are unchanged either way, and Start still starts
+   *  every `ordered` stop regardless of what the timeline scheduled. */
+  timeline?: ScheduleResult;
 }
 
-export function RoutePreview({ ordered, stats, onBack, onStart }: RoutePreviewProps) {
+export function RoutePreview({ ordered, stats, onBack, onStart, timeline }: RoutePreviewProps) {
   const shown = ordered.slice(0, PREVIEW_ROWS);
   const moreCount = ordered.length - shown.length;
 
@@ -52,7 +61,12 @@ export function RoutePreview({ ordered, stats, onBack, onStart }: RoutePreviewPr
           ))}
         </div>
 
-        {/* First PREVIEW_ROWS of the nearest-neighbor route. */}
+        {/* Body: the time-aware day timeline when a schedule is supplied
+            (calendar day), otherwise the first PREVIEW_ROWS of the plain
+            nearest-neighbor route. */}
+        {timeline ? (
+          <PathTimeline result={timeline} />
+        ) : (
         <div className="flex flex-col gap-2">
           {shown.map((m, i) => (
             <div key={m.id} className="flex items-start gap-3 rounded-radius-md border border-border-default p-3">
@@ -82,6 +96,7 @@ export function RoutePreview({ ordered, stats, onBack, onStart }: RoutePreviewPr
             <p className="py-1 text-center text-caption text-text-muted">+ {moreCount} more stops</p>
           )}
         </div>
+        )}
       </div>
 
       <div className="flex shrink-0 gap-2 border-t border-border-default px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">

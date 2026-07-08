@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { RoutePreview } from "./RoutePreview";
 import type { MerchantWithDistance } from "./MerchantList";
 import type { RouteStats } from "../lib/routeStats";
+import type { ScheduleResult } from "../lib/scheduleDay";
 
 function row(id: string, distanceMeters: number, over: Partial<MerchantWithDistance> = {}): MerchantWithDistance {
   return {
@@ -64,5 +65,67 @@ describe("RoutePreview", () => {
     expect(onBack).toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /start path/i }));
     expect(onStart).toHaveBeenCalled();
+  });
+
+  describe("with a time-aware timeline", () => {
+    const timeline: ScheduleResult = {
+      timeline: [
+        {
+          kind: "prospect",
+          id: "p-1",
+          name: "Joe's Diner",
+          arrive: "2026-07-08T14:00:00.000Z",
+          depart: "2026-07-08T14:20:00.000Z",
+        },
+        {
+          kind: "waypoint",
+          id: "wp-1",
+          title: "Acme HQ demo",
+          start: "2026-07-08T15:00:00.000Z",
+          end: "2026-07-08T16:00:00.000Z",
+        },
+      ],
+      conflicts: [],
+      unscheduledProspectIds: [],
+    };
+
+    function setupTimeline() {
+      const ordered = Array.from({ length: 3 }, (_, i) => row(`Stop${i + 1}`, (i + 1) * 643.7));
+      const onBack = vi.fn();
+      const onStart = vi.fn();
+      render(
+        <RoutePreview
+          ordered={ordered}
+          stats={{ ...STATS, stopCount: 3 }}
+          onBack={onBack}
+          onStart={onStart}
+          timeline={timeline}
+        />,
+      );
+      return { onBack, onStart };
+    }
+
+    it("renders the PathTimeline rows instead of the ordered-stop list", () => {
+      setupTimeline();
+      // Timeline rows show: the scheduled prospect + the fixed meeting.
+      expect(screen.getByText("Joe's Diner")).toBeInTheDocument();
+      expect(screen.getByText("Acme HQ demo")).toBeInTheDocument();
+      expect(screen.getByText("Meeting")).toBeInTheDocument();
+      // The plain ordered-stop list is NOT rendered.
+      expect(screen.queryByText("Stop1")).not.toBeInTheDocument();
+    });
+
+    it("still renders the KPI stats header and the Start/Back footer", () => {
+      const { onBack, onStart } = setupTimeline();
+      // KPI summary header persists (label + its value, side by side).
+      const stopsLabel = screen.getByText("Stops");
+      expect(stopsLabel).toBeInTheDocument();
+      expect(stopsLabel.parentElement).toHaveTextContent("3");
+      // Footer buttons persist and still fire.
+      fireEvent.click(screen.getByRole("button", { name: /^back$/i }));
+      expect(onBack).toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: /start path/i }));
+      expect(onStart).toHaveBeenCalled();
+    });
   });
 });

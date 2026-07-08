@@ -36,6 +36,7 @@ import type { MerchantWithDistance } from "./MerchantList";
 import { type PathSortMode } from "../lib/sortMerchants";
 import { candidatePool, orderStops } from "../lib/proposeRoute";
 import { routeStats } from "../lib/routeStats";
+import { scheduleDay, type ScheduleResult } from "../lib/scheduleDay";
 import { RoutePreview } from "./RoutePreview";
 import { ResultsCountField } from "./ResultsCountField";
 
@@ -295,6 +296,35 @@ export function CreatePathWizard({
     [origin, orderedStops],
   );
 
+  // Route-around optimizer (Slice 1): when the rep's day has calendar meetings,
+  // pack the selected prospects into the free gaps AROUND those fixed events and
+  // hand the resulting time-aware timeline to the preview. No meetings → null, so
+  // the preview keeps its plain ordered-stop list (existing behavior). The window
+  // uses the same ISO-for-today conversion the "When" picker emits.
+  const daySchedule = React.useMemo<ScheduleResult | null>(() => {
+    if (calendarWaypoints.length === 0 && calendarTimeBlocks.length === 0) return null;
+    return scheduleDay({
+      windowStart: hhmmToIsoToday(windowStart),
+      windowEnd: hhmmToIsoToday(windowEnd),
+      origin,
+      waypoints: calendarWaypoints.map((w) => ({
+        id: w.id,
+        title: w.title,
+        start: w.start,
+        end: w.end,
+        lat: w.lat,
+        lng: w.lng,
+      })),
+      timeBlocks: calendarTimeBlocks.map((b) => ({
+        id: b.id,
+        title: b.title,
+        start: b.start,
+        end: b.end,
+      })),
+      prospects: selectedStops.map((m) => ({ id: m.id, name: m.name, lat: m.lat, lng: m.lng })),
+    });
+  }, [calendarWaypoints, calendarTimeBlocks, windowStart, windowEnd, origin, selectedStops]);
+
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
@@ -491,6 +521,7 @@ export function CreatePathWizard({
               stats={previewStats}
               onBack={() => setStep("select")}
               onStart={() => onStart(orderedStops.map((m) => m.id))}
+              timeline={daySchedule ?? undefined}
             />
           )}
         </Dialog.Content>
