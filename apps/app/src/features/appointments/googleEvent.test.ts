@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildGoogleEventPayload, type AppointmentForEvent } from "../../../../../supabase/functions/_shared/googleEvent";
+import { buildGoogleEventPayload, type AppointmentForEvent, buildFollowupEvent } from "../../../../../supabase/functions/_shared/googleEvent";
 
 const appt: AppointmentForEvent = {
   id: "ap1", title: "Appointment — Acme Co",
@@ -23,5 +23,24 @@ describe("buildGoogleEventPayload", () => {
     expect(body.attendees).toBeUndefined();
     expect(body.location).toBeUndefined();
     expect(body.extendedProperties.private.navigatr_appointment_id).toBe("ap1");
+  });
+});
+
+describe("buildFollowupEvent", () => {
+  it("builds an all-day event with exclusive end (+1 day) + deal tag", () => {
+    const e = buildFollowupEvent({ id: "d1", companyName: "Acme Co" }, "2026-07-12T00:00:00.000Z");
+    expect(e.summary).toBe("Follow up: Acme Co");
+    expect(e.start).toEqual({ date: "2026-07-12" });
+    expect(e.end).toEqual({ date: "2026-07-13" });
+    expect(e.extendedProperties.private.navigatr_followup_deal_id).toBe("d1");
+  });
+  it("rolls the exclusive end across a month boundary", () => {
+    const e = buildFollowupEvent({ id: "d2", companyName: "X" }, "2026-07-31T12:00:00.000Z");
+    expect(e.start).toEqual({ date: "2026-07-31" });
+    expect(e.end).toEqual({ date: "2026-08-01" });
+  });
+  it("rolls across a year boundary", () => {
+    const e = buildFollowupEvent({ id: "d3", companyName: "Y" }, "2026-12-31T00:00:00.000Z");
+    expect(e.end).toEqual({ date: "2027-01-01" });
   });
 });
