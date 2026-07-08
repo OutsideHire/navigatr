@@ -141,22 +141,19 @@ export function scheduleDay(input: ScheduleInput): ScheduleResult {
   const pool = new Map(input.prospects.map((p) => [p.id, p]));
   const scheduled: Array<{ id: string; name: string; arrive: string; depart: string }> = [];
 
-  gaps.forEach((gap, gapIndex) => {
-    // entryLoc: where the rep is when the gap opens. First gap → origin.
-    // Otherwise → the most-recent located waypoint that ended at/before the
-    // gap start (the rep is standing wherever their last fixed meeting was).
-    let entryLoc: SchedLatLng;
-    if (gapIndex === 0) {
-      entryLoc = input.origin;
-    } else {
-      const priorWps = wpByStart.filter(
-        (w) => Date.parse(w.end) <= Date.parse(gap.start),
-      );
-      const prior = priorWps[priorWps.length - 1];
-      // Fall back to origin if the gap is bounded only by time-blocks (no
-      // located waypoint precedes it) — the rep's position is still origin.
-      entryLoc = prior?.loc ?? input.origin;
-    }
+  gaps.forEach((gap) => {
+    // entryLoc: where the rep is when the gap opens — the most-recent located
+    // waypoint that ended at/before the gap start (the rep is standing wherever
+    // their last fixed meeting was). Falls back to origin when no located
+    // waypoint precedes the gap: both the genuine start-of-day gap AND gaps
+    // bounded only by time-blocks. NB: this must run for EVERY gap, including
+    // the first — a rep whose day opens with a located meeting is at that
+    // meeting's location when the first free gap opens, not at origin.
+    const priorWps = wpByStart.filter(
+      (w) => Date.parse(w.end) <= Date.parse(gap.start),
+    );
+    const prior = priorWps[priorWps.length - 1];
+    const entryLoc: SchedLatLng = prior?.loc ?? input.origin;
 
     // exit: a located waypoint whose start == gap end constrains the return
     // leg (must arrive by waypoint.start, at its location). Otherwise the gap

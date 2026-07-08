@@ -333,6 +333,53 @@ describe("scheduleDay", () => {
     expect(entry.depart).toBe(addMinutes(entry.arrive, 45));
   });
 
+  it("8. first gap after a located meeting measures drive from the meeting, not origin", () => {
+    // Regression: when the rep's first calendar event of the day is a located
+    // meeting, the first free gap opens AT the meeting's location — not at the
+    // rep's origin. ETAs and feasibility for drop-ins in that gap must be
+    // measured from the meeting the rep just left, or every morning-gap ETA is
+    // wildly wrong (route-around's primary case: the day starts with a meeting).
+    const windowStart = iso(9);
+    const windowEnd = iso(18);
+    const meeting: FixedWaypoint = {
+      id: "m1",
+      title: "Morning Meeting",
+      start: iso(9), // opens exactly at the window → first free gap is gapIndex 0
+      end: iso(9, 30),
+      lat: 41, // ~69 miles / ~138 min north of the (40,-74) origin
+      lng: -74,
+    };
+    // A prospect right next to the meeting — but far from origin.
+    const p1: SchedProspect = { id: "p1", name: "Near Meeting", lat: 41, lng: -74.01 };
+    const input: ScheduleInput = {
+      windowStart,
+      windowEnd,
+      origin: ORIGIN,
+      waypoints: [meeting],
+      timeBlocks: [],
+      prospects: [p1],
+    };
+
+    const result = scheduleDay(input);
+
+    const entry = prospectEntries(result.timeline).find((p) => p.id === "p1");
+    expect(entry).toBeDefined();
+
+    const meetingLoc = { lat: meeting.lat, lng: meeting.lng };
+    const p1Loc = { lat: p1.lat, lng: p1.lng };
+    const driveFromMeeting = driveMinutesBetween(meetingLoc, p1Loc);
+    const driveFromOrigin = driveMinutesBetween(ORIGIN, p1Loc);
+    // Sanity: the two vantage points give very different drive times, so the
+    // assertion truly discriminates the bug (not an accidental coincidence).
+    expect(Math.abs(driveFromOrigin - driveFromMeeting)).toBeGreaterThan(60);
+
+    // The gap opens at the meeting's end (09:30) at the meeting's location.
+    const expectedArrive = addMinutes(iso(9, 30), driveFromMeeting);
+    const fromOriginArrive = addMinutes(iso(9, 30), driveFromOrigin);
+    expect(entry!.arrive).toBe(expectedArrive);
+    expect(entry!.arrive).not.toBe(fromOriginArrive);
+  });
+
   it("clamps fixed spans to the window", () => {
     // Waypoint starts before the window opens; it should be clamped to windowStart.
     const windowStart = iso(9);
