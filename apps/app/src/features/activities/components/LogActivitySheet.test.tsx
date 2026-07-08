@@ -20,6 +20,13 @@ vi.mock("../hooks/useLogActivity", () => ({
   }),
 }));
 
+// Calendar follow-up sync fires after a successful log (the DB trigger has
+// moved next_followup_at). Fire-and-forget; mock it to assert it's invoked.
+const syncFollowupMock = vi.fn().mockResolvedValue(undefined);
+vi.mock("@/features/appointments/useFollowupSync", () => ({
+  useFollowupSync: () => ({ syncFollowup: syncFollowupMock }),
+}));
+
 // NotesFieldWithMic and DispositionTile pull in audio APIs / animation —
 // not relevant to this test. Stub them as simple inputs/buttons.
 vi.mock("@/components/navigatr", async () => {
@@ -50,6 +57,7 @@ import { LogActivitySheet } from "./LogActivitySheet";
 beforeEach(() => {
   mutateAsyncMock.mockReset();
   mutateAsyncMock.mockResolvedValue({ id: "act-1" });
+  syncFollowupMock.mockClear();
 });
 
 function openSheet() {
@@ -114,6 +122,8 @@ describe("LogActivitySheet — submission payload by type", () => {
       durationMinutes: null,
       disposition: "positive_engagement",
     });
+    // After the log succeeds, the deal's follow-up calendar event is reconciled.
+    await waitFor(() => expect(syncFollowupMock).toHaveBeenCalledWith("deal-1"));
   });
 
   it("Drop-In submit sends type='drop_in' with a field-visit disposition and durationMinutes=null", async () => {

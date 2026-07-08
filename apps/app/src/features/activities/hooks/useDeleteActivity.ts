@@ -13,6 +13,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
+import { useFollowupSync } from "@/features/appointments/useFollowupSync";
 import { ACTIVITIES_ORG_QUERY_KEY, ACTIVITIES_QUERY_KEY } from "./useActivities";
 import { DEALS_QUERY_KEY } from "@/features/pipeline/hooks/useDeals";
 
@@ -25,6 +26,7 @@ export interface DeleteActivityInput {
 export function useDeleteActivity() {
   const queryClient = useQueryClient();
   const userId = useAuth((s) => s.user?.id);
+  const { syncFollowup } = useFollowupSync();
 
   return useMutation({
     mutationFn: async (input: DeleteActivityInput): Promise<void> => {
@@ -46,6 +48,11 @@ export function useDeleteActivity() {
       void queryClient.invalidateQueries({
         queryKey: DEALS_QUERY_KEY(userId),
       });
+      // next_followup_at is DERIVED — the activities_sync_deal_denorm trigger
+      // recomputes it on DELETE (deleting the latest activity can move the
+      // follow-up to an earlier one, or clear it). Reconcile the deal's
+      // follow-up calendar event. Fire-and-forget.
+      void syncFollowup(variables.dealId);
     },
   });
 }

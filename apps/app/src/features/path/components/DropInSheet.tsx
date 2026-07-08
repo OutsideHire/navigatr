@@ -35,6 +35,7 @@ import { PATH_DISPOSITION_KEYS } from "../lib/pathDispositions";
 import { todayISO } from "../lib/today";
 import { useCreateDeal } from "@/features/pipeline/hooks/useCreateDeal";
 import { useLogActivity } from "@/features/activities/hooks/useLogActivity";
+import { useFollowupSync } from "@/features/appointments/useFollowupSync";
 
 /** Default follow-up date for the inline picker: today + N calendar days, yyyy-mm-dd. */
 function plusDaysISODate(days: number): string {
@@ -64,6 +65,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
     : false;
   const createDeal = useCreateDeal();
   const logActivity = useLogActivity();
+  const { syncFollowup } = useFollowupSync();
 
   const [selected, setSelected] = React.useState<Disposition | null>(null);
   const [notes, setNotes] = React.useState("");
@@ -129,6 +131,9 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
         });
         // Both mutations succeeded — only now is a deal truly created.
         await markDealCreated(merchant.id);
+        // The drop-in log's DB trigger set the new deal's next_followup_at —
+        // reconcile its calendar event. Fire-and-forget: never blocks the flow.
+        void syncFollowup(dealId);
         toast.success(`Deal created for ${merchant.name}`);
         // Known accepted edge: if createDeal succeeds but logActivity throws, an
         // orphan deal exists with no drop-in activity / follow-up. We don't roll

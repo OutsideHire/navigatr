@@ -29,6 +29,14 @@ vi.mock("@/features/auth/useProfile", () => ({
   }),
 }));
 
+// A deal created WITH a follow-up date should reconcile a calendar event on
+// the create path (nothing else fires sync there). Mock it so we can assert
+// it fires with the NEW deal's id — and only when a follow-up was set.
+const syncFollowupMock = vi.fn().mockResolvedValue(undefined);
+vi.mock("@/features/appointments/useFollowupSync", () => ({
+  useFollowupSync: () => ({ syncFollowup: syncFollowupMock }),
+}));
+
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -40,6 +48,7 @@ beforeEach(() => {
   insertMock.mockClear();
   selectMock.mockClear();
   singleMock.mockReset();
+  syncFollowupMock.mockClear();
   authUserId = "user-1";
   profileOrgId = "org-1";
 });
@@ -209,5 +218,28 @@ describe("useCreateDeal", () => {
     expect(invalidateSpy.mock.calls[0][0]).toEqual({
       queryKey: ["deals", "list", "user-1"],
     });
+  });
+
+  it("fires the calendar follow-up sync with the new deal id when a follow-up date was set", async () => {
+    singleMock.mockResolvedValueOnce({ data: { id: "deal-followup" }, error: null });
+    const { result } = renderHook(() => useCreateDeal(), { wrapper });
+    await result.current.mutateAsync({
+      companyName: "X", contactName: "X", contactEmail: "x@x.x",
+      contactPhone: "+10000000000", valueCents: 0, stage: "new", probability: 20,
+      nextFollowupAt: "2026-06-04T00:00:00Z",
+    });
+    await waitFor(() => expect(syncFollowupMock).toHaveBeenCalledWith("deal-followup"));
+  });
+
+  it("does NOT fire the follow-up sync when the deal has no follow-up date", async () => {
+    singleMock.mockResolvedValueOnce({ data: { id: "deal-nofollow" }, error: null });
+    const { result } = renderHook(() => useCreateDeal(), { wrapper });
+    await result.current.mutateAsync({
+      companyName: "X", contactName: "X", contactEmail: "x@x.x",
+      contactPhone: "+10000000000", valueCents: 0, stage: "new", probability: 20,
+    });
+    // Give onSuccess a tick to run.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(syncFollowupMock).not.toHaveBeenCalled();
   });
 });

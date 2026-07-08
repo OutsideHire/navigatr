@@ -16,6 +16,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
 import { useProfile } from "@/features/auth/useProfile";
+import { useFollowupSync } from "@/features/appointments/useFollowupSync";
 import { DEALS_QUERY_KEY } from "./useDeals";
 import type { DealStage } from "../mockData";
 
@@ -42,6 +43,7 @@ export function useCreateDeal() {
   const queryClient = useQueryClient();
   const userId = useAuth((s) => s.user?.id);
   const profile = useProfile();
+  const { syncFollowup } = useFollowupSync();
 
   return useMutation({
     mutationFn: async (input: CreateDealInput): Promise<{ id: string }> => {
@@ -75,9 +77,15 @@ export function useCreateDeal() {
       if (error) throw error;
       return { id: data.id as string };
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       // Trigger refetch of the list so the new deal appears.
       void queryClient.invalidateQueries({ queryKey: DEALS_QUERY_KEY(userId) });
+      // If the deal was created with a follow-up date, reconcile it to an
+      // all-day calendar event right away — nothing else fires sync on the
+      // create path. Only when a follow-up was actually set. Fire-and-forget.
+      if (variables.nextFollowupAt) {
+        void syncFollowup(data.id);
+      }
     },
   });
 }

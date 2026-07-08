@@ -14,6 +14,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
+import { useFollowupSync } from "@/features/appointments/useFollowupSync";
 import { ACTIVITIES_ORG_QUERY_KEY, ACTIVITIES_QUERY_KEY } from "./useActivities";
 import { DEALS_QUERY_KEY } from "@/features/pipeline/hooks/useDeals";
 import type { ActivityType } from "../mockData";
@@ -51,6 +52,7 @@ function toSnakeCase(patch: UpdateActivityInput["patch"]): Record<string, unknow
 export function useUpdateActivity() {
   const queryClient = useQueryClient();
   const userId = useAuth((s) => s.user?.id);
+  const { syncFollowup } = useFollowupSync();
 
   return useMutation({
     mutationFn: async (input: UpdateActivityInput): Promise<void> => {
@@ -76,6 +78,11 @@ export function useUpdateActivity() {
       void queryClient.invalidateQueries({
         queryKey: DEALS_QUERY_KEY(userId),
       });
+      // next_followup_at is DERIVED — the activities_sync_deal_denorm trigger
+      // recomputes it from the latest activity's follow_up_date on ANY edit
+      // (incl. ActivitiesPage Snooze + EditActivitySheet, which route here).
+      // Reconcile the deal's follow-up calendar event. Fire-and-forget.
+      void syncFollowup(variables.dealId);
     },
   });
 }

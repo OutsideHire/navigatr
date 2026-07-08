@@ -52,6 +52,7 @@ import {
 } from "@/lib/followUpScheduling";
 import { type ActivityType } from "../mockData";
 import { useLogActivity } from "../hooks/useLogActivity";
+import { useFollowupSync } from "@/features/appointments/useFollowupSync";
 import { DISPOSITIONS_BY_TYPE, DISPOSITION_VALUES } from "../lib/dispositionSets";
 
 // ───────────────────────────────────────────────────────────────────────
@@ -242,6 +243,7 @@ function ActivityForm({
 }) {
   const [showAll, setShowAll] = React.useState(false);
   const logActivity = useLogActivity();
+  const { syncFollowup } = useFollowupSync();
   const cfg = TYPE_CONFIG[type];
   const dispositionSet = DISPOSITIONS_BY_TYPE[type];
 
@@ -276,6 +278,9 @@ function ActivityForm({
         occurredAt: new Date().toISOString(),
         followUpDate: followUpIso,
       });
+      // The log's DB trigger has moved the deal's next_followup_at — reconcile
+      // its calendar event. Fire-and-forget: never blocks or fails the log.
+      void syncFollowup(dealId);
       if (followUpIso) {
         toast.success(`Activity logged. Follow-up: ${formatFollowUpDate(followUpIso)}`);
       } else {

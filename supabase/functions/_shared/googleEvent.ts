@@ -37,3 +37,31 @@ export function buildGoogleEventPayload(
   if (desc) body.description = desc;
   return body;
 }
+
+export interface FollowupDealForEvent {
+  id: string;
+  companyName: string;
+}
+export interface GoogleAllDayEventBody {
+  summary: string;
+  start: { date: string };
+  end: { date: string };
+  description?: string;
+  extendedProperties: { private: { navigatr_followup_deal_id: string } };
+}
+// All-day follow-up reminder. Google all-day events use start.date/end.date
+// (YYYY-MM-DD) with an EXCLUSIVE end, so a single-day reminder ends the next day.
+// We take the UTC date portion of next_followup_at (follow-ups are date-intent).
+export function buildFollowupEvent(deal: FollowupDealForEvent, followUpDateISO: string): GoogleAllDayEventBody {
+  const startDate = followUpDateISO.slice(0, 10);
+  const end = new Date(`${startDate}T00:00:00Z`);
+  end.setUTCDate(end.getUTCDate() + 1);
+  const endDate = end.toISOString().slice(0, 10);
+  return {
+    summary: `Follow up: ${deal.companyName}`,
+    start: { date: startDate },
+    end: { date: endDate },
+    description: `navigatr follow-up for ${deal.companyName}`,
+    extendedProperties: { private: { navigatr_followup_deal_id: deal.id } },
+  };
+}
