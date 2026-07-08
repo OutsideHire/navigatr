@@ -32,6 +32,7 @@ import { type Merchant, type MerchantCategory } from "../mockData";
 import { usePathOrigin } from "../hooks/usePathOrigin";
 import { useMerchants } from "../hooks/useMerchants";
 import { usePathMutations, type StopSnapshot } from "../hooks/usePathMutations";
+import { usePathCalendarSync } from "../hooks/usePathCalendarSync";
 import { todayISO, addDaysISO } from "../lib/today";
 import {
   composeReminderAt,
@@ -105,6 +106,9 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
   // --- Saved path -----------------------------------------------------------
   const [createdPathId, setCreatedPathId] = React.useState<string | null>(null);
   const { createPath, addStops } = usePathMutations();
+  // Milestone 3: Plan-a-Path save is the ONLY moment that CREATES a calendar
+  // block (the path is planned + not started). Fire-and-forget after save.
+  const { syncPath } = usePathCalendarSync();
   const [saving, setSaving] = React.useState(false);
 
   // --- Schedule (SP3) -------------------------------------------------------
@@ -293,13 +297,16 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
       }));
       await addStops.mutateAsync({ pathId, basePosition: 0, stops });
       setCreatedPathId(pathId);
+      // Plan-a-Path save succeeded → create the planned path's calendar block.
+      // Fire-and-forget: never block/fail the save. This is the ONLY create site.
+      void syncPath(pathId);
       goTo("saved");
     } catch {
       toast.error("Couldn't save the path. Please try again.");
     } finally {
       setSaving(false);
     }
-  }, [saving, createdPathId, orderedStops, createPath, addStops, origin, originLabel, goTo, dateValid, scheduleDate, effectiveName, reminderAt]);
+  }, [saving, createdPathId, orderedStops, createPath, addStops, syncPath, origin, originLabel, goTo, dateValid, scheduleDate, effectiveName, reminderAt]);
 
   // --- Footer wiring per step -----------------------------------------------
   const idx = stepIndex(stepKey);

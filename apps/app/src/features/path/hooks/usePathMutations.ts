@@ -13,6 +13,7 @@ import { PATHS_QUERY_KEY } from "./usePaths";
 import { ACTIVE_PATH_QUERY_KEY } from "./useActivePath";
 import { todayISO, addDaysISO } from "../lib/today";
 import { PREVIOUS_UNFINISHED_QUERY_KEY } from "./usePreviousUnfinishedPath";
+import { usePathCalendarSync } from "./usePathCalendarSync";
 
 export interface CreatePathInput {
   date: string;
@@ -45,6 +46,10 @@ export interface AddStopsInput { pathId: string; basePosition: number; stops: St
 export function usePathMutations() {
   const qc = useQueryClient();
   const userId = useAuth((s) => s.user?.id);
+  // Calendar-block reconcile trigger (Milestone 3). Fire-and-forget: start/complete
+  // below `void syncPath(...)` so the block is deleted once the planned path is
+  // started or completed, never blocking or failing the underlying mutation.
+  const { syncPath } = usePathCalendarSync();
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: [...PATHS_QUERY_KEY, userId] });
     qc.invalidateQueries({ queryKey: [...ACTIVE_PATH_QUERY_KEY, userId] });
@@ -239,7 +244,11 @@ export function usePathMutations() {
   // mutateAsync + isPending + the shared cache invalidation.
   const finalizeCurrentPath = useMutation({
     mutationFn: (pathId: string) => finalizeSingle(pathId),
-    onSuccess: invalidate,
+    onSuccess: (_data, pathId) => {
+      invalidate();
+      // Completed path: reconcile deletes any calendar block. Fire-and-forget.
+      void syncPath(pathId);
+    },
   });
 
   // Stamp started_at on an existing (planned) path — "start a planned path" from
@@ -255,7 +264,11 @@ export function usePathMutations() {
         .is("started_at", null);
       if (error) throw error;
     },
-    onSuccess: invalidate,
+    onSuccess: (_data, pathId) => {
+      invalidate();
+      // Started path: reconcile deletes the planned calendar block. Fire-and-forget.
+      void syncPath(pathId);
+    },
   });
 
   const closePreviousPath = useMutation({
