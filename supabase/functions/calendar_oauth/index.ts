@@ -1,24 +1,35 @@
-// calendar_oauth — Google Calendar OAuth connect/callback/list/disconnect.
+// calendar_oauth — Calendar OAuth connect/callback/list/disconnect.
+//
+// Provider-aware: the OAuth endpoints (authUrl / tokenUrl / revokeUrl / scopes /
+// client-id+secret env vars / extra auth params) come from
+// getProvider(provider).oauth. `provider` defaults to "google" everywhere, so
+// existing Google callers (which send no `provider`) behave exactly as before.
 //
 // Routing: sub-route is the path segment after the function name, i.e.
 // /functions/v1/calendar_oauth/<sub>. Mirrors geocode's CORS / json() shape.
 //
-//   start       POST, authenticated — returns { authUrl } for the browser to
-//               redirect to. State is a self-verifying signed token (HMAC-SHA256
-//               over userId.nonce.expiry keyed by the service-role key), so
-//               /callback can trust it without a session.
-//   callback    GET, no session — Google redirects here with code+state. Verifies
-//               state, exchanges the code, upserts oauth_connections (service
-//               role), stores the token bundle in Vault, then 302s back to the app.
-//   calendars   POST, authenticated — lists the user's calendars for the personal-
-//               calendar picker.
-//   disconnect  POST, authenticated — marks the connection revoked and best-effort
-//               revokes the grant with Google.
+//   start       POST, authenticated — accepts { provider? } and returns
+//               { authUrl } for the browser to redirect to. State is a
+//               self-verifying signed token (HMAC-SHA256 over
+//               userId.nonce.expiry.provider keyed by the service-role key), so
+//               /callback can trust it (incl. which provider) without a session.
+//   callback    GET, no session — the provider redirects here with code+state.
+//               Verifies state, reads the provider from it, exchanges the code
+//               against that provider's token URL, upserts oauth_connections
+//               (service role), stores the token bundle in Vault, then 302s back.
+//   calendars   POST, authenticated — accepts { provider? }; lists the user's
+//               calendars for the personal-calendar picker (Google only for now;
+//               Microsoft returns an empty list — no picker in this slice).
+//   disconnect  POST, authenticated — accepts { provider? }; marks the connection
+//               revoked. For providers with a revoke endpoint (Google) it also
+//               best-effort revokes the grant; for those without (Microsoft) it
+//               clears the stored token instead.
 //
 // Secrets are read from env at runtime; nothing is hardcoded.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getFreshAccessToken, type TokenBundle } from "../_shared/googleToken.ts";
+import { getProvider, type CalendarProviderId } from "../_shared/calendarProviders/index.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -31,12 +42,10 @@ const APP_URL = Deno.env.get("APP_URL") ?? "";
 
 const CALLBACK_URL = `${SUPABASE_URL}/functions/v1/calendar_oauth/callback`;
 
-// Calendar scopes: calendar list (read-only) + events (read/write).
-// Read/WRITE calendar.events: needed to push navigatr appointments (M6). The consent screen must include this scope, and any user connected under the old read-only scope must reconnect once to grant write.
-const SCOPES = [
-  "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
-  "https://www.googleapis.com/auth/calendar.events",
-];
+// Scopes are provider-specific and sourced from getProvider(provider).oauth.scopes.
+// Google's set includes calendar.events (read/WRITE) so navigatr appointments can be
+// pushed (M6); any user connected under the old read-only scope must reconnect once
+// to grant write.
 
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes to complete the round-trip.
 
@@ -72,20 +81,25 @@ async function hmac(payload: string): Promise<string> {
   return b64url(new Uint8Array(sig));
 }
 
-// state = <userId>.<nonce>.<expiryMs>.<sig>  (sig over the first three joined by ".")
-async function signState(userId: string): Promise<string> {
+// state = <userId>.<nonce>.<expiryMs>.<provider>.<sig>
+// The HMAC covers the whole payload (userId.nonce.expiry.provider), so tampering
+// with the provider — like any other field — invalidates the signature. `provider`
+// is a fixed enum ("google"/"microsoft") with no "." so the "." split stays safe.
+async function signState(userId: string, provider: CalendarProviderId): Promise<string> {
   const nonce = b64url(crypto.getRandomValues(new Uint8Array(16)));
   const expiry = String(Date.now() + STATE_TTL_MS);
-  const payload = `${userId}.${nonce}.${expiry}`;
+  const payload = `${userId}.${nonce}.${expiry}.${provider}`;
   const sig = await hmac(payload);
   return `${payload}.${sig}`;
 }
 
-async function verifyState(state: string): Promise<string | null> {
+async function verifyState(
+  state: string,
+): Promise<{ userId: string; provider: CalendarProviderId } | null> {
   const parts = state.split(".");
-  if (parts.length !== 4) return null;
-  const [userId, nonce, expiry, sig] = parts;
-  const payload = `${userId}.${nonce}.${expiry}`;
+  if (parts.length !== 5) return null;
+  const [userId, nonce, expiry, provider, sig] = parts;
+  const payload = `${userId}.${nonce}.${expiry}.${provider}`;
   const expected = await hmac(payload);
   // Constant-time-ish compare: lengths + char loop.
   if (sig.length !== expected.length) return null;
@@ -93,7 +107,8 @@ async function verifyState(state: string): Promise<string | null> {
   for (let i = 0; i < sig.length; i++) diff |= sig.charCodeAt(i) ^ expected.charCodeAt(i);
   if (diff !== 0) return null;
   if (Number.isNaN(Number(expiry)) || Date.now() > Number(expiry)) return null;
-  return userId;
+  if (provider !== "google" && provider !== "microsoft") return null;
+  return { userId, provider };
 }
 
 // ---- helpers ----------------------------------------------------------------
@@ -128,6 +143,19 @@ async function requireUser(req: Request): Promise<{ userId: string } | Response>
   const { data, error } = await userClient.auth.getUser();
   if (error || !data?.user) return json({ error: "unauthorized" }, 401);
   return { userId: data.user.id };
+}
+
+/** Read the requested provider from the JSON body, defaulting to "google".
+ *  Existing callers send no body (invoke() with no args), which throws on
+ *  req.json() → we swallow it and return "google", preserving today's behavior.
+ *  Any missing/unknown value also falls back to "google". */
+async function readProvider(req: Request): Promise<CalendarProviderId> {
+  try {
+    const body = (await req.json()) as { provider?: unknown } | null;
+    if (body?.provider === "microsoft") return "microsoft";
+    if (body?.provider === "google") return "google";
+  } catch { /* no/empty/invalid body → default */ }
+  return "google";
 }
 
 /** Load the connection id + a fresh access token for this user, persisting a
@@ -168,15 +196,21 @@ async function handleStart(req: Request): Promise<Response> {
   const auth = await requireUser(req);
   if (auth instanceof Response) return auth;
 
-  const state = await signState(auth.userId);
-  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-  url.searchParams.set("client_id", GOOGLE_CLIENT_ID);
+  const provider = await readProvider(req);
+  const { oauth } = getProvider(provider);
+
+  const state = await signState(auth.userId, provider);
+  const url = new URL(oauth.authUrl);
+  url.searchParams.set("client_id", Deno.env.get(oauth.clientIdEnv) ?? "");
   url.searchParams.set("redirect_uri", CALLBACK_URL);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", SCOPES.join(" "));
-  url.searchParams.set("access_type", "offline");
-  url.searchParams.set("prompt", "consent");
-  url.searchParams.set("include_granted_scopes", "true");
+  url.searchParams.set("scope", oauth.scopes.join(" "));
+  // Provider-specific extras (Google: access_type/prompt/include_granted_scopes;
+  // Microsoft: response_mode). Object.entries preserves insertion order, so for
+  // Google these land in the same order/positions as before.
+  for (const [k, v] of Object.entries(oauth.extraAuthParams)) {
+    url.searchParams.set(k, v);
+  }
   url.searchParams.set("state", state);
   return json({ authUrl: url.toString() });
 }
@@ -191,18 +225,20 @@ async function handleCallback(req: Request): Promise<Response> {
     const state = u.searchParams.get("state");
     if (!code || !state) return redirect(errUrl);
 
-    const userId = await verifyState(state);
-    if (!userId) return redirect(errUrl);
+    const verified = await verifyState(state);
+    if (!verified) return redirect(errUrl);
+    const { userId, provider } = verified;
+    const { oauth } = getProvider(provider);
 
-    // Exchange the auth code for tokens.
+    // Exchange the auth code for tokens against the provider's token endpoint.
     const form = new URLSearchParams({
       code,
-      client_id: GOOGLE_CLIENT_ID,
-      client_secret: GOOGLE_CLIENT_SECRET,
+      client_id: Deno.env.get(oauth.clientIdEnv) ?? "",
+      client_secret: Deno.env.get(oauth.clientSecretEnv) ?? "",
       redirect_uri: CALLBACK_URL,
       grant_type: "authorization_code",
     });
-    const tokRes = await fetch("https://oauth2.googleapis.com/token", {
+    const tokRes = await fetch(oauth.tokenUrl, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: form.toString(),
@@ -213,6 +249,9 @@ async function handleCallback(req: Request): Promise<Response> {
       refresh_token?: string;
       expires_in: number;
     };
+    // Both providers must return a refresh_token (Google via access_type=offline
+    // + prompt=consent, Microsoft via the offline_access scope). No refresh token
+    // means we can't keep the connection alive → treat as a failed connect.
     if (!tok.access_token || !tok.refresh_token) return redirect(errUrl);
 
     const bundle: TokenBundle = {
@@ -237,8 +276,8 @@ async function handleCallback(req: Request): Promise<Response> {
         {
           org_id: profile.org_id,
           user_id: userId,
-          provider: "google",
-          scopes: SCOPES,
+          provider,
+          scopes: oauth.scopes,
           status: "active",
           connected_at: nowIso,
           last_refreshed_at: nowIso,
@@ -265,6 +304,12 @@ async function handleCalendars(req: Request): Promise<Response> {
   const auth = await requireUser(req);
   if (auth instanceof Response) return auth;
 
+  const provider = await readProvider(req);
+  // No Microsoft calendar picker in this slice — Graph's calendarView reads the
+  // primary calendar directly (see read_calendar_events), so there's nothing to
+  // pick yet. Return an empty list rather than erroring.
+  if (provider === "microsoft") return json({ calendars: [] });
+
   const fresh = await freshTokenForUser(auth.userId);
   if (!fresh) return json({ error: "not_connected" }, 409);
 
@@ -288,23 +333,39 @@ async function handleDisconnect(req: Request): Promise<Response> {
   const auth = await requireUser(req);
   if (auth instanceof Response) return auth;
 
+  const provider = await readProvider(req);
+  const { oauth } = getProvider(provider);
+
   const svc = serviceClient();
-  // Grab the refresh token (best-effort revoke with Google) before flipping.
+  // Grab the connection (and its token) before flipping so we can revoke/clear it.
   const { data: conn } = await svc
     .from("oauth_connections")
     .select("id")
-    .eq("provider", "google")
+    .eq("provider", provider)
     .eq("user_id", auth.userId)
     .maybeSingle();
 
   if (conn) {
     const { data: bundleJson } = await svc.rpc("oauth_token_get", { p_connection_id: conn.id });
     const refreshToken = (bundleJson as TokenBundle | null)?.refresh_token;
-    if (refreshToken) {
+    if (oauth.revokeUrl) {
+      // Providers with a revoke endpoint (Google): best-effort remote revoke.
+      if (refreshToken) {
+        try {
+          await fetch(`${oauth.revokeUrl}?token=${encodeURIComponent(refreshToken)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          });
+        } catch { /* best-effort */ }
+      }
+    } else if (bundleJson) {
+      // Providers without a revoke endpoint (Microsoft): we can't tell the IdP to
+      // invalidate the grant, so drop our stored copy by overwriting it with an
+      // empty bundle via the sanctioned RPC.
       try {
-        await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(refreshToken)}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        await svc.rpc("oauth_token_set", {
+          p_connection_id: conn.id,
+          p_token: { access_token: "", refresh_token: "", expiry: "" },
         });
       } catch { /* best-effort */ }
     }
@@ -313,7 +374,7 @@ async function handleDisconnect(req: Request): Promise<Response> {
   await svc
     .from("oauth_connections")
     .update({ status: "revoked" })
-    .eq("provider", "google")
+    .eq("provider", provider)
     .eq("user_id", auth.userId);
 
   return json({ ok: true });
