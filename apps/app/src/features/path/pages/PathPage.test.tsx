@@ -561,6 +561,54 @@ describe("PathPage discover — meeting-aware banner + fit flags", () => {
     expect(screen.queryByText(/min until/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/won't fit before/i)).not.toBeInTheDocument();
   });
+
+  it("does not crash (and flags nothing) when a discover merchant has non-finite coords", () => {
+    // Regression: discoverUnfit iterates `sorted` and calls fitsBeforeMeeting,
+    // which for a non-finite coord drives driveMinutesBetween -> NaN -> new
+    // Date(NaN).toISOString(), throwing a RangeError. Because that runs in a
+    // render-time useMemo it crashed the ENTIRE discover view, not just the row.
+    // The guard (Number.isFinite lat/lng — the same convention MerchantMap and
+    // the distance code use over this SAME `sorted` array) leaves such a merchant
+    // unflagged instead of crashing.
+    //
+    // A finite sibling would flip `anyGeocoded` true and the non-finite row would
+    // be radius-filtered out of `sorted` before it ever reached discoverUnfit — so
+    // to actually exercise the guarded path the non-finite merchant must be the
+    // only (un-geocoded) row.
+    originState.current = readyOrigin;
+    merchantsState.current = {
+      merchants: [
+        { id: "nan1", name: "No Coords Co", address: "0 Void St", phone: null, lat: NaN, lng: NaN, category: "retail", primaryType: null },
+      ] as unknown as typeof merchantsState.current.merchants,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as typeof merchantsState.current;
+    todayState.current = { ...todayState.current, stops: geoStops as unknown as typeof todayState.current.stops };
+    // A future located meeting → discoverNextMeeting is non-null, so discoverUnfit
+    // actually runs its filter over `sorted` (which holds the non-finite merchant).
+    calendarState.current = {
+      waypoints: [
+        {
+          id: "cal1", title: "Acme sync",
+          start: new Date(Date.now() + 40 * 60000).toISOString(),
+          end: new Date(Date.now() + 100 * 60000).toISOString(),
+          address: "Far Away", lat: 31.5, lng: -98.5, source: "calendar",
+        },
+      ],
+      timeBlocks: [],
+      status: "ok",
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    };
+    // Before the guard this render throws RangeError; the render succeeding IS the
+    // core regression assertion.
+    enterDiscover();
+    // The non-finite merchant still renders in the list, just unflagged.
+    expect(screen.getByText("No Coords Co")).toBeInTheDocument();
+    expect(screen.queryByText(/won't fit before/i)).not.toBeInTheDocument();
+  });
 });
 
 describe("PathPage handleStartPath — dropped stops", () => {

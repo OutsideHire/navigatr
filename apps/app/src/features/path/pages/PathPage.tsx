@@ -508,7 +508,12 @@ export function PathPage() {
     const now = new Date().toISOString();
     const ids = new Set(
       sorted
-        .filter((m) => !fitsBeforeMeeting(now, origin, { lat: m.lat, lng: m.lng }, discoverNextMeeting))
+        .filter(
+          (m) =>
+            Number.isFinite(m.lat) &&
+            Number.isFinite(m.lng) &&
+            !fitsBeforeMeeting(now, origin, { lat: m.lat, lng: m.lng }, discoverNextMeeting),
+        )
         .map((m) => m.id),
     );
     const label = "won't fit before " + new Date(discoverNextMeeting.start).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
