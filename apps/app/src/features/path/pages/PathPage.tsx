@@ -66,7 +66,9 @@ import { planQueueMigration } from "../lib/migrateLocalQueue";
 import { useMerchants } from "../hooks/useMerchants";
 import { sortMerchants, type PathSortMode } from "../lib/sortMerchants";
 import { useCalendarEvents } from "../hooks/useCalendarEvents";
+import { useGeolocation } from "../hooks/useGeolocation";
 import { computeFreeWindows } from "../lib/freeWindows";
+import { annotateRunSchedule } from "../lib/runSchedule";
 
 // Phase 2: discovered prospects are all cold leads, so the old deal-lifecycle
 // status chips (prospect/active/won/cooled) don't apply. Filter by business
@@ -181,6 +183,71 @@ export function PathPage() {
   const hasPending = queueStops.some((s) => s.status === "pending");
   const prevUnfinished = usePreviousUnfinishedPath();
   const { continuePreviousPath, closePreviousPath } = usePathMutations();
+
+  // Route-around optimizer (Slice 2): a live, meeting-aware overlay for the
+  // RUNNING path. This is independent of the planning `calWindow` above — we
+  // always read TODAY's calendar so the Run tab can surface the current stop's
+  // ETA and warn when it will overrun the next fixed meeting. Purely additive +
+  // non-blocking: `runOverlay` stays null (nothing new renders, the running
+  // card looks exactly as before) unless the calendar is connected ("ok"),
+  // there is at least one meeting/time-block today, a pending stop remains, and
+  // we have a start location. The overlay's current stop is the first pending
+  // stop — the same one RunningPath seeks to on entry.
+  const runTodayWindow = React.useMemo(() => {
+    const s = new Date();
+    s.setHours(0, 0, 0, 0);
+    const e = new Date();
+    e.setHours(23, 59, 59, 999);
+    return { start: s.toISOString(), end: e.toISOString() };
+  }, []);
+  const {
+    waypoints: runWaypoints,
+    timeBlocks: runTimeBlocks,
+    status: runCalStatus,
+  } = useCalendarEvents(runTodayWindow);
+  const runGeo = useGeolocation();
+  const runOverlay = React.useMemo(() => {
+    const pending = queueStops.filter((s) => s.status === "pending");
+    const startLoc = runGeo.coords ?? origin;
+    if (
+      runCalStatus !== "ok" ||
+      (runWaypoints.length === 0 && runTimeBlocks.length === 0) ||
+      pending.length === 0 ||
+      !startLoc
+    ) {
+      return null;
+    }
+    const result = annotateRunSchedule({
+      now: new Date().toISOString(),
+      startLoc,
+      stops: pending.map((s) => ({ id: s.merchantId, name: s.name, lat: s.lat, lng: s.lng })),
+      waypoints: runWaypoints.map((w) => ({
+        id: w.id,
+        title: w.title,
+        start: w.start,
+        end: w.end,
+        lat: w.lat,
+        lng: w.lng,
+      })),
+      timeBlocks: runTimeBlocks.map((b) => ({ id: b.id, title: b.title, start: b.start, end: b.end })),
+    });
+    const current = result.stops[0];
+    if (!current) return null;
+    const nextMeeting = result.meetings.find((m) => m.id === current.nextMeetingId) ?? null;
+    const stopsUntil = current.nextMeetingId
+      ? result.stops.filter((s) => s.nextMeetingId === current.nextMeetingId).length
+      : 0;
+    return {
+      arrive: current.arrive,
+      dwellMin: 20,
+      currentStopName: pending[0].name,
+      nextMeeting: nextMeeting
+        ? { title: nextMeeting.title, start: nextMeeting.start, located: nextMeeting.located }
+        : null,
+      stopsUntilNextMeeting: stopsUntil,
+      fits: current.fitsBeforeNextMeeting,
+    };
+  }, [queueStops, runWaypoints, runTimeBlocks, runCalStatus, runGeo.coords, origin]);
 
   // Lifecycle landing rule (design's lifecycle table). Derives where the rep
   // lands from started_at + pending stops, uniformly across tab switch, reopen,
@@ -660,6 +727,7 @@ export function PathPage() {
                 onPause={() => setActiveTab("stops")}
                 onViewPipeline={() => navigate("/pipeline")}
                 onExit={() => setPathView("entry")}
+                runOverlay={runOverlay}
               />
             ) : (
               <>

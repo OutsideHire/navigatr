@@ -10,6 +10,7 @@ import { merchantFromStop } from "../lib/merchantFromStop";
 import { DropInSheet } from "./DropInSheet";
 import { EndRouteSheet } from "./EndRouteSheet";
 import { PathSummary } from "./PathSummary";
+import { RunScheduleOverlay } from "./RunScheduleOverlay";
 import { usePathMutations } from "../hooks/usePathMutations";
 import { todayISO } from "../lib/today";
 import { DISPOSITIONS, type Disposition } from "@/lib/followUpScheduling";
@@ -20,6 +21,21 @@ export interface RunningPathProps {
   onPause: () => void;
   onViewPipeline: () => void;
   onExit: () => void;
+  /**
+   * Calendar-aware run overlay for the current stop (route-around optimizer,
+   * Slice 2). Computed live by the parent from the rep's calendar + position;
+   * null/undefined when there's nothing to show (calendar not connected, no
+   * meetings today, or route complete) — in which case nothing new renders and
+   * the running card looks exactly as it did before.
+   */
+  runOverlay?: {
+    arrive: string | null;
+    dwellMin: number;
+    currentStopName: string;
+    nextMeeting: { title: string; start: string; located: boolean } | null;
+    stopsUntilNextMeeting: number;
+    fits: boolean;
+  } | null;
 }
 
 type PathSummaryStats = {
@@ -62,7 +78,7 @@ function computePathSummaryStats(
  * Log drop-in, with Prev/Skip/Next. Logging a drop-in (via DropInSheet) auto-advances
  * to the next pending stop + an Undo toast. When no stops are pending, shows PathSummary.
  */
-export function RunningPath({ origin, onPause, onViewPipeline, onExit }: RunningPathProps) {
+export function RunningPath({ origin, onPause, onViewPipeline, onExit, runOverlay }: RunningPathProps) {
   const { stops, setStatus, clear, pathId, pendingCount } = useTodayPath();
   const { carryToTomorrow, finalizeCurrentPath } = usePathMutations();
   // stops arrive position-ordered (useActivePath sorts, useTodayPath preserves it),
@@ -193,6 +209,7 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit }: Running
             {cur.address ? `${cur.address} · ` : ""}{labelForCategory(cur.category)}
           </p>
         </div>
+        {runOverlay && <RunScheduleOverlay {...runOverlay} />}
         <div className="flex flex-wrap gap-2">
           {cur.phone && (
             <a href={`tel:${cur.phone}`}

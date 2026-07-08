@@ -128,6 +128,24 @@ vi.mock("../hooks/usePathMutations", () => ({
     closePreviousPath: { mutate: closeMutate, mutateAsync: vi.fn(), isPending: false },
   }),
 }));
+// Calendar + geolocation drive the run overlay only. Default to "not connected"
+// / no fix so the meeting-aware overlay is null and the existing assertions
+// (which never touch the calendar) are unaffected. RunningPath is stubbed above,
+// so nothing renders the overlay here anyway — these mocks just keep PathPage's
+// new live read from firing a real Edge Function / geolocation request in jsdom.
+vi.mock("../hooks/useCalendarEvents", () => ({
+  useCalendarEvents: () => ({
+    waypoints: [],
+    timeBlocks: [],
+    status: "not_connected",
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+}));
+vi.mock("../hooks/useGeolocation", () => ({
+  useGeolocation: () => ({ coords: null, status: "denied", error: null, retry: vi.fn() }),
+}));
 
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

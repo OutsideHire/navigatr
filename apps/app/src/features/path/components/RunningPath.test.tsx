@@ -218,4 +218,53 @@ describe("RunningPath", () => {
     expect(clear).not.toHaveBeenCalled();
     expect(onExitSpy).not.toHaveBeenCalled();
   });
+
+  // ─── runOverlay (S3: meeting-aware overlay) ──────────────────────────
+  const OVERLAY = {
+    arrive: "2026-07-08T15:00:00.000Z",
+    dwellMin: 20,
+    currentStopName: "A",
+    nextMeeting: { title: "Acme sync", start: "2026-07-08T16:00:00.000Z", located: true },
+    stopsUntilNextMeeting: 2,
+    fits: true,
+  };
+
+  it("renders the next meeting title and stops-to-go when a runOverlay is given", () => {
+    stops = [stop("A"), stop("B")];
+    render(
+      <RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} runOverlay={OVERLAY} />,
+    );
+    expect(screen.getByText(/Acme sync/)).toBeInTheDocument();
+    expect(screen.getByText(/2 stops to go/i)).toBeInTheDocument();
+  });
+
+  it("renders a role=alert warning when the current stop won't fit (fits:false)", () => {
+    stops = [stop("A")];
+    render(
+      <RunningPath
+        origin={ORIGIN}
+        onPause={vi.fn()}
+        onViewPipeline={vi.fn()}
+        onExit={vi.fn()}
+        runOverlay={{ ...OVERLAY, fits: false }}
+      />,
+    );
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+  });
+
+  it("renders no meeting or alert text when runOverlay is null (existing behavior preserved)", () => {
+    stops = [stop("A")];
+    render(
+      <RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} runOverlay={null} />,
+    );
+    expect(screen.queryByText(/Acme sync/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("renders no meeting or alert text when runOverlay is omitted (existing behavior preserved)", () => {
+    stops = [stop("A")];
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
+    expect(screen.queryByText(/Acme sync/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });
