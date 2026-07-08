@@ -86,6 +86,7 @@ function makePathReminder(): PathReminder {
       id: "path-1", date: "2026-07-01", name: "Downtown run", originLabel: "Austin, TX",
       originLat: 30, originLng: -97, status: "planned",
       reminderAt: "2026-07-01T13:30:00.000Z", startedAt: null, stopCount: 3,
+      pathCalendarSyncStatus: null,
     },
     name: "Downtown run",
     date: "2026-07-01",

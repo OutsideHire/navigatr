@@ -8,6 +8,11 @@ vi.mock("../hooks/usePaths", () => ({
   PATHS_QUERY_KEY: ["paths", "list"],
 }));
 
+const { syncPath } = vi.hoisted(() => ({ syncPath: vi.fn() }));
+vi.mock("../hooks/usePathCalendarSync", () => ({
+  usePathCalendarSync: () => ({ syncPath }),
+}));
+
 import { UpcomingPaths } from "./UpcomingPaths";
 
 function makePath(overrides: Partial<Path> = {}): Path {
@@ -22,6 +27,7 @@ function makePath(overrides: Partial<Path> = {}): Path {
     reminderAt: null,
     startedAt: null,
     stopCount: 3,
+    pathCalendarSyncStatus: null,
     ...overrides,
   };
 }
@@ -30,6 +36,7 @@ const TODAY = "2026-07-01";
 
 beforeEach(() => {
   pathsData = [];
+  syncPath.mockReset();
 });
 
 describe("UpcomingPaths", () => {
@@ -71,5 +78,28 @@ describe("UpcomingPaths", () => {
     fireEvent.click(screen.getByRole("button", { name: /open/i }));
     expect(onLaunch).toHaveBeenCalledTimes(1);
     expect((onLaunch.mock.calls[0]![0] as Path).id).toBe("a");
+  });
+
+  it("shows an 'On calendar' badge for a synced planned path", () => {
+    pathsData = [makePath({ id: "a", date: "2026-07-05", pathCalendarSyncStatus: "synced" })];
+    render(<UpcomingPaths onLaunch={vi.fn()} todayIso={TODAY} />);
+    expect(screen.getByText("On calendar")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+  });
+
+  it("shows 'Not synced' + a Retry that calls syncPath(path.id) on error", () => {
+    pathsData = [makePath({ id: "err-path", date: "2026-07-05", pathCalendarSyncStatus: "error" })];
+    render(<UpcomingPaths onLaunch={vi.fn()} todayIso={TODAY} />);
+    expect(screen.getByText("Not synced")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect(syncPath).toHaveBeenCalledWith("err-path");
+  });
+
+  it("shows no sync badge when the status is null", () => {
+    pathsData = [makePath({ id: "a", date: "2026-07-05", pathCalendarSyncStatus: null })];
+    render(<UpcomingPaths onLaunch={vi.fn()} todayIso={TODAY} />);
+    expect(screen.queryByText("On calendar")).not.toBeInTheDocument();
+    expect(screen.queryByText("Not synced")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
   });
 });

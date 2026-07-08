@@ -8,6 +8,16 @@ import type { MerchantCategory } from "../mockData";
 export type PathStatus = "planned" | "completed";
 export type StopStatus = "pending" | "visited" | "skipped";
 
+/**
+ * Calendar-sync state for a planned path's all-day Google Calendar block
+ * (Milestone 3, plan PM5). Stamped on the path row by the `sync_path` Edge fn:
+ *   pending → block create/delete in flight
+ *   synced  → block reconciled to Google
+ *   error   → last sync failed (surface Retry)
+ *   null    → nothing to sync / legacy row
+ */
+export type PathCalendarSyncStatus = "pending" | "synced" | "error";
+
 export interface Path {
   id: string;
   date: string;            // ISO date (yyyy-mm-dd)
@@ -22,6 +32,9 @@ export interface Path {
   // landing rule (see pathLanding). Nullable so legacy paths stay Planned.
   startedAt: string | null;
   stopCount: number;
+  // Calendar-sync state for this path's all-day Google Calendar block (PM5).
+  // Null on legacy rows / paths with nothing to mirror.
+  pathCalendarSyncStatus: PathCalendarSyncStatus | null;
 }
 
 export interface PathStop {
@@ -52,6 +65,7 @@ export interface PathRow {
   status: PathStatus;
   reminder_at?: string | null;
   started_at?: string | null;
+  path_calendar_sync_status?: PathCalendarSyncStatus | null;
 }
 
 export interface PathStopRow {
@@ -84,6 +98,7 @@ export function rowToPath(row: PathRow, stopCount: number): Path {
     reminderAt: row.reminder_at ?? null,
     startedAt: row.started_at ?? null,
     stopCount,
+    pathCalendarSyncStatus: row.path_calendar_sync_status ?? null,
   };
 }
 
