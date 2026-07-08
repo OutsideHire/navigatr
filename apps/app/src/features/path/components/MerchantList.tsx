@@ -33,6 +33,10 @@ export interface MerchantListProps {
   /** When provided, the empty state surfaces a "Reset filters" CTA. The page
    *  passes this in when a stage filter is active so reps aren't stranded. */
   onResetFilters?: () => void;
+  /** Ids of merchants a drop-in couldn't finish before the rep's next meeting. */
+  unfitIds?: Set<string>;
+  /** Label shown on unfit rows, e.g. "won't fit before 12:00 PM". */
+  unfitLabel?: string;
 }
 
 function StatusPill({ status }: { status: Merchant["status"] }) {
@@ -59,7 +63,7 @@ function relativeLastActivity(iso: string | null): string {
   return "Over a year";
 }
 
-export function MerchantList({ merchants, selectedId, onSelect, onResetFilters }: MerchantListProps) {
+export function MerchantList({ merchants, selectedId, onSelect, onResetFilters, unfitIds, unfitLabel }: MerchantListProps) {
   if (merchants.length === 0) {
     return (
       <Card padding="lg" className="flex flex-col items-center gap-3 text-center">
@@ -113,6 +117,9 @@ export function MerchantList({ merchants, selectedId, onSelect, onResetFilters }
                 }
                 trailing={
                   <div className="flex shrink-0 items-center gap-2">
+                    {unfitIds?.has(m.id) && unfitLabel && (
+                      <span className="text-caption text-status-warning">{unfitLabel}</span>
+                    )}
                     <span className="text-caption tabular-nums text-text-muted">{formatDistance(m.distanceMeters)}</span>
                     <ChevronRight className="h-4 w-4 text-text-subtle" aria-hidden />
                   </div>
