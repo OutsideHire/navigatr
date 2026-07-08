@@ -20,6 +20,13 @@ vi.mock("@/features/activities/hooks/useLogActivity", () => ({
   useLogActivity: () => ({ mutateAsync: logActivityMutateAsync }),
 }));
 
+// Calendar follow-up sync fires after the drop-in log succeeds for a created
+// deal. Fire-and-forget; mock it to assert it's invoked with the deal id.
+const syncFollowupMock = vi.fn().mockResolvedValue(undefined);
+vi.mock("@/features/appointments/useFollowupSync", () => ({
+  useFollowupSync: () => ({ syncFollowup: syncFollowupMock }),
+}));
+
 vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
@@ -110,6 +117,8 @@ describe("DropInSheet", () => {
     await act(async () => { fireEvent.click(logStopBtn()); });
     expect(logVisit).toHaveBeenCalledWith("m-1", "not_interested");
     expect(createDealMutateAsync).not.toHaveBeenCalled();
+    // Terminal disposition creates no deal, so there's nothing to reconcile.
+    expect(syncFollowupMock).not.toHaveBeenCalled();
     expect(onLogged).toHaveBeenCalledWith("not_interested");
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
@@ -131,6 +140,8 @@ describe("DropInSheet", () => {
       }),
     );
     expect(markDealCreated).toHaveBeenCalledWith("m-1");
+    // The new deal's follow-up event is reconciled with the created deal id.
+    await waitFor(() => expect(syncFollowupMock).toHaveBeenCalledWith("deal-1"));
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 

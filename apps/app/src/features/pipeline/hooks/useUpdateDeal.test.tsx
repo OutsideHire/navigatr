@@ -22,6 +22,13 @@ vi.mock("@/stores/auth", () => ({
     selector({ user: authUserId ? { id: authUserId } : null }),
 }));
 
+// Calendar follow-up sync is fire-and-forget; mock it so we can assert it's
+// invoked (with the deal id) exactly when the follow-up or stage changed.
+const syncFollowupMock = vi.fn().mockResolvedValue(undefined);
+vi.mock("@/features/appointments/useFollowupSync", () => ({
+  useFollowupSync: () => ({ syncFollowup: syncFollowupMock }),
+}));
+
 function makeWrapper(client: QueryClient) {
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
@@ -31,6 +38,7 @@ function makeWrapper(client: QueryClient) {
 beforeEach(() => {
   updateMock.mockClear();
   eqMock.mockReset();
+  syncFollowupMock.mockClear();
   authUserId = "user-1";
 });
 
@@ -174,5 +182,43 @@ describe("useUpdateDeal", () => {
     await expect(
       result.current.mutateAsync({ id: "deal-1", patch: { stage: "won" } }),
     ).rejects.toMatchObject({ message: expect.stringMatching(/permission denied/) });
+  });
+
+  it("fires the calendar follow-up sync when the patch changes next_followup_at", async () => {
+    eqMock.mockResolvedValueOnce({ error: null });
+    const { result } = renderHook(() => useUpdateDeal(), {
+      wrapper: makeWrapper(new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })),
+    });
+    await result.current.mutateAsync({
+      id: "deal-1",
+      patch: { nextFollowupAt: "2026-06-04T00:00:00Z" },
+    });
+    await waitFor(() => expect(syncFollowupMock).toHaveBeenCalledWith("deal-1"));
+  });
+
+  it("fires the calendar follow-up sync on a stage change (won/lost clears the event)", async () => {
+    eqMock.mockResolvedValueOnce({ error: null });
+    const { result } = renderHook(() => useUpdateDeal(), {
+      wrapper: makeWrapper(new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })),
+    });
+    await result.current.mutateAsync({ id: "deal-1", patch: { stage: "won" } });
+    await waitFor(() => expect(syncFollowupMock).toHaveBeenCalledWith("deal-1"));
+  });
+
+  it("does NOT fire the follow-up sync when neither follow-up nor stage changed", async () => {
+    eqMock.mockResolvedValueOnce({ error: null });
+    const { result } = renderHook(() => useUpdateDeal(), {
+      wrapper: makeWrapper(new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })),
+    });
+    await result.current.mutateAsync({ id: "deal-1", patch: { notes: "just a note" } });
+    // Give onSuccess a tick to run.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(syncFollowupMock).not.toHaveBeenCalled();
   });
 });

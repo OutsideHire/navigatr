@@ -18,6 +18,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
+import { useFollowupSync } from "@/features/appointments/useFollowupSync";
 import { DEALS_QUERY_KEY } from "./useDeals";
 import { STAGE_HISTORY_QUERY_KEY } from "./useStageHistory";
 import type { DealStage, LostReasonCategory } from "../mockData";
@@ -75,6 +76,7 @@ function toSnakeCase(patch: UpdateDealInput["patch"]): Record<string, unknown> {
 export function useUpdateDeal() {
   const queryClient = useQueryClient();
   const userId = useAuth((s) => s.user?.id);
+  const { syncFollowup } = useFollowupSync();
 
   return useMutation({
     mutationFn: async (input: UpdateDealInput): Promise<void> => {
@@ -95,6 +97,13 @@ export function useUpdateDeal() {
       // Funnel — stage_history trigger writes a row whenever stage changes
       if (variables.patch.stage !== undefined) {
         void queryClient.invalidateQueries({ queryKey: STAGE_HISTORY_QUERY_KEY(userId) });
+      }
+      // Calendar — reconcile the deal's follow-up event when the follow-up
+      // itself changed (a direct edit) OR the stage moved (won/lost clears it;
+      // all stage changes, incl. StageUpdateModal/LostReasonModal, persist via
+      // this hook). Fire-and-forget: never blocks or fails the update.
+      if (variables.patch.nextFollowupAt !== undefined || variables.patch.stage !== undefined) {
+        void syncFollowup(variables.id);
       }
     },
   });
