@@ -17,9 +17,15 @@ interface Props {
   title: string;
   lastUpdated: string;
   children: React.ReactNode;
+  /**
+   * Show the "DRAFT — not legally reviewed" banner. Defaults to true so
+   * pages still on placeholder copy (Terms) keep the warning. Finalized,
+   * counsel-ready pages (Privacy) pass `draft={false}`.
+   */
+  draft?: boolean;
 }
 
-export function LegalPageShell({ title, lastUpdated, children }: Props) {
+export function LegalPageShell({ title, lastUpdated, children, draft = true }: Props) {
   return (
     <div className="min-h-dvh bg-surface-canvas text-text-default">
       {/* Top bar — minimal, just the brand + a home link. No auth chrome. */}
@@ -38,22 +44,24 @@ export function LegalPageShell({ title, lastUpdated, children }: Props) {
       </header>
 
       <main className="mx-auto max-w-4xl px-6 py-10">
-        {/* DRAFT banner. Visible on every load until production legal copy
-            replaces the placeholder. */}
-        <div
-          role="status"
-          className="mb-6 flex items-start gap-3 rounded-radius-md border border-status-warning/40 bg-status-warning-bg/40 px-4 py-3 text-body-sm"
-        >
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-status-warning" aria-hidden />
-          <div>
-            <p className="font-medium text-text-default">DRAFT — not legally reviewed</p>
-            <p className="mt-0.5 text-caption text-text-muted">
-              This is placeholder copy intended for product completeness and
-              vendor security review. Final terms will be published before
-              the first paying customer.
-            </p>
+        {/* DRAFT banner. Shown until production legal copy replaces the
+            placeholder (see the `draft` prop). */}
+        {draft && (
+          <div
+            role="status"
+            className="mb-6 flex items-start gap-3 rounded-radius-md border border-status-warning/40 bg-status-warning-bg/40 px-4 py-3 text-body-sm"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-status-warning" aria-hidden />
+            <div>
+              <p className="font-medium text-text-default">DRAFT — not legally reviewed</p>
+              <p className="mt-0.5 text-caption text-text-muted">
+                This is placeholder copy intended for product completeness and
+                vendor security review. Final terms will be published before
+                the first paying customer.
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
         <h1 className="text-heading-xl text-text-default">{title}</h1>
         <p className="mt-1.5 text-caption text-text-muted">
@@ -73,8 +81,8 @@ export function LegalPageShell({ title, lastUpdated, children }: Props) {
             {" · "}
             <Link to="/privacy" className="hover:text-text-default">Privacy</Link>
             {" · "}
-            <a href="mailto:legal@outsidehire.com" className="hover:text-text-default">
-              legal@outsidehire.com
+            <a href="mailto:privacy@getnavigatr.io" className="hover:text-text-default">
+              privacy@getnavigatr.io
             </a>
           </p>
         </footer>
