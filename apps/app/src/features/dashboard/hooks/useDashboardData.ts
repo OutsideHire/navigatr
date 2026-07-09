@@ -27,6 +27,7 @@ import { useStageHistory } from "@/features/pipeline/hooks/useStageHistory";
 import { STAGE_LABEL, type Deal, type DealStage } from "@/features/pipeline/mockData";
 import type { Partner } from "@/features/partners/mockData";
 import { withinRange, type DateRange } from "../lib/dateRange";
+import { calendarDayDelta } from "@/lib/calendarDate";
 
 export interface DashboardKpis {
   activeDealsCount: number;
@@ -34,7 +35,7 @@ export interface DashboardKpis {
   weightedPipelineCents: number;
   wonDealsCount: number;
   wonRevenueCents: number;
-  winRate: number; // 0..1 — won / (won + lost). We don't track "lost" yet, so this is won / total.
+  winRate: number; // 0..1 — won / (won + lost). Open deals are excluded; 0 when there are no closed deals.
 }
 
 export interface PipelineStageRow {
@@ -137,10 +138,16 @@ export interface DashboardData {
 
 const STAGES: DealStage[] = ["new", "contacted", "qualified", "proposal", "won"];
 
+/** The stages the by-stage breakdown renders (everything except "lost").
+ *  The %-of-pipeline denominator is summed over exactly this set so the bars
+ *  sum to 100% and a terminal "lost" deal never dilutes them. */
+const DISPLAYED_STAGES = new Set<DealStage>(STAGES);
+
 /** Sum a single deal's contribution to the weighted pipeline. Excludes
- *  Won deals (they're closed; weighted forecast is about open pipeline). */
+ *  terminal deals — both Won and Lost (weighted forecast is about the open
+ *  pipeline; a lost deal has no forecast value). */
 function weightedContribution(d: Deal): number {
-  if (d.stage === "won") return 0;
+  if (d.stage === "won" || d.stage === "lost") return 0;
   return Math.round(d.valueCents * (d.probability / 100));
 }
 
@@ -166,24 +173,31 @@ export function useDashboardData(range: DateRange): DashboardData {
     let weightedCents = 0;
     let wonCount = 0;
     let wonValueCents = 0;
+    let lostCount = 0;
     for (const d of deals) {
       if (d.stage === "won") {
         wonCount += 1;
         wonValueCents += d.valueCents;
+      } else if (d.stage === "lost") {
+        // Terminal: a lost deal is neither won nor active. It contributes to
+        // nothing but the win-rate denominator below.
+        lostCount += 1;
       } else {
         activeCount += 1;
         openValueCents += d.valueCents;
         weightedCents += weightedContribution(d);
       }
     }
-    const totalDeals = deals.length;
+    // Win rate is won / (won + lost) — the closed-deal outcome rate. Open
+    // deals are excluded (matches AgentsPage). 0 when nothing has closed.
+    const closedCount = wonCount + lostCount;
     return {
       activeDealsCount: activeCount,
       pipelineValueCents: openValueCents,
       weightedPipelineCents: weightedCents,
       wonDealsCount: wonCount,
       wonRevenueCents: wonValueCents,
-      winRate: totalDeals > 0 ? wonCount / totalDeals : 0,
+      winRate: closedCount > 0 ? wonCount / closedCount : 0,
     };
   }, [deals]);
 
@@ -200,7 +214,9 @@ export function useDashboardData(range: DateRange): DashboardData {
     for (const d of deals) {
       buckets[d.stage].count += 1;
       buckets[d.stage].valueCents += d.valueCents;
-      totalCents += d.valueCents;
+      // Denominator spans only the displayed stages (excludes "lost"), so the
+      // rendered rows' percentages are internally consistent and sum to 100%.
+      if (DISPLAYED_STAGES.has(d.stage)) totalCents += d.valueCents;
     }
     return STAGES.map((stage) => ({
       stage,
@@ -239,19 +255,25 @@ export function useDashboardData(range: DateRange): DashboardData {
   }, [partners, deals]);
 
   const todaysSnapshot = React.useMemo<TodaysSnapshot>(() => {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const endOfToday = new Date(startOfToday);
-    endOfToday.setDate(endOfToday.getDate() + 1);
+    const now = new Date();
+    const dealById = new Map(deals.map((d) => [d.id, d]));
 
+    // Same guard + date logic as useFollowUpReminders (the notification bell)
+    // so the dashboard count and the bell badge never disagree: skip
+    // orphaned (parent deleted) and closed-won parents, and compare calendar
+    // DAYS via the shared tz-stable helper rather than raw instants.
     let tasksDueToday = 0;
     for (const a of activities) {
       if (!a.followUpDate) continue;
-      const due = new Date(a.followUpDate);
-      // "Today or overdue" → due date is before end-of-today
-      if (due < endOfToday) tasksDueToday += 1;
+      const deal = dealById.get(a.dealId);
+      if (!deal) continue; // orphan — parent deleted
+      if (deal.stage === "won") continue; // closed-won; no follow-up needed
+      // delta <= 0 → due today or overdue.
+      if (calendarDayDelta(now, new Date(a.followUpDate)) <= 0) tasksDueToday += 1;
     }
 
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
     let partnersOverdue = 0;
     for (const p of partners) {
       if (!p.nextFollowup) continue;
@@ -260,7 +282,7 @@ export function useDashboardData(range: DateRange): DashboardData {
     }
 
     return { tasksDueToday, partnersOverdue };
-  }, [activities, partners]);
+  }, [activities, partners, deals]);
 
   const leadSources = React.useMemo<LeadSourceRow[]>(() => {
     if (deals.length === 0) return [];

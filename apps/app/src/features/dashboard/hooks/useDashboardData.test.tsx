@@ -16,6 +16,7 @@ import type { DateRange } from "../lib/dateRange";
 import type { Deal } from "@/features/pipeline/mockData";
 import type { Partner } from "@/features/partners/mockData";
 import type { Activity } from "@/features/activities/mockData";
+import { dateOnlyToNoonUtcIso, toDateOnly } from "@/lib/calendarDate";
 
 // All-time range with a far-future upper bound — preserves the original
 // all-data assertions without depending on the system clock. Flow tests
@@ -128,8 +129,9 @@ describe("useDashboardData / KPIs", () => {
     expect(result.current.kpis.activeDealsCount).toBe(2);
     expect(result.current.kpis.wonDealsCount).toBe(2);
     expect(result.current.kpis.wonRevenueCents).toBe(800_000);
-    // win rate = 2 won / 4 total = 0.5
-    expect(result.current.kpis.winRate).toBe(0.5);
+    // win rate = won / (won + lost). 2 won, 0 lost → 2/2 = 1.0.
+    // (The old buggy formula was won / all-deals = 2/4 = 0.5.)
+    expect(result.current.kpis.winRate).toBe(1);
   });
 
   it("pipeline value excludes won deals; weighted applies probability", () => {
@@ -142,6 +144,39 @@ describe("useDashboardData / KPIs", () => {
     expect(result.current.kpis.pipelineValueCents).toBe(200_000);
     // 100_000 * 0.20 + 100_000 * 0.55 = 75_000
     expect(result.current.kpis.weightedPipelineCents).toBe(75_000);
+  });
+
+  it("treats a lost deal as terminal — not active, not open pipeline, not weighted", () => {
+    // Bug 1 regression. A lost deal carries value + a high probability; none
+    // of it may leak into the active count, open pipeline, or weighted total.
+    dealsData = [
+      deal("open", "qualified", 100_000, 60),
+      deal("lost", "lost", 400_000, 90),
+    ];
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
+    expect(result.current.kpis.activeDealsCount).toBe(1);
+    expect(result.current.kpis.pipelineValueCents).toBe(100_000);
+    // Only the open deal contributes: 100_000 * 0.60 = 60_000.
+    // (Buggy code added the lost deal's 400_000 * 0.90 = 360_000 too.)
+    expect(result.current.kpis.weightedPipelineCents).toBe(60_000);
+  });
+
+  it("winRate = won / (won + lost), ignoring still-open deals", () => {
+    // Bug 3 regression. 5 won + 5 lost + 40 open.
+    dealsData = [
+      ...Array.from({ length: 5 }, (_, i) => deal(`won-${i}`, "won", 100_000)),
+      ...Array.from({ length: 5 }, (_, i) => deal(`lost-${i}`, "lost", 100_000)),
+      ...Array.from({ length: 40 }, (_, i) => deal(`open-${i}`, "qualified", 100_000)),
+    ];
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
+    // 5 / (5 + 5) = 0.5 — NOT the buggy 5 / 50 = 0.1.
+    expect(result.current.kpis.winRate).toBe(0.5);
+  });
+
+  it("winRate is 0 when there are no closed deals (divide-by-zero guard)", () => {
+    dealsData = [deal("a", "qualified", 100_000), deal("b", "new", 100_000)];
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
+    expect(result.current.kpis.winRate).toBe(0);
   });
 });
 
@@ -167,6 +202,24 @@ describe("useDashboardData / by-stage", () => {
     expect(newRow.valueCents).toBe(200_000);
     // 200K out of 500K total = 40%
     expect(newRow.percentOfPipeline).toBe(40);
+  });
+
+  it("percentages of the visible stages sum to 100% and a lost deal doesn't dilute them", () => {
+    // Bug 2 regression. The lost deal's value must NOT enter the % denominator
+    // (the rendered rows exclude lost), so the visible bars still sum to 100%.
+    dealsData = [
+      deal("a", "new", 100_000),
+      deal("b", "qualified", 100_000),
+      deal("c", "proposal", 200_000),
+      deal("d", "lost", 600_000),
+    ];
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
+    const sum = result.current.byStage.reduce((s, r) => s + r.percentOfPipeline, 0);
+    expect(sum).toBe(100);
+    const newRow = result.current.byStage.find((s) => s.stage === "new")!;
+    // 100K of 400K visible-stage pipeline = 25%.
+    // (Buggy code divided by 1,000K incl. the lost deal → 10%, sum → 40%.)
+    expect(newRow.percentOfPipeline).toBe(25);
   });
 });
 
@@ -423,18 +476,49 @@ describe("useDashboardData / persistence index", () => {
 });
 
 describe("useDashboardData / today's snapshot", () => {
+  // Follow-up dates are stored at noon-UTC of a calendar day (the app
+  // convention in lib/calendarDate); tasks-due compares them via the shared
+  // calendarDayDelta, so this offset builder matches production exactly.
+  function dueOffset(days: number): string {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    return dateOnlyToNoonUtcIso(toDateOnly(d));
+  }
+
   it("counts activities with follow_up_date today or earlier as tasks-due", () => {
-    const today = new Date();
-    const yesterday = new Date(today.getTime() - 86_400_000);
-    const tomorrow = new Date(today.getTime() + 86_400_000);
+    // Parent deals must exist and be open — tasks-due now mirrors the bell's
+    // guard (orphaned/won parents are skipped), so every counted activity
+    // needs an open parent deal.
+    dealsData = [
+      deal("d1", "qualified", 100_00),
+      deal("d2", "qualified", 100_00),
+      deal("d3", "qualified", 100_00),
+      deal("d4", "qualified", 100_00),
+    ];
     activitiesData = [
-      activity("d1", yesterday.toISOString()),  // overdue — counts
-      activity("d2", today.toISOString()),      // today — counts
-      activity("d3", tomorrow.toISOString()),   // future — does NOT count
-      activity("d4", null),                     // no follow-up — does NOT count
+      activity("d1", dueOffset(-1)),  // overdue — counts
+      activity("d2", dueOffset(0)),   // today — counts
+      activity("d3", dueOffset(1)),   // future — does NOT count
+      activity("d4", null),           // no follow-up — does NOT count
     ];
     const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     expect(result.current.todaysSnapshot.tasksDueToday).toBe(2);
+  });
+
+  it("tasksDueToday skips follow-ups whose parent deal is won or missing (matches the bell)", () => {
+    // Bug 4 regression. Same guard as useFollowUpReminders: an activity on a
+    // won or orphaned deal is not an open task, so it must not be counted.
+    dealsData = [
+      deal("open", "qualified", 100_00),
+      deal("wonDeal", "won", 100_00),
+    ];
+    activitiesData = [
+      activity("open", dueOffset(0)),     // open parent — counts
+      activity("wonDeal", dueOffset(0)),  // won parent — skipped
+      activity("ghost", dueOffset(0)),    // orphan (no such deal) — skipped
+    ];
+    const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
+    expect(result.current.todaysSnapshot.tasksDueToday).toBe(1);
   });
 
   it("counts partners with nextFollowup before today as overdue", () => {
