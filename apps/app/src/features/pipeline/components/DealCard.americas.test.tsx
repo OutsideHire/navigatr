@@ -44,6 +44,17 @@ describe("DealCard — expected close renders on the correct day (Americas)", ()
     expect(screen.queryByText(/Jul 8/)).not.toBeInTheDocument();
   });
 
+  it("renders a MIDNIGHT-UTC follow-up (DB-trigger representation) as its UTC day", () => {
+    // The `activities_sync_deal_denorm` trigger writes next_followup_at as
+    // `follow_up_date::timestamptz` = MIDNIGHT UTC. For Jul 10 that is
+    // 2026-07-10T00:00:00Z, which in Los Angeles is Jul 9 17:00. Rendering in
+    // local time (the pre-fix bug) showed "Jul 9" — a day early. The correct
+    // display is the stored UTC calendar day, "Jul 10".
+    renderCard({ stage: "contacted", nextFollowup: "2026-07-10T00:00:00.000Z" });
+    expect(screen.getByText(/Jul 10/)).toBeInTheDocument();
+    expect(screen.queryByText(/Jul 9/)).not.toBeInTheDocument();
+  });
+
   it("documents the off-by-one the fix removes", () => {
     // Same calendar date, two representations, rendered in a US timezone.
     expect(formatShortDate(dateOnlyToNoonUtcIso("2026-07-09"))).toBe("Jul 9");

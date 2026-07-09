@@ -11,12 +11,12 @@ import { useNavigate } from "react-router-dom";
 import { Mail } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { formatCalendarDate } from "@/lib/calendarDate";
 import { CardWithStatusBand } from "@/components/navigatr";
 import { DealCallButton } from "@/features/activities/components/DealCallButton";
 import {
   formatMoney,
   formatRelative,
-  formatShortDate,
   STAGE_LABEL,
   STAGE_NEXT_VERB,
   STAGE_TONE,
@@ -90,7 +90,7 @@ export function DealCard({ deal }: { deal: Deal }) {
           <span className="shrink-0 text-text-default">
             Next: <span className="font-medium">{verb}</span>
             {deal.nextFollowup && (
-              <span className="text-text-muted"> · <span className="tabular-nums">{formatShortDate(deal.nextFollowup)}</span></span>
+              <span className="text-text-muted"> · <span className="tabular-nums">{formatCalendarDate(deal.nextFollowup)}</span></span>
             )}
           </span>
         </div>

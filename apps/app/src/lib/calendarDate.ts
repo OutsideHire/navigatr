@@ -11,9 +11,12 @@
  * The convention, applied everywhere a calendar date is stored/compared/shown:
  *
  *  1. When a calendar date must live in a timestamp column / ISO string, store
- *     it at NOON UTC of that day (`dateOnlyToNoonUtcIso`). Noon UTC reads as
- *     the same calendar day in every timezone from UTC-12..+12, whether it is
- *     later sliced (UTC day) or rendered in local time.
+ *     it at NOON UTC of that day (`dateOnlyToNoonUtcIso`), and always READ it
+ *     back by its UTC calendar day — slice it (`toUtcDateOnly`) or render it
+ *     with `timeZone:'UTC'` (`formatCalendarDate`). Rendered in the viewer's
+ *     LOCAL time the displayed day drifts (a day early west of UTC, a day late
+ *     at +12); rendered in UTC it equals the stored calendar day for every
+ *     viewer.
  *  2. When it is a plain DATE value, keep it as a `YYYY-MM-DD` string.
  *  3. When comparing "is this due today", compare calendar DAYS, not instants:
  *     the rep's LOCAL today (`toDateOnly(now)`) against the stored date's
@@ -46,6 +49,23 @@ export function toUtcDateOnly(d: Date): string {
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
   const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+/**
+ * Render a stored calendar date as short "Mon Day" (e.g. "Jul 9") on its UTC
+ * calendar day, so every viewer sees the intended day regardless of their local
+ * timezone. Use for calendar-date fields (follow-up day, expected-close day) —
+ * NOT for true instants like `occurred_at`/`created_at`, where the viewer's
+ * local time-of-day is the point. Robust to both DB representations of these
+ * fields (midnight-UTC from the denorm trigger, noon-UTC from client writes):
+ * both share the same UTC calendar day.
+ */
+export function formatCalendarDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 /**

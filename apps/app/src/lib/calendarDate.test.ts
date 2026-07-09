@@ -11,6 +11,7 @@ import {
   dateOnlyToNoonUtcIso,
   diffCalendarDays,
   calendarDayDelta,
+  formatCalendarDate,
 } from "./calendarDate";
 
 describe("toDateOnly (local calendar day)", () => {
@@ -53,6 +54,21 @@ describe("dateOnlyToNoonUtcIso", () => {
   });
   it("throws on a non-date input", () => {
     expect(() => dateOnlyToNoonUtcIso("not-a-date")).toThrow();
+  });
+});
+
+describe("formatCalendarDate (UTC calendar-day render)", () => {
+  // File is pinned to America/Los_Angeles (UTC-8/-7). A local-time render would
+  // shift both representations to the previous day; UTC rendering does not.
+  it("renders a noon-UTC instant on its stored calendar day", () => {
+    expect(formatCalendarDate(dateOnlyToNoonUtcIso("2026-07-09"))).toBe("Jul 9");
+  });
+  it("renders a midnight-UTC instant (DB-trigger representation) on its stored day", () => {
+    expect(formatCalendarDate("2026-07-10T00:00:00.000Z")).toBe("Jul 10");
+  });
+  it("does not drift a day earlier in a negative-UTC timezone", () => {
+    // The pre-fix local render showed "Jul 8" for this value in Los Angeles.
+    expect(formatCalendarDate("2026-07-09T00:00:00.000Z")).toBe("Jul 9");
   });
 });
 

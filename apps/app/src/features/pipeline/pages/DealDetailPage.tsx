@@ -72,6 +72,7 @@ import { useActivities } from "@/features/activities/hooks/useActivities";
 import { Select, type SelectOption } from "@/components/navigatr";
 import type { Activity } from "@/features/activities/mockData";
 import { DISPOSITIONS } from "@/lib/followUpScheduling";
+import { formatCalendarDate } from "@/lib/calendarDate";
 import {
   ACTIVITY_TYPE_ICON,
   ACTIVITY_TYPE_ACCENT,
@@ -275,7 +276,7 @@ function HeroCard({ deal, onLogActivity, onEdit }: { deal: Deal; onLogActivity: 
           <div className="flex flex-col gap-1.5">
             <Metric
               eyebrow="EXPECTED CLOSE"
-              value={deal.nextFollowup ? formatShortDate(deal.nextFollowup) : "—"}
+              value={deal.nextFollowup ? formatCalendarDate(deal.nextFollowup) : "—"}
             />
             <FollowupSyncIndicator
               dealId={deal.id}

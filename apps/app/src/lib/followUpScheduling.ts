@@ -232,11 +232,20 @@ export function schedulesFollowUp(d: Disposition): boolean {
   return DISPOSITIONS[d].businessDays != null || d === "followup_requested";
 }
 
-/** Pretty short-form for toasts and chips: "Mon, May 18". */
+/**
+ * Pretty short-form for toasts and chips: "Mon, May 18".
+ *
+ * A follow-up is a calendar date stored at noon/midnight UTC — render it on its
+ * UTC calendar day (`timeZone:'UTC'`) so the toast/chip/Activities row agree
+ * with the UTC-based day headings and the notification bell for every viewer.
+ * In the viewer's local time it would drift a day (early west of UTC, late at
+ * +12). See `lib/calendarDate`.
+ */
 export function formatFollowUpDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
+    timeZone: "UTC",
   });
 }
