@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeAll, afterEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { computeKpis, PipelinePage } from "./PipelinePage";
+import { computeKpis, countByStage, buildWonAtMap, PipelinePage } from "./PipelinePage";
 import type { Deal } from "../mockData";
 import { MOCK_DEALS } from "../mockData";
+import type { StageHistoryRow } from "../hooks/useStageHistory";
 
 // This project's vitest env doesn't ship a fully-functional jsdom
 // localStorage; usePersistedViewMode reads it on mount. Install a small
@@ -44,6 +45,12 @@ afterEach(() => {
 
 vi.mock("../hooks/useDeals", () => ({
   useDeals: () => ({ data: mockDeals, isLoading: false }),
+}));
+// Stage history is a network read; the page uses it for won-this-month. Keep
+// it empty here so the render tests are deterministic (computeKpis falls back
+// to updatedAt). buildWonAtMap/computeKpis are unit-tested directly below.
+vi.mock("../hooks/useStageHistory", () => ({
+  useStageHistory: () => ({ data: [] }),
 }));
 vi.mock("@/features/profession/useTerm", () => ({
   useTerm: (k: string) => k,
@@ -85,6 +92,109 @@ describe("computeKpis", () => {
     expect(k.wonThisMonth).toBe(500_00);
     expect(k.wonDealsThisMonth).toBe(1);
     expect(k.activeDeals).toBe(0);
+  });
+
+  it("gates won-this-month on the stage-history win date, not updatedAt", () => {
+    // Regression (Bug 3): updated_at bumps on ANY edit, so a deal won months
+    // ago but edited this month used to re-count. The stage-history WON date
+    // is authoritative.
+    const now = new Date();
+    const thisMonth = new Date(now.getFullYear(), now.getMonth(), 2).toISOString();
+    const monthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 10).toISOString();
+    const deals = [
+      // Won 3 months ago, then EDITED this month (updatedAt bumped).
+      d({ id: "old-win", stage: "won", valueCents: 400_00, updatedAt: thisMonth }),
+      // Genuinely won this month.
+      d({ id: "new-win", stage: "won", valueCents: 600_00, updatedAt: thisMonth }),
+    ];
+    const wonAt = new Map<string, string>([
+      ["old-win", monthsAgo],
+      ["new-win", thisMonth],
+    ]);
+    const k = computeKpis(deals, wonAt);
+    expect(k.wonDealsThisMonth).toBe(1);
+    expect(k.wonThisMonth).toBe(600_00);
+  });
+
+  it("falls back to updatedAt for won deals absent from stage history", () => {
+    const now = new Date();
+    const thisMonth = new Date(now.getFullYear(), now.getMonth(), 2).toISOString();
+    const deals = [d({ id: "legacy", stage: "won", valueCents: 300_00, updatedAt: thisMonth })];
+    const k = computeKpis(deals, new Map());
+    expect(k.wonThisMonth).toBe(300_00);
+    expect(k.wonDealsThisMonth).toBe(1);
+  });
+});
+
+describe("buildWonAtMap", () => {
+  const row = (over: Partial<StageHistoryRow>): StageHistoryRow => ({
+    id: "h1",
+    dealId: "d1",
+    fromStage: "proposal",
+    toStage: "won",
+    transitionedAt: "2026-01-01T00:00:00.000Z",
+    ...over,
+  });
+
+  it("returns an empty map for undefined history", () => {
+    expect(buildWonAtMap(undefined).size).toBe(0);
+  });
+
+  it("indexes only WON transitions by dealId", () => {
+    const map = buildWonAtMap([
+      row({ id: "a", dealId: "d1", toStage: "won", transitionedAt: "2026-03-01T00:00:00.000Z" }),
+      row({ id: "b", dealId: "d2", toStage: "proposal", transitionedAt: "2026-03-02T00:00:00.000Z" }),
+    ]);
+    expect(map.get("d1")).toBe("2026-03-01T00:00:00.000Z");
+    expect(map.has("d2")).toBe(false);
+  });
+
+  it("keeps the most recent win when a deal was re-won", () => {
+    const map = buildWonAtMap([
+      row({ id: "a", dealId: "d1", toStage: "won", transitionedAt: "2026-01-01T00:00:00.000Z" }),
+      row({ id: "b", dealId: "d1", toStage: "won", transitionedAt: "2026-05-01T00:00:00.000Z" }),
+    ]);
+    expect(map.get("d1")).toBe("2026-05-01T00:00:00.000Z");
+  });
+});
+
+describe("countByStage", () => {
+  it("returns all-zero counts for no deals (fresh org shows no fabricated totals)", () => {
+    expect(countByStage([])).toEqual({
+      all: 0, new: 0, contacted: 0, qualified: 0, proposal: 0, won: 0, lost: 0,
+    });
+    expect(countByStage(undefined)).toEqual({
+      all: 0, new: 0, contacted: 0, qualified: 0, proposal: 0, won: 0, lost: 0,
+    });
+  });
+
+  it("counts deals per stage; all = total of the counted set", () => {
+    const deals = [
+      d({ id: "1", stage: "new" }),
+      d({ id: "2", stage: "new" }),
+      d({ id: "3", stage: "qualified" }),
+      d({ id: "4", stage: "won" }),
+      d({ id: "5", stage: "lost" }),
+    ];
+    const c = countByStage(deals);
+    expect(c.new).toBe(2);
+    expect(c.qualified).toBe(1);
+    expect(c.contacted).toBe(0);
+    expect(c.won).toBe(1);
+    expect(c.lost).toBe(1);
+    expect(c.all).toBe(5); // includes won + lost
+  });
+
+  it("scopes counts to the owner filter, matching the KPI strip", () => {
+    const deals = [
+      d({ id: "1", stage: "new", owner_id: "u-1" }),
+      d({ id: "2", stage: "qualified", owner_id: "u-1" }),
+      d({ id: "3", stage: "new", owner_id: "u-2" }),
+    ];
+    const c = countByStage(deals, "u-1");
+    expect(c.all).toBe(2);
+    expect(c.new).toBe(1);
+    expect(c.qualified).toBe(1);
   });
 });
 

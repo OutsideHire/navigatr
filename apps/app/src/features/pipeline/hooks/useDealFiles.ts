@@ -84,13 +84,36 @@ export function useUploadDealFile() {
   });
 }
 
+/** True when a storage error means the object is already gone. Removing a
+ *  missing object is the outcome we want, so it's treated as success rather
+ *  than aborting the delete and leaving the DB row behind. */
+function isStorageNotFound(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const e = err as { status?: number; statusCode?: number | string; message?: string };
+  if (e.status === 404 || e.statusCode === 404 || e.statusCode === "404") return true;
+  const msg = typeof e.message === "string" ? e.message.toLowerCase() : "";
+  return msg.includes("not found") || msg.includes("does not exist");
+}
+
 export function useDeleteDealFile() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, path }: { id: string; dealId: string; path: string }) => {
+      // Remove the storage object FIRST, then the DB row. Deleting the row
+      // first meant a storage hiccup rejected the mutation ("Couldn't delete
+      // file") AFTER the row was already gone — the file vanished from the
+      // list while its object stayed orphaned, and the rep was told it failed.
+      // With storage-first, a genuine storage failure aborts before the row is
+      // touched: nothing is deleted, the error is accurate, and a retry is
+      // clean. An already-missing object counts as success (the object is gone
+      // either way), so we still proceed to remove the row.
+      try {
+        await removeDealFile(path);
+      } catch (err) {
+        if (!isStorageNotFound(err)) throw err;
+      }
       const { error } = await supabase.from("deal_files").delete().eq("id", id);
       if (error) throw error;
-      await removeDealFile(path);
     },
     onSuccess: (_r, v) => {
       void qc.invalidateQueries({ queryKey: DEAL_FILES_KEY(v.dealId) });

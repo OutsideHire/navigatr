@@ -47,8 +47,8 @@ import { applyDealFilters, EMPTY_DEAL_FILTERS, type DealFilters } from "../lib/f
 import { PipelineFilterPopover } from "../components/PipelineFilterPopover";
 
 import { useDeals } from "../hooks/useDeals";
+import { useStageHistory, type StageHistoryRow } from "../hooks/useStageHistory";
 import {
-  STAGE_CHIP_COUNTS,
   STAGE_LABEL,
   formatShortDate,
   type Deal,
@@ -75,10 +75,38 @@ export interface PipelineKpis {
   wonDealsThisMonth: number;
 }
 
+/** Latest WON-transition timestamp per deal, from deal_stage_history.
+ *  `deals.updated_at` bumps on ANY edit (a DB trigger), so it can't tell
+ *  "won this month" from "won long ago, edited this month". The stage-history
+ *  log is the authoritative source for when a deal actually reached "won".
+ *  A deal that went won → lost → won keeps the most recent win. */
+export function buildWonAtMap(rows: StageHistoryRow[] | undefined): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!rows) return map;
+  for (const r of rows) {
+    if (r.toStage !== "won") continue;
+    const existing = map.get(r.dealId);
+    if (!existing || new Date(r.transitionedAt) > new Date(existing)) {
+      map.set(r.dealId, r.transitionedAt);
+    }
+  }
+  return map;
+}
+
 /** Open-stage pipeline + weighted value + active count, and won-this-month.
  *  Won/lost are excluded from the open pipeline; won deals closed in the
- *  current calendar month feed the "won this month" tile. */
-export function computeKpis(deals: Deal[] | undefined): PipelineKpis {
+ *  current calendar month feed the "won this month" tile.
+ *
+ *  `wonAtByDeal` maps dealId → the deal's WON-transition timestamp (from
+ *  deal_stage_history via {@link buildWonAtMap}). When supplied, that date
+ *  gates "won this month" — so a deal won months ago but merely edited this
+ *  month no longer re-counts. When a won deal is absent from history (legacy
+ *  rows predating the trigger, or history not yet loaded) we fall back to
+ *  `updatedAt`, matching the previous behavior. */
+export function computeKpis(
+  deals: Deal[] | undefined,
+  wonAtByDeal?: Map<string, string>,
+): PipelineKpis {
   const zero = { totalPipeline: 0, weighted: 0, activeDeals: 0, wonThisMonth: 0, wonDealsThisMonth: 0 };
   if (!deals || deals.length === 0) return zero;
   const now = new Date();
@@ -86,9 +114,12 @@ export function computeKpis(deals: Deal[] | undefined): PipelineKpis {
   const k = { ...zero };
   for (const dDeal of deals) {
     if (dDeal.stage === "won" || dDeal.stage === "lost") {
-      if (dDeal.stage === "won" && new Date(dDeal.updatedAt) >= monthStart) {
-        k.wonThisMonth += dDeal.valueCents;
-        k.wonDealsThisMonth += 1;
+      if (dDeal.stage === "won") {
+        const wonAt = wonAtByDeal?.get(dDeal.id) ?? dDeal.updatedAt;
+        if (new Date(wonAt) >= monthStart) {
+          k.wonThisMonth += dDeal.valueCents;
+          k.wonDealsThisMonth += 1;
+        }
       }
     } else {
       k.totalPipeline += dDeal.valueCents;
@@ -113,6 +144,30 @@ function fmtMoneyShort(cents: number): string {
 
 type StageFilter = "all" | DealStage;
 const STAGE_FILTERS: StageFilter[] = ["all", "new", "contacted", "qualified", "proposal", "won"];
+
+/** Live per-stage deal counts for the stage-filter chips.
+ *
+ *  Derived from the fetched deals (not a static mock) so a fresh org with no
+ *  deals shows zeros. Scoped by the same `ownerFilter` the KPI strip honors,
+ *  so chips and KPIs agree on which book of business they describe. The stage
+ *  filter itself is intentionally NOT applied — each chip reports how many
+ *  deals sit in its stage. `all` is the total of the owner-scoped set (every
+ *  stage, including won/lost), matching what the "All" chip reveals. */
+export function countByStage(
+  deals: Deal[] | undefined,
+  ownerFilter?: string | null,
+): Record<StageFilter, number> {
+  const counts: Record<StageFilter, number> = {
+    all: 0, new: 0, contacted: 0, qualified: 0, proposal: 0, won: 0, lost: 0,
+  };
+  if (!deals) return counts;
+  for (const d of deals) {
+    if (ownerFilter && d.owner_id !== ownerFilter) continue;
+    counts.all += 1;
+    counts[d.stage] += 1;
+  }
+  return counts;
+}
 
 type ViewMode = "kanban" | "list";
 const VIEW_MODE_KEY = "navigatr:pipeline:viewMode";
@@ -307,8 +362,16 @@ const KPI_DOT: Record<string, string> = {
   teal: "bg-accent-teal", violet: "bg-accent-violet", blue: "bg-accent-blue", success: "bg-status-success",
 };
 
-function KpiStrip({ deals, filtered }: { deals: Deal[] | undefined; filtered: boolean }) {
-  const k = React.useMemo(() => computeKpis(deals), [deals]);
+function KpiStrip({
+  deals,
+  filtered,
+  wonAtByDeal,
+}: {
+  deals: Deal[] | undefined;
+  filtered: boolean;
+  wonAtByDeal: Map<string, string>;
+}) {
+  const k = React.useMemo(() => computeKpis(deals, wonAtByDeal), [deals, wonAtByDeal]);
   const tiles = [
     { dot: "teal",    eyebrow: filtered ? "Pipeline (filtered)" : "Total pipeline", value: fmtMoneyShort(k.totalPipeline) },
     { dot: "violet",  eyebrow: "Weighted",       value: fmtMoneyShort(k.weighted) },
@@ -375,9 +438,11 @@ function ViewToggle({
 function StageChips({
   active,
   onChange,
+  counts,
 }: {
   active: StageFilter;
   onChange: (next: StageFilter) => void;
+  counts: Record<StageFilter, number>;
 }) {
   return (
     <div
@@ -393,7 +458,7 @@ function StageChips({
         <div key={f} className="snap-start">
           <Chip
             active={active === f}
-            count={STAGE_CHIP_COUNTS[f]}
+            count={counts[f]}
             onClick={() => onChange(f)}
           >
             {chipLabel(f)}
@@ -438,6 +503,12 @@ export function PipelinePage() {
   // Stage/search filters still applied in-memory below; dataset is small
   // enough that round-tripping per chip click would be wasteful.
   const { data: deals, isLoading } = useDeals();
+  // Stage-transition log (org-scoped via RLS) — authoritative for when a deal
+  // reached "won", so "won this month" doesn't re-count deals merely edited
+  // this month. Undefined until loaded / when signed out; computeKpis then
+  // falls back to updatedAt.
+  const { data: stageHistory } = useStageHistory();
+  const wonAtByDeal = React.useMemo(() => buildWonAtMap(stageHistory), [stageHistory]);
   const update = useUpdateDeal();
   const [pendingDrop, setPendingDrop] = React.useState<{ deal: Deal; toStage: DealStage } | null>(null);
 
@@ -474,8 +545,14 @@ export function PipelinePage() {
     [filtered, filters, sortKey],
   );
 
-  const headerKpis = React.useMemo(() => computeKpis(ownerFilter ? filtered : deals), [deals, filtered, ownerFilter]);
+  const headerKpis = React.useMemo(
+    () => computeKpis(ownerFilter ? filtered : deals, wonAtByDeal),
+    [deals, filtered, ownerFilter, wonAtByDeal],
+  );
   const subhead = `${headerKpis.activeDeals} active deals · ${fmtMoneyShort(headerKpis.weighted)} weighted`;
+
+  // Live stage-chip counts, owner-scoped to agree with the KPI strip.
+  const stageCounts = React.useMemo(() => countByStage(deals, ownerFilter), [deals, ownerFilter]);
 
   return (
     <div className="mx-auto w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
@@ -510,14 +587,14 @@ export function PipelinePage() {
           onSortChange={setSortKey}
         />
 
-        <KpiStrip deals={ownerFilter ? filtered : deals} filtered={Boolean(ownerFilter)} />
+        <KpiStrip deals={ownerFilter ? filtered : deals} filtered={Boolean(ownerFilter)} wonAtByDeal={wonAtByDeal} />
 
         {/* Stage chips: when kanban is the active view AND we're at lg+,
             the columns ARE the stages, so the chip filter is redundant.
             Hide it then. Below lg we always render list view, so chips
             stay. */}
         <div className={cn(viewMode === "kanban" && "lg:hidden")}>
-          <StageChips active={stageFilter} onChange={setStageFilter} />
+          <StageChips active={stageFilter} onChange={setStageFilter} counts={stageCounts} />
         </div>
 
         {isLoading ? (

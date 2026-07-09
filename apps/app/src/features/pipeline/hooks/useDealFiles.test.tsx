@@ -211,7 +211,9 @@ describe("useUploadDealFile", () => {
 });
 
 describe("useDeleteDealFile", () => {
-  it("deletes the row by id then removes the object", async () => {
+  it("removes the storage object first, then deletes the row", async () => {
+    // Storage-first is the corrected ordering: a storage failure must never
+    // leave the row deleted while its object is orphaned.
     eqMock.mockResolvedValueOnce({ error: null });
     const invocations: string[] = [];
     deleteMock.mockImplementation(() => invocations.push("delete"));
@@ -223,10 +225,34 @@ describe("useDeleteDealFile", () => {
     expect(vi.mocked(removeDealFile)).toHaveBeenCalledWith("deal-1/abc");
     expect(deleteMock).toHaveBeenCalledTimes(1);
     expect(eqMock).toHaveBeenCalledWith("id", "df-1");
-    expect(invocations).toEqual(["delete", "removeDealFile"]);
+    expect(invocations).toEqual(["removeDealFile", "delete"]);
   });
 
-  it("throws when the row delete errors", async () => {
+  it("does NOT delete the row when storage removal fails (no orphan + accurate error)", async () => {
+    // Regression: previously the row was deleted first, so a storage failure
+    // rejected the mutation AFTER the row was gone — the file vanished from
+    // the list, the object was orphaned, and the rep was told it failed.
+    // Now a genuine storage failure aborts before the row is touched.
+    vi.mocked(removeDealFile).mockRejectedValueOnce(new Error("storage unavailable"));
+    const { result } = renderHook(() => useDeleteDealFile(), { wrapper });
+    await expect(
+      result.current.mutateAsync({ id: "df-1", dealId: "deal-1", path: "deal-1/abc" }),
+    ).rejects.toMatchObject({ message: "storage unavailable" });
+    // Row untouched: the reported failure matches reality (file still there,
+    // object still there) and the delete is cleanly retryable.
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it("treats an already-missing storage object as success and still deletes the row", async () => {
+    vi.mocked(removeDealFile).mockRejectedValueOnce({ status: 404, message: "Object not found" });
+    eqMock.mockResolvedValueOnce({ error: null });
+    const { result } = renderHook(() => useDeleteDealFile(), { wrapper });
+    await result.current.mutateAsync({ id: "df-1", dealId: "deal-1", path: "deal-1/abc" });
+    expect(deleteMock).toHaveBeenCalledTimes(1);
+    expect(eqMock).toHaveBeenCalledWith("id", "df-1");
+  });
+
+  it("throws when the row delete errors (after storage removal succeeded)", async () => {
     vi.mocked(removeDealFile).mockResolvedValueOnce(undefined);
     eqMock.mockResolvedValueOnce({ error: { message: "delete denied" } });
     const { result } = renderHook(() => useDeleteDealFile(), { wrapper });
