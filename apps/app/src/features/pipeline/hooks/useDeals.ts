@@ -38,6 +38,7 @@ interface DealRow {
   owner_id: string | null;
   lost_reason_category: LostReasonCategory | null;
   lost_reason_notes: string | null;
+  notes?: string | null;
   profession_data?: Record<string, unknown> | null;
   followup_calendar_sync_status?: "pending" | "synced" | "error" | null;
 }
@@ -72,6 +73,11 @@ function toDeal(row: DealRow): Deal {
     owner_id: row.owner_id,
     lostReasonCategory: row.lost_reason_category,
     lostReasonNotes: row.lost_reason_notes,
+    // Freeform deal notes. Must be loaded so the stage-change read-modify-write
+    // (appendStageNote(deal.notes, ...)) appends to existing notes instead of
+    // overwriting them with an empty string / bare stage line. `?? undefined`
+    // keeps the field consistent with the Deal type's `notes?: string`.
+    notes: row.notes ?? undefined,
     professionData: row.profession_data ?? null,
     followupCalendarSyncStatus: row.followup_calendar_sync_status ?? null,
   };
@@ -93,7 +99,7 @@ export function useDeals() {
             "value_cents, stage, probability, last_activity_at, " +
             "next_followup_at, address, employee_count_range, lead_source, " +
             "updated_at, owner_id, lost_reason_category, lost_reason_notes, " +
-            "profession_data, followup_calendar_sync_status",
+            "notes, profession_data, followup_calendar_sync_status",
         )
         .order("updated_at", { ascending: false });
       if (error) throw error;

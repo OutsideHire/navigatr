@@ -93,6 +93,40 @@ describe("useDeals", () => {
     ]);
   });
 
+  it("loads the notes column so stage changes append instead of wiping (data-loss regression)", async () => {
+    // Regression: useDeals previously omitted `notes` from the SELECT and
+    // toDeal never set it, so `deal.notes` was always undefined. The
+    // stage-change read-modify-write appendStageNote(deal.notes, ...) then
+    // overwrote deals.notes with "" or just the new stage line, destroying
+    // the rep's saved notes on every transition. The loaded value must
+    // survive the mapping so the append preserves it.
+    orderMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: "deal-notes",
+          company_name: "Notes Co",
+          contact_name: "N",
+          contact_phone: "+12025550002",
+          contact_email: "n@c.co",
+          value_cents: 750_000,
+          stage: "qualified",
+          probability: 55,
+          last_activity_at: "2026-05-18T12:00:00Z",
+          next_followup_at: null,
+          employee_count_range: "1-10",
+          lead_source: "Referral",
+          updated_at: "2026-05-19T08:00:00Z",
+          owner_id: null,
+          notes: "keep me",
+        },
+      ],
+      error: null,
+    });
+    const { result } = renderHook(() => useDeals(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0].notes).toBe("keep me");
+  });
+
   it("maps followup_calendar_sync_status through to followupCalendarSyncStatus", async () => {
     orderMock.mockResolvedValueOnce({
       data: [
