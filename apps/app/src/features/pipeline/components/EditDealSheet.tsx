@@ -26,6 +26,7 @@ import { X, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
+import { dateOnlyToNoonUtcIso } from "@/lib/calendarDate";
 import {
   Button,
   FormField,
@@ -213,10 +214,11 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
     }
     if (dirtyFields.expectedClose) {
       patch.expectedClose = values.expectedClose || null;
-      // Mirror to next_followup_at so the dashboard's follow-up
-      // signals stay in sync — same convention AddDealSheet uses.
+      // Mirror to next_followup_at so the dashboard's follow-up signals stay
+      // in sync — same convention AddDealSheet uses: noon UTC of the picked
+      // calendar day (UTC midnight would render a day early west of UTC).
       patch.nextFollowupAt = values.expectedClose
-        ? new Date(values.expectedClose).toISOString()
+        ? dateOnlyToNoonUtcIso(values.expectedClose)
         : null;
     }
     if (dirtyFields.leadSource) patch.leadSource = values.leadSource;

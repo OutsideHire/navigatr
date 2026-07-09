@@ -65,8 +65,8 @@ describe("useActivities", () => {
         durationMinutes: 23,
         outcomeNotes: "Good chat",
         occurredAt: "2026-05-18T12:00:00Z",
-        // DB date string → ISO midnight UTC
-        followUpDate: "2026-05-22T00:00:00.000Z",
+        // DB date string → ISO NOON UTC (tz-stable calendar day)
+        followUpDate: "2026-05-22T12:00:00.000Z",
         loggedBy: null,
       },
     ]);

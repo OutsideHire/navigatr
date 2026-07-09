@@ -59,6 +59,7 @@ import { X } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
+import { dateOnlyToNoonUtcIso } from "@/lib/calendarDate";
 import { useAuth, getProfession, type Profession } from "@/stores/auth";
 import {
   Button,
@@ -557,7 +558,10 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
         expectedClose: expectedClose || null,
         leadSource,
         notes,
-        nextFollowupAt: expectedClose ? new Date(expectedClose).toISOString() : null,
+        // expectedClose is a YYYY-MM-DD calendar date; store the mirrored
+        // timestamp at noon UTC so cards/hero render the same day the rep
+        // picked (new Date(date) parsed as UTC midnight → a day early in the US).
+        nextFollowupAt: expectedClose ? dateOnlyToNoonUtcIso(expectedClose) : null,
         professionData: { profession: _profession, ...professionFields },
       });
       toast.success("Deal added");

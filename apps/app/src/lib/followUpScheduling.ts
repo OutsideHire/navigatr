@@ -14,6 +14,7 @@
  */
 
 import { addBusinessDays } from "date-fns";
+import { dateOnlyToNoonUtcIso, toDateOnly } from "./calendarDate";
 
 export type Disposition =
   | "statement_secured"
@@ -194,8 +195,10 @@ export const DISPOSITIONS: Record<Disposition, DispositionSpec> = {
 /**
  * Compute the next-touch date for a given disposition.
  *
- * @returns ISO date string at start-of-day UTC, or null when the
- *          disposition is terminal / manual-pick.
+ * @returns ISO instant at NOON UTC of the follow-up's calendar day, or null
+ *          when the disposition is terminal / manual-pick. Noon UTC keeps the
+ *          day stable whether callers slice it (UTC day) or render it in local
+ *          time — see `lib/calendarDate`.
  *
  * Expected outputs (relative to a Wednesday `from`):
  *   statement_secured    → Wed + 1bd  = Thu
@@ -215,10 +218,12 @@ export function calculateFollowUpDate(
 ): string | null {
   const spec = DISPOSITIONS[disposition];
   if (spec.businessDays === null) return null;
+  // addBusinessDays operates in local wall-clock, so `next` already lands on
+  // the correct local business day (never a weekend). Take that LOCAL calendar
+  // day and pin it to noon UTC — flooring to UTC midnight instead would shift
+  // the day (and could land on a weekend) for reps west of UTC.
   const next = addBusinessDays(from, spec.businessDays);
-  // Normalize to start-of-day UTC so client tz doesn't drift the date.
-  next.setUTCHours(0, 0, 0, 0);
-  return next.toISOString();
+  return dateOnlyToNoonUtcIso(toDateOnly(next));
 }
 
 /** True when this disposition schedules a follow-up (and thus creates a deal):

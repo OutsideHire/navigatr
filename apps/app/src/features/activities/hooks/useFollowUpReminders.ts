@@ -16,13 +16,16 @@
  *    AddDealSheet, which conflates "expected close date" with "next
  *    scheduled touch." Activities are unambiguous.
  *
- * Today is bucketed against the user's local midnight so the bell flips
- * to a new day at the user's wall clock, not UTC midnight.
+ * "Today" is the rep's LOCAL calendar day, so the bell flips at the rep's
+ * wall clock; a follow-up's day is read from its stored value's UTC calendar
+ * day (the intended date). See lib/calendarDate — the Activities list uses the
+ * same comparison so the bell and the list never disagree.
  */
 
 import * as React from "react";
 import { useActivitiesForOrg } from "./useActivities";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
+import { calendarDayDelta } from "@/lib/calendarDate";
 import type { Activity } from "../mockData";
 import type { Deal } from "@/features/pipeline/mockData";
 
@@ -32,7 +35,7 @@ export interface FollowUpReminder {
   /** Parent deal — for the row's company name + click-to-navigate. */
   deal: Deal;
   activity: Activity;
-  /** ISO of the follow_up_date, local-midnight-floored. */
+  /** ISO of the follow_up_date (noon-UTC of its calendar day). */
   dueAt: string;
   /** Negative = overdue, 0 = today, positive = future (filtered out). */
   daysOverdue: number;
@@ -48,18 +51,18 @@ export interface UseFollowUpRemindersResult {
   isLoading: boolean;
 }
 
-/** Local-midnight floor as ISO. "2026-05-22T00:00:00.000Z"-style string
- *  comparison only works once both sides have been floored. */
-function localMidnight(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-/** Whole-day delta: (other - reference). Positive = future. */
+/**
+ * Whole-day delta: (other - reference). Positive = future, 0 = due today.
+ *
+ * `reference` is "now" (its LOCAL day is today); `other` is a follow-up date
+ * stored as a noon/midnight-UTC instant (its UTC day is the intended date).
+ * Delegates to the shared calendar-day comparison so this bell and the
+ * Activities list agree on which day a task belongs to. The old version
+ * floored BOTH sides to LOCAL midnight, which read a stored date a day early
+ * for reps west of UTC ("due today" when it was really tomorrow).
+ */
 export function dayDelta(reference: Date, other: Date): number {
-  const ms = localMidnight(other).getTime() - localMidnight(reference).getTime();
-  return Math.round(ms / 86_400_000);
+  return calendarDayDelta(reference, other);
 }
 
 export function useFollowUpReminders(now: Date = new Date()): UseFollowUpRemindersResult {

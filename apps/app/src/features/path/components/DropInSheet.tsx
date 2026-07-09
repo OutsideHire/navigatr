@@ -23,6 +23,7 @@ import { Mic, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button, Input, NotesFieldWithMic, DispositionTile } from "@/components/navigatr";
+import { dateOnlyToNoonUtcIso } from "@/lib/calendarDate";
 import {
   DISPOSITIONS,
   calculateFollowUpDate,
@@ -108,7 +109,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
     if (schedulesFollowUp(disposition) && !alreadyDealCreated) {
       try {
         const followUpDate = customDateStr
-          ? new Date(`${customDateStr}T00:00:00Z`).toISOString()
+          ? dateOnlyToNoonUtcIso(customDateStr)
           : calculateFollowUpDate(disposition);
         const { id: dealId } = await createDeal.mutateAsync({
           companyName: merchant.name,

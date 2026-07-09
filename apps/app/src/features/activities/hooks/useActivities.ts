@@ -11,6 +11,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
 import type { Activity, ActivityType } from "../mockData";
 import type { Disposition } from "@/lib/followUpScheduling";
+import { dateOnlyToNoonUtcIso } from "@/lib/calendarDate";
 
 /** Shape Supabase returns. Snake_case + nullable timestamps. */
 interface ActivityRow {
@@ -35,10 +36,12 @@ function toActivity(row: ActivityRow): Activity {
     durationMinutes: row.duration_minutes,
     outcomeNotes: row.outcome_notes,
     occurredAt: row.occurred_at,
-    // Mock stores follow-up as a full ISO timestamp; DB stores a date.
-    // Coerce to ISO midnight UTC so consumers don't have to switch.
+    // DB stores follow_up_date as a plain DATE. Hydrate it to NOON UTC (not
+    // midnight) so it reads as the same calendar day whether a consumer slices
+    // it or renders it in local time — see lib/calendarDate. Midnight UTC read
+    // back a day early for reps west of UTC.
     followUpDate: row.follow_up_date
-      ? new Date(row.follow_up_date + "T00:00:00Z").toISOString()
+      ? dateOnlyToNoonUtcIso(row.follow_up_date)
       : null,
     loggedBy: row.logged_by ?? null,
     voiceNoteUrl: row.voice_note_url,

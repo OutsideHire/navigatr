@@ -66,21 +66,21 @@ function makeActivity(overrides: Partial<Activity> = {}): Activity {
 }
 
 describe("dayDelta", () => {
-  it("is 0 for same local day", () => {
-    // Build via local-time constructor so the floor lands on the same
-    // calendar day regardless of test-runner timezone.
-    const a = new Date(2026, 4, 22, 9, 0, 0);
-    const b = new Date(2026, 4, 22, 22, 0, 0);
-    expect(dayDelta(a, b)).toBe(0);
+  // `other` is a follow-up date stored at noon UTC of its calendar day; the
+  // delta is measured against the reference instant's LOCAL day.
+  it("is 0 when the follow-up day is the reference's day", () => {
+    const ref = new Date("2026-05-22T15:00:00Z"); // midday-ish, same day US-wide
+    const due = new Date("2026-05-22T12:00:00Z");
+    expect(dayDelta(ref, due)).toBe(0);
   });
   it("is positive when 'other' is in the future", () => {
-    const ref = new Date("2026-05-22T12:00:00Z");
-    const future = new Date("2026-05-24T00:00:00Z");
+    const ref = new Date("2026-05-22T15:00:00Z");
+    const future = new Date("2026-05-24T12:00:00Z");
     expect(dayDelta(ref, future)).toBeGreaterThan(0);
   });
   it("is negative when 'other' is in the past", () => {
-    const ref = new Date("2026-05-22T12:00:00Z");
-    const past = new Date("2026-05-19T00:00:00Z");
+    const ref = new Date("2026-05-22T15:00:00Z");
+    const past = new Date("2026-05-19T12:00:00Z");
     expect(dayDelta(ref, past)).toBeLessThan(0);
   });
 });

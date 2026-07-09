@@ -7,8 +7,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ActivitiesPage } from "./ActivitiesPage";
 import { ACTIVITIES_ORG_QUERY_KEY } from "../hooks/useActivities";
 import { DEALS_QUERY_KEY } from "@/features/pipeline/hooks/useDeals";
+import { dateOnlyToNoonUtcIso, toDateOnly } from "@/lib/calendarDate";
 import type { Activity } from "../mockData";
 import type { Deal } from "@/features/pipeline/mockData";
+
+// A follow-up due *today*, represented the way a real one is stored: noon UTC
+// of today's calendar day. Using a raw `todayFollowUp()` instant
+// would bucket a day off in a negative-UTC test environment.
+const todayFollowUp = () => dateOnlyToNoonUtcIso(toDateOnly(new Date()));
 
 // Radix DropdownMenu uses Pointer Capture + scrollIntoView; jsdom lacks both.
 beforeAll(() => {
@@ -89,7 +95,7 @@ describe("ActivitiesPage / Snooze menu on task rows", () => {
     // A task = an activity with a non-null followUpDate, due (today) so it
     // surfaces on the default Today tab.
     renderWithSeed({
-      activities: [task("a-1", "d-1", new Date().toISOString())],
+      activities: [task("a-1", "d-1", todayFollowUp())],
       deals: [deal("d-1", "Acme")],
     });
 
@@ -108,7 +114,7 @@ describe("ActivitiesPage / Snooze menu on task rows", () => {
   it("offers all three snooze options", async () => {
     const user = userEvent.setup();
     renderWithSeed({
-      activities: [task("a-1", "d-1", new Date().toISOString())],
+      activities: [task("a-1", "d-1", todayFollowUp())],
       deals: [deal("d-1", "Acme")],
     });
 
@@ -121,7 +127,7 @@ describe("ActivitiesPage / Snooze menu on task rows", () => {
 });
 
 describe("ActivitiesPage / shared type filter (above tabs)", () => {
-  const todayIso = () => new Date().toISOString();
+  const todayIso = () => todayFollowUp();
 
   it("narrows the Today list by type and updates the Today tab count", async () => {
     const user = userEvent.setup();
@@ -200,7 +206,7 @@ describe("ActivitiesPage / edit from History", () => {
     const user = userEvent.setup();
     // A due-today follow-up surfaces as a task on the default Today tab.
     renderWithSeed({
-      activities: [task("a-1", "d-1", new Date().toISOString(), "call")],
+      activities: [task("a-1", "d-1", todayFollowUp(), "call")],
       deals: [deal("d-1", "Acme")],
     });
 
@@ -214,7 +220,7 @@ describe("ActivitiesPage / edit from History", () => {
   it("clicking anywhere on a task row (not just the name) opens the edit sheet", async () => {
     const user = userEvent.setup();
     renderWithSeed({
-      activities: [task("a-1", "d-1", new Date().toISOString(), "call")],
+      activities: [task("a-1", "d-1", todayFollowUp(), "call")],
       deals: [deal("d-1", "Acme")],
     });
 
@@ -227,7 +233,7 @@ describe("ActivitiesPage / edit from History", () => {
   it("clicking Snooze on a task row does NOT open the edit sheet (propagation stopped)", async () => {
     const user = userEvent.setup();
     renderWithSeed({
-      activities: [task("a-1", "d-1", new Date().toISOString(), "call")],
+      activities: [task("a-1", "d-1", todayFollowUp(), "call")],
       deals: [deal("d-1", "Acme")],
     });
 
@@ -247,7 +253,7 @@ describe("ActivitiesPage / task row type indicator", () => {
   it("colors a (non-overdue) task row's icon by its activity type", () => {
     renderWithSeed({
       // Due today → not overdue → uses the email type accent.
-      activities: [task("a-1", "d-1", new Date().toISOString(), "email")],
+      activities: [task("a-1", "d-1", todayFollowUp(), "email")],
       deals: [deal("d-1", "Acme")],
     });
     expect(badgeOf(/Edit Email activity/i)?.className).toContain("bg-accent-blue-20");

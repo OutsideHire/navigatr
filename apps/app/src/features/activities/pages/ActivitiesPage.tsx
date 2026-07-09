@@ -42,6 +42,7 @@ import {
 import { type Activity, type ActivityType } from "../mockData";
 import { type Deal } from "@/features/pipeline/mockData";
 import { DISPOSITIONS, formatFollowUpDate } from "@/lib/followUpScheduling";
+import { calendarDayDelta } from "@/lib/calendarDate";
 import { LogActivitySheet } from "../components/LogActivitySheet";
 import { EditActivitySheet } from "../components/EditActivitySheet";
 import { UnloggedCallsSection } from "../components/UnloggedCallsSection";
@@ -57,16 +58,14 @@ import {
 
 // ── Date helpers ──────────────────────────────────────────────────────
 
-/** Start-of-day UTC for the given date — used for "is this today?" math. */
-function startOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setUTCHours(0, 0, 0, 0);
-  return x;
-}
-
-function daysBetween(a: Date, b: Date): number {
-  const ms = startOfDay(b).getTime() - startOfDay(a).getTime();
-  return Math.round(ms / (1000 * 60 * 60 * 24));
+/**
+ * Whole-day delta from "now" (its LOCAL day) to a follow-up's calendar day.
+ * Shared with the notification bell (lib/calendarDate) so a task buckets to
+ * the same day here and in the bell. `now` west of UTC used to bucket against
+ * UTC midnight, disagreeing with the bell's local-midnight bell.
+ */
+function daysBetween(now: Date, dueAt: Date): number {
+  return calendarDayDelta(now, dueAt);
 }
 
 function formatRelativeShort(iso: string, now: Date): string {
@@ -92,12 +91,11 @@ function dayHeading(iso: string, now: Date): string {
   const d = daysBetween(now, new Date(iso));
   if (d === 0) return "Today";
   if (d === 1) return "Tomorrow";
-  // Otherwise "Mon, May 18". timeZone: 'UTC' so the rendered date stays
-  // consistent with the UTC-based grouping key elsewhere in this file
-  // (everything uses UTC: startOfDay() sets UTC hours, dueAt.slice(0,10)
-  // is a UTC date prefix). Without this, a PST user could see a "May 16"
-  // label under a UTC-2026-05-17 group key — same task surfaces under the
-  // wrong day heading.
+  // Otherwise "Mon, May 18". timeZone: 'UTC' so the label matches the
+  // follow-up's calendar day: dueAt is stored at noon UTC, its UTC day is the
+  // intended date, and the Upcoming grouping key is dueAt.slice(0,10) (a UTC
+  // date prefix). Rendering in local tz could show the previous day's label
+  // under the correct group key for a rep west of UTC.
   return new Date(iso).toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
