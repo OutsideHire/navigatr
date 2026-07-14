@@ -57,6 +57,9 @@ describe("usePartnerNotes", () => {
         authorName: "Sarah Johnson",
       },
     ]);
+    // Pin the core contract: this partner's feed, newest first.
+    expect(eqMock).toHaveBeenCalledWith("partner_id", "p-1");
+    expect(orderMock).toHaveBeenCalledWith("created_at", { ascending: false });
   });
 
   it("normalizes a missing/hidden author to null", async () => {

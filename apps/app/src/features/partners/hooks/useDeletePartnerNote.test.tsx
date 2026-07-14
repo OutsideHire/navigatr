@@ -43,6 +43,22 @@ describe("useDeletePartnerNote", () => {
     await waitFor(() => expect(invalidateSpy).toHaveBeenCalled());
     const keys = invalidateSpy.mock.calls.map((c) => c[0]?.queryKey);
     expect(keys).toContainEqual(["partnerNotes", "byPartner", "user-1", "p-1"]);
+    // A note deletion is not a "touch" either — the partners list (which
+    // renders last_touch_at) must NOT be invalidated.
+    expect(keys).not.toContainEqual(["partners", "list", "user-1"]);
+  });
+
+  it("refuses when not signed in", async () => {
+    authUserId = undefined;
+    const { result } = renderHook(() => useDeletePartnerNote(), {
+      wrapper: makeWrapper(new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })),
+    });
+    await expect(
+      result.current.mutateAsync({ noteId: "n-1", partnerId: "p-1" }),
+    ).rejects.toThrow(/not signed in/i);
+    expect(deleteMock).not.toHaveBeenCalled();
   });
 
   it("surfaces RLS / Supabase errors", async () => {
