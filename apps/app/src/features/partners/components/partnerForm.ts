@@ -44,6 +44,15 @@ export const STATUS_OPTIONS: SelectOption[] = [
   { value: "inactive", label: "Inactive" },
 ];
 
+export const CADENCE_OPTIONS: SelectOption[] = [
+  { value: "none", label: "No cadence" },
+  { value: "7",    label: "Every 7 days" },
+  { value: "14",   label: "Every 14 days" },
+  { value: "30",   label: "Every 30 days" },
+  { value: "60",   label: "Every 60 days" },
+  { value: "90",   label: "Every 90 days" },
+];
+
 /** Add-partner fields. Phone + email are required and validated to a US
  *  10-digit number / a valid email. City + notes are optional. */
 export const partnerFormSchema = z.object({
@@ -66,5 +75,7 @@ export type PartnerFormValues = z.infer<typeof partnerFormSchema>;
 /** Edit-partner fields = add fields + editable status. */
 export const editPartnerSchema = partnerFormSchema.extend({
   status: z.enum(["active", "cooling", "inactive"]),
+  /** Preset day count as a string, or "none". Converted to number|null on save. */
+  followupCadence: z.string(),
 });
 export type EditPartnerValues = z.infer<typeof editPartnerSchema>;

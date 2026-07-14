@@ -133,4 +133,39 @@ describe("EditPartnerSheet", () => {
     // On rejection the handler catches + toasts; it must NOT close the sheet.
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
+
+  it("pre-fills the cadence from the partner", () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <EditPartnerSheet open onOpenChange={() => {}} partner={partner({ followupCadenceDays: 30 })} />
+      </QueryClientProvider>,
+    );
+    // The Select trigger shows the matching option label. (Inside a <form>,
+    // Radix also emits a hidden native <select> with the same option text, so
+    // scope the assertion to the trigger rather than a bare getByText.)
+    expect(screen.getByLabelText("Follow-up cadence").textContent).toContain("Every 30 days");
+  });
+
+  it("patches followup_cadence_days when the cadence changes", async () => {
+    renderSheet(partner({ followupCadenceDays: null }));
+    const trigger = screen.getByLabelText("Follow-up cadence");
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("option", { name: "Every 30 days" }));
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    const [{ patch }] = mutateAsync.mock.calls[0];
+    expect(patch.followup_cadence_days).toBe(30);
+  });
+
+  it("clears the cadence (null) when set to No cadence", async () => {
+    renderSheet(partner({ followupCadenceDays: 30 }));
+    const trigger = screen.getByLabelText("Follow-up cadence");
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("option", { name: "No cadence" }));
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    const [{ patch }] = mutateAsync.mock.calls[0];
+    expect(patch.followup_cadence_days).toBeNull();
+  });
 });

@@ -29,6 +29,7 @@ import {
   type EditPartnerValues,
   TYPE_OPTIONS,
   STATUS_OPTIONS,
+  CADENCE_OPTIONS,
   formatUSPhone,
   stripUsCountryCode,
 } from "./partnerForm";
@@ -54,6 +55,7 @@ export function EditPartnerSheet({ open, onOpenChange, partner }: EditPartnerShe
       email: partner.email,
       city: partner.city,
       notes: partner.notes,
+      followupCadence: partner.followupCadenceDays == null ? "none" : String(partner.followupCadenceDays),
     }),
     [partner],
   );
@@ -89,6 +91,10 @@ export function EditPartnerSheet({ open, onOpenChange, partner }: EditPartnerShe
     if (dirtyFields.email) patch.email = values.email;
     if (dirtyFields.city) patch.city = values.city ?? "";
     if (dirtyFields.notes) patch.notes = values.notes ?? "";
+    if (dirtyFields.followupCadence) {
+      patch.followup_cadence_days =
+        values.followupCadence === "none" ? null : Number(values.followupCadence);
+    }
 
     if (Object.keys(patch).length === 0) {
       toast("No changes to save");
@@ -184,6 +190,21 @@ export function EditPartnerSheet({ open, onOpenChange, partner }: EditPartnerShe
                       value={field.value}
                       onValueChange={(v) => field.onChange(v as PartnerStatus)}
                       options={STATUS_OPTIONS}
+                    />
+                  </FormField>
+                )}
+              />
+
+              <Controller
+                control={control}
+                name="followupCadence"
+                render={({ field }) => (
+                  <FormField htmlFor="edit-partner-cadence" label="Follow-up cadence">
+                    <Select
+                      id="edit-partner-cadence"
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      options={CADENCE_OPTIONS}
                     />
                   </FormField>
                 )}
