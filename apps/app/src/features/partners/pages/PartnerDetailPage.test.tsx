@@ -69,6 +69,10 @@ vi.mock("../components/EditPartnerSheet", () => ({
 vi.mock("../components/PartnerNotesCard", () => ({
   PartnerNotesCard: () => <div data-testid="partner-notes-card" />,
 }));
+vi.mock("../components/ReferralPreviewSheet", () => ({
+  ReferralPreviewSheet: ({ deal, open }: { deal: { id: string } | null; open: boolean }) =>
+    open && deal ? <div data-testid="referral-preview" data-deal={deal.id} /> : null,
+}));
 
 function deal(id: string, valueCents: number): Deal {
   return {
@@ -259,5 +263,25 @@ describe("PartnerDetailPage / notes + about", () => {
     renderPage({ partners, deals: [], partnerId: "p1" });
     expect(screen.getByRole("heading", { name: "About" })).toBeTruthy();
     expect(screen.getByTestId("partner-notes-card")).toBeTruthy();
+  });
+});
+
+describe("PartnerDetailPage / referral preview", () => {
+  // useDeals keys its query on the auth user id; the seed lives at
+  // DEALS_QUERY_KEY(undefined). Reset the leaked id from the gating
+  // describe back to the documented default so the seeded deal resolves.
+  beforeEach(() => {
+    authUserId = undefined;
+  });
+
+  it("clicking a referral row opens the preview panel (no navigation)", () => {
+    const deals = [deal("d-in", 10_000_00)];
+    const partners = [partner({ id: "p1", attributedDealIds: ["d-in"] })];
+    renderPage({ partners, deals, partnerId: "p1" });
+
+    fireEvent.click(screen.getByText("Co-d-in").closest("button")!);
+    const preview = screen.getByTestId("referral-preview");
+    expect(preview).toBeTruthy();
+    expect(preview.getAttribute("data-deal")).toBe("d-in");
   });
 });

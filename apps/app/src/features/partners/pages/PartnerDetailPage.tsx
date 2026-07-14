@@ -65,6 +65,7 @@ import { useProfile } from "@/features/auth/useProfile";
 import { useAuth } from "@/stores/auth";
 import { EditPartnerSheet } from "../components/EditPartnerSheet";
 import { PartnerNotesCard } from "../components/PartnerNotesCard";
+import { ReferralPreviewSheet } from "../components/ReferralPreviewSheet";
 
 // ── Not found ──────────────────────────────────────────────────────
 
@@ -583,6 +584,7 @@ export function PartnerDetailPage() {
   const profile = useProfile();
   const currentUserId = useAuth((s) => s.user?.id);
   const [editOpen, setEditOpen] = React.useState(false);
+  const [previewDeal, setPreviewDeal] = React.useState<Deal | null>(null);
 
   // HeroCard's "Log touch" button toggles this; TouchTimelineCard reads
   // it. When the form opens, we also scroll the timeline card into view
@@ -678,6 +680,7 @@ export function PartnerDetailPage() {
           eligibleOptions={eligibleOptions}
           addLabel="Attach deal"
           emptyText="No deals attributed yet."
+          onSelectDeal={setPreviewDeal}
           onAdd={async (dealId) => {
             try {
               await attribute.mutateAsync({ partnerId: partner.id, dealId });
@@ -703,6 +706,7 @@ export function PartnerDetailPage() {
           eligibleOptions={eligibleOptions}
           addLabel="Refer a deal"
           emptyText="No deals referred to this partner yet."
+          onSelectDeal={setPreviewDeal}
           onAdd={async (dealId) => {
             try {
               await referDeal.mutateAsync({ partnerId: partner.id, dealId });
@@ -723,6 +727,11 @@ export function PartnerDetailPage() {
           }}
         />
         <EditPartnerSheet open={editOpen} onOpenChange={setEditOpen} partner={partner} />
+        <ReferralPreviewSheet
+          deal={previewDeal}
+          open={previewDeal !== null}
+          onOpenChange={(o) => { if (!o) setPreviewDeal(null); }}
+        />
       </div>
     </div>
   );
