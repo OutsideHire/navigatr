@@ -177,12 +177,38 @@ describe("PartnerNotesCard", () => {
     expect(screen.getByText(/· edited/)).toBeTruthy();
   });
 
-  it("does not submit an empty edit", () => {
+  it("disables Save for a whitespace-only edit (guard on empty)", () => {
     notesResult.data = [note({ id: "n-9", createdBy: "user-1", body: "Prefers texts" })];
     renderCard();
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByDisplayValue("Prefers texts"), { target: { value: "   " } });
+    // Save is disabled for a blank draft, so the mutation can't fire.
+    expect((screen.getByRole("button", { name: /Save/ }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: /Save/ }));
     expect(updMutate).not.toHaveBeenCalled();
+  });
+
+  it("treats an unchanged Save as a no-op and closes the editor", async () => {
+    notesResult.data = [note({ id: "n-9", createdBy: "user-1", body: "Prefers texts" })];
+    renderCard();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    // Text unchanged; Save is enabled (non-empty) but handleUpdate
+    // short-circuits because body === original.
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy());
+    expect(updMutate).not.toHaveBeenCalled();
+    // Editor closed: the textarea is gone.
+    expect(screen.queryByDisplayValue("Prefers texts")).toBeNull();
+  });
+
+  it("does not show an 'edited' marker for an unedited note", () => {
+    notesResult.data = [note({
+      id: "n-4",
+      createdBy: "user-1",
+      createdAt: "2026-07-14T12:00:00.000Z",
+      updatedAt: "2026-07-14T12:00:00.000Z",
+    })];
+    renderCard();
+    expect(screen.queryByText(/· edited/)).toBeNull();
   });
 });
