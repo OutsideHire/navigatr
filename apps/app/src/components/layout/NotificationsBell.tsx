@@ -10,7 +10,7 @@
  * the badge width.
  */
 
-import { Bell, Phone, Mail, MapPin, Calendar, Route as RouteIcon } from "lucide-react";
+import { Bell, Phone, Mail, MapPin, Calendar, Route as RouteIcon, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
@@ -30,6 +30,10 @@ import {
   usePathReminders,
   type PathReminder,
 } from "@/features/path/hooks/usePathReminders";
+import {
+  usePartnerFollowUpReminders,
+  type PartnerFollowUpReminder,
+} from "@/features/partners/hooks/usePartnerFollowUpReminders";
 import { formatReminder } from "@/features/path/lib/scheduleDate";
 import type { ActivityType } from "@/features/activities/mockData";
 
@@ -116,6 +120,42 @@ function PathReminderRow({
   );
 }
 
+function PartnerReminderRow({
+  reminder,
+  onNavigate,
+}: {
+  reminder: PartnerFollowUpReminder;
+  onNavigate: (partnerId: string) => void;
+}) {
+  const overdue = reminder.daysOverdue > 0;
+  const label = overdue ? `${reminder.daysOverdue}d overdue` : "Due today";
+  return (
+    <DropdownMenuItem onSelect={() => onNavigate(reminder.id)} className="flex items-start gap-2">
+      <span
+        className={cn(
+          "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-radius-full",
+          overdue ? "bg-status-danger-bg text-status-danger" : "bg-status-warning-bg text-status-warning",
+        )}
+        aria-hidden
+      >
+        <Users className="h-3.5 w-3.5" />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate text-body-strong text-text-default">{reminder.partner.name}</span>
+        <span className="truncate text-caption text-text-muted">{reminder.partner.company}</span>
+      </div>
+      <span
+        className={cn(
+          "shrink-0 self-center text-caption tabular-nums",
+          overdue ? "text-status-danger" : "text-status-warning",
+        )}
+      >
+        {label}
+      </span>
+    </DropdownMenuItem>
+  );
+}
+
 export interface NotificationsBellProps {
   /** Max reminders rendered before showing "+N more". Defaults to 6. */
   maxItems?: number;
@@ -127,16 +167,24 @@ export function NotificationsBell({ maxItems = 6, now }: NotificationsBellProps)
   const navigate = useNavigate();
   const { overdue, today, count: followUpCount } = useFollowUpReminders(now);
   const { due: duePaths, count: pathCount } = usePathReminders(now);
+  const {
+    overdue: partnerOverdue,
+    today: partnerToday,
+    count: partnerCount,
+  } = usePartnerFollowUpReminders(now);
 
   const all = [...overdue, ...today];
   const shown = all.slice(0, maxItems);
   const hidden = all.length - shown.length;
 
-  // Total badge = follow-ups + due planned paths.
-  const count = followUpCount + pathCount;
+  const partnerReminders = [...partnerOverdue, ...partnerToday];
+
+  // Total badge = follow-ups + due planned paths + partner cadence reminders.
+  const count = followUpCount + pathCount + partnerCount;
 
   const handleNavigate = (dealId: string) => navigate(`/pipeline/${dealId}`);
   const handleNavigatePath = () => navigate("/path");
+  const handleNavigatePartner = (partnerId: string) => navigate(`/partners/${partnerId}`);
 
   // 9+ cap keeps the badge a tight circle.
   const badgeText = count > 9 ? "9+" : String(count);
@@ -166,9 +214,11 @@ export function NotificationsBell({ maxItems = 6, now }: NotificationsBellProps)
           <span className="text-body-strong text-text-default">Notifications</span>
           {count > 0 && (
             <span className="text-caption text-text-muted">
-              {followUpCount > 0 && `${followUpCount} follow-up${followUpCount === 1 ? "" : "s"}`}
-              {followUpCount > 0 && pathCount > 0 && " · "}
-              {pathCount > 0 && `${pathCount} path${pathCount === 1 ? "" : "s"}`}
+              {[
+                followUpCount > 0 && `${followUpCount} follow-up${followUpCount === 1 ? "" : "s"}`,
+                partnerCount > 0 && `${partnerCount} partner${partnerCount === 1 ? "" : "s"}`,
+                pathCount > 0 && `${pathCount} path${pathCount === 1 ? "" : "s"}`,
+              ].filter(Boolean).join(" · ")}
             </span>
           )}
         </DropdownMenuLabel>
@@ -188,6 +238,15 @@ export function NotificationsBell({ maxItems = 6, now }: NotificationsBellProps)
               <>
                 {duePaths.map((p) => (
                   <PathReminderRow key={p.id} reminder={p} onNavigate={handleNavigatePath} />
+                ))}
+                {followUpCount > 0 && <DropdownMenuSeparator />}
+              </>
+            )}
+
+            {partnerReminders.length > 0 && (
+              <>
+                {partnerReminders.map((r) => (
+                  <PartnerReminderRow key={r.id} reminder={r} onNavigate={handleNavigatePartner} />
                 ))}
                 {followUpCount > 0 && <DropdownMenuSeparator />}
               </>

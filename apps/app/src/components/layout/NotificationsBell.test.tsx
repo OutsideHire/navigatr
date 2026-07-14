@@ -24,12 +24,21 @@ vi.mock("react-router-dom", async (orig) => {
 
 let followUps: { overdue: FollowUpReminder[]; today: FollowUpReminder[]; count: number; isLoading: boolean };
 let pathReminders: { due: PathReminder[]; count: number; isLoading: boolean };
+let partnerReminders = { overdue: [], today: [], count: 0, isLoading: false } as {
+  overdue: { id: string; partner: { id: string; name: string; company: string }; dueAt: string; daysOverdue: number }[];
+  today: { id: string; partner: { id: string; name: string; company: string }; dueAt: string; daysOverdue: number }[];
+  count: number;
+  isLoading: boolean;
+};
 
 vi.mock("@/features/activities/hooks/useFollowUpReminders", () => ({
   useFollowUpReminders: () => followUps,
 }));
 vi.mock("@/features/path/hooks/usePathReminders", () => ({
   usePathReminders: () => pathReminders,
+}));
+vi.mock("@/features/partners/hooks/usePartnerFollowUpReminders", () => ({
+  usePartnerFollowUpReminders: () => partnerReminders,
 }));
 
 import { NotificationsBell } from "./NotificationsBell";
@@ -106,6 +115,7 @@ beforeEach(() => {
   navigateMock.mockClear();
   followUps = { overdue: [], today: [], count: 0, isLoading: false };
   pathReminders = { due: [], count: 0, isLoading: false };
+  partnerReminders = { overdue: [], today: [], count: 0, isLoading: false };
 });
 
 describe("NotificationsBell", () => {
@@ -143,5 +153,26 @@ describe("NotificationsBell", () => {
     await user.click(screen.getByRole("button", { name: /notifications/i }));
     await user.click(screen.getByText("Downtown run"));
     expect(navigateMock).toHaveBeenCalledWith("/path");
+  });
+
+  it("shows a partner cadence reminder, counts it, and navigates to the partner", async () => {
+    const user = userEvent.setup();
+    partnerReminders = {
+      overdue: [{ id: "pA", partner: { id: "pA", name: "Auris", company: "Auris LLC" }, dueAt: "2026-07-10T12:00:00Z", daysOverdue: 5 }],
+      today: [],
+      count: 1,
+      isLoading: false,
+    };
+    renderBell();
+    // The partner reminder adds to the badge count.
+    expect(screen.getByRole("button", { name: /notifications: 1/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /notifications/i }));
+    // The partner reminder shows name, company, and the overdue label.
+    expect(screen.getByText("Auris")).toBeInTheDocument();
+    expect(screen.getByText("Auris LLC")).toBeInTheDocument();
+    expect(screen.getByText("5d overdue")).toBeInTheDocument();
+    // Selecting it navigates to the partner detail.
+    await user.click(screen.getByText("Auris"));
+    expect(navigateMock).toHaveBeenCalledWith("/partners/pA");
   });
 });
