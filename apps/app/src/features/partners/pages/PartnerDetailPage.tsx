@@ -61,6 +61,9 @@ import { Loader2, Check, MessageSquare } from "lucide-react";
 import { Select, type SelectOption, Textarea } from "@/components/navigatr";
 import { ReferralSection } from "../components/ReferralSection";
 import { type PartnerStatus } from "../mockData";
+import { useProfile } from "@/features/auth/useProfile";
+import { useAuth } from "@/stores/auth";
+import { EditPartnerSheet } from "../components/EditPartnerSheet";
 
 // ── Not found ──────────────────────────────────────────────────────
 
@@ -91,11 +94,15 @@ function HeroCard({
   dealCount,
   totalRevenue,
   onLogTouch,
+  canEdit,
+  onEdit,
 }: {
   partner: Partner;
   dealCount: number;
   totalRevenue: number;
   onLogTouch: () => void;
+  canEdit: boolean;
+  onEdit: () => void;
 }) {
   return (
     <Card padding="lg" className="flex flex-col gap-4">
@@ -143,9 +150,16 @@ function HeroCard({
         >
           Log touch
         </Button>
-        {/* Edit is now inline: click the status pill above, or click
-            Edit on the Notes card below. A top-bar "edit everything"
-            button would need a sheet that doesn't exist yet. */}
+        {canEdit && (
+          <Button
+            variant="secondary"
+            size="md"
+            leadingIcon={Pencil}
+            onClick={onEdit}
+          >
+            Edit
+          </Button>
+        )}
       </div>
     </Card>
   );
@@ -565,6 +579,10 @@ export function PartnerDetailPage() {
   const referDeal = useReferDeal();
   const unattribute = useUnattributeDeal();
 
+  const profile = useProfile();
+  const currentUserId = useAuth((s) => s.user?.id);
+  const [editOpen, setEditOpen] = React.useState(false);
+
   // HeroCard's "Log touch" button toggles this; TouchTimelineCard reads
   // it. When the form opens, we also scroll the timeline card into view
   // so the form is visible without the user hunting for it.
@@ -617,6 +635,11 @@ export function PartnerDetailPage() {
 
   if (!partner) return <NotFound />;
 
+  const canEdit =
+    profile.data?.role === "manager" ||
+    profile.data?.role === "admin" ||
+    (!!partner.createdBy && partner.createdBy === currentUserId);
+
   return (
     <div className="mx-auto w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
       <div className="mb-3">
@@ -636,6 +659,8 @@ export function PartnerDetailPage() {
           dealCount={inboundDeals.length}
           totalRevenue={totalRevenue}
           onLogTouch={openLogTouch}
+          canEdit={canEdit}
+          onEdit={() => setEditOpen(true)}
         />
         <ContactCard partner={partner} />
         <NotesCard partner={partner} />
@@ -695,6 +720,7 @@ export function PartnerDetailPage() {
             }
           }}
         />
+        <EditPartnerSheet open={editOpen} onOpenChange={setEditOpen} partner={partner} />
       </div>
     </div>
   );

@@ -46,6 +46,27 @@ vi.mock("../hooks/useReferDeal", () => ({
   useReferDeal: () => ({ mutateAsync: referMutate, isPending: false }),
 }));
 
+// Profile + auth drive the Edit-button gate. Defaults set per test via
+// the mutable holders below.
+const profileHolder: { role: "rep" | "manager" | "admin" } = { role: "rep" };
+// Default undefined so the existing inbound/outbound referral tests (which
+// seed DEALS_QUERY_KEY(undefined)) keep matching — useDeals keys its query
+// on this auth id. The gating tests set it explicitly in their beforeEach.
+let authUserId: string | undefined = undefined;
+vi.mock("@/features/auth/useProfile", () => ({
+  useProfile: () => ({ data: { role: profileHolder.role, org_id: "org-1" } }),
+}));
+vi.mock("@/stores/auth", () => ({
+  useAuth: (selector: (s: { user: { id: string } | null }) => unknown) =>
+    selector({ user: authUserId ? { id: authUserId } : null }),
+}));
+// EditPartnerSheet is exercised in its own test; stub it to a marker so
+// this test only asserts the button + open wiring.
+vi.mock("../components/EditPartnerSheet", () => ({
+  EditPartnerSheet: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="edit-partner-sheet" /> : null,
+}));
+
 function deal(id: string, valueCents: number): Deal {
   return {
     id,
@@ -72,6 +93,7 @@ function partner(args: {
   id: string;
   attributedDealIds?: string[];
   outboundDealIds?: string[];
+  createdBy?: string | null;
 }): Partner {
   return {
     id: args.id,
@@ -87,6 +109,7 @@ function partner(args: {
     attributedDealIds: args.attributedDealIds ?? [],
     outboundDealIds: args.outboundDealIds ?? [],
     notes: "",
+    createdBy: args.createdBy ?? "creator-9",
   };
 }
 
@@ -182,5 +205,47 @@ describe("PartnerDetailPage / inbound + outbound referrals", () => {
     // REFERRALS KPI = inbound count = 1 (not 3).
     const kpi = screen.getByText("REFERRALS").parentElement!;
     expect(within(kpi).getByText("1")).toBeTruthy();
+  });
+});
+
+describe("PartnerDetailPage / Edit button gating", () => {
+  beforeEach(() => {
+    profileHolder.role = "rep";
+    authUserId = "creator-9";
+  });
+
+  // The NotesCard renders its own "Edit" button (and the timeline card a
+  // second "Log touch"), so scope the hero Edit query to the hero action
+  // row: the parent of the first "Log touch" (HeroCard renders before the
+  // timeline card). That row holds only Log touch + the gated Edit.
+  const heroActions = () =>
+    screen.getAllByRole("button", { name: "Log touch" })[0].parentElement as HTMLElement;
+
+  it("shows Edit for the rep who created the partner", () => {
+    const partners = [partner({ id: "p1", createdBy: "creator-9" })];
+    renderPage({ partners, deals: [], partnerId: "p1" });
+    expect(within(heroActions()).getByRole("button", { name: /^Edit$/ })).toBeTruthy();
+  });
+
+  it("hides Edit for a rep who did not create the partner", () => {
+    authUserId = "someone-else";
+    const partners = [partner({ id: "p1", createdBy: "creator-9" })];
+    renderPage({ partners, deals: [], partnerId: "p1" });
+    expect(within(heroActions()).queryByRole("button", { name: /^Edit$/ })).toBeNull();
+  });
+
+  it("shows Edit for a manager regardless of creator", () => {
+    profileHolder.role = "manager";
+    authUserId = "someone-else";
+    const partners = [partner({ id: "p1", createdBy: "creator-9" })];
+    renderPage({ partners, deals: [], partnerId: "p1" });
+    expect(within(heroActions()).getByRole("button", { name: /^Edit$/ })).toBeTruthy();
+  });
+
+  it("opens the edit sheet when Edit is clicked", () => {
+    const partners = [partner({ id: "p1", createdBy: "creator-9" })];
+    renderPage({ partners, deals: [], partnerId: "p1" });
+    fireEvent.click(within(heroActions()).getByRole("button", { name: /^Edit$/ }));
+    expect(screen.getByTestId("edit-partner-sheet")).toBeTruthy();
   });
 });
