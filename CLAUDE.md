@@ -1,5 +1,22 @@
 # Project: navigatr
 
+## Product context
+
+navigatr (by Navigatr LLC) is a field-sales operating system: an "action layer" on top of a rep's CRM that helps field reps discover nearby businesses, plan and run a driving route, drop in and log visits, manage a deal pipeline, book appointments and follow-ups, and route their day around calendar meetings. There is also a partner/referral side and an AI co-pilot ("Miles").
+
+**Two audiences (build for both):**
+- **Buyers = payment and payroll ISOs** (Independent Sales Organizations) who purchase navigatr for their sales teams. They care about onboarding reps, roles/permissions, and visibility into the team's pipeline (the admin / agents / dashboard surfaces).
+- **End users = the ISOs' field sales reps**, working accounts in the field: in the car, on a phone, between drop-ins. They live in the discover / path / pipeline / activities screens.
+
+**Stage & near-term goal:** pre-launch, heading into a beta. The target is landing the first **beta ISO customers**, running a 1-2 month beta, and converting them to paying. So prioritize a trustworthy, complete core experience (a rep can run their whole day; an ISO can onboard a team) over breadth. Avoid half-built features that would erode beta trust. (Pre-launch gates and current initiative status live in Claude memory, not here.)
+
+**Tone / design personality (hold both at once):**
+- **Fast and no-nonsense for reps in the field** — mobile-first, minimal taps, legible and quick while moving.
+- **Polished and premium** — looks like a paid product an ISO would confidently put in front of its team.
+- When they tension: reps' speed wins on the in-field screens (discover, path, quick-log); premium polish wins on the surfaces buyers evaluate (marketing, settings, dashboards, onboarding).
+
+**Non-goals:** none stated yet (revisit as scope firms up).
+
 ## Design system source of truth
 
 `/Users/ryanmeo/Downloads/DESIGN.md` is the design system reference for this project. Read it before any Figma work. Do not work from memory.
