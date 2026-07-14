@@ -185,7 +185,7 @@ export function AddPartnerSheet({ open, onOpenChange, onAdded }: AddPartnerSheet
                 control={control}
                 name="notes"
                 render={({ field }) => (
-                  <FormField htmlFor="notes" label="Notes">
+                  <FormField htmlFor="notes" label="About">
                     <NotesFieldWithMic
                       id="notes"
                       value={field.value ?? ""}

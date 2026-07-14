@@ -64,6 +64,7 @@ import { type PartnerStatus } from "../mockData";
 import { useProfile } from "@/features/auth/useProfile";
 import { useAuth } from "@/stores/auth";
 import { EditPartnerSheet } from "../components/EditPartnerSheet";
+import { PartnerNotesCard } from "../components/PartnerNotesCard";
 
 // ── Not found ──────────────────────────────────────────────────────
 
@@ -269,7 +270,7 @@ function StatusPicker({ partner }: { partner: Partner }) {
   );
 }
 
-function NotesCard({ partner }: { partner: Partner }) {
+function AboutCard({ partner }: { partner: Partner }) {
   const update = useUpdatePartner();
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(partner.notes);
@@ -288,7 +289,7 @@ function NotesCard({ partner }: { partner: Partner }) {
     }
     try {
       await update.mutateAsync({ id: partner.id, patch: { notes: draft } });
-      toast.success("Notes saved");
+      toast.success("About saved");
       setEditing(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save notes");
@@ -305,7 +306,7 @@ function NotesCard({ partner }: { partner: Partner }) {
     return (
       <Card padding="md">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="text-body-strong text-text-default">Notes</h2>
+          <h2 className="text-body-strong text-text-default">About</h2>
         </div>
         <Textarea
           id={`partner-notes-${partner.id}`}
@@ -331,7 +332,7 @@ function NotesCard({ partner }: { partner: Partner }) {
   return (
     <Card padding="md">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 className="text-body-strong text-text-default">Notes</h2>
+        <h2 className="text-body-strong text-text-default">About</h2>
         <Button variant="tertiary" size="sm" leadingIcon={Pencil} onClick={() => setEditing(true)}>
           Edit
         </Button>
@@ -339,7 +340,7 @@ function NotesCard({ partner }: { partner: Partner }) {
       {partner.notes ? (
         <p className="whitespace-pre-wrap text-body-md text-text-default">{partner.notes}</p>
       ) : (
-        <p className="text-body-md text-text-muted">No notes yet. Click Edit to add some.</p>
+        <p className="text-body-md text-text-muted">No summary yet. Click Edit to add one.</p>
       )}
     </Card>
   );
@@ -663,7 +664,8 @@ export function PartnerDetailPage() {
           onEdit={() => setEditOpen(true)}
         />
         <ContactCard partner={partner} />
-        <NotesCard partner={partner} />
+        <AboutCard partner={partner} />
+        <PartnerNotesCard partnerId={partner.id} />
         <TouchTimelineCard
           ref={timelineRef}
           partnerId={partner.id}

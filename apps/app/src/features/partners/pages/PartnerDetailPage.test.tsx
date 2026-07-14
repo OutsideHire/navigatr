@@ -66,6 +66,9 @@ vi.mock("../components/EditPartnerSheet", () => ({
   EditPartnerSheet: ({ open }: { open: boolean }) =>
     open ? <div data-testid="edit-partner-sheet" /> : null,
 }));
+vi.mock("../components/PartnerNotesCard", () => ({
+  PartnerNotesCard: () => <div data-testid="partner-notes-card" />,
+}));
 
 function deal(id: string, valueCents: number): Deal {
   return {
@@ -247,5 +250,14 @@ describe("PartnerDetailPage / Edit button gating", () => {
     renderPage({ partners, deals: [], partnerId: "p1" });
     fireEvent.click(within(heroActions()).getByRole("button", { name: /^Edit$/ }));
     expect(screen.getByTestId("edit-partner-sheet")).toBeTruthy();
+  });
+});
+
+describe("PartnerDetailPage / notes + about", () => {
+  it("renders the About card and the Notes feed", () => {
+    const partners = [partner({ id: "p1", createdBy: "creator-9" })];
+    renderPage({ partners, deals: [], partnerId: "p1" });
+    expect(screen.getByRole("heading", { name: "About" })).toBeTruthy();
+    expect(screen.getByTestId("partner-notes-card")).toBeTruthy();
   });
 });

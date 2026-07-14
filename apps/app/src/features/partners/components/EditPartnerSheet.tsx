@@ -220,7 +220,7 @@ export function EditPartnerSheet({ open, onOpenChange, partner }: EditPartnerShe
                 control={control}
                 name="notes"
                 render={({ field }) => (
-                  <FormField htmlFor="edit-partner-notes" label="Notes">
+                  <FormField htmlFor="edit-partner-notes" label="About">
                     <NotesFieldWithMic
                       id="edit-partner-notes"
                       value={field.value ?? ""}
