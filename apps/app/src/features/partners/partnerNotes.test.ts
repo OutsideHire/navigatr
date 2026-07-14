@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canDeleteNote, formatNoteTimestamp, type PartnerNote } from "./partnerNotes";
+import { canDeleteNote, canEditNote, isNoteEdited, formatNoteTimestamp, type PartnerNote } from "./partnerNotes";
 
 function note(overrides: Partial<PartnerNote> = {}): PartnerNote {
   return {
@@ -8,6 +8,7 @@ function note(overrides: Partial<PartnerNote> = {}): PartnerNote {
     createdBy: "user-1",
     body: "Prefers texts over calls",
     createdAt: "2026-07-14T12:00:00.000Z",
+    updatedAt: "2026-07-14T12:00:00.000Z",
     authorName: "Sarah Johnson",
     ...overrides,
   };
@@ -29,6 +30,33 @@ describe("canDeleteNote", () => {
 
   it("blocks deletion when signed out / role unknown", () => {
     expect(canDeleteNote(note({ createdBy: "other" }), undefined, undefined)).toBe(false);
+  });
+});
+
+describe("canEditNote", () => {
+  it("lets the author edit their own note", () => {
+    expect(canEditNote(note({ createdBy: "user-1" }), "user-1")).toBe(true);
+  });
+  it("blocks editing someone else's note (even for a manager — author only)", () => {
+    expect(canEditNote(note({ createdBy: "other" }), "user-1")).toBe(false);
+  });
+  it("blocks editing when signed out", () => {
+    expect(canEditNote(note({ createdBy: "user-1" }), undefined)).toBe(false);
+  });
+});
+
+describe("isNoteEdited", () => {
+  it("is false when updatedAt equals createdAt", () => {
+    expect(isNoteEdited(note({
+      createdAt: "2026-07-14T12:00:00.000Z",
+      updatedAt: "2026-07-14T12:00:00.000Z",
+    }))).toBe(false);
+  });
+  it("is true when updatedAt is after createdAt", () => {
+    expect(isNoteEdited(note({
+      createdAt: "2026-07-14T12:00:00.000Z",
+      updatedAt: "2026-07-14T12:05:00.000Z",
+    }))).toBe(true);
   });
 });
 

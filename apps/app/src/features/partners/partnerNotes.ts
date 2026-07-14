@@ -10,6 +10,8 @@ export interface PartnerNote {
   body: string;
   /** ISO instant the note was written. */
   createdAt: string;
+  /** ISO instant the note was last edited (== createdAt when never edited). */
+  updatedAt: string;
   /** Author's display name, or null if their profile isn't visible. */
   authorName: string | null;
 }
@@ -24,6 +26,19 @@ export function canDeleteNote(
 ): boolean {
   if (role === "manager" || role === "admin") return true;
   return Boolean(userId) && note.createdBy === userId;
+}
+
+/** Only the author can edit a note's text (author-only UPDATE policy). */
+export function canEditNote(
+  note: Pick<PartnerNote, "createdBy">,
+  userId: string | undefined,
+): boolean {
+  return Boolean(userId) && note.createdBy === userId;
+}
+
+/** True once a note has been edited (updated_at moved past created_at). */
+export function isNoteEdited(note: Pick<PartnerNote, "createdAt" | "updatedAt">): boolean {
+  return new Date(note.updatedAt).getTime() > new Date(note.createdAt).getTime();
 }
 
 /** Short LOCAL date for a note. created_at is a true instant (when the note
