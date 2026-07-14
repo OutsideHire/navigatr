@@ -40,6 +40,7 @@ describe("usePartnerNotes", () => {
           created_by: "user-1",
           body: "Prefers texts",
           created_at: "2026-07-14T12:00:00.000Z",
+          updated_at: "2026-07-14T12:00:00.000Z",
           author: { full_name: "Sarah Johnson" },
         },
       ],
@@ -54,6 +55,7 @@ describe("usePartnerNotes", () => {
         createdBy: "user-1",
         body: "Prefers texts",
         createdAt: "2026-07-14T12:00:00.000Z",
+        updatedAt: "2026-07-14T12:00:00.000Z",
         authorName: "Sarah Johnson",
       },
     ]);
@@ -71,6 +73,7 @@ describe("usePartnerNotes", () => {
           created_by: "gone",
           body: "x",
           created_at: "2026-07-14T12:00:00.000Z",
+          updated_at: "2026-07-14T12:00:00.000Z",
           author: null,
         },
       ],

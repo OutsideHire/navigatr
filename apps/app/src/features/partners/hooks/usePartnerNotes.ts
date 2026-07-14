@@ -17,6 +17,7 @@ interface Row {
   created_by: string;
   body: string;
   created_at: string;
+  updated_at: string;
   // PostgREST embed of the created_by → profiles FK (to-one → object|null).
   author: { full_name: string | null } | null;
 }
@@ -28,6 +29,7 @@ function toNote(r: Row): PartnerNote {
     createdBy: r.created_by,
     body: r.body,
     createdAt: r.created_at,
+    updatedAt: r.updated_at,
     authorName: r.author?.full_name ?? null,
   };
 }
@@ -46,7 +48,7 @@ export function usePartnerNotes(partnerId: string | undefined) {
       const { data, error } = await supabase
         .from("partner_notes")
         .select(
-          "id, partner_id, created_by, body, created_at, " +
+          "id, partner_id, created_by, body, created_at, updated_at, " +
             "author:profiles!partner_notes_created_by_fkey(full_name)",
         )
         .eq("partner_id", partnerId!)
