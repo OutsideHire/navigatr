@@ -54,6 +54,7 @@ import {
   type PartnerStatus,
 } from "../mockData";
 import { formatMoney } from "@/features/pipeline/mockData";
+import { computeCadenceStatus, cadenceSignalLabel } from "../partnerCadence";
 import { AddPartnerSheet } from "../components/AddPartnerSheet";
 import { usePartners } from "../hooks/usePartners";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
@@ -101,6 +102,16 @@ function useRevenueByPartner(
 function PartnerCard({ partner, revenue }: { partner: Partner; revenue: number }) {
   const navigate = useNavigate();
   const referrals = partner.attributedDealIds.length;
+  const cadenceSignal = cadenceSignalLabel(
+    computeCadenceStatus(
+      {
+        followupCadenceDays: partner.followupCadenceDays,
+        lastTouch: partner.lastTouch,
+        createdAt: partner.createdAt,
+      },
+      new Date(),
+    ),
+  );
 
   return (
     <Card
@@ -123,6 +134,18 @@ function PartnerCard({ partner, revenue }: { partner: Partner; revenue: number }
             </Badge>
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-caption text-text-muted">
+            {cadenceSignal && (
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-radius-full px-2 py-0.5 font-medium",
+                  cadenceSignal === "Due today"
+                    ? "bg-status-warning-bg text-status-warning"
+                    : "bg-status-danger-bg text-status-danger",
+                )}
+              >
+                {cadenceSignal}
+              </span>
+            )}
             <span className="inline-flex items-center gap-1">
               <Users className="h-3 w-3" aria-hidden />
               <span className="tabular-nums text-text-default">{referrals}</span>{" "}

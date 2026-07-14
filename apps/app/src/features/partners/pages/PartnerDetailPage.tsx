@@ -50,6 +50,8 @@ import {
   formatMoney,
   type Deal,
 } from "@/features/pipeline/mockData";
+import { computeCadenceStatus, formatCadence, cadenceSignalLabel } from "../partnerCadence";
+import { formatCalendarDate } from "@/lib/calendarDate";
 import { usePartner } from "../hooks/usePartner";
 import { useAttributeDeal, useUnattributeDeal } from "../hooks/useAttributeDeal";
 import { useReferDeal } from "../hooks/useReferDeal";
@@ -106,6 +108,15 @@ function HeroCard({
   canEdit: boolean;
   onEdit: () => void;
 }) {
+  const cadence = computeCadenceStatus(
+    {
+      followupCadenceDays: partner.followupCadenceDays,
+      lastTouch: partner.lastTouch,
+      createdAt: partner.createdAt,
+    },
+    new Date(),
+  );
+  const cadenceSignal = cadenceSignalLabel(cadence);
   return (
     <Card padding="lg" className="flex flex-col gap-4">
       <div className="flex items-start gap-4">
@@ -142,6 +153,26 @@ function HeroCard({
           </span>
         </div>
       </div>
+
+      {cadence.hasCadence && (
+        <div className="flex flex-wrap items-center gap-2 text-body-md text-text-muted">
+          <span className="text-text-default">{formatCadence(partner.followupCadenceDays ?? null)}</span>
+          {cadenceSignal ? (
+            <span
+              className={cn(
+                "rounded-radius-full px-2 py-0.5 text-caption font-medium",
+                cadence.state === "overdue"
+                  ? "bg-status-danger-bg text-status-danger"
+                  : "bg-status-warning-bg text-status-warning",
+              )}
+            >
+              {cadenceSignal}
+            </span>
+          ) : (
+            cadence.dueAt && <span>· next due {formatCalendarDate(cadence.dueAt)}</span>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <Button

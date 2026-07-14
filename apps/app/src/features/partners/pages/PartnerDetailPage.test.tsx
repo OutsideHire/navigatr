@@ -101,6 +101,9 @@ function partner(args: {
   attributedDealIds?: string[];
   outboundDealIds?: string[];
   createdBy?: string | null;
+  lastTouch?: string | null;
+  createdAt?: string;
+  followupCadenceDays?: number | null;
 }): Partner {
   return {
     id: args.id,
@@ -111,12 +114,14 @@ function partner(args: {
     phone: "+12025550100",
     email: `${args.id}@example.com`,
     city: "Austin, TX",
-    lastTouch: null,
+    lastTouch: args.lastTouch ?? null,
     nextFollowup: null,
     attributedDealIds: args.attributedDealIds ?? [],
     outboundDealIds: args.outboundDealIds ?? [],
     notes: "",
     createdBy: args.createdBy ?? "creator-9",
+    createdAt: args.createdAt,
+    followupCadenceDays: args.followupCadenceDays,
   };
 }
 
@@ -283,5 +288,21 @@ describe("PartnerDetailPage / referral preview", () => {
     const preview = screen.getByTestId("referral-preview");
     expect(preview).toBeTruthy();
     expect(preview.getAttribute("data-deal")).toBe("d-in");
+  });
+});
+
+describe("PartnerDetailPage / cadence", () => {
+  it("shows the cadence line and an overdue chip when past due", () => {
+    const partners = [
+      partner({
+        id: "p1",
+        createdBy: "creator-9",
+        followupCadenceDays: 30,
+        lastTouch: "2020-01-01T12:00:00Z", // long ago → overdue
+      }),
+    ];
+    renderPage({ partners, deals: [], partnerId: "p1" });
+    expect(screen.getByText(/Every 30 days/)).toBeTruthy();
+    expect(screen.getByText(/Overdue/)).toBeTruthy();
   });
 });
