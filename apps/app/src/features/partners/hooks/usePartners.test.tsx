@@ -50,6 +50,8 @@ describe("usePartners", () => {
           next_followup_at: "2026-05-22T00:00:00Z",
           notes: "Best CPA in network",
           created_by: "creator-9",
+          created_at: "2026-05-01T00:00:00Z",
+          followup_cadence_days: 30,
           partner_deals: [
             { deal_id: "d-206", direction: "inbound" },
             { deal_id: "d-301", direction: "inbound" },
@@ -80,6 +82,8 @@ describe("usePartners", () => {
         outboundDealIds: ["d-999"],
         notes: "Best CPA in network",
         createdBy: "creator-9",
+        createdAt: "2026-05-01T00:00:00Z",
+        followupCadenceDays: 30,
       },
     ]);
     // Outbound links are excluded from attribution (inbound-only).

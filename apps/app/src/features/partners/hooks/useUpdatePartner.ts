@@ -28,6 +28,8 @@ export interface UpdatePartnerInput {
     email?: string | null;
     city?: string | null;
     notes?: string;
+    /** Column name (patch keys map straight to columns). null clears it. */
+    followup_cadence_days?: number | null;
   };
 }
 

@@ -49,6 +49,13 @@ export interface Partner {
    *  Optional: only fetched by usePartners; used to gate the Edit button
    *  against RLS. null/undefined when unknown → treated as "not the owner". */
   createdBy?: string | null;
+  /** ISO timestamp the partner row was created (partners.created_at).
+   *  Optional: only fetched by usePartners. Anchors the cadence clock for a
+   *  never-touched partner. */
+  createdAt?: string;
+  /** Required follow-up cadence in days (partners.followup_cadence_days).
+   *  null/undefined = no cadence set. */
+  followupCadenceDays?: number | null;
 }
 
 const TODAY = new Date("2026-04-30T12:00:00Z");

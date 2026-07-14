@@ -27,6 +27,8 @@ interface PartnerRow {
   next_followup_at: string | null;
   notes: string;
   created_by: string | null;
+  created_at: string;
+  followup_cadence_days: number | null;
   // Nested via PostgREST embedded resource
   partner_deals: Array<{ deal_id: string; direction?: string }> | null;
 }
@@ -52,6 +54,8 @@ function toPartner(row: PartnerRow): Partner {
       .map((l) => l.deal_id),
     notes: row.notes,
     createdBy: row.created_by ?? null,
+    createdAt: row.created_at,
+    followupCadenceDays: row.followup_cadence_days ?? null,
   };
 }
 
@@ -69,6 +73,7 @@ export function usePartners() {
         .select(
           "id, name, company, type, status, phone, email, city, " +
             "last_touch_at, next_followup_at, notes, created_by, " +
+            "created_at, followup_cadence_days, " +
             "partner_deals(deal_id, direction)",
         )
         .order("updated_at", { ascending: false });
