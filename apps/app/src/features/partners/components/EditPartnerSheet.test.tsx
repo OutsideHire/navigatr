@@ -94,6 +94,18 @@ describe("EditPartnerSheet", () => {
     expect(Object.keys(patch)).toEqual(["phone"]);
   });
 
+  it("does not double the country code when the phone is typed with a leading 1", async () => {
+    // Regression: a habitual leading "1" (11 digits) still validates. The
+    // save path must strip it before prepending "+1", not produce
+    // "+112063834000".
+    renderSheet();
+    fireEvent.change(screen.getByLabelText(/^Phone/), { target: { value: "1 (206) 383-4000" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    const [{ patch }] = mutateAsync.mock.calls[0];
+    expect(patch.phone).toBe("+12063834000");
+  });
+
   it("includes status when the status select changes", async () => {
     renderSheet();
     // Radix Select: open the status combobox, choose "Cooling".

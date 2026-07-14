@@ -27,8 +27,8 @@ import {
   partnerFormSchema,
   type PartnerFormValues,
   TYPE_OPTIONS,
-  digitsOnly,
   formatUSPhone,
+  stripUsCountryCode,
 } from "./partnerForm";
 
 export interface AddPartnerSheetProps {
@@ -63,8 +63,9 @@ export function AddPartnerSheet({ open, onOpenChange, onAdded }: AddPartnerSheet
   const onSubmit: SubmitHandler<PartnerFormValues> = async (values) => {
     try {
       // Normalize phone to E.164 — same contract as deals.contact_phone.
-      // Validator already guarantees 10 digits.
-      const e164 = "+1" + digitsOnly(values.phone);
+      // stripUsCountryCode drops a habitual leading "1" so we never write a
+      // doubled country code (e.g. "+112065550101").
+      const e164 = "+1" + stripUsCountryCode(values.phone);
       await createPartner.mutateAsync({
         name: values.name,
         company: values.company,

@@ -191,6 +191,9 @@ describe("usePartners", () => {
   });
 
   it("normalizes a missing created_by to null", async () => {
+    // Intentionally OMIT created_by so row.created_by is `undefined` — this is
+    // what actually exercises the `?? null` in toPartner. (A row with an
+    // explicit null would pass even if the coalescing were removed.)
     orderMock.mockResolvedValueOnce({
       data: [
         {
@@ -205,7 +208,6 @@ describe("usePartners", () => {
           last_touch_at: null,
           next_followup_at: null,
           notes: "",
-          created_by: null,
           partner_deals: null,
         },
       ],

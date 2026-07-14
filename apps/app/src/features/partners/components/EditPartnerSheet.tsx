@@ -29,7 +29,6 @@ import {
   type EditPartnerValues,
   TYPE_OPTIONS,
   STATUS_OPTIONS,
-  digitsOnly,
   formatUSPhone,
   stripUsCountryCode,
 } from "./partnerForm";
@@ -83,7 +82,10 @@ export function EditPartnerSheet({ open, onOpenChange, partner }: EditPartnerShe
     if (dirtyFields.company) patch.company = values.company;
     if (dirtyFields.type) patch.type = values.type;
     if (dirtyFields.status) patch.status = values.status;
-    if (dirtyFields.phone) patch.phone = "+1" + digitsOnly(values.phone);
+    // stripUsCountryCode drops a habitual leading "1" (an 11-digit value that
+    // still validates) so we never write a doubled country code like
+    // "+112065550101". It digit-strips internally.
+    if (dirtyFields.phone) patch.phone = "+1" + stripUsCountryCode(values.phone);
     if (dirtyFields.email) patch.email = values.email;
     if (dirtyFields.city) patch.city = values.city ?? "";
     if (dirtyFields.notes) patch.notes = values.notes ?? "";
