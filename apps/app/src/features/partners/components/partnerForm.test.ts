@@ -51,10 +51,16 @@ describe("partnerFormSchema", () => {
 
 describe("editPartnerSchema", () => {
   it("requires a valid status on top of the add fields", () => {
-    expect(editPartnerSchema.safeParse({ ...validAdd, status: "cooling" }).success).toBe(true);
-    expect(editPartnerSchema.safeParse(validAdd).success).toBe(false); // no status
     expect(
-      editPartnerSchema.safeParse({ ...validAdd, status: "archived" }).success,
+      editPartnerSchema.safeParse({ ...validAdd, status: "cooling", followupCadence: "none" })
+        .success,
+    ).toBe(true);
+    expect(
+      editPartnerSchema.safeParse({ ...validAdd, followupCadence: "none" }).success,
+    ).toBe(false); // no status
+    expect(
+      editPartnerSchema.safeParse({ ...validAdd, status: "archived", followupCadence: "none" })
+        .success,
     ).toBe(false); // bad status
   });
 });
