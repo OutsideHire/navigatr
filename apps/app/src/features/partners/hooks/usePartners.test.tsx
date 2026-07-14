@@ -49,6 +49,7 @@ describe("usePartners", () => {
           last_touch_at: "2026-05-17T00:00:00Z",
           next_followup_at: "2026-05-22T00:00:00Z",
           notes: "Best CPA in network",
+          created_by: "creator-9",
           partner_deals: [
             { deal_id: "d-206", direction: "inbound" },
             { deal_id: "d-301", direction: "inbound" },
@@ -78,6 +79,7 @@ describe("usePartners", () => {
         attributedDealIds: ["d-206", "d-301"],
         outboundDealIds: ["d-999"],
         notes: "Best CPA in network",
+        createdBy: "creator-9",
       },
     ]);
     // Outbound links are excluded from attribution (inbound-only).
@@ -160,6 +162,58 @@ describe("usePartners", () => {
     });
     const { result } = renderHook(() => usePartners(), { wrapper });
     await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  it("maps created_by → createdBy (gates the Edit button on the detail page)", async () => {
+    orderMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: "p-9",
+          name: "Owned",
+          company: "Owned Co",
+          type: "cpa",
+          status: "active",
+          phone: null,
+          email: null,
+          city: null,
+          last_touch_at: null,
+          next_followup_at: null,
+          notes: "",
+          created_by: "creator-9",
+          partner_deals: null,
+        },
+      ],
+      error: null,
+    });
+    const { result } = renderHook(() => usePartners(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0].createdBy).toBe("creator-9");
+  });
+
+  it("normalizes a missing created_by to null", async () => {
+    orderMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: "p-10",
+          name: "NoCreator",
+          company: "NoCreator Co",
+          type: "other",
+          status: "active",
+          phone: null,
+          email: null,
+          city: null,
+          last_touch_at: null,
+          next_followup_at: null,
+          notes: "",
+          created_by: null,
+          partner_deals: null,
+        },
+      ],
+      error: null,
+    });
+    const { result } = renderHook(() => usePartners(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0].createdBy).toBeNull();
   });
 
   it("cache key shape — useCreatePartner's invalidation depends on this", () => {

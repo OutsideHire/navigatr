@@ -45,6 +45,10 @@ export interface Partner {
   /** Deal ids in MOCK_DEALS we referred TO this partner (outbound). */
   outboundDealIds: string[];
   notes: string;
+  /** auth uid of the profile that created this partner (partners.created_by).
+   *  Optional: only fetched by usePartners; used to gate the Edit button
+   *  against RLS. null/undefined when unknown → treated as "not the owner". */
+  createdBy?: string | null;
 }
 
 const TODAY = new Date("2026-04-30T12:00:00Z");
