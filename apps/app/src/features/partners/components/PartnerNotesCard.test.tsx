@@ -24,6 +24,10 @@ vi.mock("../hooks/useAddPartnerNote", () => ({
 vi.mock("../hooks/useDeletePartnerNote", () => ({
   useDeletePartnerNote: () => ({ mutateAsync: delMutate, isPending: false }),
 }));
+const updMutate = vi.fn().mockResolvedValue(undefined);
+vi.mock("../hooks/useUpdatePartnerNote", () => ({
+  useUpdatePartnerNote: () => ({ mutateAsync: updMutate, isPending: false }),
+}));
 
 let authUserId: string | undefined = "user-1";
 let role: string | undefined = "rep";
@@ -49,6 +53,7 @@ function note(overrides: Partial<PartnerNote> = {}): PartnerNote {
     createdBy: "user-1",
     body: "Prefers texts over calls",
     createdAt: "2026-07-14T12:00:00.000Z",
+    updatedAt: "2026-07-14T12:00:00.000Z",
     authorName: "Sarah Johnson",
     ...overrides,
   };
@@ -66,6 +71,7 @@ function renderCard() {
 beforeEach(() => {
   addMutate.mockClear();
   delMutate.mockClear();
+  updMutate.mockClear();
   notesResult.data = [];
   notesResult.isLoading = false;
   notesResult.isError = false;
@@ -136,5 +142,47 @@ describe("PartnerNotesCard", () => {
     role = "manager";
     renderCard();
     expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
+  });
+
+  it("shows Edit on your own note and edits it in place", async () => {
+    notesResult.data = [note({ id: "n-9", createdBy: "user-1", body: "Prefers texts" })];
+    renderCard();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const box = screen.getByDisplayValue("Prefers texts") as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "Prefers texts, cc his assistant" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+    await waitFor(() => expect(updMutate).toHaveBeenCalledTimes(1));
+    expect(updMutate).toHaveBeenCalledWith({
+      noteId: "n-9",
+      partnerId: "p-1",
+      body: "Prefers texts, cc his assistant",
+    });
+  });
+
+  it("hides Edit on a teammate's note (author-only)", () => {
+    notesResult.data = [note({ id: "n-2", createdBy: "other", authorName: "Marcus" })];
+    role = "manager"; // even a manager can't edit someone else's words
+    renderCard();
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+  });
+
+  it("shows an 'edited' marker when a note has been changed", () => {
+    notesResult.data = [note({
+      id: "n-3",
+      createdBy: "user-1",
+      createdAt: "2026-07-14T12:00:00.000Z",
+      updatedAt: "2026-07-14T13:00:00.000Z",
+    })];
+    renderCard();
+    expect(screen.getByText(/· edited/)).toBeTruthy();
+  });
+
+  it("does not submit an empty edit", () => {
+    notesResult.data = [note({ id: "n-9", createdBy: "user-1", body: "Prefers texts" })];
+    renderCard();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByDisplayValue("Prefers texts"), { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+    expect(updMutate).not.toHaveBeenCalled();
   });
 });
