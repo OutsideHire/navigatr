@@ -36,6 +36,7 @@ const eligible = MOCK_DEALS.slice(2, 5).map((d) => ({
 function renderSection(props: Partial<React.ComponentProps<typeof ReferralSection>> = {}) {
   const onAdd = props.onAdd ?? vi.fn().mockResolvedValue(undefined);
   const onRemove = props.onRemove ?? vi.fn().mockResolvedValue(undefined);
+  const onSelectDeal = props.onSelectDeal ?? vi.fn();
   render(
     <MemoryRouter>
       <ReferralSection
@@ -45,11 +46,12 @@ function renderSection(props: Partial<React.ComponentProps<typeof ReferralSectio
         addLabel="Attach deal"
         onAdd={onAdd}
         onRemove={onRemove}
+        onSelectDeal={onSelectDeal}
         {...props}
       />
     </MemoryRouter>,
   );
-  return { onAdd, onRemove };
+  return { onAdd, onRemove, onSelectDeal };
 }
 
 describe("ReferralSection", () => {
@@ -95,6 +97,7 @@ describe("ReferralSection", () => {
           addLabel="Refer a deal"
           onAdd={onAdd}
           onRemove={vi.fn()}
+          onSelectDeal={vi.fn()}
         />
       </MemoryRouter>,
     );
@@ -123,10 +126,11 @@ describe("ReferralSection", () => {
     expect(onRemove).toHaveBeenCalledWith(dealA.id);
   });
 
-  it("clicking a deal row navigates to /pipeline/:id", () => {
-    renderSection();
+  it("clicking a deal row calls onSelectDeal(deal)", () => {
+    const onSelectDeal = vi.fn();
+    renderSection({ onSelectDeal });
     const row = screen.getByText(dealA.companyName).closest("button")!;
     fireEvent.click(row);
-    expect(navigateSpy).toHaveBeenCalledWith(`/pipeline/${dealA.id}`);
+    expect(onSelectDeal).toHaveBeenCalledWith(dealA);
   });
 });

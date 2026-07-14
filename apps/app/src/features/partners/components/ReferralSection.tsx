@@ -1,8 +1,8 @@
 /**
  * ReferralSection — a reusable, data-agnostic card that lists a set of
- * deals (with company/contact/value/stage + a /pipeline/:id link) and
- * lets the user attach a new one from a passed list of eligible options
- * or remove an existing one.
+ * deals (with company/contact/value/stage) and reports row clicks via
+ * `onSelectDeal`, and lets the user attach a new one from a passed list
+ * of eligible options or remove an existing one.
  *
  * Extracted from PartnerDetailPage's inline ReferralsCard so it can back
  * both inbound (attributed) and outbound referrals. It owns no data
@@ -12,7 +12,6 @@
  */
 
 import * as React from "react";
-import { useNavigate } from "react-router-dom";
 import { Plus, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -31,6 +30,9 @@ interface ReferralSectionProps {
   addLabel: string;
   onAdd: (dealId: string) => Promise<void>;
   onRemove: (dealId: string) => Promise<void>;
+  /** Called when a deal row is clicked. The parent decides what to show
+   *  (a preview panel) — this component no longer navigates. */
+  onSelectDeal: (deal: Deal) => void;
   emptyText?: string;
 }
 
@@ -41,9 +43,9 @@ export function ReferralSection({
   addLabel,
   onAdd,
   onRemove,
+  onSelectDeal,
   emptyText,
 }: ReferralSectionProps) {
-  const navigate = useNavigate();
   const [picking, setPicking] = React.useState(false);
   const [pickedDealId, setPickedDealId] = React.useState<string>("");
   const [busy, setBusy] = React.useState(false);
@@ -138,7 +140,7 @@ export function ReferralSection({
             >
               <button
                 type="button"
-                onClick={() => navigate(`/pipeline/${d.id}`)}
+                onClick={() => onSelectDeal(d)}
                 className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left transition-colors hover:opacity-80 focus-visible:outline-none"
               >
                 <div className="flex min-w-0 flex-col">
