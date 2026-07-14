@@ -10,8 +10,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useForm, Controller, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { AsYouType, parsePhoneNumberFromString } from "libphonenumber-js";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -22,45 +20,16 @@ import {
   Input,
   NotesFieldWithMic,
   Select,
-  type SelectOption,
 } from "@/components/navigatr";
 import { type PartnerType } from "../mockData";
 import { useCreatePartner } from "../hooks/useCreatePartner";
-
-function digitsOnly(s: string): string {
-  return s.replace(/\D/g, "");
-}
-function formatUSPhone(input: string): string {
-  const d = digitsOnly(input);
-  if (d.length === 0) return "";
-  return new AsYouType("US").input(d.slice(0, d.startsWith("1") ? 11 : 10));
-}
-
-const TYPE_OPTIONS: SelectOption[] = [
-  { value: "cpa",        label: "CPA" },
-  { value: "banker",     label: "Banker" },
-  { value: "attorney",   label: "Attorney" },
-  { value: "insurance",  label: "Insurance" },
-  { value: "consultant", label: "Consultant" },
-  { value: "other",      label: "Other" },
-];
-
-const schema = z.object({
-  name: z.string().min(1, "Name is required"),
-  company: z.string().min(1, "Company is required"),
-  type: z.enum(["cpa", "banker", "attorney", "insurance", "consultant", "other"]),
-  phone: z
-    .string()
-    .min(1, "Phone is required")
-    .refine(
-      (v) => parsePhoneNumberFromString(v, "US")?.isValid() || digitsOnly(v).length === 10,
-      "Enter a 10-digit US phone",
-    ),
-  email: z.string().email("Enter a valid email"),
-  city: z.string().optional(),
-  notes: z.string().optional(),
-});
-type FormValues = z.infer<typeof schema>;
+import {
+  partnerFormSchema,
+  type PartnerFormValues,
+  TYPE_OPTIONS,
+  digitsOnly,
+  formatUSPhone,
+} from "./partnerForm";
 
 export interface AddPartnerSheetProps {
   open: boolean;
@@ -77,8 +46,8 @@ export function AddPartnerSheet({ open, onOpenChange, onAdded }: AddPartnerSheet
     control,
     formState: { errors, isSubmitting },
     reset,
-  } = useForm<FormValues>({
-    resolver: zodResolver(schema),
+  } = useForm<PartnerFormValues>({
+    resolver: zodResolver(partnerFormSchema),
     defaultValues: {
       name: "",
       company: "",
@@ -91,7 +60,7 @@ export function AddPartnerSheet({ open, onOpenChange, onAdded }: AddPartnerSheet
     mode: "onBlur",
   });
 
-  const onSubmit: SubmitHandler<FormValues> = async (values) => {
+  const onSubmit: SubmitHandler<PartnerFormValues> = async (values) => {
     try {
       // Normalize phone to E.164 — same contract as deals.contact_phone.
       // Validator already guarantees 10 digits.
