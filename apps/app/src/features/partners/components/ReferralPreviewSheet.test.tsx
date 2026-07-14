@@ -82,8 +82,12 @@ describe("ReferralPreviewSheet", () => {
     expect(screen.getByText("—")).toBeInTheDocument();
   });
 
-  it("renders no deal body when deal is null", () => {
-    renderSheet(null, false);
-    expect(screen.queryByText("Acme Corp")).not.toBeInTheDocument();
+  it("falls back to a generic title and hides the body when deal is null (panel open)", () => {
+    // open=true so Radix actually mounts the content and the null guards run
+    // (a closed dialog mounts nothing, which wouldn't exercise them).
+    renderSheet(null, true);
+    expect(screen.getByText("Referral")).toBeInTheDocument();
+    expect(screen.queryByText("Jane Doe")).not.toBeInTheDocument();
+    expect(screen.queryByText(formatMoney(4_200_000))).not.toBeInTheDocument();
   });
 });
