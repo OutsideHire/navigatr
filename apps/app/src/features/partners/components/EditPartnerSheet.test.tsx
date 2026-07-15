@@ -179,12 +179,16 @@ describe("EditPartnerSheet", () => {
     expect(patch).not.toHaveProperty("phone"); // phone untouched → not written
   });
 
-  it("still enforces phone format on edit when a phone IS typed", async () => {
+  it("still enforces phone format on edit when an invalid phone IS typed", async () => {
     renderSheet(partner({ phone: "" }));
-    fireEvent.change(screen.getByLabelText(/^Phone/), { target: { value: "abc" } });
+    // "555" survives formatUSPhone (stays "555"), so the field is dirty AND
+    // invalid — this genuinely exercises the optional-but-format-checked path.
+    // ("abc" would be stripped to "" by formatUSPhone → an empty no-op save
+    // that passes for the wrong reason.)
+    fireEvent.change(screen.getByLabelText(/^Phone/), { target: { value: "555" } });
     fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
-    // Format is forced even though phone is optional — invalid → no save.
-    await waitFor(() => expect(screen.getByRole("button", { name: /Save changes/i })).toBeTruthy());
+    // The format error fires, so the mutation is blocked.
+    await waitFor(() => expect(screen.getByText(/10-digit US phone/i)).toBeTruthy());
     expect(mutateAsync).not.toHaveBeenCalled();
   });
 
