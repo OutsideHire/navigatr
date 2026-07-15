@@ -23,6 +23,17 @@ import { toast } from "sonner";
 // change — mirrors the codebase's existing "none" pattern (partnerForm cadence).
 const NO_MANAGER = "none";
 
+// Friendly copy for admin_set_manager RPC error codes (raw Postgres exception
+// messages should never reach the toast).
+const MANAGER_ERROR_COPY: Record<string, string> = {
+  cycle_detected: "That would create a reporting loop.",
+  cannot_report_to_self: "Someone can't report to themselves.",
+  cannot_place_admin: "Admins aren't placed in the reporting chart.",
+  manager_not_found: "That manager is no longer available.",
+  member_not_found: "That member is no longer available.",
+  forbidden: "Only an admin can change reporting.",
+};
+
 const WINDOW_OPTIONS: { label: string; value: number }[] = [
   { label: "7 days", value: 7 },
   { label: "30 days", value: 30 },
@@ -105,20 +116,53 @@ export function AgentDetailPage() {
     () => leaderboardRows.find((r) => r.agent_id === userId)?.role,
     [leaderboardRows, userId],
   );
-  // Managers/admins in the org (active), excluding the agent themselves —
-  // eligible "reports to" targets.
-  const managerOptions = React.useMemo(
-    () =>
-      leaderboardRows
-        .filter(
-          (r) =>
-            r.status === "active" &&
-            (r.role === "manager" || r.role === "admin") &&
-            r.agent_id !== agentId,
-        )
-        .map((r) => ({ value: r.agent_id, label: r.full_name ?? r.email })),
-    [leaderboardRows, agentId],
-  );
+  // The agent's transitive reports — excluded as "reports to" targets so the
+  // picker can't create a reporting loop (the server guards this too).
+  const descendantIds = React.useMemo(() => {
+    const childrenByManager = new Map<string, string[]>();
+    for (const r of leaderboardRows) {
+      if (r.manager_id) {
+        const arr = childrenByManager.get(r.manager_id) ?? [];
+        arr.push(r.agent_id);
+        childrenByManager.set(r.manager_id, arr);
+      }
+    }
+    const out = new Set<string>();
+    const stack = [...(childrenByManager.get(agentId ?? "") ?? [])];
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (out.has(id)) continue;
+      out.add(id);
+      for (const c of childrenByManager.get(id) ?? []) stack.push(c);
+    }
+    return out;
+  }, [leaderboardRows, agentId]);
+
+  // Eligible "reports to" targets: active managers/admins, not the agent, not
+  // in the agent's own subtree. Plus the currently-assigned manager even if now
+  // ineligible (deactivated / demoted), so the current line is never silently
+  // blank.
+  const managerOptions = React.useMemo(() => {
+    const opts = leaderboardRows
+      .filter(
+        (r) =>
+          r.status === "active" &&
+          (r.role === "manager" || r.role === "admin") &&
+          r.agent_id !== agentId &&
+          !descendantIds.has(r.agent_id),
+      )
+      .map((r) => ({ value: r.agent_id, label: r.full_name ?? r.email }));
+    if (agent?.manager_id && !opts.some((o) => o.value === agent.manager_id)) {
+      const current = leaderboardRows.find((r) => r.agent_id === agent.manager_id);
+      if (current) {
+        opts.unshift({
+          value: current.agent_id,
+          label: `${current.full_name ?? current.email}${current.status !== "active" ? " (inactive)" : ""}`,
+        });
+      }
+    }
+    return opts;
+  }, [leaderboardRows, agentId, descendantIds, agent?.manager_id]);
 
   if (isLoading) {
     return (
@@ -194,7 +238,7 @@ export function AgentDetailPage() {
           <p className="mt-1 text-body-md text-text-muted">
             Admins see the whole organization.
           </p>
-        ) : callerRole === "admin" ? (
+        ) : callerRole === "admin" && agent.status === "active" ? (
           <div className="mt-1 max-w-xs">
             <Select
               id="agent-manager"
@@ -205,7 +249,10 @@ export function AgentDetailPage() {
                   {
                     onSuccess: () => toast.success("Reporting updated"),
                     onError: (e) =>
-                      toast.error(e instanceof Error ? e.message : "Could not update reporting"),
+                      toast.error(
+                        (e instanceof Error && MANAGER_ERROR_COPY[e.message]) ||
+                          "Could not update reporting",
+                      ),
                   },
                 );
               }}
@@ -214,7 +261,10 @@ export function AgentDetailPage() {
           </div>
         ) : (
           <p className="mt-1 text-body-md text-text-default">
-            {leaderboardRows.find((r) => r.agent_id === agent.manager_id)?.full_name ?? "No manager"}
+            {(() => {
+              const m = leaderboardRows.find((r) => r.agent_id === agent.manager_id);
+              return m ? (m.full_name ?? m.email) : "No manager";
+            })()}
           </p>
         )}
       </Card>

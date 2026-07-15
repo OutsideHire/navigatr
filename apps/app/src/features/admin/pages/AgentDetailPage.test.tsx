@@ -262,4 +262,60 @@ describe("AgentDetailPage / reports-to control", () => {
     // The current manager's name is shown read-only.
     expect(screen.getByText("Mike Manager")).toBeInTheDocument();
   });
+
+  it("excludes the viewed member from their OWN manager options (no self-report)", () => {
+    // View a MANAGER's detail so the self-exclusion clause is exercised
+    // independently of the role filter (a manager IS role-eligible).
+    h.rows = [
+      row({ agent_id: "test-agent-id", full_name: "Mike Manager", role: "manager", status: "active" }),
+      row({ agent_id: "mgr-2", full_name: "Nora Manager", role: "manager", status: "active" }),
+      row({ agent_id: "admin-1", full_name: "Amy Admin", role: "admin", status: "active" }),
+    ];
+    renderPage();
+    fireEvent.click(screen.getByRole("combobox"));
+    // Other managers/admins are offered…
+    expect(screen.getByRole("option", { name: "Nora Manager" })).toBeTruthy();
+    // …but the viewed manager is NOT an option for themselves.
+    expect(screen.queryByRole("option", { name: "Mike Manager" })).toBeNull();
+  });
+
+  it("excludes the viewed member's own reports (cycle) from manager options", () => {
+    // Mike (viewed) manages a sub-manager. The sub-manager is role-eligible but
+    // is a descendant → must not be selectable (would form a loop).
+    h.rows = [
+      row({ agent_id: "test-agent-id", full_name: "Mike Manager", role: "manager", status: "active" }),
+      row({ agent_id: "sub-mgr", full_name: "Sub Manager", role: "manager", status: "active", manager_id: "test-agent-id" }),
+      row({ agent_id: "mgr-2", full_name: "Nora Manager", role: "manager", status: "active" }),
+      row({ agent_id: "admin-1", full_name: "Amy Admin", role: "admin", status: "active" }),
+    ];
+    renderPage();
+    fireEvent.click(screen.getByRole("combobox"));
+    expect(screen.getByRole("option", { name: "Nora Manager" })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "Sub Manager" })).toBeNull();
+  });
+
+  it("keeps a deactivated current manager visible (Select not blank)", () => {
+    // Sarah reports to mgr-1, but mgr-1 has been deactivated → not eligible.
+    h.rows = [
+      SARAH(),
+      row({ agent_id: "mgr-1", full_name: "Mike Manager", role: "manager", status: "revoked" }),
+      row({ agent_id: "mgr-2", full_name: "Nora Manager", role: "manager", status: "active" }),
+      row({ agent_id: "admin-1", full_name: "Amy Admin", role: "admin", status: "active" }),
+    ];
+    renderPage();
+    fireEvent.click(screen.getByRole("combobox"));
+    // The current (now-inactive) manager is still shown, flagged.
+    expect(screen.getByRole("option", { name: /Mike Manager \(inactive\)/ })).toBeTruthy();
+  });
+
+  it("shows a read-only line (no editable control) for an invited/revoked member", () => {
+    // Admin caller, but the member isn't active → not editable.
+    h.rows = [
+      row({ agent_id: "test-agent-id", full_name: "Pending Pat", role: "rep", status: "invited", manager_id: null }),
+      row({ agent_id: "admin-1", full_name: "Amy Admin", role: "admin", status: "active" }),
+    ];
+    renderPage();
+    expect(screen.getByText("Reports to")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).toBeNull();
+  });
 });

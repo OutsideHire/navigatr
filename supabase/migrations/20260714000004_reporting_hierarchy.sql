@@ -102,7 +102,17 @@ begin
   end if;
 
   update profiles set manager_id = p_manager where id = p_member and org_id = v_org_id;
-  perform public.rebuild_role_path_subtree(p_member);
+  -- Rebuild from the MANAGER, not just the member: the manager may not have
+  -- been rooted yet (no role_path). Rebuilding the manager's subtree roots the
+  -- manager (own label) AND recomputes every descendant — including the
+  -- newly-attached member — so assigning reps actually scopes the manager.
+  -- When unassigning (no manager), rebuild the member's own subtree so it
+  -- re-roots cleanly.
+  if p_manager is not null then
+    perform public.rebuild_role_path_subtree(p_manager);
+  else
+    perform public.rebuild_role_path_subtree(p_member);
+  end if;
 end $$;
 
 grant execute on function admin_set_manager(uuid, uuid) to authenticated;
@@ -254,3 +264,56 @@ begin
 end $$;
 
 grant execute on function team_leaderboard(int) to authenticated;
+
+-- 6) admin_set_role: re-derive role_path when a role changes.
+--    role_path derivation is now role-dependent (admin => NULL / org-wide;
+--    non-admin => derived from the manager chain). The prior admin_set_role
+--    (20260625000002) did NOT touch role_path — so promoting a manager to
+--    admin would leave a stale non-NULL path (wrongly scoped instead of
+--    org-wide), and demoting an admin would leave NULL (wrongly org-wide
+--    instead of scoped). Recreate it to rebuild the member's subtree after the
+--    role change so the invariant holds. Body is otherwise identical to
+--    20260625000002_admin_set_role.sql.
+create or replace function admin_set_role(p_profile_id uuid, p_new_role user_role)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_org_id uuid;
+  v_caller user_role;
+  v_target_role user_role;
+begin
+  if auth.uid() is null then raise exception 'not_authenticated'; end if;
+
+  select p.org_id, p.role into v_org_id, v_caller
+    from profiles p
+   where p.id = auth.uid() and p.deactivated_at is null;
+  if v_org_id is null or v_caller <> 'admin' then
+    raise exception 'forbidden';
+  end if;
+
+  if p_profile_id = auth.uid() then
+    raise exception 'cannot_change_own_role';
+  end if;
+
+  select p.role into v_target_role
+    from profiles p
+   where p.id = p_profile_id and p.org_id = v_org_id and p.deactivated_at is null;
+  if v_target_role is null then
+    raise exception 'profile_not_found';
+  end if;
+
+  if v_target_role = 'admin' and p_new_role <> 'admin'
+     and (select count(*) from profiles
+            where org_id = v_org_id and role = 'admin' and deactivated_at is null) <= 1 then
+    raise exception 'cannot_demote_sole_admin';
+  end if;
+
+  update profiles set role = p_new_role where id = p_profile_id and org_id = v_org_id;
+
+  -- Re-derive role_path for the member + all reports (admin<=>NULL flip, and a
+  -- demoted admin becomes a subtree root whose reports nest under them).
+  perform public.rebuild_role_path_subtree(p_profile_id);
+end $$;
+
+grant execute on function admin_set_role(uuid, user_role) to authenticated;
