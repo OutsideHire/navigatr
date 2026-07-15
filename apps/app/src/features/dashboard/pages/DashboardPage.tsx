@@ -221,7 +221,8 @@ function PageHeading({
 // visually empty. Two-column on md+: content left, oversized ghost-Zap
 // glyph right to anchor the gradient. Mobile keeps a single column with
 // a smaller corner glyph so the value stays the focal point.
-function ActivitiesToWinHero({ data }: { data: DashboardData["activitiesToWin"] }) {
+export function ActivitiesToWinHero({ data }: { data: DashboardData["activitiesToWin"] }) {
+  const navigate = useNavigate();
   // Two render paths:
   //   1. Has wins → big ratio number + "X activities / Y wins" subtitle.
   //   2. No wins yet → still show total activities as the hero number,
@@ -244,11 +245,14 @@ function ActivitiesToWinHero({ data }: { data: DashboardData["activitiesToWin"] 
 
   return (
     <div className="flex flex-col gap-2">
-      <div
+      <button
+        type="button"
+        onClick={() => navigate("/activities")}
         className={cn(
-          "relative overflow-hidden rounded-radius-md p-6 sm:p-8",
+          "relative w-full overflow-hidden rounded-radius-md p-6 text-left sm:p-8",
           "bg-gradient-to-br from-brand-gradient-from via-brand-gradient-via to-brand-gradient-to",
-          "text-text-inverse",
+          "text-text-inverse transition-shadow hover:shadow-md",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary",
         )}
       >
         <Zap
@@ -278,7 +282,7 @@ function ActivitiesToWinHero({ data }: { data: DashboardData["activitiesToWin"] 
             <span className="text-caption text-text-inverse/80">{subtitle}</span>
           </div>
         </div>
-      </div>
+      </button>
     </div>
   );
 }
@@ -381,7 +385,7 @@ export function SecondaryKpiRow({ kpis }: { kpis: DashboardData["kpis"] }) {
 }
 
 // Section 5: Pipeline by Stage — live data from useDashboardData.
-function PipelineByStage({ byStage }: { byStage: DashboardData["byStage"] }) {
+export function PipelineByStage({ byStage }: { byStage: DashboardData["byStage"] }) {
   const navigate = useNavigate();
   const dealSingular = useTerm("deal");
   const dealPlural = useTerm("deals");
@@ -397,7 +401,12 @@ function PipelineByStage({ byStage }: { byStage: DashboardData["byStage"] }) {
       />
       <div className="flex flex-col gap-3">
         {byStage.map((stage) => (
-          <div key={stage.stage} className="flex items-center gap-3">
+          <button
+            key={stage.stage}
+            type="button"
+            onClick={() => navigate(`/pipeline?stage=${stage.stage}`)}
+            className="flex w-full items-center gap-3 rounded-radius-md px-1 py-1 text-left transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+          >
             <Badge kind={STAGE_BADGE_KIND[stage.stage]} className="min-w-[80px] justify-center">{stage.label}</Badge>
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex items-baseline justify-between gap-2">
@@ -414,7 +423,7 @@ function PipelineByStage({ byStage }: { byStage: DashboardData["byStage"] }) {
                 />
               </div>
             </div>
-          </div>
+          </button>
         ))}
       </div>
     </Card>
@@ -432,7 +441,7 @@ const SNAPSHOT_ACCENTS: Record<string, { bg: string; fg: string }> = {
   violet:  { bg: "bg-accent-violet-20",  fg: "text-accent-violet"  },
   danger:  { bg: "bg-status-danger-bg",  fg: "text-status-danger"  },
 };
-function TodaysSnapshot({ snapshot }: { snapshot: DashboardData["todaysSnapshot"] }) {
+export function TodaysSnapshot({ snapshot }: { snapshot: DashboardData["todaysSnapshot"] }) {
   const navigate = useNavigate();
   // Build rows from live data. Order matches the original Figma reading
   // order (tasks first, partners-overdue next). The "next stop on Path"
@@ -502,7 +511,8 @@ function TodaysSnapshot({ snapshot }: { snapshot: DashboardData["todaysSnapshot"
 }
 
 // Section 7: Monthly Performance — live last-4-months won-deal chart.
-function MonthlyPerformance({ months }: { months: DashboardData["monthlyPerformance"] }) {
+export function MonthlyPerformance({ months }: { months: DashboardData["monthlyPerformance"] }) {
+  const navigate = useNavigate();
   // Max value sets the scale. If no wins exist yet we clamp to 1 so we
   // don't divide by zero — every bar renders as a zero-height stub.
   const maxValue = Math.max(1, ...months.map((m) => m.valueCents));
@@ -532,7 +542,12 @@ function MonthlyPerformance({ months }: { months: DashboardData["monthlyPerforma
         {months.map((m) => {
           const heightPct = (m.valueCents / maxValue) * 100;
           return (
-            <div key={m.monthKey} className="flex flex-1 flex-col items-center gap-2">
+            <button
+              key={m.monthKey}
+              type="button"
+              onClick={() => navigate("/pipeline?stage=won")}
+              className="flex flex-1 flex-col items-center gap-2 rounded-radius-md py-1 transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+            >
               <div className="relative w-full flex-1">
                 <div
                   className="absolute inset-x-0 bottom-0 rounded-t-radius-sm bg-brand-primary transition-all"
@@ -546,7 +561,7 @@ function MonthlyPerformance({ months }: { months: DashboardData["monthlyPerforma
                   {m.deals} {m.deals === 1 ? dealSingular : dealPlural}
                 </span>
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -583,7 +598,7 @@ function PersistenceIndex({ stats }: { stats: DashboardData["persistenceIndex"] 
 }
 
 // Section 9: Top Partners leaderboard — live data.
-function TopPartners({ topPartners }: { topPartners: DashboardData["topPartners"] }) {
+export function TopPartners({ topPartners }: { topPartners: DashboardData["topPartners"] }) {
   const navigate = useNavigate();
   if (topPartners.length === 0) {
     return (
@@ -643,7 +658,8 @@ function TopPartners({ topPartners }: { topPartners: DashboardData["topPartners"
 // the same color across renders.
 const LEAD_SOURCE_COLORS = ["bg-accent-teal", "bg-accent-violet", "bg-accent-blue", "bg-accent-orange"];
 
-function LeadSources({ leadSources }: { leadSources: DashboardData["leadSources"] }) {
+export function LeadSources({ leadSources }: { leadSources: DashboardData["leadSources"] }) {
+  const navigate = useNavigate();
   if (leadSources.length === 0) {
     return (
       <Card padding="lg" shadow="sm">
@@ -681,11 +697,16 @@ function LeadSources({ leadSources }: { leadSources: DashboardData["leadSources"
       {/* Legend */}
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
         {leadSources.map((seg) => (
-          <div key={seg.label} className="flex items-center gap-2">
+          <button
+            key={seg.label}
+            type="button"
+            onClick={() => navigate(`/pipeline?source=${encodeURIComponent(seg.label)}`)}
+            className="flex w-full items-center gap-2 rounded-radius-md px-1 py-0.5 text-left transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+          >
             <span className={cn("h-2.5 w-2.5 shrink-0 rounded-radius-full", labelColor.get(seg.label))} aria-hidden />
             <span className="text-body-sm text-text-default">{seg.label}</span>
             <span className="ml-auto text-body-sm tabular-nums text-text-muted">{seg.percent}%</span>
-          </div>
+          </button>
         ))}
       </div>
     </Card>
@@ -693,7 +714,8 @@ function LeadSources({ leadSources }: { leadSources: DashboardData["leadSources"
 }
 
 // Section 11: Conversion Funnel — live data from deal_stage_history.
-function ConversionFunnel({ funnel }: { funnel: DashboardData["conversionFunnel"] }) {
+export function ConversionFunnel({ funnel }: { funnel: DashboardData["conversionFunnel"] }) {
+  const navigate = useNavigate();
   // Empty-state: org has no stage transitions yet (every deal is in
   // its initial stage with nothing graduated). The funnel is technically
   // all-zeros, which would render but reads as broken — better to show
@@ -714,7 +736,12 @@ function ConversionFunnel({ funnel }: { funnel: DashboardData["conversionFunnel"
       <SectionHeader title="Conversion funnel" />
       <div className="flex flex-col gap-4">
         {funnel.map((step) => (
-          <div key={`${step.from}-${step.to}`} className="flex flex-col gap-1.5">
+          <button
+            key={`${step.from}-${step.to}`}
+            type="button"
+            onClick={() => navigate(`/pipeline?stage=${step.to}`)}
+            className="flex w-full flex-col gap-1.5 rounded-radius-md px-1 py-1 text-left transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+          >
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-body-md text-text-default">
                 {step.fromLabel} <ArrowRight className="inline h-3 w-3 text-text-subtle" aria-hidden /> {step.toLabel}
@@ -736,7 +763,7 @@ function ConversionFunnel({ funnel }: { funnel: DashboardData["conversionFunnel"
                 aria-hidden
               />
             </div>
-          </div>
+          </button>
         ))}
       </div>
     </Card>
