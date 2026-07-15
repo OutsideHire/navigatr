@@ -81,6 +81,10 @@ import { useTerm } from "@/features/profession/useTerm";
 import { CoverageWidget } from "@/features/coverage/components/CoverageWidget";
 import { useProfile } from "@/features/auth/useProfile";
 import { scopeLabel } from "../lib/scopeLabel";
+import { useDeals } from "@/features/pipeline/hooks/useDeals";
+import { useOrgMemberNames } from "../hooks/useOrgMemberNames";
+import { KpiBreakdownPanel } from "../components/KpiBreakdownPanel";
+import { type KpiMetric } from "../lib/kpiBreakdown";
 
 // ───────────────────────────────────────────────────────────────────────
 // Empty state — copied from Session 11. Lives here so the page picks
@@ -287,67 +291,91 @@ const KPI_ICONS: Record<string, LucideIcon> = {
   close: Clock,
 };
 
-function SecondaryKpiRow({ kpis }: { kpis: DashboardData["kpis"] }) {
+export function SecondaryKpiRow({ kpis }: { kpis: DashboardData["kpis"] }) {
   // Profession-aware singular/plural for the subtitles.
   const dealSingular = useTerm("deal");
   const dealPlural = useTerm("deals");
-  // 4 KPI cards derived from live deals data. Order matches the canonical
-  // Figma reading order: active count → open pipeline → won this period
-  // → win rate. We dropped "avg close time" from the mock because we
-  // don't yet expose created_at on the Deal type — when we do, a 5th
-  // KPI slot can come back.
-  const cards = [
+
+  // Drill-down: managers/admins expand a per-rep breakdown; reps drill to their
+  // own records. Data is the already-scoped deals; names via useOrgMemberNames.
+  const navigate = useNavigate();
+  const role = useProfile().data?.role;
+  const isManagerish = role === "manager" || role === "admin";
+  const { data: deals = [] } = useDeals();
+  const memberNames = useOrgMemberNames();
+  const [openMetric, setOpenMetric] = React.useState<KpiMetric | null>(null);
+
+  const cards: {
+    key: string; eyebrow: string; value: string; subtitle: string;
+    accent: "blue" | "teal" | "violet" | "orange"; metric?: KpiMetric;
+  }[] = [
     {
-      key: "leads",
-      eyebrow: "ACTIVE LEADS",
-      value: String(kpis.activeDealsCount),
+      key: "leads", eyebrow: "ACTIVE LEADS", value: String(kpis.activeDealsCount),
       subtitle: kpis.activeDealsCount === 1 ? `active ${dealSingular}` : `active ${dealPlural}`,
-      accent: "blue" as const,
+      accent: "blue", metric: "activeLeads",
     },
     {
-      key: "pipeline",
-      eyebrow: "PIPELINE VALUE",
-      value: formatMoney(kpis.pipelineValueCents),
+      key: "pipeline", eyebrow: "PIPELINE VALUE", value: formatMoney(kpis.pipelineValueCents),
       subtitle: `weighted: ${formatMoney(kpis.weightedPipelineCents)}`,
-      accent: "teal" as const,
+      accent: "teal", metric: "pipelineValue",
     },
     {
-      key: "won",
-      eyebrow: "WON",
-      value: formatMoney(kpis.wonRevenueCents),
+      key: "won", eyebrow: "WON", value: formatMoney(kpis.wonRevenueCents),
       subtitle: `${kpis.wonDealsCount} ${kpis.wonDealsCount === 1 ? dealSingular : dealPlural} closed`,
-      accent: "violet" as const,
+      accent: "violet", metric: "won",
     },
     {
-      key: "win",
-      eyebrow: "WIN RATE",
-      value: `${Math.round(kpis.winRate * 100)}%`,
-      subtitle: `of all ${dealPlural}`,
-      accent: "orange" as const,
+      key: "win", eyebrow: "WIN RATE", value: `${Math.round(kpis.winRate * 100)}%`,
+      subtitle: `of all ${dealPlural}`, accent: "orange",
     },
   ];
+
+  const cardClick = (metric: KpiMetric | undefined): (() => void) | undefined => {
+    if (!metric) return undefined; // Win Rate — not drillable
+    if (isManagerish) return () => setOpenMetric((cur) => (cur === metric ? null : metric));
+    return () => navigate("/pipeline"); // reps drill to their own list
+  };
+
+  const PANEL_TITLE: Record<KpiMetric, string> = {
+    activeLeads: "Active leads by rep",
+    pipelineValue: "Pipeline value by rep",
+    won: "Won by rep",
+  };
+
   return (
-    <div
-      // Mobile: horizontal scroll with snap. Desktop: 4-col grid.
-      className={cn(
-        "flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory",
-        "md:grid md:grid-cols-4 md:gap-4 md:overflow-x-visible md:snap-none md:pb-0",
-        "[&::-webkit-scrollbar]:hidden",
-        "[-ms-overflow-style:none] [scrollbar-width:none]",
+    <div className="flex flex-col gap-3">
+      <div
+        className={cn(
+          "flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory",
+          "md:grid md:grid-cols-4 md:gap-4 md:overflow-x-visible md:snap-none md:pb-0",
+          "[&::-webkit-scrollbar]:hidden",
+          "[-ms-overflow-style:none] [scrollbar-width:none]",
+        )}
+      >
+        {cards.map((kpi) => (
+          <div key={kpi.key} className="min-w-[220px] shrink-0 snap-start md:min-w-0">
+            <KpiCard
+              eyebrow={kpi.eyebrow}
+              value={kpi.value}
+              subtitle={kpi.subtitle}
+              icon={KPI_ICONS[kpi.key] ?? Briefcase}
+              accent={kpi.accent}
+              size="standard"
+              onClick={cardClick(kpi.metric)}
+            />
+          </div>
+        ))}
+      </div>
+
+      {isManagerish && openMetric && (
+        <KpiBreakdownPanel
+          title={PANEL_TITLE[openMetric]}
+          metric={openMetric}
+          deals={deals}
+          memberNames={memberNames}
+          onSelectRep={(ownerId) => navigate(`/admin/agents/${ownerId}`)}
+        />
       )}
-    >
-      {cards.map((kpi) => (
-        <div key={kpi.key} className="min-w-[220px] shrink-0 snap-start md:min-w-0">
-          <KpiCard
-            eyebrow={kpi.eyebrow}
-            value={kpi.value}
-            subtitle={kpi.subtitle}
-            icon={KPI_ICONS[kpi.key] ?? Briefcase}
-            accent={kpi.accent}
-            size="standard"
-          />
-        </div>
-      ))}
     </div>
   );
 }
