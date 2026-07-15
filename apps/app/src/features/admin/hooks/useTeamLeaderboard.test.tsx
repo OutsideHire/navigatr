@@ -35,6 +35,7 @@ const SAMPLE_ROW = {
   email: "alice@x.com",
   role: "rep" as const,
   status: "active" as const,
+  manager_id: "mgr-1",
   open_deals: 3,
   pipeline_cents: 150_000,
   won_deals_window: 1,

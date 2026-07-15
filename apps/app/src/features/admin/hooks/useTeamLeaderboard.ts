@@ -10,6 +10,7 @@ export interface LeaderboardRow {
   email: string;
   role: "rep" | "manager" | "admin";
   status: LeaderboardStatus;
+  manager_id: string | null;
   open_deals: number;
   pipeline_cents: number;
   won_deals_window: number;
