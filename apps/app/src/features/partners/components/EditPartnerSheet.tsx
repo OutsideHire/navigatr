@@ -33,6 +33,7 @@ import {
   formatUSPhone,
   stripUsCountryCode,
 } from "./partnerForm";
+import { phoneToE164, normalizeEmail } from "@/lib/contactValidation";
 import { type Partner, type PartnerStatus, type PartnerType } from "../mockData";
 import { useUpdatePartner, type UpdatePartnerInput } from "../hooks/useUpdatePartner";
 
@@ -84,11 +85,11 @@ export function EditPartnerSheet({ open, onOpenChange, partner }: EditPartnerShe
     if (dirtyFields.company) patch.company = values.company;
     if (dirtyFields.type) patch.type = values.type;
     if (dirtyFields.status) patch.status = values.status;
-    // stripUsCountryCode drops a habitual leading "1" (an 11-digit value that
-    // still validates) so we never write a doubled country code like
-    // "+112065550101". It digit-strips internally.
-    if (dirtyFields.phone) patch.phone = "+1" + stripUsCountryCode(values.phone);
-    if (dirtyFields.email) patch.email = values.email;
+    // phoneToE164 drops a habitual leading "1" (an 11-digit value that still
+    // validates) so we never write a doubled country code like
+    // "+112065550101", and maps an emptied value to null.
+    if (dirtyFields.phone) patch.phone = phoneToE164(values.phone);
+    if (dirtyFields.email) patch.email = normalizeEmail(values.email);
     if (dirtyFields.city) patch.city = values.city ?? "";
     if (dirtyFields.notes) patch.notes = values.notes ?? "";
     if (dirtyFields.followupCadence) {
@@ -214,7 +215,7 @@ export function EditPartnerSheet({ open, onOpenChange, partner }: EditPartnerShe
                 control={control}
                 name="phone"
                 render={({ field }) => (
-                  <FormField htmlFor="edit-partner-phone" label="Phone" required error={errors.phone?.message}>
+                  <FormField htmlFor="edit-partner-phone" label="Phone" error={errors.phone?.message}>
                     <Input
                       id="edit-partner-phone"
                       type="tel"
@@ -229,7 +230,7 @@ export function EditPartnerSheet({ open, onOpenChange, partner }: EditPartnerShe
                 )}
               />
 
-              <FormField htmlFor="edit-partner-email" label="Email" required error={errors.email?.message}>
+              <FormField htmlFor="edit-partner-email" label="Email" error={errors.email?.message}>
                 <Input id="edit-partner-email" type="email" placeholder="name@firm.com" {...register("email")} />
               </FormField>
 

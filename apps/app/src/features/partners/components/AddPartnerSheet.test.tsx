@@ -59,4 +59,24 @@ describe("AddPartnerSheet — phone normalization", () => {
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
     expect(mutateAsync.mock.calls[0][0].phone).toBe("+12063834000");
   });
+
+  it("still requires a phone (empty phone blocks create)", async () => {
+    renderSheet();
+    fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: "Jane Doe" } });
+    fireEvent.change(screen.getByLabelText(/^Company/), { target: { value: "Doe LLC" } });
+    fireEvent.change(screen.getByLabelText(/^Email/), { target: { value: "jane@doe.com" } });
+    // Leave phone empty.
+    fireEvent.click(screen.getByRole("button", { name: /Add partner/i }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /Add partner/i })).toBeTruthy());
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("trims the email on create", async () => {
+    renderSheet();
+    fillRequired("(512) 555-2222");
+    fireEvent.change(screen.getByLabelText(/^Email/), { target: { value: "  jane@doe.com  " } });
+    fireEvent.click(screen.getByRole("button", { name: /Add partner/i }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    expect(mutateAsync.mock.calls[0][0].email).toBe("jane@doe.com");
+  });
 });

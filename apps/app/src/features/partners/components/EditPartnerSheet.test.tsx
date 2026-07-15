@@ -168,4 +168,32 @@ describe("EditPartnerSheet", () => {
     const [{ patch }] = mutateAsync.mock.calls[0];
     expect(patch.followup_cadence_days).toBeNull();
   });
+
+  it("saves an unrelated change on a partner with no phone (no 'Phone is required')", async () => {
+    renderSheet(partner({ phone: "" }));
+    fireEvent.change(screen.getByLabelText("City"), { target: { value: "Reno, NV" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    const [{ patch }] = mutateAsync.mock.calls[0];
+    expect(patch.city).toBe("Reno, NV");
+    expect(patch).not.toHaveProperty("phone"); // phone untouched → not written
+  });
+
+  it("still enforces phone format on edit when a phone IS typed", async () => {
+    renderSheet(partner({ phone: "" }));
+    fireEvent.change(screen.getByLabelText(/^Phone/), { target: { value: "abc" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+    // Format is forced even though phone is optional — invalid → no save.
+    await waitFor(() => expect(screen.getByRole("button", { name: /Save changes/i })).toBeTruthy());
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("clears a phone to null when emptied", async () => {
+    renderSheet(partner({ phone: "+12025550101" }));
+    fireEvent.change(screen.getByLabelText(/^Phone/), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    const [{ patch }] = mutateAsync.mock.calls[0];
+    expect(patch.phone).toBeNull();
+  });
 });

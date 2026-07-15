@@ -28,8 +28,8 @@ import {
   type PartnerFormValues,
   TYPE_OPTIONS,
   formatUSPhone,
-  stripUsCountryCode,
 } from "./partnerForm";
+import { phoneToE164, normalizeEmail } from "@/lib/contactValidation";
 
 export interface AddPartnerSheetProps {
   open: boolean;
@@ -62,16 +62,17 @@ export function AddPartnerSheet({ open, onOpenChange, onAdded }: AddPartnerSheet
 
   const onSubmit: SubmitHandler<PartnerFormValues> = async (values) => {
     try {
-      // Normalize phone to E.164 — same contract as deals.contact_phone.
-      // stripUsCountryCode drops a habitual leading "1" so we never write a
-      // doubled country code (e.g. "+112065550101").
-      const e164 = "+1" + stripUsCountryCode(values.phone);
+      // Normalize phone to E.164 + trim email via the shared normalizers —
+      // same contract as deals.contact_phone. phoneToE164 drops a habitual
+      // leading "1" so we never write a doubled country code
+      // (e.g. "+112065550101"). Both are required here, so values are
+      // non-empty/valid; coerce the `string | null` return to "" defensively.
       await createPartner.mutateAsync({
         name: values.name,
         company: values.company,
         type: values.type,
-        phone: e164,
-        email: values.email,
+        phone: phoneToE164(values.phone) ?? "",
+        email: normalizeEmail(values.email) ?? "",
         city: values.city ?? "",
         notes: values.notes ?? "",
       });
