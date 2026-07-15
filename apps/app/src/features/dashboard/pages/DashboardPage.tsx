@@ -79,6 +79,8 @@ import {
 import { STAGE_BADGE_KIND } from "@/features/pipeline/mockData";
 import { useTerm } from "@/features/profession/useTerm";
 import { CoverageWidget } from "@/features/coverage/components/CoverageWidget";
+import { useProfile } from "@/features/auth/useProfile";
+import { scopeLabel } from "../lib/scopeLabel";
 
 // ───────────────────────────────────────────────────────────────────────
 // Empty state — copied from Session 11. Lives here so the page picks
@@ -163,6 +165,8 @@ function PageHeading({
   rangeKey: RangeKey;
   onRangeChange: (key: RangeKey) => void;
 }) {
+  const role = useProfile().data?.role;
+  const scope = scopeLabel(role);
   return (
     <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div className="flex flex-col gap-1">
@@ -174,6 +178,11 @@ function PageHeading({
           Activity metrics reflect the selected range. Pipeline, stage &amp; partner
           metrics show current totals.
         </p>
+        {scope && (
+          <span className="mt-1 inline-flex w-fit items-center rounded-radius-full bg-surface-sunken px-2 py-0.5 text-caption font-medium text-text-muted">
+            {scope}
+          </span>
+        )}
       </div>
       <div className="hidden sm:flex">
         <DropdownMenu>
