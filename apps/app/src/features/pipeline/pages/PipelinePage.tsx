@@ -483,8 +483,7 @@ function StageChips({
 export function PipelinePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   // Deep-link ?stage=<stage> (Dashboard "Pipeline by stage" / "Conversion
-  // funnel" widgets) pre-selects a chip on mount; the active chip then makes
-  // it visible + clearable.
+  // funnel" / "Monthly performance" widgets) pre-selects a chip on mount.
   const [stageFilter, setStageFilter] = React.useState<StageFilter>(
     () => parseStageParam(searchParams.get("stage")),
   );
@@ -493,8 +492,28 @@ export function PipelinePage() {
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [addStage, setAddStage] = React.useState<DealStage | undefined>(undefined);
   const [viewMode, setViewMode] = usePersistedViewMode();
+  // A ?stage deep-link means "show me the deals in this stage". Kanban (the
+  // desktop default) would render one populated column beside four empty ones
+  // AND hides the stage chips at lg+, leaving the filter invisible and
+  // unclearable. So force the list view while the deep-link filter is active:
+  // the filtered set is fully visible and the stage chip stays on-screen as the
+  // clear affordance. An explicit view toggle (below) releases the override.
+  const [stageDeepLink, setStageDeepLink] = React.useState(
+    () => parseStageParam(searchParams.get("stage")) !== "all",
+  );
   const [filters, setFilters] = React.useState<DealFilters>(EMPTY_DEAL_FILTERS);
   const [sortKey, setSortKey] = React.useState<DealSortKey>("last_activity");
+
+  // The view actually rendered: forced to list while a stage deep-link is
+  // active, otherwise the user's persisted preference. Reverts automatically
+  // once the stage filter is cleared to "all".
+  const effectiveViewMode = stageDeepLink && stageFilter !== "all" ? "list" : viewMode;
+  // Explicit view toggle releases the deep-link override so the user's choice
+  // wins from then on.
+  const handleViewModeChange = (next: typeof viewMode) => {
+    setStageDeepLink(false);
+    setViewMode(next);
+  };
 
   // Deep-link: /pipeline?action=add auto-opens the Add Deal sheet. We
   // strip the param after opening so a back-nav doesn't re-fire it.
@@ -615,8 +634,8 @@ export function PipelinePage() {
           search={searchInput}
           onSearchChange={setSearchInput}
           onAddDeal={onAddDeal}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
+          viewMode={effectiveViewMode}
+          onViewModeChange={handleViewModeChange}
           subhead={subhead}
           filters={filters}
           onFiltersChange={setFilters}
@@ -629,8 +648,9 @@ export function PipelinePage() {
         {/* Stage chips: when kanban is the active view AND we're at lg+,
             the columns ARE the stages, so the chip filter is redundant.
             Hide it then. Below lg we always render list view, so chips
-            stay. */}
-        <div className={cn(viewMode === "kanban" && "lg:hidden")}>
+            stay. A stage deep-link forces list view (effectiveViewMode), so
+            the chips render there as the visible + clearable affordance. */}
+        <div className={cn(effectiveViewMode === "kanban" && "lg:hidden")}>
           <StageChips active={stageFilter} onChange={setStageFilter} counts={stageCounts} />
         </div>
 
@@ -638,7 +658,7 @@ export function PipelinePage() {
           <LoadingList />
         ) : visible.length === 0 ? (
           <EmptyState onAddDeal={onAddDeal} />
-        ) : viewMode === "kanban" ? (
+        ) : effectiveViewMode === "kanban" ? (
           <>
             {/* Kanban only renders at lg+. Below that we fall back to
                 the list view of the same filtered set so mobile + tablet

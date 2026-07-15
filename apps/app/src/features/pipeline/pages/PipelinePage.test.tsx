@@ -306,6 +306,29 @@ describe("PipelinePage", () => {
     expect(screen.queryByText("Newbie LLC")).toBeNull();
   });
 
+  it("a ?stage deep-link forces the list view so the filtered set is fully visible", () => {
+    // Kanban is the persisted default: a plain render shows each card in BOTH
+    // the lg+ kanban board AND the below-lg fallback grid (jsdom keeps both),
+    // so the company name appears more than once.
+    mockDeals = [d({ id: "p", companyName: "Proposal Co", stage: "proposal" })];
+    renderPage("/pipeline");
+    expect(screen.getAllByText("Proposal Co").length).toBeGreaterThan(1);
+  });
+
+  it("a ?stage deep-link renders exactly one card per deal (list view, no empty kanban columns)", () => {
+    // Regression: landing via a stage deep-link used to render the kanban
+    // board — one populated column beside four empty ones — with the stage
+    // chip (the only clear affordance) hidden at lg+. The list view renders
+    // each matching deal exactly once and keeps the chip on-screen.
+    mockDeals = [
+      d({ id: "p", companyName: "Proposal Co", stage: "proposal" }),
+      d({ id: "n", companyName: "Newbie LLC", stage: "new" }),
+    ];
+    renderPage("/pipeline?stage=proposal");
+    expect(screen.getAllByText("Proposal Co").length).toBe(1);
+    expect(screen.queryByText("Newbie LLC")).toBeNull();
+  });
+
   it("?source=<label> deep-link filters by lead source and shows a clearable banner", () => {
     mockDeals = [
       d({ id: "referral", companyName: "Referral Co", stage: "new", leadSource: "Partner referral" }),
@@ -325,6 +348,29 @@ describe("PipelinePage", () => {
     renderPage("/pipeline?source=Other");
     expect(screen.getAllByText("Blank Co").length).toBeGreaterThan(0);
     expect(screen.queryByText("Sourced Co")).toBeNull();
+  });
+
+  it("?source trims whitespace so it buckets identically to the dashboard", () => {
+    // The dashboard's Lead Sources widget trims leadSource before bucketing
+    // (empty → "Other"), so the pipeline drill must trim too or the list
+    // count would disagree with the widget for whitespace-padded sources.
+    mockDeals = [
+      d({ id: "padded", companyName: "Padded Co", stage: "new", leadSource: "  Partner referral  " }),
+      d({ id: "ws", companyName: "Whitespace Co", stage: "new", leadSource: "   " }),
+    ];
+    renderPage("/pipeline?source=Partner%20referral");
+    expect(screen.getAllByText("Padded Co").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Whitespace Co")).toBeNull();
+  });
+
+  it("?source=Other matches a whitespace-only lead source (trim → empty → Other)", () => {
+    mockDeals = [
+      d({ id: "ws", companyName: "Whitespace Co", stage: "new", leadSource: "   " }),
+      d({ id: "real", companyName: "Real Co", stage: "new", leadSource: "Webinar" }),
+    ];
+    renderPage("/pipeline?source=Other");
+    expect(screen.getAllByText("Whitespace Co").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Real Co")).toBeNull();
   });
 
   it("no stage/source params → unfiltered (regression)", () => {
