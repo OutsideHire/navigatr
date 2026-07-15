@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeAll, afterEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { computeKpis, countByStage, buildWonAtMap, PipelinePage } from "./PipelinePage";
+import { computeKpis, countByStage, buildWonAtMap, parseStageParam, PipelinePage } from "./PipelinePage";
 import type { Deal } from "../mockData";
 import { MOCK_DEALS } from "../mockData";
 import type { StageHistoryRow } from "../hooks/useStageHistory";
@@ -198,12 +198,25 @@ describe("countByStage", () => {
   });
 });
 
+describe("parseStageParam", () => {
+  it("accepts the real chip stages", () => {
+    expect(parseStageParam("proposal")).toBe("proposal");
+    expect(parseStageParam("won")).toBe("won");
+    expect(parseStageParam("all")).toBe("all");
+  });
+  it("falls back to 'all' for unknown or missing values", () => {
+    expect(parseStageParam("lost")).toBe("all"); // not a chip stage
+    expect(parseStageParam("bogus")).toBe("all");
+    expect(parseStageParam(null)).toBe("all");
+  });
+});
+
 describe("PipelinePage", () => {
-  function renderPage() {
+  function renderPage(path = "/pipeline") {
     const qc = new QueryClient();
     render(
       <QueryClientProvider client={qc}>
-        <MemoryRouter><PipelinePage /></MemoryRouter>
+        <MemoryRouter initialEntries={[path]}><PipelinePage /></MemoryRouter>
       </QueryClientProvider>,
     );
   }
@@ -281,5 +294,46 @@ describe("PipelinePage", () => {
     expect(screen.queryByText("Lowball LLC")).toBeNull();
     expect(screen.getAllByText("Midtier Inc").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Highrise Co").length).toBeGreaterThan(0);
+  });
+
+  it("?stage=proposal deep-link pre-filters to Proposal deals", () => {
+    mockDeals = [
+      d({ id: "p", companyName: "Proposal Co", stage: "proposal" }),
+      d({ id: "n", companyName: "Newbie LLC", stage: "new" }),
+    ];
+    renderPage("/pipeline?stage=proposal");
+    expect(screen.getAllByText("Proposal Co").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Newbie LLC")).toBeNull();
+  });
+
+  it("?source=<label> deep-link filters by lead source and shows a clearable banner", () => {
+    mockDeals = [
+      d({ id: "referral", companyName: "Referral Co", stage: "new", leadSource: "Partner referral" }),
+      d({ id: "cold", companyName: "Cold Co", stage: "new", leadSource: "Cold outreach" }),
+    ];
+    renderPage("/pipeline?source=Partner%20referral");
+    expect(screen.getAllByText("Referral Co").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Cold Co")).toBeNull();
+    expect(screen.getByText(/filtered by lead source/i)).toBeInTheDocument();
+  });
+
+  it("?source=Other matches deals with an empty lead source", () => {
+    mockDeals = [
+      d({ id: "blank", companyName: "Blank Co", stage: "new", leadSource: "" }),
+      d({ id: "set", companyName: "Sourced Co", stage: "new", leadSource: "Webinar" }),
+    ];
+    renderPage("/pipeline?source=Other");
+    expect(screen.getAllByText("Blank Co").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Sourced Co")).toBeNull();
+  });
+
+  it("no stage/source params → unfiltered (regression)", () => {
+    mockDeals = [
+      d({ id: "p", companyName: "Proposal Co", stage: "proposal" }),
+      d({ id: "n", companyName: "Newbie LLC", stage: "new" }),
+    ];
+    renderPage("/pipeline");
+    expect(screen.getAllByText("Proposal Co").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Newbie LLC").length).toBeGreaterThan(0);
   });
 });

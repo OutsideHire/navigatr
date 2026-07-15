@@ -145,6 +145,13 @@ function fmtMoneyShort(cents: number): string {
 type StageFilter = "all" | DealStage;
 const STAGE_FILTERS: StageFilter[] = ["all", "new", "contacted", "qualified", "proposal", "won"];
 
+/** Validate a ?stage= URL param against the real chip stages. Unknown or
+ *  missing → "all" so a deep-link never produces a hidden, unclearable
+ *  filter (there is no chip for e.g. "lost"). */
+export function parseStageParam(raw: string | null): StageFilter {
+  return STAGE_FILTERS.includes(raw as StageFilter) ? (raw as StageFilter) : "all";
+}
+
 /** Live per-stage deal counts for the stage-filter chips.
  *
  *  Derived from the fetched deals (not a static mock) so a fresh org with no
@@ -474,12 +481,17 @@ function StageChips({
 // ───────────────────────────────────────────────────────────────────────
 
 export function PipelinePage() {
-  const [stageFilter, setStageFilter] = React.useState<StageFilter>("all");
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Deep-link ?stage=<stage> (Dashboard "Pipeline by stage" / "Conversion
+  // funnel" widgets) pre-selects a chip on mount; the active chip then makes
+  // it visible + clearable.
+  const [stageFilter, setStageFilter] = React.useState<StageFilter>(
+    () => parseStageParam(searchParams.get("stage")),
+  );
   const [searchInput, setSearchInput] = React.useState("");
   const debouncedSearch = useDebounced(searchInput, 300);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [addStage, setAddStage] = React.useState<DealStage | undefined>(undefined);
-  const [searchParams, setSearchParams] = useSearchParams();
   const [viewMode, setViewMode] = usePersistedViewMode();
   const [filters, setFilters] = React.useState<DealFilters>(EMPTY_DEAL_FILTERS);
   const [sortKey, setSortKey] = React.useState<DealSortKey>("last_activity");
@@ -498,6 +510,9 @@ export function PipelinePage() {
   // ?owner=<id> filter — set by the admin portal when drilling into one
   // agent's pipeline. A banner is shown at the top with a "Clear filter" link.
   const ownerFilter = searchParams.get("owner");
+  // ?source=<label> filter — Dashboard "Lead sources" widget. Buckets
+  // identically to the dashboard (empty leadSource → "Other").
+  const sourceFilter = searchParams.get("source");
 
   // Reads from Supabase via RLS — server scopes to the user's org_id.
   // Stage/search filters still applied in-memory below; dataset is small
@@ -535,10 +550,15 @@ export function PipelinePage() {
     return deals.filter((d) => {
       if (ownerFilter && d.owner_id !== ownerFilter) return false;
       if (stageFilter !== "all" && d.stage !== stageFilter) return false;
+      if (sourceFilter) {
+        const raw = (d.leadSource ?? "").trim();
+        const bucket = raw === "" ? "Other" : raw;
+        if (bucket !== sourceFilter) return false;
+      }
       if (q && !d.companyName.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [deals, stageFilter, debouncedSearch, ownerFilter]);
+  }, [deals, stageFilter, debouncedSearch, ownerFilter, sourceFilter]);
 
   const visible = React.useMemo(
     () => sortDeals(applyDealFilters(filtered, filters), sortKey),
@@ -565,6 +585,23 @@ export function PipelinePage() {
               onClick={() => {
                 const next = new URLSearchParams(searchParams);
                 next.delete("owner");
+                setSearchParams(next, { replace: true });
+              }}
+              className="text-brand-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+            >
+              Clear filter
+            </button>
+          </div>
+        )}
+
+        {sourceFilter && (
+          <div className="flex items-center justify-between rounded-radius-md border border-border-subtle bg-surface-sunken px-4 py-2.5 text-body-sm text-text-muted">
+            <span>Filtered by lead source: <span className="text-text-default">{sourceFilter}</span></span>
+            <button
+              type="button"
+              onClick={() => {
+                const next = new URLSearchParams(searchParams);
+                next.delete("source");
                 setSearchParams(next, { replace: true });
               }}
               className="text-brand-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
