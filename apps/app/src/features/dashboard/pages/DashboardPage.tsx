@@ -302,7 +302,7 @@ export function SecondaryKpiRow({ kpis }: { kpis: DashboardData["kpis"] }) {
   const role = useProfile().data?.role;
   const isManagerish = role === "manager" || role === "admin";
   const { data: deals = [] } = useDeals();
-  const memberNames = useOrgMemberNames();
+  const memberNames = useOrgMemberNames(isManagerish);
   const [openMetric, setOpenMetric] = React.useState<KpiMetric | null>(null);
 
   const cards: {

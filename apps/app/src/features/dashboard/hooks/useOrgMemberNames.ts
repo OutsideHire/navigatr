@@ -14,11 +14,13 @@ interface MemberRow {
   email: string;
 }
 
-export function useOrgMemberNames(): Map<string, string> {
+export function useOrgMemberNames(enabled = true): Map<string, string> {
   const userId = useAuth((s) => s.user?.id);
   const q = useQuery({
     queryKey: ["orgMemberNames", userId ?? "anon"],
-    enabled: Boolean(userId),
+    // Only fetch when a consumer needs it (managers/admins). Reps never render
+    // the breakdown, so we skip the profiles query for them.
+    enabled: Boolean(userId) && enabled,
     queryFn: async (): Promise<MemberRow[]> => {
       const { data, error } = await supabase.from("profiles").select("id, full_name, email");
       if (error) throw error;

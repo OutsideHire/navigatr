@@ -30,7 +30,9 @@ describe("KpiBreakdownPanel", () => {
     expect(screen.getByText(formatMoney(30000))).toBeInTheDocument();
     expect(screen.getByText("Marcus Chen")).toBeInTheDocument();
     expect(screen.getByText("Unassigned")).toBeInTheDocument();
-    expect(screen.getByText(new RegExp(`Range across reps: ${escRe(formatMoney(5000))}.${escRe(formatMoney(30000))}`))).toBeTruthy();
+    // Band spans real owners only ($100 Marcus – $300 Sarah); the $50
+    // Unassigned bucket does NOT set the min.
+    expect(screen.getByText(new RegExp(`Range across reps: ${escRe(formatMoney(10000))}.${escRe(formatMoney(30000))}`))).toBeTruthy();
   });
 
   it("a real-owner row navigates via onSelectRep; unassigned is not a button", () => {

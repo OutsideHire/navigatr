@@ -42,4 +42,10 @@ describe("useOrgMemberNames", () => {
     expect(result.current.size).toBe(0);
     expect(selectMock).not.toHaveBeenCalled();
   });
+
+  it("does not query when disabled (e.g. a rep who has no breakdown to show)", () => {
+    const { result } = renderHook(() => useOrgMemberNames(false), { wrapper });
+    expect(result.current.size).toBe(0);
+    expect(selectMock).not.toHaveBeenCalled();
+  });
 });

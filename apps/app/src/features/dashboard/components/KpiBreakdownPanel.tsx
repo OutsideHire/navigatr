@@ -22,14 +22,17 @@ export interface KpiBreakdownPanelProps {
 export function KpiBreakdownPanel({
   title, metric, deals, memberNames, onSelectRep,
 }: KpiBreakdownPanelProps) {
-  const { rows, min, max } = breakdownByOwner(deals, metric);
+  const { rows } = breakdownByOwner(deals, metric);
+  // The "across reps" band spans only real owners — the Unassigned bucket
+  // (owner_id null) isn't a rep, so it must not set the min/max.
+  const repValues = rows.filter((r) => r.ownerId !== null).map((r) => r.value);
   return (
     <Card padding="md" shadow="sm">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h3 className="text-body-strong text-text-default">{title}</h3>
-        {rows.length > 1 && (
+        {repValues.length > 1 && (
           <span className="text-caption text-text-muted">
-            Range across reps: {fmt(metric, min)}–{fmt(metric, max)}
+            Range across reps: {fmt(metric, Math.min(...repValues))}–{fmt(metric, Math.max(...repValues))}
           </span>
         )}
       </div>
