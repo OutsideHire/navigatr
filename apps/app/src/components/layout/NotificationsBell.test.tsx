@@ -175,4 +175,22 @@ describe("NotificationsBell", () => {
     await user.click(screen.getByText("Auris"));
     expect(navigateMock).toHaveBeenCalledWith("/partners/pA");
   });
+
+  it("labels a due-today partner reminder and navigates to it", async () => {
+    const user = userEvent.setup();
+    partnerReminders = {
+      overdue: [],
+      today: [{ id: "pB", partner: { id: "pB", name: "Beta", company: "Beta LLC" }, dueAt: "2026-07-20T12:00:00Z", daysOverdue: 0 }],
+      count: 1,
+      isLoading: false,
+    };
+    renderBell();
+    expect(screen.getByRole("button", { name: /notifications: 1/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /notifications/i }));
+    // The due-today branch of PartnerReminderRow (label + warning styling).
+    expect(screen.getByText("Beta")).toBeInTheDocument();
+    expect(screen.getByText("Due today")).toBeInTheDocument();
+    await user.click(screen.getByText("Beta"));
+    expect(navigateMock).toHaveBeenCalledWith("/partners/pB");
+  });
 });

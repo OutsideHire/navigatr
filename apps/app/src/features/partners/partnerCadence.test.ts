@@ -72,6 +72,18 @@ describe("computeCadenceStatus", () => {
     expect(s.state).toBe("none");
     expect(s.dueAt).toBeNull();
   });
+
+  it("normalizes the due date to NOON UTC of a calendar day (no evening drift)", () => {
+    // Anchor at a non-noon instant. The due date must be the anchor's calendar
+    // day + cadence, stored at noon UTC — NOT the anchor's time-of-day carried
+    // forward. Asserting the noon suffix catches the old raw-instant math on
+    // any runner timezone (old code preserved "T23:30:00.000Z").
+    const s = computeCadenceStatus(
+      { followupCadenceDays: 30, lastTouch: "2026-06-20T23:30:00.000Z", createdAt: "2026-01-01T12:00:00Z" },
+      now,
+    );
+    expect(s.dueAt?.endsWith("T12:00:00.000Z")).toBe(true);
+  });
 });
 
 describe("formatCadence", () => {

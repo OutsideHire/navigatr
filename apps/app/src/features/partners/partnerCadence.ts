@@ -7,7 +7,7 @@
  * (same day-math the bell uses, so the chip and the bell never disagree).
  */
 
-import { calendarDayDelta } from "@/lib/calendarDate";
+import { calendarDayDelta, toDateOnly, dateOnlyToNoonUtcIso } from "@/lib/calendarDate";
 
 export type CadenceState = "none" | "upcoming" | "due-today" | "overdue";
 
@@ -38,11 +38,17 @@ export function computeCadenceStatus(input: CadenceInput, now: Date = new Date()
     return { hasCadence, dueAt: null, state: "none", daysOverdue: 0, daysUntilDue: 0 };
   }
 
-  const due = new Date(anchor);
-  due.setUTCDate(due.getUTCDate() + cadence);
-  const dueAt = due.toISOString();
+  // The anchor is a true instant (last_touch_at / created_at). Take its
+  // rep-LOCAL calendar day, add cadence days as pure calendar days, and store
+  // the due date at NOON UTC — the app's calendar-date convention. Adding days
+  // to the raw instant and reading its UTC day would drift a day for evening
+  // touches west of UTC (the whole US market).
+  const anchorDay = toDateOnly(new Date(anchor)); // rep-local YYYY-MM-DD
+  const dueDay = new Date(`${anchorDay}T00:00:00Z`);
+  dueDay.setUTCDate(dueDay.getUTCDate() + cadence);
+  const dueAt = dateOnlyToNoonUtcIso(dueDay.toISOString());
 
-  const delta = calendarDayDelta(now, due); // >0 future, 0 today, <0 overdue
+  const delta = calendarDayDelta(now, new Date(dueAt)); // >0 future, 0 today, <0 overdue
   const state: CadenceState = delta > 0 ? "upcoming" : delta === 0 ? "due-today" : "overdue";
 
   return {
