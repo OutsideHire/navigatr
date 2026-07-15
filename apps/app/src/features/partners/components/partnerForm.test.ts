@@ -80,3 +80,28 @@ describe("phone helpers", () => {
     expect(stripUsCountryCode("2025550101")).toBe("2025550101");
   });
 });
+
+describe("editPartnerSchema — optional phone/email (unblock legacy edits)", () => {
+  const validEdit = {
+    name: "Sarah Johnson",
+    company: "Johnson & Boyle CPAs",
+    type: "cpa" as const,
+    status: "active" as const,
+    followupCadence: "none",
+    phone: "",
+    email: "",
+    city: "",
+    notes: "",
+  };
+  it("accepts empty phone AND empty email (a legacy partner missing both)", () => {
+    expect(editPartnerSchema.safeParse(validEdit).success).toBe(true);
+  });
+  it("still forces phone format when a phone IS entered", () => {
+    expect(editPartnerSchema.safeParse({ ...validEdit, phone: "555" }).success).toBe(false);
+    expect(editPartnerSchema.safeParse({ ...validEdit, phone: "2025550101" }).success).toBe(true);
+  });
+  it("still forces email format when an email IS entered", () => {
+    expect(editPartnerSchema.safeParse({ ...validEdit, email: "nope" }).success).toBe(false);
+    expect(editPartnerSchema.safeParse({ ...validEdit, email: "a@b.com" }).success).toBe(true);
+  });
+});

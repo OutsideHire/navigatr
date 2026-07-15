@@ -8,26 +8,17 @@
  */
 
 import { z } from "zod";
-import { AsYouType, parsePhoneNumberFromString } from "libphonenumber-js";
 import type { SelectOption } from "@/components/navigatr";
+import {
+  requiredPhoneSchema,
+  optionalPhoneSchema,
+  requiredEmailSchema,
+  optionalEmailSchema,
+} from "@/lib/contactValidation";
 
-export function digitsOnly(s: string): string {
-  return s.replace(/\D/g, "");
-}
-
-export function formatUSPhone(input: string): string {
-  const d = digitsOnly(input);
-  if (d.length === 0) return "";
-  return new AsYouType("US").input(d.slice(0, d.startsWith("1") ? 11 : 10));
-}
-
-/** Stored phones are E.164 ("+15555555555"). The validator wants exactly
- *  10 digits; pre-filling "1 (555) 555-5555" would fail and force a
- *  re-type. Strip the leading US country code so the form sees 10 digits. */
-export function stripUsCountryCode(phone: string): string {
-  const d = digitsOnly(phone);
-  return d.length === 11 && d.startsWith("1") ? d.slice(1) : d;
-}
+// Re-export the phone display helpers from their canonical home so existing
+// importers (the sheets, partnerForm.test) keep one import site.
+export { digitsOnly, formatUSPhone, stripUsCountryCode } from "@/lib/contactValidation";
 
 export const TYPE_OPTIONS: SelectOption[] = [
   { value: "cpa",        label: "CPA" },
@@ -59,23 +50,20 @@ export const partnerFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
   company: z.string().min(1, "Company is required"),
   type: z.enum(["cpa", "banker", "attorney", "insurance", "consultant", "other"]),
-  phone: z
-    .string()
-    .min(1, "Phone is required")
-    .refine(
-      (v) => parsePhoneNumberFromString(v, "US")?.isValid() || digitsOnly(v).length === 10,
-      "Enter a 10-digit US phone",
-    ),
-  email: z.string().email("Enter a valid email"),
+  phone: requiredPhoneSchema,
+  email: requiredEmailSchema,
   city: z.string().optional(),
   notes: z.string().optional(),
 });
 export type PartnerFormValues = z.infer<typeof partnerFormSchema>;
 
-/** Edit-partner fields = add fields + editable status. */
+/** Edit-partner fields = add fields + status + cadence, with phone/email
+ *  relaxed to optional-but-format-checked so a legacy partner missing one
+ *  isn't blocked (format is still forced when a value is present). */
 export const editPartnerSchema = partnerFormSchema.extend({
   status: z.enum(["active", "cooling", "inactive"]),
-  /** Preset day count as a string, or "none". Converted to number|null on save. */
   followupCadence: z.string(),
+  phone: optionalPhoneSchema,
+  email: optionalEmailSchema,
 });
 export type EditPartnerValues = z.infer<typeof editPartnerSchema>;
