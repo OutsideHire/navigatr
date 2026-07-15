@@ -8,12 +8,20 @@
 import * as React from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { ArrowLeft, Phone, Mail, MapPin, Calendar, Loader2 } from "lucide-react";
-import { Badge, Button, Card } from "@/components/navigatr";
+import { Badge, Button, Card, Select } from "@/components/navigatr";
 import type { BadgeKind } from "@/components/navigatr/Badge";
 import { useTeamLeaderboard } from "../hooks/useTeamLeaderboard";
+import { useSetMemberManager } from "../hooks/useSetMemberManager";
 import { useActivitiesForOrg } from "@/features/activities/hooks/useActivities";
+import { useAuth } from "@/stores/auth";
 import type { ActivityType } from "@/features/activities/mockData";
 import { formatMoney, formatRelative } from "@/features/pipeline/mockData";
+import { toast } from "sonner";
+
+// Radix Select forbids empty-string item values (it reserves "" to clear the
+// selection), so "No manager" uses this sentinel and maps back to null on
+// change — mirrors the codebase's existing "none" pattern (partnerForm cadence).
+const NO_MANAGER = "none";
 
 const WINDOW_OPTIONS: { label: string; value: number }[] = [
   { label: "7 days", value: 7 },
@@ -91,6 +99,27 @@ export function AgentDetailPage() {
     [agentActivities],
   );
 
+  const setManager = useSetMemberManager();
+  const userId = useAuth((s) => s.user?.id);
+  const callerRole = React.useMemo(
+    () => leaderboardRows.find((r) => r.agent_id === userId)?.role,
+    [leaderboardRows, userId],
+  );
+  // Managers/admins in the org (active), excluding the agent themselves —
+  // eligible "reports to" targets.
+  const managerOptions = React.useMemo(
+    () =>
+      leaderboardRows
+        .filter(
+          (r) =>
+            r.status === "active" &&
+            (r.role === "manager" || r.role === "admin") &&
+            r.agent_id !== agentId,
+        )
+        .map((r) => ({ value: r.agent_id, label: r.full_name ?? r.email })),
+    [leaderboardRows, agentId],
+  );
+
   if (isLoading) {
     return (
       <div className="flex min-h-dvh items-center justify-center">
@@ -157,6 +186,38 @@ export function AgentDetailPage() {
           </Button>
         </div>
       </div>
+
+      {/* Reporting line — who this person reports to (activates hierarchy scoping) */}
+      <Card padding="md">
+        <p className="text-eyebrow text-text-subtle uppercase tracking-wider">Reports to</p>
+        {agent.role === "admin" ? (
+          <p className="mt-1 text-body-md text-text-muted">
+            Admins see the whole organization.
+          </p>
+        ) : callerRole === "admin" ? (
+          <div className="mt-1 max-w-xs">
+            <Select
+              id="agent-manager"
+              value={agent.manager_id ?? NO_MANAGER}
+              onValueChange={(v) => {
+                setManager.mutate(
+                  { memberId: agentId!, managerId: v === NO_MANAGER ? null : v },
+                  {
+                    onSuccess: () => toast.success("Reporting updated"),
+                    onError: (e) =>
+                      toast.error(e instanceof Error ? e.message : "Could not update reporting"),
+                  },
+                );
+              }}
+              options={[{ value: NO_MANAGER, label: "No manager" }, ...managerOptions]}
+            />
+          </div>
+        ) : (
+          <p className="mt-1 text-body-md text-text-default">
+            {leaderboardRows.find((r) => r.agent_id === agent.manager_id)?.full_name ?? "No manager"}
+          </p>
+        )}
+      </Card>
 
       {/* KPI row — 6 cards: Open Deals / Pipeline / Won / Lost / Win rate / Activities */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
