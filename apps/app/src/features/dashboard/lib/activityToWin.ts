@@ -99,7 +99,7 @@ export const MIN_SAMPLE = 3;
 /** Default (tenant-configurable) deal-value bands, in cents. */
 export const VALUE_BANDS = [
   { key: "lt25k", label: "< $25K", minCents: undefined, maxCents: 25_000_00 },
-  { key: "25kto100k", label: "$25K–$100K", minCents: 25_000_00, maxCents: 100_000_00 },
+  { key: "25kto100k", label: "$25K-$100K", minCents: 25_000_00, maxCents: 100_000_00 },
   { key: "gt100k", label: "> $100K", minCents: 100_000_00, maxCents: undefined },
 ] as const;
 

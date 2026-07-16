@@ -319,7 +319,7 @@ export function ActivitiesToWinHero({
             </div>
             <div>
               <p className="text-kpi-lg tabular-nums leading-none text-text-inverse">
-                {agg.medianBusinessDays != null ? fmtMedian(agg.medianBusinessDays) : "—"}
+                {agg.medianBusinessDays != null ? fmtMedian(agg.medianBusinessDays) : "-"}
               </p>
               <span className="text-caption text-text-inverse/80">median business days to close</span>
             </div>

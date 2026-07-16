@@ -77,6 +77,16 @@ describe("ActivitiesToWinHero", () => {
     expect(screen.getByText("2 of 3 won deals so far")).toBeInTheDocument();
   });
 
+  it("renders a plain hyphen (never an em dash) when median business days is null", () => {
+    // Reachable when the measured cohort is ≥3 but no won deal has timing data.
+    agg = populated({ medianBusinessDays: null });
+    render(<ActivitiesToWinHero range={RANGE} windowLabel="Last 90 days" />);
+    expect(screen.getByText("median business days to close")).toBeInTheDocument();
+    expect(screen.getByText("-")).toBeInTheDocument();
+    // Guard the hard NO-LONG-HYPHENS rule on the rendered hero.
+    expect(document.body.textContent ?? "").not.toMatch(/[–—]/);
+  });
+
   it("surfaces unmeasured wins when present", () => {
     agg = populated({ unmeasuredWins: 3 });
     render(<ActivitiesToWinHero range={RANGE} windowLabel="Last 90 days" />);
