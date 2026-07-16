@@ -141,8 +141,13 @@ const button = cva(
         ],
         gradient: [
           // Code-only variant — see file-level doc.
+          // Label pinned to white in both modes: text-text-inverse flips to
+          // near-black in dark mode, which is unreadable on the gradient. If
+          // this variant is ever used for a large/critical surface in dark
+          // mode, wrap it like AW_HERO_CARD (white text + dark scrim) since the
+          // dark-mode gradient stops are light.
           "bg-gradient-to-r from-brand-gradient-from via-brand-gradient-via to-brand-gradient-to",
-          "text-text-inverse",
+          "text-white",
           "hover:opacity-90 active:opacity-80",
         ],
       },

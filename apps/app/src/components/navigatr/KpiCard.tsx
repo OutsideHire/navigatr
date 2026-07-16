@@ -125,24 +125,31 @@ export const KpiCard = React.forwardRef<HTMLDivElement, KpiCardProps>(function K
   const iconBoxSize = isHero ? "h-10 w-10" : "h-8 w-8";
   const iconClass = isHero ? "h-5 w-5" : "h-4 w-4";
   const accentClasses = gradient
-    ? { bg: "bg-text-inverse/15", fg: "text-text-inverse" }
+    ? { bg: "bg-white/15 dark:bg-black/25", fg: "text-white" }
     : accentTokens[accent];
 
   // Trend pill colors
   const trendPillClass = gradient
-    ? "bg-text-inverse/15 text-text-inverse"
+    ? "bg-white/15 dark:bg-black/25 text-white"
     : trend?.isPositive
       ? "bg-status-success-bg text-status-success"
       : "bg-status-danger-bg text-status-danger";
 
-  // Eyebrow + value + subtitle colors flip on gradient
-  const eyebrowClass = gradient ? "text-text-inverse/80" : "text-text-muted";
-  const valueColor = gradient ? "text-text-inverse" : "text-text-default";
-  const subtitleColor = gradient ? "text-text-inverse/80" : "text-text-muted";
+  // Eyebrow + value + subtitle colors flip on gradient. Pinned to white in
+  // both modes (text-inverse flips to near-black in dark mode).
+  const eyebrowClass = gradient ? "text-white/80" : "text-text-muted";
+  const valueColor = gradient ? "text-white" : "text-text-default";
+  const subtitleColor = gradient ? "text-white/80" : "text-text-muted";
 
-  // The card surface itself
+  // The card surface itself. On the gradient variant, a dark-mode scrim
+  // deepens the (lighter) dark-mode gradient so white text clears WCAG AA;
+  // [&>*]:relative lifts the content above the ::before scrim.
   const surfaceClass = gradient
-    ? "bg-gradient-to-br from-brand-gradient-from via-brand-gradient-via to-brand-gradient-to text-text-inverse border-0"
+    ? cn(
+        "relative overflow-hidden border-0 text-white [&>*]:relative",
+        "bg-gradient-to-br from-brand-gradient-from via-brand-gradient-via to-brand-gradient-to",
+        "dark:before:absolute dark:before:inset-0 dark:before:rounded-[inherit] dark:before:bg-black/30 dark:before:content-['']",
+      )
     : "bg-surface-default border border-border-subtle shadow-card";
 
   const TrendIcon = trend?.direction === "down" ? TrendingDown : TrendingUp;
@@ -225,7 +232,7 @@ export const KpiCard = React.forwardRef<HTMLDivElement, KpiCardProps>(function K
             <span
               className={cn(
                 "inline-flex shrink-0 items-center gap-1 text-caption font-medium",
-                gradient ? "text-text-inverse" : "text-brand-primary",
+                gradient ? "text-white" : "text-brand-primary",
               )}
             >
               {action.label}

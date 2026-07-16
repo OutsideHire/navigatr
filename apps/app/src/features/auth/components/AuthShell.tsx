@@ -74,14 +74,17 @@ export function AuthSplitShell({
         <div className="absolute inset-0 bg-gradient-to-br from-brand-gradient-from via-brand-gradient-via to-brand-gradient-to" />
         {/* Soft inner glow + grid pattern for depth */}
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.18),transparent_60%)]" />
-        <div className="relative flex h-full flex-col justify-between p-12 text-text-inverse">
-          <span className="text-eyebrow tracking-widest text-text-inverse/80">{heroEyebrow}</span>
+        {/* Dark-mode scrim: the dark-mode gradient stops are light enough that
+            white hero text dips under WCAG AA; deepen the surface (dark only). */}
+        <div className="absolute inset-0 hidden bg-black/25 dark:block" aria-hidden />
+        <div className="relative flex h-full flex-col justify-between p-12 text-white">
+          <span className="text-eyebrow tracking-widest text-white/80">{heroEyebrow}</span>
           <div className="flex flex-col gap-4">
             <h2 className="text-display-md leading-tight">{heroTitle}</h2>
-            <p className="max-w-md text-body-lg text-text-inverse/85">{heroBody}</p>
+            <p className="max-w-md text-body-lg text-white/85">{heroBody}</p>
           </div>
-          <div className="flex items-center gap-2 text-caption text-text-inverse/70">
-            <span className="h-1.5 w-1.5 rounded-radius-full bg-text-inverse/70" />
+          <div className="flex items-center gap-2 text-caption text-white/80">
+            <span className="h-1.5 w-1.5 rounded-radius-full bg-white/80" />
             <span>The mobile-first sales platform for field reps</span>
           </div>
         </div>
