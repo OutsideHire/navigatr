@@ -108,6 +108,45 @@ export function leadSourceBucket(leadSource: string | null | undefined): string 
   return t === "" ? "Other" : t;
 }
 
+export interface RepComparisonBand {
+  /** Range of per-rep median touches-to-close across reps in the cohort. */
+  touches: { min: number; max: number } | null;
+  /** Range of per-rep median business-days-to-close across reps. */
+  businessDays: { min: number; max: number } | null;
+  repCount: number;
+}
+
+/**
+ * The manager comparison band: the spread of per-rep medians across the reps
+ * whose deals are in the cohort. A range needs ≥2 reps with a value to be
+ * meaningful, so bands are null below that (e.g. a manager with one active rep).
+ */
+export function repComparisonBand(rows: ActivityToWinRow[]): RepComparisonBand {
+  const byRep = new Map<string, ActivityToWinRow[]>();
+  for (const r of rows) {
+    const key = r.ownerId ?? "__unassigned__";
+    const group = byRep.get(key);
+    if (group) group.push(r);
+    else byRep.set(key, [r]);
+  }
+
+  const touchMedians: number[] = [];
+  const dayMedians: number[] = [];
+  for (const group of byRep.values()) {
+    const t = median(group.filter((r) => r.counts.total > 0).map((r) => r.counts.total));
+    if (t != null) touchMedians.push(t);
+    const d = median(
+      group.filter((r) => r.businessDays != null).map((r) => r.businessDays as number),
+    );
+    if (d != null) dayMedians.push(d);
+  }
+
+  const range = (xs: number[]) =>
+    xs.length >= 2 ? { min: Math.min(...xs), max: Math.max(...xs) } : null;
+
+  return { touches: range(touchMedians), businessDays: range(dayMedians), repCount: byRep.size };
+}
+
 // ── Aggregation ──────────────────────────────────────────────────────────
 
 export function computeActivityToWin(

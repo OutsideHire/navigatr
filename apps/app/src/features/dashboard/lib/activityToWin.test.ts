@@ -5,6 +5,7 @@ import {
   percentile,
   stddev,
   computeActivityToWin,
+  repComparisonBand,
   leadSourceBucket,
   type AwFilters,
 } from "./activityToWin";
@@ -269,5 +270,34 @@ describe("computeActivityToWin", () => {
     expect(agg.medianTotal).toBeNull();
     expect(agg.medianBusinessDays).toBeNull();
     expect(agg.rows).toHaveLength(0);
+  });
+});
+
+describe("repComparisonBand", () => {
+  it("ranges per-rep medians across reps", () => {
+    const deals = [
+      // rep u1: totals [4,6] → median 5; days [4,6] → 5
+      won({ id: "a", owner_id: "u1", activityCountTotal: 4, timeToWinBusinessDays: 4 }),
+      won({ id: "b", owner_id: "u1", activityCountTotal: 6, timeToWinBusinessDays: 6 }),
+      // rep u2: totals [10,12] → median 11; days [30,40] → 35
+      won({ id: "c", owner_id: "u2", activityCountTotal: 10, timeToWinBusinessDays: 30 }),
+      won({ id: "d", owner_id: "u2", activityCountTotal: 12, timeToWinBusinessDays: 40 }),
+    ];
+    const agg = computeActivityToWin(deals, { range: ALL });
+    const band = repComparisonBand(agg.rows);
+    expect(band.repCount).toBe(2);
+    expect(band.touches).toEqual({ min: 5, max: 11 });
+    expect(band.businessDays).toEqual({ min: 5, max: 35 });
+  });
+
+  it("returns null bands when only one rep has a value", () => {
+    const deals = [
+      won({ id: "a", owner_id: "u1", activityCountTotal: 4, timeToWinBusinessDays: 4 }),
+      won({ id: "b", owner_id: "u1", activityCountTotal: 6, timeToWinBusinessDays: 6 }),
+    ];
+    const band = repComparisonBand(computeActivityToWin(deals, { range: ALL }).rows);
+    expect(band.repCount).toBe(1);
+    expect(band.touches).toBeNull();
+    expect(band.businessDays).toBeNull();
   });
 });

@@ -75,7 +75,10 @@ import {
   rangeLabel,
   resolveRange,
   type RangeKey,
+  type DateRange,
 } from "../lib/dateRange";
+import { useActivityToWin } from "../hooks/useActivityToWin";
+import { repComparisonBand, type AwActivityType } from "../lib/activityToWin";
 import { STAGE_BADGE_KIND } from "@/features/pipeline/mockData";
 import { useTerm } from "@/features/profession/useTerm";
 import { CoverageWidget } from "@/features/coverage/components/CoverageWidget";
@@ -214,74 +217,136 @@ function PageHeading({
   );
 }
 
-// Section 3: Activities-to-Win hero KPI — the ONE gradient surface.
+// Section 3: Activity-to-Win hero KPI — the ONE gradient surface (PRD §3.3.A).
 //
-// Bespoke layout (not KpiCard) because the hero stretches full-width on
-// desktop and a single-column flex left the right half of the gradient
-// visually empty. Two-column on md+: content left, oversized ghost-Zap
-// glyph right to anchor the gradient. Mobile keeps a single column with
-// a smaller corner glyph so the value stays the focal point.
-export function ActivitiesToWinHero({ data }: { data: DashboardData["activitiesToWin"] }) {
+// Two components side by side: median touches to close (Component A) and
+// median business days to close (Component B), with a per-type breakdown, the
+// sample size, and — for managers/admins — a comparison band showing the range
+// across their reps. Below the 3-won-deal minimum it shows an honest
+// "not enough data yet" state instead of a misleading number.
+const AW_TYPE_LABEL: Record<AwActivityType, [string, string]> = {
+  call: ["call", "calls"],
+  email: ["email", "emails"],
+  dropin: ["drop-in", "drop-ins"],
+  appointment: ["appointment", "appointments"],
+};
+
+/** Median counts can be x.5 (even cohort); show the integer when whole. */
+function fmtMedian(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+const AW_HERO_CARD = cn(
+  "relative w-full overflow-hidden rounded-radius-md p-6 text-left sm:p-8",
+  "bg-gradient-to-br from-brand-gradient-from via-brand-gradient-via to-brand-gradient-to",
+  "text-text-inverse transition-shadow hover:shadow-md",
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary",
+);
+
+function AwHeroGlyph() {
+  return (
+    <Zap
+      aria-hidden
+      className={cn(
+        "pointer-events-none absolute text-text-inverse/10",
+        "right-[-24px] top-[-16px] h-40 w-40 rotate-12",
+        "sm:right-[-32px] sm:top-1/2 sm:h-64 sm:w-64 sm:-translate-y-1/2 sm:rotate-0",
+        "lg:right-[-24px] lg:h-72 lg:w-72",
+      )}
+      strokeWidth={1.25}
+    />
+  );
+}
+
+const AW_MIN_SAMPLE = 3;
+
+export function ActivitiesToWinHero({
+  range,
+  windowLabel,
+}: {
+  range: DateRange;
+  windowLabel: string;
+}) {
   const navigate = useNavigate();
-  // Two render paths:
-  //   1. Has wins → big ratio number + "X activities / Y wins" subtitle.
-  //   2. No wins yet → still show total activities as the hero number,
-  //      and copy that nudges the rep to close a deal so the ratio
-  //      becomes meaningful. Avoids an empty-card-shaped void at the
-  //      top of the dashboard on fresh orgs.
-  //
-  // The historical trend chip ("+18% vs last quarter") is intentionally
-  // gone — we don't have a baseline to compare against without a
-  // snapshot history table. Better to show the honest current ratio
-  // than to invent a delta.
-  const hasWins = data.ratio !== null;
-  const heroValue = hasWins
-    ? data.ratio!.toFixed(1)
-    : String(data.totalActivities);
-  const eyebrow = hasWins ? "ACTIVITIES PER WIN" : "ACTIVITIES LOGGED";
-  const subtitle = hasWins
-    ? `${data.totalActivities} ${data.totalActivities === 1 ? "activity" : "activities"} · ${data.wonDealsCount} ${data.wonDealsCount === 1 ? "win" : "wins"}`
-    : "Close a deal to start tracking your touchpoint efficiency";
+  const role = useProfile().data?.role;
+  const isManagerish = role === "manager" || role === "admin";
+  const agg = useActivityToWin(range);
+  const scope = scopeLabel(role) ?? "You";
+  const scopeChip = `${scope} · ${windowLabel}`;
+
+  if (agg.insufficientData) {
+    return (
+      <div className="flex flex-col gap-2">
+        <button type="button" onClick={() => navigate("/activities")} className={AW_HERO_CARD}>
+          <AwHeroGlyph />
+          <div className="relative flex flex-col gap-3 sm:max-w-[70%]">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-eyebrow text-text-inverse/80">ACTIVITY-TO-WIN</span>
+              <span className="rounded-radius-full bg-text-inverse/15 px-2.5 py-1 text-caption text-text-inverse/90">{scopeChip}</span>
+            </div>
+            <p className="text-heading-sm text-text-inverse">Not enough data yet</p>
+            <span className="text-caption text-text-inverse/80">
+              Close at least {AW_MIN_SAMPLE} deals with logged activity to see your typical touches and days to close.
+            </span>
+            <span className="text-caption text-text-inverse/70">
+              {agg.sampleSize} of {AW_MIN_SAMPLE} won deals so far
+            </span>
+          </div>
+        </button>
+      </div>
+    );
+  }
+
+  const band = isManagerish ? repComparisonBand(agg.rows) : null;
+  const typePills = (Object.keys(AW_TYPE_LABEL) as AwActivityType[])
+    .map((t) => ({ t, m: agg.medianByType[t] }))
+    .filter((x): x is { t: AwActivityType; m: number } => x.m != null && x.m > 0);
 
   return (
     <div className="flex flex-col gap-2">
-      <button
-        type="button"
-        onClick={() => navigate("/activities")}
-        className={cn(
-          "relative w-full overflow-hidden rounded-radius-md p-6 text-left sm:p-8",
-          "bg-gradient-to-br from-brand-gradient-from via-brand-gradient-via to-brand-gradient-to",
-          "text-text-inverse transition-shadow hover:shadow-md",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary",
-        )}
-      >
-        <Zap
-          aria-hidden
-          className={cn(
-            "pointer-events-none absolute text-text-inverse/10",
-            "right-[-24px] top-[-16px] h-40 w-40 rotate-12",
-            "sm:right-[-32px] sm:top-1/2 sm:h-64 sm:w-64 sm:-translate-y-1/2 sm:rotate-0",
-            "lg:right-[-24px] lg:h-72 lg:w-72",
-          )}
-          strokeWidth={1.25}
-        />
-
-        <div className="relative flex flex-col gap-3 sm:max-w-[60%]">
-          <div className="flex items-center gap-2">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-radius-full bg-text-inverse/15">
-              <Zap className="h-5 w-5" aria-hidden />
-            </span>
-            <span className="text-eyebrow text-text-inverse/80">{eyebrow}</span>
+      <button type="button" onClick={() => navigate("/activities")} className={AW_HERO_CARD}>
+        <AwHeroGlyph />
+        <div className="relative flex flex-col gap-4 sm:max-w-[72%]">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-eyebrow text-text-inverse/80">ACTIVITY-TO-WIN</span>
+            <span className="rounded-radius-full bg-text-inverse/15 px-2.5 py-1 text-caption text-text-inverse/90">{scopeChip}</span>
           </div>
 
-          <p className="text-kpi-lg tabular-nums leading-none text-text-inverse">
-            {heroValue}
-          </p>
+          <div className="flex flex-wrap gap-x-10 gap-y-4">
+            <div>
+              <p className="text-kpi-lg tabular-nums leading-none text-text-inverse">{fmtMedian(agg.medianTotal!)}</p>
+              <span className="text-caption text-text-inverse/80">median touches to close</span>
+            </div>
+            <div>
+              <p className="text-kpi-lg tabular-nums leading-none text-text-inverse">
+                {agg.medianBusinessDays != null ? fmtMedian(agg.medianBusinessDays) : "—"}
+              </p>
+              <span className="text-caption text-text-inverse/80">median business days to close</span>
+            </div>
+          </div>
 
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-1">
-            <span className="text-caption text-text-inverse/80">{subtitle}</span>
+          {typePills.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {typePills.map(({ t, m }) => {
+                const [sg, pl] = AW_TYPE_LABEL[t];
+                return (
+                  <span key={t} className="rounded-radius-full bg-text-inverse/15 px-2.5 py-1 text-caption text-text-inverse">
+                    {fmtMedian(m)} {m === 1 ? sg : pl}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-text-inverse/20 pt-3">
+            <span className="text-caption text-text-inverse/80">
+              Based on {agg.sampleSize} won {agg.sampleSize === 1 ? "deal" : "deals"}
+              {band?.touches ? ` · reps range ${fmtMedian(band.touches.min)}-${fmtMedian(band.touches.max)} touches` : ""}
+              {band?.businessDays ? ` · ${fmtMedian(band.businessDays.min)}-${fmtMedian(band.businessDays.max)} days` : ""}
+              {agg.unmeasuredWins > 0 ? ` · ${agg.unmeasuredWins} unmeasured` : ""}
+            </span>
             <span className="inline-flex items-center gap-1 text-caption font-medium text-text-inverse">
-              View activities <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+              View the deals <ArrowRight className="h-3.5 w-3.5" aria-hidden />
             </span>
           </div>
         </div>
@@ -815,7 +880,7 @@ function PopulatedDashboard({ firstName: _firstName }: { firstName: string }) {
 
       <div className="mt-6 flex flex-col gap-4 lg:gap-6">
         {/* LIVE — avg activities-per-win, real ratio from live data */}
-        <ActivitiesToWinHero data={data.activitiesToWin} />
+        <ActivitiesToWinHero range={range} windowLabel={rangeLabel(rangeKey)} />
 
         {/* LIVE — secondary KPI row from useDashboardData */}
         <SecondaryKpiRow kpis={data.kpis} />

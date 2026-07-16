@@ -5,7 +5,6 @@ import {
   ConversionFunnel,
   MonthlyPerformance,
   LeadSources,
-  ActivitiesToWinHero,
   TodaysSnapshot,
   TopPartners,
 } from "./DashboardPage";
@@ -72,14 +71,8 @@ describe("LeadSources drill-down", () => {
   });
 });
 
-describe("ActivitiesToWinHero drill-down", () => {
-  const data: DashboardData["activitiesToWin"] = { ratio: 4.2, totalActivities: 42, wonDealsCount: 10 };
-  it("clicking the hero navigates to activities", () => {
-    render(<ActivitiesToWinHero data={data} />);
-    fireEvent.click(screen.getByRole("button", { name: /activities per win/i }));
-    expect(navigateMock).toHaveBeenCalledWith("/activities");
-  });
-});
+// ActivitiesToWinHero has its own test file (ActivitiesToWinHero.test.tsx) now
+// that it reads useActivityToWin + useProfile directly.
 
 describe("TodaysSnapshot drill-down (regression — already wired)", () => {
   const snapshot: DashboardData["todaysSnapshot"] = { tasksDueToday: 3, partnersOverdue: 2 };
