@@ -239,7 +239,12 @@ function fmtMedian(n: number): string {
 const AW_HERO_CARD = cn(
   "relative w-full overflow-hidden rounded-radius-md p-6 text-left sm:p-8",
   "bg-gradient-to-br from-brand-gradient-from via-brand-gradient-via to-brand-gradient-to",
-  "text-text-inverse transition-shadow hover:shadow-md",
+  "text-white transition-shadow hover:shadow-md",
+  // The dark-mode gradient stops are light enough that white body text dips
+  // under WCAG AA. A dark scrim (dark mode only) deepens the surface so the
+  // small captions clear 4.5:1; light mode is unaffected (no scrim).
+  "dark:before:pointer-events-none dark:before:absolute dark:before:inset-0",
+  "dark:before:rounded-[inherit] dark:before:bg-black/30 dark:before:content-['']",
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary",
 );
 
@@ -248,7 +253,7 @@ function AwHeroGlyph() {
     <Zap
       aria-hidden
       className={cn(
-        "pointer-events-none absolute text-text-inverse/10",
+        "pointer-events-none absolute text-white/10",
         "right-[-24px] top-[-16px] h-40 w-40 rotate-12",
         "sm:right-[-32px] sm:top-1/2 sm:h-64 sm:w-64 sm:-translate-y-1/2 sm:rotate-0",
         "lg:right-[-24px] lg:h-72 lg:w-72",
@@ -281,14 +286,14 @@ export function ActivitiesToWinHero({
           <AwHeroGlyph />
           <div className="relative flex flex-col gap-3 sm:max-w-[70%]">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-eyebrow text-text-inverse/80">ACTIVITY-TO-WIN</span>
-              <span className="rounded-radius-full bg-text-inverse/15 px-2.5 py-1 text-caption text-text-inverse/90">{scopeChip}</span>
+              <span className="text-eyebrow text-white/80">ACTIVITY-TO-WIN</span>
+              <span className="rounded-radius-full bg-white/15 dark:bg-black/25 px-2.5 py-1 text-caption text-white/90">{scopeChip}</span>
             </div>
-            <p className="text-heading-sm text-text-inverse">Not enough data yet</p>
-            <span className="text-caption text-text-inverse/80">
+            <p className="text-heading-sm text-white">Not enough data yet</p>
+            <span className="text-caption text-white/80">
               Close at least {AW_MIN_SAMPLE} deals with logged activity to see your typical touches and days to close.
             </span>
-            <span className="text-caption text-text-inverse/70">
+            <span className="text-caption text-white/80">
               {agg.sampleSize} of {AW_MIN_SAMPLE} won deals so far
             </span>
           </div>
@@ -308,20 +313,20 @@ export function ActivitiesToWinHero({
         <AwHeroGlyph />
         <div className="relative flex flex-col gap-4 sm:max-w-[72%]">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-eyebrow text-text-inverse/80">ACTIVITY-TO-WIN</span>
-            <span className="rounded-radius-full bg-text-inverse/15 px-2.5 py-1 text-caption text-text-inverse/90">{scopeChip}</span>
+            <span className="text-eyebrow text-white/80">ACTIVITY-TO-WIN</span>
+            <span className="rounded-radius-full bg-white/15 dark:bg-black/25 px-2.5 py-1 text-caption text-white/90">{scopeChip}</span>
           </div>
 
           <div className="flex flex-wrap gap-x-10 gap-y-4">
             <div>
-              <p className="text-kpi-lg tabular-nums leading-none text-text-inverse">{fmtMedian(agg.medianTotal!)}</p>
-              <span className="text-caption text-text-inverse/80">median touches to close</span>
+              <p className="text-kpi-lg tabular-nums leading-none text-white">{fmtMedian(agg.medianTotal!)}</p>
+              <span className="text-caption text-white/80">median touches to close</span>
             </div>
             <div>
-              <p className="text-kpi-lg tabular-nums leading-none text-text-inverse">
+              <p className="text-kpi-lg tabular-nums leading-none text-white">
                 {agg.medianBusinessDays != null ? fmtMedian(agg.medianBusinessDays) : "-"}
               </p>
-              <span className="text-caption text-text-inverse/80">median business days to close</span>
+              <span className="text-caption text-white/80">median business days to close</span>
             </div>
           </div>
 
@@ -330,7 +335,7 @@ export function ActivitiesToWinHero({
               {typePills.map(({ t, m }) => {
                 const [sg, pl] = AW_TYPE_LABEL[t];
                 return (
-                  <span key={t} className="rounded-radius-full bg-text-inverse/15 px-2.5 py-1 text-caption text-text-inverse">
+                  <span key={t} className="rounded-radius-full bg-white/15 dark:bg-black/25 px-2.5 py-1 text-caption text-white">
                     {fmtMedian(m)} {m === 1 ? sg : pl}
                   </span>
                 );
@@ -338,14 +343,14 @@ export function ActivitiesToWinHero({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-text-inverse/20 pt-3">
-            <span className="text-caption text-text-inverse/80">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-white/25 pt-3">
+            <span className="text-caption text-white/80">
               Based on {agg.sampleSize} won {agg.sampleSize === 1 ? "deal" : "deals"}
               {band?.touches ? ` · reps range ${fmtMedian(band.touches.min)}-${fmtMedian(band.touches.max)} touches` : ""}
               {band?.businessDays ? ` · ${fmtMedian(band.businessDays.min)}-${fmtMedian(band.businessDays.max)} days` : ""}
               {agg.unmeasuredWins > 0 ? ` · ${agg.unmeasuredWins} unmeasured` : ""}
             </span>
-            <span className="inline-flex items-center gap-1 text-caption font-medium text-text-inverse">
+            <span className="inline-flex items-center gap-1 text-caption font-medium text-white">
               View the deals <ArrowRight className="h-3.5 w-3.5" aria-hidden />
             </span>
           </div>
