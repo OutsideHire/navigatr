@@ -451,27 +451,30 @@ describe("useDashboardData / persistence index", () => {
     expect(stats[2].comingSoon).toBe(true);     // response window
   });
 
-  it("touches-before-win shows the ratio when wins exist", () => {
-    dealsData = [
-      deal("won1", "won", 100, 100),
-      deal("won2", "won", 100, 100),
-    ];
-    activitiesData = Array.from({ length: 8 }, (_, i) => ({
-      id: `a-${i}`, dealId: "won1", type: "call" as const,
-      disposition: "positive_engagement" as const,
-      durationMinutes: 10, outcomeNotes: "",
-      occurredAt: "2026-05-19T10:00:00Z", followUpDate: null,
+  it("touches-before-win shows the median touches-to-close when enough wins exist", () => {
+    // Median of per-deal snapshot touch counts [4, 6, 8] = 6 — matches the
+    // hero's median, not the old activities/wins average.
+    dealsData = [4, 6, 8].map((touches, i) => ({
+      ...deal(`won${i}`, "won", 100, 100),
+      closedWonAt: "2026-05-18T12:00:00Z",
+      activityCountTotal: touches,
     }));
     const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
-    // 8 activities / 2 wins = 4.0
-    expect(result.current.persistenceIndex[0].value).toBe("4.0");
-    expect(result.current.persistenceIndex[0].caption).toMatch(/2 wins/);
+    expect(result.current.persistenceIndex[0].value).toBe("6");
+    expect(result.current.persistenceIndex[0].caption).toMatch(/median across 3 wins/);
   });
 
-  it("touches-before-win shows em-dash when no wins yet", () => {
-    dealsData = [deal("open", "qualified", 100)];
+  it("touches-before-win shows em-dash below the 3-win minimum", () => {
+    // Two measured wins is under MIN_SAMPLE, so the card gates to em-dash
+    // rather than showing a shaky median (same gate as the hero).
+    dealsData = [4, 8].map((touches, i) => ({
+      ...deal(`won${i}`, "won", 100, 100),
+      closedWonAt: "2026-05-18T12:00:00Z",
+      activityCountTotal: touches,
+    }));
     const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     expect(result.current.persistenceIndex[0].value).toBe("—");
+    expect(result.current.persistenceIndex[0].caption).toMatch(/3\+ measured wins/);
   });
 });
 

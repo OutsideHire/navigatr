@@ -27,6 +27,7 @@ import { useStageHistory } from "@/features/pipeline/hooks/useStageHistory";
 import { STAGE_LABEL, type Deal, type DealStage } from "@/features/pipeline/mockData";
 import type { Partner } from "@/features/partners/mockData";
 import { withinRange, type DateRange } from "../lib/dateRange";
+import { computeActivityToWin, MIN_SAMPLE } from "../lib/activityToWin";
 import { calendarDayDelta } from "@/lib/calendarDate";
 
 export interface DashboardKpis {
@@ -395,20 +396,30 @@ export function useDashboardData(range: DateRange): DashboardData {
     });
   }, [stageHistory]);
 
+  // Activity-to-Win aggregate — the SAME engine the hero uses (median touches
+  // per won deal from the snapshot columns), so this card can't disagree with
+  // the headline the way the old activities/wins average did.
+  const activityToWinAgg = React.useMemo(
+    () => computeActivityToWin(deals, { range }),
+    [deals, range],
+  );
+
   const persistenceIndex = React.useMemo<PersistenceStat[]>(() => {
-    // 1. Touches before win — already computed for the hero, mirror it
-    //    here so the card has a real number.
-    const touchesBeforeWin: PersistenceStat = activitiesToWin.ratio !== null
-      ? {
-          eyebrow: "TOUCHES BEFORE WIN",
-          value: activitiesToWin.ratio.toFixed(1),
-          caption: `across ${activitiesToWin.wonDealsCount} ${activitiesToWin.wonDealsCount === 1 ? "win" : "wins"}`,
-        }
-      : {
-          eyebrow: "TOUCHES BEFORE WIN",
-          value: "—",
-          caption: "needs at least one win to compute",
-        };
+    // 1. Touches before win — the median touches-to-close, gated the same way
+    //    as the hero (needs MIN_SAMPLE measured wins) so the two always match.
+    const med = activityToWinAgg.medianTotal;
+    const touchesBeforeWin: PersistenceStat =
+      !activityToWinAgg.insufficientData && med !== null
+        ? {
+            eyebrow: "TOUCHES BEFORE WIN",
+            value: Number.isInteger(med) ? String(med) : med.toFixed(1),
+            caption: `median across ${activityToWinAgg.sampleSize} ${activityToWinAgg.sampleSize === 1 ? "win" : "wins"}`,
+          }
+        : {
+            eyebrow: "TOUCHES BEFORE WIN",
+            value: "—",
+            caption: `needs ${MIN_SAMPLE}+ measured wins`,
+          };
 
     // 2 + 3. Follow-up rate + response window require data we don't yet
     //    capture (scheduled-vs-completed activities, response timestamps
@@ -429,7 +440,7 @@ export function useDashboardData(range: DateRange): DashboardData {
         comingSoon: true,
       },
     ];
-  }, [activitiesToWin]);
+  }, [activityToWinAgg]);
 
   return {
     isLoading,
