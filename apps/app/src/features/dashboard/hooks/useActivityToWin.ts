@@ -11,8 +11,10 @@ import * as React from "react";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import {
   computeActivityToWin,
+  computeActivityToLost,
   type AwFilters,
   type ActivityToWinAggregate,
+  type AwLostSummary,
 } from "../lib/activityToWin";
 import type { DateRange } from "../lib/dateRange";
 
@@ -20,6 +22,18 @@ export function useActivityToWin(range: DateRange, filters?: AwFilters): Activit
   const { data: deals = [] } = useDeals();
   return React.useMemo(
     () => computeActivityToWin(deals, { range, filters }),
+    [deals, range, filters],
+  );
+}
+
+/**
+ * The lost-side companion (Compare-to-Lost, slice 5b). Same RLS-scoped deals,
+ * same window/filters — the report only calls this when the toggle is on.
+ */
+export function useActivityToLost(range: DateRange, filters?: AwFilters): AwLostSummary {
+  const { data: deals = [] } = useDeals();
+  return React.useMemo(
+    () => computeActivityToLost(deals, { range, filters }),
     [deals, range, filters],
   );
 }

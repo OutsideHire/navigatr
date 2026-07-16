@@ -95,6 +95,12 @@ export interface Deal {
   activityCountAppointment?: number | null;
   timeToWinBusinessDays?: number | null;
   timeToWinCalendarDays?: number | null;
+  /** Compare-to-Lost snapshots (set once at Closed Lost by the DB trigger in
+   *  migration 20260716000002; null on open/won deals / older rows). Activity
+   *  counts reuse the activityCount* fields above. */
+  closedLostAt?: string | null;
+  timeToLostBusinessDays?: number | null;
+  timeToLostCalendarDays?: number | null;
   /** ICP industry for cohort filtering (deals.industry). */
   industry?: string | null;
 }

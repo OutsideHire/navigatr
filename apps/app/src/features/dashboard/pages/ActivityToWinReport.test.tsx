@@ -17,7 +17,16 @@ vi.mock("../hooks/useOrgMemberNames", () => ({
 }));
 
 let agg: ActivityToWinAggregate;
-vi.mock("../hooks/useActivityToWin", () => ({ useActivityToWin: () => agg }));
+let lostSummary: {
+  sampleSize: number;
+  insufficientData: boolean;
+  medianTotal: number | null;
+  medianBusinessDays: number | null;
+};
+vi.mock("../hooks/useActivityToWin", () => ({
+  useActivityToWin: () => agg,
+  useActivityToLost: () => lostSummary,
+}));
 
 function row(o: Partial<ActivityToWinAggregate["rows"][number]> & { dealId: string; companyName: string }) {
   return {
@@ -55,7 +64,12 @@ beforeAll(() => {
     Element.prototype.scrollIntoView = () => {};
   }
 });
-beforeEach(() => { navigateMock.mockReset(); role = "manager"; agg = populated(); });
+beforeEach(() => {
+  navigateMock.mockReset();
+  role = "manager";
+  agg = populated();
+  lostSummary = { sampleSize: 5, insufficientData: false, medianTotal: 3, medianBusinessDays: 22 };
+});
 
 describe("ActivityToWinReport", () => {
   it("shows the summary medians and sample size", () => {
@@ -163,5 +177,24 @@ describe("ActivityToWinReport", () => {
     agg = { ...populated(), rows: [], sampleSize: 0, insufficientData: true };
     renderReport();
     expect(screen.getByRole("button", { name: /export csv/i })).toBeDisabled();
+  });
+
+  it("hides the lost comparison until the toggle is on", () => {
+    renderReport();
+    expect(screen.queryByText(/Compared to lost/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /compare to lost/i }));
+
+    expect(screen.getByText(/Compared to lost/i)).toBeInTheDocument();
+    expect(screen.getByText(/median touches before loss/i)).toBeInTheDocument();
+    expect(screen.getByText(/median business days to loss/i)).toBeInTheDocument();
+    expect(screen.getByText(/5 lost deals/i)).toBeInTheDocument();
+  });
+
+  it("warns on a thin lost sample", () => {
+    lostSummary = { sampleSize: 2, insufficientData: true, medianTotal: 2, medianBusinessDays: 18 };
+    renderReport();
+    fireEvent.click(screen.getByRole("checkbox", { name: /compare to lost/i }));
+    expect(screen.getByText(/Fewer than 3 lost deals/i)).toBeInTheDocument();
   });
 });

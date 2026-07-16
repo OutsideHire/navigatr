@@ -99,6 +99,10 @@ describe("useDeals", () => {
         activityCountAppointment: null,
         timeToWinBusinessDays: null,
         timeToWinCalendarDays: null,
+        // Compare-to-Lost snapshot columns — absent on this row → null.
+        closedLostAt: null,
+        timeToLostBusinessDays: null,
+        timeToLostCalendarDays: null,
         industry: null,
       },
     ]);

@@ -50,6 +50,9 @@ interface DealRow {
   activity_count_appointment?: number | null;
   time_to_win_business_days?: number | null;
   time_to_win_calendar_days?: number | null;
+  closed_lost_at?: string | null;
+  time_to_lost_business_days?: number | null;
+  time_to_lost_calendar_days?: number | null;
   industry?: string | null;
 }
 
@@ -99,6 +102,9 @@ export function toDeal(row: DealRow): Deal {
     activityCountAppointment: row.activity_count_appointment ?? null,
     timeToWinBusinessDays: row.time_to_win_business_days ?? null,
     timeToWinCalendarDays: row.time_to_win_calendar_days ?? null,
+    closedLostAt: row.closed_lost_at ?? null,
+    timeToLostBusinessDays: row.time_to_lost_business_days ?? null,
+    timeToLostCalendarDays: row.time_to_lost_calendar_days ?? null,
     industry: row.industry ?? null,
   };
 }
@@ -123,7 +129,8 @@ export function useDeals() {
             "closed_won_at, first_activity_at, activity_count_total, " +
             "activity_count_call, activity_count_email, activity_count_dropin, " +
             "activity_count_appointment, time_to_win_business_days, " +
-            "time_to_win_calendar_days, industry",
+            "time_to_win_calendar_days, closed_lost_at, " +
+            "time_to_lost_business_days, time_to_lost_calendar_days, industry",
         )
         .order("updated_at", { ascending: false });
       if (error) throw error;

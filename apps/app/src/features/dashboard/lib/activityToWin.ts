@@ -147,6 +147,59 @@ export function repComparisonBand(rows: ActivityToWinRow[]): RepComparisonBand {
   return { touches: range(touchMedians), businessDays: range(dayMedians), repCount: byRep.size };
 }
 
+// ── Compare-to-Lost (slice 5b) ─────────────────────────────────────────────
+
+export interface AwLostSummary {
+  /** Lost deals with ≥1 logged activity before loss (median cohort). */
+  sampleSize: number;
+  insufficientData: boolean;
+  /** Median touches-before-loss over the measured cohort. */
+  medianTotal: number | null;
+  /** Median business-days-to-loss over lost deals that have a timing. */
+  medianBusinessDays: number | null;
+}
+
+/**
+ * The lost-side companion to computeActivityToWin, for the report's
+ * Compare-to-Lost toggle: median touches + median business-days over deals
+ * currently in the terminal 'lost' stage whose loss snapshot falls in the
+ * window. Same filters and MIN_SAMPLE gate as the won side so the two read
+ * consistently. Touches reuse activityCount*; timing uses the lost columns.
+ */
+export function computeActivityToLost(
+  deals: Deal[],
+  opts: { range: DateRange; filters?: AwFilters; minSample?: number },
+): AwLostSummary {
+  const minSample = opts.minSample ?? MIN_SAMPLE;
+  const f = opts.filters ?? {};
+
+  const lost = deals.filter((dl) => {
+    if (dl.stage !== "lost") return false;
+    if (!dl.closedLostAt) return false;
+    if (!withinRange(dl.closedLostAt, opts.range)) return false;
+    if (f.ownerId && dl.owner_id !== f.ownerId) return false;
+    if (f.source && leadSourceBucket(dl.leadSource) !== f.source) return false;
+    if (f.industry && (dl.industry ?? "") !== f.industry) return false;
+    if (f.valueBand) {
+      if (f.valueBand.minCents != null && dl.valueCents < f.valueBand.minCents) return false;
+      if (f.valueBand.maxCents != null && dl.valueCents >= f.valueBand.maxCents) return false;
+    }
+    return true;
+  });
+
+  const measured = lost.filter((dl) => (dl.activityCountTotal ?? 0) > 0);
+  const bizDays = lost
+    .filter((dl) => dl.timeToLostBusinessDays != null)
+    .map((dl) => dl.timeToLostBusinessDays as number);
+
+  return {
+    sampleSize: measured.length,
+    insufficientData: measured.length < minSample,
+    medianTotal: median(measured.map((dl) => dl.activityCountTotal ?? 0)),
+    medianBusinessDays: median(bizDays),
+  };
+}
+
 // ── Trend over time (slice 5a) ─────────────────────────────────────────────
 
 export interface AwTrendBucket {

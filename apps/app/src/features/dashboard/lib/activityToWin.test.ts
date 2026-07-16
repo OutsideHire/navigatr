@@ -5,6 +5,7 @@ import {
   percentile,
   stddev,
   computeActivityToWin,
+  computeActivityToLost,
   repComparisonBand,
   leadSourceBucket,
   activityToWinTrend,
@@ -324,6 +325,77 @@ function mkRow(o: Partial<ActivityToWinRow> & { dealId: string; closedWonAt: str
     ...o,
   };
 }
+
+/** Lost-deal factory. Honors an explicit `closedLostAt: null` (no snapshot). */
+function lost(o: Partial<Deal> & { id: string }): Deal {
+  return {
+    ...won({ ...o, stage: "lost" }),
+    closedWonAt: null,
+    closedLostAt: "closedLostAt" in o ? o.closedLostAt : "2026-06-15T00:00:00.000Z",
+    timeToLostBusinessDays: o.timeToLostBusinessDays,
+    timeToLostCalendarDays: o.timeToLostCalendarDays,
+  };
+}
+
+describe("computeActivityToLost", () => {
+  it("medians touches + business days over in-window lost deals", () => {
+    const deals = [
+      lost({ id: "a", activityCountTotal: 2, timeToLostBusinessDays: 30 }),
+      lost({ id: "b", activityCountTotal: 4, timeToLostBusinessDays: 40 }),
+      lost({ id: "c", activityCountTotal: 6, timeToLostBusinessDays: 50 }),
+    ];
+    const s = computeActivityToLost(deals, { range: ALL });
+    expect(s.sampleSize).toBe(3);
+    expect(s.insufficientData).toBe(false);
+    expect(s.medianTotal).toBe(4);
+    expect(s.medianBusinessDays).toBe(40);
+  });
+
+  it("ignores won deals, out-of-window losses, and unsnapshotted lost rows", () => {
+    const deals = [
+      won({ id: "w", activityCountTotal: 9, timeToWinBusinessDays: 5 }),
+      lost({ id: "old", closedLostAt: "2020-01-01T00:00:00.000Z", activityCountTotal: 3 }),
+      lost({ id: "nostamp", closedLostAt: null, activityCountTotal: 3 }),
+      lost({ id: "in", activityCountTotal: 5, timeToLostBusinessDays: 12 }),
+    ];
+    const s = computeActivityToLost(deals, { range: resolveRange("90d", NOW) });
+    expect(s.sampleSize).toBe(1);
+    expect(s.medianTotal).toBe(5);
+    expect(s.medianBusinessDays).toBe(12);
+  });
+
+  it("excludes zero-activity losses from the touch median and flags low sample", () => {
+    const s = computeActivityToLost(
+      [
+        lost({ id: "z", activityCountTotal: 0, timeToLostBusinessDays: 20 }),
+        lost({ id: "m", activityCountTotal: 4, timeToLostBusinessDays: 10 }),
+      ],
+      { range: ALL },
+    );
+    expect(s.sampleSize).toBe(1); // zero-activity loss excluded from measured
+    expect(s.insufficientData).toBe(true); // under MIN_SAMPLE
+    expect(s.medianTotal).toBe(4);
+    expect(s.medianBusinessDays).toBe(15); // timing cohort keeps both
+  });
+
+  it("honors source + value-band filters", () => {
+    const deals = [
+      lost({ id: "a", leadSource: "Cold", valueCents: 10_000_00, activityCountTotal: 3 }),
+      lost({ id: "b", leadSource: "Referral", valueCents: 200_000_00, activityCountTotal: 9 }),
+    ];
+    const bySource = computeActivityToLost(deals, { range: ALL, filters: { source: "Referral" } });
+    expect(bySource.sampleSize).toBe(1);
+    expect(bySource.medianTotal).toBe(9);
+  });
+
+  it("empty when no lost deals", () => {
+    const s = computeActivityToLost([won({ id: "w", activityCountTotal: 5 })], { range: ALL });
+    expect(s.sampleSize).toBe(0);
+    expect(s.medianTotal).toBeNull();
+    expect(s.medianBusinessDays).toBeNull();
+    expect(s.insufficientData).toBe(true);
+  });
+});
 
 describe("activityToWinTrend", () => {
   it("buckets by close month oldest→newest and computes both medians", () => {

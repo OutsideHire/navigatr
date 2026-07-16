@@ -3,20 +3,19 @@
  * (PRD §3.3.A.11, FR-DASH-AW-04/05). Lists the won deals that make up the
  * medians, with per-type touch mix, days-to-close, and outlier flags, sorted
  * by close date. Filterable by window / source / value band, with a
- * month-by-month trend and CSV export. Reps see only their own deals (RLS +
- * the rep column is hidden); managers see their team.
- *
- * Compare-to-Lost lands in a later slice (needs lost-deal snapshot data).
+ * month-by-month trend, CSV export, and an optional Compare-to-Lost toggle
+ * (won vs lost medians). Reps see only their own deals (RLS + the rep column
+ * is hidden); managers see their team.
  */
 
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Card, Select, Badge, Button } from "@/components/navigatr";
+import { Card, Select, Badge, Button, Checkbox } from "@/components/navigatr";
 import { useProfile } from "@/features/auth/useProfile";
 import { useOrgMemberNames } from "../hooks/useOrgMemberNames";
-import { useActivityToWin } from "../hooks/useActivityToWin";
+import { useActivityToWin, useActivityToLost } from "../hooks/useActivityToWin";
 import {
   VALUE_BANDS,
   activityToWinTrend,
@@ -114,6 +113,7 @@ export function ActivityToWinReport() {
   const [windowKey, setWindowKey] = React.useState<RangeKey>("90d");
   const [source, setSource] = React.useState<string>(SOURCE_ALL);
   const [bandKey, setBandKey] = React.useState<string>(BAND_ANY);
+  const [compareLost, setCompareLost] = React.useState(false); // off by default (beta)
 
   // resolveRange captures "now" per window selection (not per render).
   const range = React.useMemo(() => resolveRange(windowKey, new Date()), [windowKey]);
@@ -131,6 +131,7 @@ export function ActivityToWinReport() {
   // the summary + table.
   const windowOnly = useActivityToWin(range);
   const agg = useActivityToWin(range, filters);
+  const lost = useActivityToLost(range, filters);
 
   const sourceOptions = React.useMemo(() => {
     const set = new Set(windowOnly.rows.map((r) => r.source));
@@ -217,6 +218,28 @@ export function ActivityToWinReport() {
               )}
             </div>
           </div>
+
+          {compareLost && (
+            <div className="mt-4 flex flex-wrap items-end gap-x-10 gap-y-4 border-t border-border-subtle pt-4">
+              <span className="text-caption uppercase tracking-wide text-text-muted">Compared to lost</span>
+              <div>
+                <p className="text-heading-sm tabular-nums leading-none text-text-muted">{fmt(lost.medianTotal)}</p>
+                <span className="text-caption text-text-muted">median touches before loss</span>
+              </div>
+              <div>
+                <p className="text-heading-sm tabular-nums leading-none text-text-muted">{fmt(lost.medianBusinessDays)}</p>
+                <span className="text-caption text-text-muted">median business days to loss</span>
+              </div>
+              <div className="flex flex-col justify-center">
+                <span className="text-body-sm text-text-muted">
+                  {lost.sampleSize} lost {lost.sampleSize === 1 ? "deal" : "deals"}
+                </span>
+                {lost.insufficientData && (
+                  <span className="text-caption text-text-subtle">Fewer than 3 lost deals; indicative only.</span>
+                )}
+              </div>
+            </div>
+          )}
         </Card>
 
         {/* Trend by month */}
@@ -243,6 +266,11 @@ export function ActivityToWinReport() {
           <div className="w-40">
             <Select value={bandKey} onValueChange={setBandKey} options={bandOptions} />
           </div>
+          <Checkbox
+            label="Compare to lost"
+            checked={compareLost}
+            onCheckedChange={setCompareLost}
+          />
           <Button
             variant="secondary"
             size="sm"
