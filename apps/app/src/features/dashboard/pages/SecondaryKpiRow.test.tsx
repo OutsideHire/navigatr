@@ -76,9 +76,20 @@ describe("SecondaryKpiRow drill-down", () => {
     render(<SecondaryKpiRow kpis={KPIS} />);
     // One cue per drillable KPI (Active Leads, Pipeline Value, Won).
     expect(screen.getAllByText("By rep")).toHaveLength(3);
-    // Win Rate card carries no cue.
-    const winCard = screen.getByText("WIN RATE").closest("div");
-    expect(winCard?.textContent).not.toMatch(/By rep|View/);
+    // Win Rate card carries no cue. Walk to the card root (the eyebrow's
+    // grandparent div) so the whole card subtree — including the subtitle/cue
+    // row — is in scope; .closest("div") alone stops at the eyebrow row.
+    const winCardRoot = screen.getByText("WIN RATE").closest("div")?.parentElement;
+    expect(winCardRoot?.textContent).toContain("WIN RATE");
+    expect(winCardRoot?.textContent).not.toMatch(/By rep|View/);
+  });
+
+  it("manager: the accordion card exposes aria-expanded and toggles it on open", () => {
+    render(<SecondaryKpiRow kpis={KPIS} />);
+    const card = screen.getByText("PIPELINE VALUE").closest("[role='button']") as HTMLElement;
+    expect(card).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(card);
+    expect(card).toHaveAttribute("aria-expanded", "true");
   });
 
   it("rep: shows a 'View' drill cue (navigates), not 'By rep'", () => {

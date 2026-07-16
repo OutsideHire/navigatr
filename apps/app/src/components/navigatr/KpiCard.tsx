@@ -152,6 +152,7 @@ export const KpiCard = React.forwardRef<HTMLDivElement, KpiCardProps>(function K
       ref={ref}
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
+      aria-expanded={interactive ? action?.expanded : undefined}
       onClick={onClick}
       onKeyDown={
         interactive
@@ -203,7 +204,7 @@ export const KpiCard = React.forwardRef<HTMLDivElement, KpiCardProps>(function K
       {/* Subtitle + trend/action row. The drill affordance shares this row
           (never a new footer) so all cards in a KPI grid keep identical
           heights regardless of which are interactive. */}
-      {(subtitle || trend || action) && (
+      {(subtitle || trend || (interactive && action)) && (
         <div className="mt-auto flex items-center justify-between gap-2 pt-1">
           {subtitle ? (
             <span className={cn("min-w-0 truncate text-caption", subtitleColor)}>{subtitle}</span>
@@ -220,7 +221,7 @@ export const KpiCard = React.forwardRef<HTMLDivElement, KpiCardProps>(function K
               <TrendIcon className="h-3 w-3" aria-hidden />
               {trend.label}
             </span>
-          ) : action ? (
+          ) : interactive && action ? (
             <span
               className={cn(
                 "inline-flex shrink-0 items-center gap-1 text-caption font-medium",
