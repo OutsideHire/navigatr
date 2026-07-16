@@ -102,4 +102,16 @@ describe("ActivityToWinReport", () => {
     renderReport();
     expect(screen.getByText(/No won deals in this window/)).toBeInTheDocument();
   });
+
+  it("renders the window, source, and value-band filter controls", () => {
+    renderReport();
+    expect(screen.getAllByRole("combobox")).toHaveLength(3);
+  });
+
+  it("surfaces unmeasured wins and the low-sample caveat", () => {
+    agg = { ...populated(), sampleSize: 2, unmeasuredWins: 4, insufficientData: true };
+    renderReport();
+    expect(screen.getByText(/2 won deals · 4 unmeasured/)).toBeInTheDocument();
+    expect(screen.getByText(/Fewer than 3 deals/)).toBeInTheDocument();
+  });
 });

@@ -77,6 +77,15 @@ export function ActivityToWinReport() {
     ];
   }, [windowOnly.rows]);
 
+  // A selected source can drop out of the option set when the window changes
+  // (e.g. "Referral" picked, then a shorter window with no referral wins).
+  // Fall back to "All sources" so the dropdown never shows a stale/blank value.
+  React.useEffect(() => {
+    if (source !== SOURCE_ALL && !windowOnly.rows.some((r) => r.source === source)) {
+      setSource(SOURCE_ALL);
+    }
+  }, [windowOnly.rows, source]);
+
   const bandOptions = [
     { value: BAND_ANY, label: "Any value" },
     ...VALUE_BANDS.map((b) => ({ value: b.key, label: b.label })),
