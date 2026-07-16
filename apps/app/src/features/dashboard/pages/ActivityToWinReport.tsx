@@ -2,24 +2,28 @@
  * Activity-to-Win report — the per-deal detail behind the dashboard headline
  * (PRD §3.3.A.11, FR-DASH-AW-04/05). Lists the won deals that make up the
  * medians, with per-type touch mix, days-to-close, and outlier flags, sorted
- * by close date. Filterable by window / source / value band. Reps see only
- * their own deals (RLS + the rep column is hidden); managers see their team.
+ * by close date. Filterable by window / source / value band, with a
+ * month-by-month trend and CSV export. Reps see only their own deals (RLS +
+ * the rep column is hidden); managers see their team.
  *
- * CSV export + Compare-to-Lost land in a later slice.
+ * Compare-to-Lost lands in a later slice (needs lost-deal snapshot data).
  */
 
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Card, Select, Badge } from "@/components/navigatr";
+import { Card, Select, Badge, Button } from "@/components/navigatr";
 import { useProfile } from "@/features/auth/useProfile";
 import { useOrgMemberNames } from "../hooks/useOrgMemberNames";
 import { useActivityToWin } from "../hooks/useActivityToWin";
 import {
   VALUE_BANDS,
+  activityToWinTrend,
+  activityToWinRowsToCsv,
   type AwFilters,
   type ActivityToWinRow,
+  type AwTrendBucket,
 } from "../lib/activityToWin";
 import { RANGE_OPTIONS, rangeLabel, resolveRange, type RangeKey } from "../lib/dateRange";
 import { formatShortDate } from "@/features/pipeline/mockData";
@@ -37,6 +41,65 @@ function mixLabel(counts: ActivityToWinRow["counts"]): string {
   if (counts.dropin > 0) parts.push(`${counts.dropin}d`);
   if (counts.appointment > 0) parts.push(`${counts.appointment}a`);
   return parts.length ? parts.join(" · ") : "-";
+}
+
+/**
+ * A single month-bucketed bar chart (CSS bars, no chart lib). Bars scale to
+ * the series max; a null month renders a baseline tick rather than a 0-bar so
+ * "no measured deals" reads differently from "closed in zero touches".
+ */
+function TrendMiniChart({
+  title,
+  buckets,
+  valueOf,
+}: {
+  title: string;
+  buckets: AwTrendBucket[];
+  valueOf: (b: AwTrendBucket) => number | null;
+}) {
+  const values = buckets.map(valueOf);
+  const max = Math.max(1, ...values.filter((v): v is number => v != null));
+  return (
+    <div className="flex min-w-[180px] flex-1 flex-col gap-2">
+      <span className="text-caption uppercase tracking-wide text-text-muted">{title}</span>
+      <div className="flex h-24 items-end gap-2" role="img" aria-label={title}>
+        {buckets.map((b) => {
+          const v = valueOf(b);
+          const heightPct = v == null ? 0 : Math.max(6, Math.round((v / max) * 100));
+          return (
+            <div key={b.key} className="flex flex-1 flex-col items-center justify-end gap-1">
+              <span className="text-caption tabular-nums leading-none text-text-default">{fmt(v)}</span>
+              <div className="flex w-full max-w-[40px] flex-1 items-end">
+                {v == null ? (
+                  <div className="h-px w-full bg-border-subtle" />
+                ) : (
+                  <div
+                    className="w-full rounded-t-radius-sm bg-brand-primary"
+                    style={{ height: `${heightPct}%` }}
+                  />
+                )}
+              </div>
+              <span className="text-caption text-text-subtle">{b.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Build a CSV blob for the given rows and trigger a client-side download. */
+function downloadCsv(csv: string, filename: string) {
+  // Prepend a UTF-8 BOM (U+FEFF) so Excel opens accented names correctly.
+  const blob = new Blob(["﻿", csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 const SOURCE_ALL = "__all__";
@@ -102,6 +165,20 @@ export function ActivityToWinReport() {
       ? ` (${fmt(agg.p25BusinessDays)}-${fmt(agg.p75BusinessDays)})`
       : "";
 
+  // Trend needs ≥2 months to read as a trend; otherwise the summary says it all.
+  const trend = React.useMemo(() => activityToWinTrend(rows), [rows]);
+  const showTrend = trend.length >= 2;
+
+  const repName = React.useCallback(
+    (ownerId: string | null) => (ownerId ? memberNames.get(ownerId) ?? "Unassigned" : "Unassigned"),
+    [memberNames],
+  );
+
+  const handleExport = React.useCallback(() => {
+    const csv = activityToWinRowsToCsv(rows, { includeRep: isManagerish, repName });
+    downloadCsv(csv, `activity-to-win-${range.toIso.slice(0, 10)}.csv`);
+  }, [rows, isManagerish, repName, range.toIso]);
+
   return (
     <div className="mx-auto w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
       <div className="flex flex-col gap-4 lg:gap-6">
@@ -142,8 +219,21 @@ export function ActivityToWinReport() {
           </div>
         </Card>
 
-        {/* Filters */}
-        <div className="flex flex-wrap gap-3">
+        {/* Trend by month */}
+        {showTrend && (
+          <Card padding="lg" shadow="sm">
+            <div className="flex flex-col gap-4">
+              <span className="text-body-sm font-medium text-text-default">Trend by close month</span>
+              <div className="flex flex-wrap gap-x-10 gap-y-6">
+                <TrendMiniChart title="Median touches" buckets={trend} valueOf={(b) => b.medianTotal} />
+                <TrendMiniChart title="Median business days" buckets={trend} valueOf={(b) => b.medianBusinessDays} />
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Filters + export */}
+        <div className="flex flex-wrap items-center gap-3">
           <div className="w-40">
             <Select value={windowKey} onValueChange={(v) => setWindowKey(v as RangeKey)} options={RANGE_OPTIONS.map((o) => ({ value: o.key, label: o.label }))} />
           </div>
@@ -153,6 +243,15 @@ export function ActivityToWinReport() {
           <div className="w-40">
             <Select value={bandKey} onValueChange={setBandKey} options={bandOptions} />
           </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="ml-auto"
+            onClick={handleExport}
+            disabled={rows.length === 0}
+          >
+            <Download className="h-4 w-4" aria-hidden /> Export CSV
+          </Button>
         </div>
 
         {/* Detail table */}

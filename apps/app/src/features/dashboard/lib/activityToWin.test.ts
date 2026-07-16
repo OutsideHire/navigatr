@@ -7,7 +7,10 @@ import {
   computeActivityToWin,
   repComparisonBand,
   leadSourceBucket,
+  activityToWinTrend,
+  activityToWinRowsToCsv,
   type AwFilters,
+  type ActivityToWinRow,
 } from "./activityToWin";
 import type { Deal } from "@/features/pipeline/mockData";
 import { resolveRange } from "./dateRange";
@@ -299,5 +302,93 @@ describe("repComparisonBand", () => {
     expect(band.repCount).toBe(1);
     expect(band.touches).toBeNull();
     expect(band.businessDays).toBeNull();
+  });
+});
+
+/**
+ * Minimal ActivityToWinRow factory for the trend/CSV pure functions. Spreads
+ * overrides last so an explicit `null` (e.g. businessDays) is honored, not
+ * coerced back to the default.
+ */
+function mkRow(o: Partial<ActivityToWinRow> & { dealId: string; closedWonAt: string }): ActivityToWinRow {
+  return {
+    companyName: o.dealId,
+    ownerId: "u1",
+    source: "Cold",
+    valueCents: 50_000_00,
+    firstActivityAt: null,
+    counts: { total: 5, call: 2, email: 1, dropin: 2, appointment: 0 },
+    businessDays: 8,
+    calendarDays: 11,
+    isOutlier: false,
+    ...o,
+  };
+}
+
+describe("activityToWinTrend", () => {
+  it("buckets by close month oldest→newest and computes both medians", () => {
+    const trend = activityToWinTrend([
+      mkRow({ dealId: "a", closedWonAt: "2026-06-02T00:00:00.000Z", counts: { total: 4, call: 4, email: 0, dropin: 0, appointment: 0 }, businessDays: 10 }),
+      mkRow({ dealId: "b", closedWonAt: "2026-06-20T00:00:00.000Z", counts: { total: 8, call: 8, email: 0, dropin: 0, appointment: 0 }, businessDays: 20 }),
+      mkRow({ dealId: "c", closedWonAt: "2026-05-15T00:00:00.000Z", counts: { total: 6, call: 6, email: 0, dropin: 0, appointment: 0 }, businessDays: 6 }),
+    ]);
+    expect(trend.map((b) => b.key)).toEqual(["2026-05", "2026-06"]);
+    expect(trend.map((b) => b.label)).toEqual(["May", "Jun"]);
+    expect(trend[0]).toMatchObject({ wonCount: 1, medianTotal: 6, medianBusinessDays: 6 });
+    expect(trend[1]).toMatchObject({ wonCount: 2, medianTotal: 6, medianBusinessDays: 15 });
+  });
+
+  it("excludes zero-activity deals from the touch median but counts them in wonCount", () => {
+    const [bucket] = activityToWinTrend([
+      mkRow({ dealId: "a", closedWonAt: "2026-06-02T00:00:00.000Z", counts: { total: 0, call: 0, email: 0, dropin: 0, appointment: 0 }, businessDays: null }),
+      mkRow({ dealId: "b", closedWonAt: "2026-06-10T00:00:00.000Z", counts: { total: 4, call: 4, email: 0, dropin: 0, appointment: 0 }, businessDays: 4 }),
+    ]);
+    expect(bucket).toMatchObject({ wonCount: 2, medianTotal: 4, medianBusinessDays: 4 });
+  });
+
+  it("adds a 2-digit year to labels when the trend spans multiple years", () => {
+    const trend = activityToWinTrend([
+      mkRow({ dealId: "a", closedWonAt: "2025-12-10T00:00:00.000Z" }),
+      mkRow({ dealId: "b", closedWonAt: "2026-01-10T00:00:00.000Z" }),
+    ]);
+    expect(trend.map((b) => b.label)).toEqual(["Dec '25", "Jan '26"]);
+  });
+
+  it("returns an empty array for no rows", () => {
+    expect(activityToWinTrend([])).toEqual([]);
+  });
+});
+
+describe("activityToWinRowsToCsv", () => {
+  it("emits a header and one CRLF-terminated line per row with raw values", () => {
+    const csv = activityToWinRowsToCsv([
+      mkRow({ dealId: "a", companyName: "Northside Diner", source: "Cold", valueCents: 5_000_000, closedWonAt: "2026-06-02T00:00:00.000Z", counts: { total: 5, call: 2, email: 1, dropin: 2, appointment: 0 }, businessDays: 8, calendarDays: 11 }),
+    ]);
+    const [header, row] = csv.split("\r\n");
+    expect(header).toBe("Company,Total touches,Calls,Emails,Drop-ins,Appointments,Business days,Calendar days,Source,Value (USD),Closed,Outlier");
+    expect(row).toBe("Northside Diner,5,2,1,2,0,8,11,Cold,50000.00,2026-06-02,");
+  });
+
+  it("adds the Rep column and resolves names when includeRep is set", () => {
+    const csv = activityToWinRowsToCsv(
+      [mkRow({ dealId: "a", ownerId: "u2", closedWonAt: "2026-06-02T00:00:00.000Z" })],
+      { includeRep: true, repName: (id) => (id === "u2" ? "Marcus Tan" : "Unassigned") },
+    );
+    expect(csv.split("\r\n")[0]).toContain("Company,Rep,Total touches");
+    expect(csv.split("\r\n")[1]).toContain("Marcus Tan");
+  });
+
+  it("escapes commas, quotes, and blanks null days / non-outliers", () => {
+    const csv = activityToWinRowsToCsv([
+      mkRow({ dealId: "a", companyName: 'Smith, Jones & "Co"', closedWonAt: "2026-06-02T00:00:00.000Z", businessDays: null, calendarDays: null, isOutlier: true }),
+    ]);
+    const row = csv.split("\r\n")[1]!;
+    expect(row).toContain('"Smith, Jones & ""Co"""');
+    expect(row).toContain(",,,Cold,"); // empty business + calendar days
+    expect(row.endsWith(",yes")).toBe(true);
+  });
+
+  it("emits only the header for no rows", () => {
+    expect(activityToWinRowsToCsv([]).split("\r\n")).toHaveLength(1);
   });
 });

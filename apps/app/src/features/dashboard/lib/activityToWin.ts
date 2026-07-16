@@ -147,6 +147,117 @@ export function repComparisonBand(rows: ActivityToWinRow[]): RepComparisonBand {
   return { touches: range(touchMedians), businessDays: range(dayMedians), repCount: byRep.size };
 }
 
+// ── Trend over time (slice 5a) ─────────────────────────────────────────────
+
+export interface AwTrendBucket {
+  /** Calendar month of close, "YYYY-MM" (UTC). */
+  key: string;
+  /** Short display label, e.g. "Jun" (or "Jun '25" when the trend spans years). */
+  label: string;
+  /** Won deals closing in the month (all, including zero-activity). */
+  wonCount: number;
+  /** Median touches-to-close over the month's measured deals (activity > 0). */
+  medianTotal: number | null;
+  /** Median business-days-to-close over the month's timed deals. */
+  medianBusinessDays: number | null;
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * Bucket won-deal rows into calendar months of close and compute the two
+ * medians per month, so the report can show whether deals are trending toward
+ * fewer touches / faster closes. Only months that contain a won deal appear
+ * (sparse beta data reads better without empty gaps), sorted oldest → newest.
+ * Labels carry a 2-digit year only when the trend spans more than one year.
+ */
+export function activityToWinTrend(rows: ActivityToWinRow[]): AwTrendBucket[] {
+  const byMonth = new Map<string, ActivityToWinRow[]>();
+  for (const r of rows) {
+    const key = r.closedWonAt.slice(0, 7); // "YYYY-MM" (UTC, lexicographic-safe)
+    const group = byMonth.get(key);
+    if (group) group.push(r);
+    else byMonth.set(key, [r]);
+  }
+
+  const keys = [...byMonth.keys()].sort();
+  const spansYears = keys.length > 0 && keys[0]!.slice(0, 4) !== keys[keys.length - 1]!.slice(0, 4);
+
+  return keys.map((key) => {
+    const group = byMonth.get(key)!;
+    const monthIdx = Number(key.slice(5, 7)) - 1;
+    const label = spansYears ? `${MONTHS[monthIdx]} '${key.slice(2, 4)}` : MONTHS[monthIdx]!;
+    return {
+      key,
+      label,
+      wonCount: group.length,
+      medianTotal: median(group.filter((r) => r.counts.total > 0).map((r) => r.counts.total)),
+      medianBusinessDays: median(
+        group.filter((r) => r.businessDays != null).map((r) => r.businessDays as number),
+      ),
+    };
+  });
+}
+
+// ── CSV export (slice 5a) ──────────────────────────────────────────────────
+
+/** RFC-4180 field escape: quote when the value holds a comma, quote, or newline. */
+function csvField(value: string | number): string {
+  const s = String(value);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+export interface AwCsvOptions {
+  /** Include a Rep column (managers/admins only). */
+  includeRep?: boolean;
+  /** ownerId → display name; unresolved / null owners render "Unassigned". */
+  repName?: (ownerId: string | null) => string;
+}
+
+/**
+ * Serialize the drill-down rows to a spreadsheet-friendly CSV. Numbers stay
+ * raw (dollars, integer days) and dates are YYYY-MM-DD so Excel/Sheets parse
+ * them without coercion. Row order matches whatever the caller passes in.
+ */
+export function activityToWinRowsToCsv(rows: ActivityToWinRow[], opts: AwCsvOptions = {}): string {
+  const header = [
+    "Company",
+    ...(opts.includeRep ? ["Rep"] : []),
+    "Total touches",
+    "Calls",
+    "Emails",
+    "Drop-ins",
+    "Appointments",
+    "Business days",
+    "Calendar days",
+    "Source",
+    "Value (USD)",
+    "Closed",
+    "Outlier",
+  ];
+
+  const lines = [header.map(csvField).join(",")];
+  for (const r of rows) {
+    const cells: (string | number)[] = [
+      r.companyName,
+      ...(opts.includeRep ? [opts.repName ? opts.repName(r.ownerId) : (r.ownerId ?? "Unassigned")] : []),
+      r.counts.total,
+      r.counts.call,
+      r.counts.email,
+      r.counts.dropin,
+      r.counts.appointment,
+      r.businessDays ?? "",
+      r.calendarDays ?? "",
+      r.source,
+      (r.valueCents / 100).toFixed(2),
+      r.closedWonAt.slice(0, 10),
+      r.isOutlier ? "yes" : "",
+    ];
+    lines.push(cells.map(csvField).join(","));
+  }
+  return lines.join("\r\n");
+}
+
 // ── Aggregation ──────────────────────────────────────────────────────────
 
 export function computeActivityToWin(

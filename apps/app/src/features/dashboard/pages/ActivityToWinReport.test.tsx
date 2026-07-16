@@ -114,4 +114,54 @@ describe("ActivityToWinReport", () => {
     expect(screen.getByText(/2 won deals · 4 unmeasured/)).toBeInTheDocument();
     expect(screen.getByText(/Fewer than 3 deals/)).toBeInTheDocument();
   });
+
+  it("shows the month trend when the window spans 2+ months", () => {
+    renderReport(); // fixture spans Jun + Jul 2026
+    expect(screen.getByText(/Trend by close month/)).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Median touches" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Median business days" })).toBeInTheDocument();
+  });
+
+  it("hides the trend when all wins fall in a single month", () => {
+    agg = {
+      ...populated(),
+      rows: [
+        row({ dealId: "d1", companyName: "Northside Diner", closedWonAt: "2026-07-02T00:00:00.000Z" }),
+        row({ dealId: "d2", companyName: "Beacon Auto", closedWonAt: "2026-07-10T00:00:00.000Z" }),
+      ],
+    };
+    renderReport();
+    expect(screen.queryByText(/Trend by close month/)).toBeNull();
+  });
+
+  it("exports the visible rows to CSV on click", () => {
+    const createObjectURL = vi.fn(() => "blob:mock");
+    const revokeObjectURL = vi.fn();
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = createObjectURL as unknown as typeof URL.createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL as unknown as typeof URL.revokeObjectURL;
+    let downloadName = "";
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        downloadName = this.download;
+      });
+
+    renderReport();
+    fireEvent.click(screen.getByRole("button", { name: /export csv/i }));
+
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    expect(downloadName).toMatch(/^activity-to-win-\d{4}-\d{2}-\d{2}\.csv$/);
+
+    clickSpy.mockRestore();
+    URL.createObjectURL = origCreate;
+    URL.revokeObjectURL = origRevoke;
+  });
+
+  it("disables export when there are no rows", () => {
+    agg = { ...populated(), rows: [], sampleSize: 0, insufficientData: true };
+    renderReport();
+    expect(screen.getByRole("button", { name: /export csv/i })).toBeDisabled();
+  });
 });
