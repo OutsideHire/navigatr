@@ -137,6 +137,11 @@ export function computeActivityToWin(
 
   const totals = measured.map((dl) => dl.activityCountTotal ?? 0);
   const bizDays = timed.map((dl) => dl.timeToWinBusinessDays as number);
+  // Calendar-days median over its OWN non-null cohort (not the business-days
+  // cohort) so it never depends on the two columns being co-null.
+  const calDays = won
+    .filter((dl) => dl.timeToWinCalendarDays != null)
+    .map((dl) => dl.timeToWinCalendarDays as number);
   const medTotal = median(totals);
   const medBiz = median(bizDays);
   const sdTotal = stddev(totals);
@@ -144,7 +149,9 @@ export function computeActivityToWin(
 
   const isOutlier = (dl: Deal): boolean => {
     const t = dl.activityCountTotal ?? 0;
-    const totalOut = medTotal != null && sdTotal > 0 && Math.abs(t - medTotal) > 2 * sdTotal;
+    // Only measured-cohort deals (activity > 0) can be Component-A outliers;
+    // zero-activity wins are excluded from the component entirely.
+    const totalOut = t > 0 && medTotal != null && sdTotal > 0 && Math.abs(t - medTotal) > 2 * sdTotal;
     const b = dl.timeToWinBusinessDays;
     const bizOut = b != null && medBiz != null && sdBiz > 0 && Math.abs(b - medBiz) > 2 * sdBiz;
     return Boolean(totalOut || bizOut);
@@ -184,7 +191,7 @@ export function computeActivityToWin(
     },
     timingSampleSize: timed.length,
     medianBusinessDays: medBiz,
-    medianCalendarDays: median(timed.map((dl) => dl.timeToWinCalendarDays as number)),
+    medianCalendarDays: median(calDays),
     p25BusinessDays: percentile(bizDays, 0.25),
     p75BusinessDays: percentile(bizDays, 0.75),
     rows,

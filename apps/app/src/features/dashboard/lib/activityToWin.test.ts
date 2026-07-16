@@ -199,6 +199,31 @@ describe("computeActivityToWin", () => {
     expect(agg.rows.every((r) => !r.isOutlier)).toBe(true);
   });
 
+  it("never flags a zero-activity (unmeasured) win as a Component-A outlier", () => {
+    // z's total (0) is far from the measured cohort median, but it is excluded
+    // from Component A, so it must not receive an activity-volume outlier badge.
+    const deals = [
+      won({ id: "a", activityCountTotal: 8, timeToWinBusinessDays: 8 }),
+      won({ id: "b", activityCountTotal: 9, timeToWinBusinessDays: 9 }),
+      won({ id: "c", activityCountTotal: 10, timeToWinBusinessDays: 10 }),
+      won({ id: "d", activityCountTotal: 11, timeToWinBusinessDays: 11 }),
+      won({ id: "e", activityCountTotal: 12, timeToWinBusinessDays: 12 }),
+      won({ id: "z", activityCountTotal: 0, timeToWinBusinessDays: null }),
+    ];
+    const agg = computeActivityToWin(deals, { range: ALL });
+    expect(agg.rows.find((r) => r.dealId === "z")!.isOutlier).toBe(false);
+  });
+
+  it("computes median calendar days over the calendar-days cohort", () => {
+    const deals = [
+      won({ id: "a", activityCountTotal: 3, timeToWinBusinessDays: 3, timeToWinCalendarDays: 4 }),
+      won({ id: "b", activityCountTotal: 3, timeToWinBusinessDays: 5, timeToWinCalendarDays: 8 }),
+      won({ id: "c", activityCountTotal: 3, timeToWinBusinessDays: 7, timeToWinCalendarDays: 10 }),
+    ];
+    const agg = computeActivityToWin(deals, { range: ALL });
+    expect(agg.medianCalendarDays).toBe(8);
+  });
+
   it("filters by owner, source (incl Other), industry, and value band", () => {
     const deals = [
       won({ id: "u1a", owner_id: "u1", leadSource: "Cold outreach", industry: "retail", valueCents: 10_000_00, activityCountTotal: 3, timeToWinBusinessDays: 3 }),
