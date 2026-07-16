@@ -57,6 +57,9 @@ const CreateOrganizationPage = lazy(() =>
 const DashboardPage = lazy(() =>
   import("@/features/dashboard/pages/DashboardPage").then((m) => ({ default: m.DashboardPage })),
 );
+const ActivityToWinReport = lazy(() =>
+  import("@/features/dashboard/pages/ActivityToWinReport").then((m) => ({ default: m.ActivityToWinReport })),
+);
 const PipelinePage = lazy(() =>
   import("@/features/pipeline/pages/PipelinePage").then((m) => ({ default: m.PipelinePage })),
 );
@@ -239,6 +242,14 @@ export function App() {
             element={
               <ProtectedRoute>
                 <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard/activity-to-win"
+            element={
+              <ProtectedRoute>
+                <ActivityToWinReport />
               </ProtectedRoute>
             }
           />

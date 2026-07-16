@@ -93,10 +93,10 @@ describe("ActivitiesToWinHero", () => {
     expect(screen.getByText(/3 unmeasured/)).toBeInTheDocument();
   });
 
-  it("clicking the hero navigates to the activity list", () => {
+  it("clicking the hero navigates to the Activity-to-Win report", () => {
     agg = populated();
     render(<ActivitiesToWinHero range={RANGE} windowLabel="Last 90 days" />);
     fireEvent.click(screen.getByRole("button", { name: /activity-to-win/i }));
-    expect(navigateMock).toHaveBeenCalledWith("/activities");
+    expect(navigateMock).toHaveBeenCalledWith("/dashboard/activity-to-win");
   });
 });

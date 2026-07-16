@@ -277,7 +277,7 @@ export function ActivitiesToWinHero({
   if (agg.insufficientData) {
     return (
       <div className="flex flex-col gap-2">
-        <button type="button" onClick={() => navigate("/activities")} className={AW_HERO_CARD}>
+        <button type="button" onClick={() => navigate("/dashboard/activity-to-win")} className={AW_HERO_CARD}>
           <AwHeroGlyph />
           <div className="relative flex flex-col gap-3 sm:max-w-[70%]">
             <div className="flex items-center justify-between gap-2">
@@ -304,7 +304,7 @@ export function ActivitiesToWinHero({
 
   return (
     <div className="flex flex-col gap-2">
-      <button type="button" onClick={() => navigate("/activities")} className={AW_HERO_CARD}>
+      <button type="button" onClick={() => navigate("/dashboard/activity-to-win")} className={AW_HERO_CARD}>
         <AwHeroGlyph />
         <div className="relative flex flex-col gap-4 sm:max-w-[72%]">
           <div className="flex items-center justify-between gap-2">
