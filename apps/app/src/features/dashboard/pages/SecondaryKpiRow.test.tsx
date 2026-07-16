@@ -71,4 +71,20 @@ describe("SecondaryKpiRow drill-down", () => {
     render(<SecondaryKpiRow kpis={KPIS} />);
     expect(screen.getByText("WIN RATE").closest("[role='button']")).toBeNull();
   });
+
+  it("manager: shows a 'By rep' drill cue on the three drillable cards, not on Win Rate", () => {
+    render(<SecondaryKpiRow kpis={KPIS} />);
+    // One cue per drillable KPI (Active Leads, Pipeline Value, Won).
+    expect(screen.getAllByText("By rep")).toHaveLength(3);
+    // Win Rate card carries no cue.
+    const winCard = screen.getByText("WIN RATE").closest("div");
+    expect(winCard?.textContent).not.toMatch(/By rep|View/);
+  });
+
+  it("rep: shows a 'View' drill cue (navigates), not 'By rep'", () => {
+    role = "rep";
+    render(<SecondaryKpiRow kpis={KPIS} />);
+    expect(screen.getAllByText("View")).toHaveLength(3);
+    expect(screen.queryByText("By rep")).toBeNull();
+  });
 });

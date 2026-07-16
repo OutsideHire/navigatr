@@ -280,6 +280,9 @@ export function ActivitiesToWinHero({ data }: { data: DashboardData["activitiesT
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-1">
             <span className="text-caption text-text-inverse/80">{subtitle}</span>
+            <span className="inline-flex items-center gap-1 text-caption font-medium text-text-inverse">
+              View activities <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+            </span>
           </div>
         </div>
       </button>
@@ -340,6 +343,16 @@ export function SecondaryKpiRow({ kpis }: { kpis: DashboardData["kpis"] }) {
     return () => navigate("/pipeline"); // reps drill to their own list
   };
 
+  // At-rest drill affordance shown on each card's subtitle row so the
+  // interaction is discoverable without hovering. Managers/admins get an
+  // accordion cue ("By rep", chevron rotates when open); reps get a
+  // navigate cue ("View"). Win Rate is not drillable → no cue.
+  const cardAction = (metric: KpiMetric | undefined): { label: string; expanded?: boolean } | undefined => {
+    if (!metric) return undefined;
+    if (isManagerish) return { label: "By rep", expanded: openMetric === metric };
+    return { label: "View" };
+  };
+
   const PANEL_TITLE: Record<KpiMetric, string> = {
     activeLeads: "Active leads by rep",
     pipelineValue: "Pipeline value by rep",
@@ -366,6 +379,7 @@ export function SecondaryKpiRow({ kpis }: { kpis: DashboardData["kpis"] }) {
               accent={kpi.accent}
               size="standard"
               onClick={cardClick(kpi.metric)}
+              action={cardAction(kpi.metric)}
             />
           </div>
         ))}
@@ -423,6 +437,7 @@ export function PipelineByStage({ byStage }: { byStage: DashboardData["byStage"]
                 />
               </div>
             </div>
+            <ChevronRight className="h-4 w-4 shrink-0 text-text-subtle" aria-hidden />
           </button>
         ))}
       </div>
@@ -525,7 +540,9 @@ export function MonthlyPerformance({ months }: { months: DashboardData["monthlyP
       <SectionHeader
         title="Monthly performance"
         action={
-          <Button variant="tertiary" size="sm" leadingIcon={Clock4}>Last 4 months</Button>
+          <Button variant="tertiary" size="sm" trailingIcon={ArrowRight} onClick={() => navigate("/pipeline?stage=won")}>
+            View won
+          </Button>
         }
       />
       {!hasAnyWins && (
@@ -706,6 +723,7 @@ export function LeadSources({ leadSources }: { leadSources: DashboardData["leadS
             <span className={cn("h-2.5 w-2.5 shrink-0 rounded-radius-full", labelColor.get(seg.label))} aria-hidden />
             <span className="text-body-sm text-text-default">{seg.label}</span>
             <span className="ml-auto text-body-sm tabular-nums text-text-muted">{seg.percent}%</span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-text-subtle" aria-hidden />
           </button>
         ))}
       </div>
@@ -740,29 +758,32 @@ export function ConversionFunnel({ funnel }: { funnel: DashboardData["conversion
             key={`${step.from}-${step.to}`}
             type="button"
             onClick={() => navigate(`/pipeline?stage=${step.to}`)}
-            className="flex w-full flex-col gap-1.5 rounded-radius-md px-1 py-1 text-left transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+            className="flex w-full items-center gap-3 rounded-radius-md px-1 py-1 text-left transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
           >
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-body-md text-text-default">
-                {step.fromLabel} <ArrowRight className="inline h-3 w-3 text-text-subtle" aria-hidden /> {step.toLabel}
-              </span>
-              <span className="text-body-strong tabular-nums text-text-default">
-                {step.rate}%
-                <span className="ml-2 text-caption font-normal text-text-muted">
-                  ({step.fromCount} → {step.toCount})
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-body-md text-text-default">
+                  {step.fromLabel} <ArrowRight className="inline h-3 w-3 text-text-subtle" aria-hidden /> {step.toLabel}
                 </span>
-              </span>
+                <span className="text-body-strong tabular-nums text-text-default">
+                  {step.rate}%
+                  <span className="ml-2 text-caption font-normal text-text-muted">
+                    ({step.fromCount} → {step.toCount})
+                  </span>
+                </span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-radius-full bg-surface-sunken">
+                <div
+                  className={cn(
+                    "h-full rounded-radius-full",
+                    step.rate >= 70 ? "bg-status-success" : step.rate >= 50 ? "bg-accent-teal" : "bg-status-warning",
+                  )}
+                  style={{ width: `${step.rate}%` }}
+                  aria-hidden
+                />
+              </div>
             </div>
-            <div className="h-2 w-full overflow-hidden rounded-radius-full bg-surface-sunken">
-              <div
-                className={cn(
-                  "h-full rounded-radius-full",
-                  step.rate >= 70 ? "bg-status-success" : step.rate >= 50 ? "bg-accent-teal" : "bg-status-warning",
-                )}
-                style={{ width: `${step.rate}%` }}
-                aria-hidden
-              />
-            </div>
+            <ChevronRight className="h-4 w-4 shrink-0 text-text-subtle" aria-hidden />
           </button>
         ))}
       </div>

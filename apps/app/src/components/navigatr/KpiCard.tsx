@@ -36,7 +36,7 @@
  */
 
 import * as React from "react";
-import { TrendingUp, TrendingDown, type LucideIcon } from "lucide-react";
+import { TrendingUp, TrendingDown, ChevronRight, ChevronDown, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type KpiAccent = "teal" | "violet" | "blue" | "orange" | "indigo" | "pink";
@@ -88,6 +88,10 @@ export interface KpiCardProps extends Omit<React.HTMLAttributes<HTMLDivElement>,
   gradient?: boolean;
   /** Renders the card as a clickable surface (focus ring + cursor pointer). */
   onClick?: () => void;
+  /** Optional drill affordance shown on the subtitle row when interactive.
+   *  `expanded` defined → accordion (chevron-down, rotates up when open);
+   *  `expanded` undefined → navigates (chevron-right). */
+  action?: { label: string; expanded?: boolean };
 }
 
 export const KpiCard = React.forwardRef<HTMLDivElement, KpiCardProps>(function KpiCard(
@@ -101,6 +105,7 @@ export const KpiCard = React.forwardRef<HTMLDivElement, KpiCardProps>(function K
     size = "standard",
     gradient = false,
     onClick,
+    action,
     className,
     ...rest
   },
@@ -195,25 +200,44 @@ export const KpiCard = React.forwardRef<HTMLDivElement, KpiCardProps>(function K
         {value}
       </p>
 
-      {/* Subtitle + trend row */}
-      {(subtitle || trend) && (
+      {/* Subtitle + trend/action row. The drill affordance shares this row
+          (never a new footer) so all cards in a KPI grid keep identical
+          heights regardless of which are interactive. */}
+      {(subtitle || trend || action) && (
         <div className="mt-auto flex items-center justify-between gap-2 pt-1">
           {subtitle ? (
-            <span className={cn("text-caption", subtitleColor)}>{subtitle}</span>
+            <span className={cn("min-w-0 truncate text-caption", subtitleColor)}>{subtitle}</span>
           ) : (
             <span />
           )}
-          {trend && (
+          {trend ? (
             <span
               className={cn(
-                "inline-flex items-center gap-1 rounded-radius-full px-2 py-0.5 text-caption font-medium tabular-nums",
+                "inline-flex shrink-0 items-center gap-1 rounded-radius-full px-2 py-0.5 text-caption font-medium tabular-nums",
                 trendPillClass,
               )}
             >
               <TrendIcon className="h-3 w-3" aria-hidden />
               {trend.label}
             </span>
-          )}
+          ) : action ? (
+            <span
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1 text-caption font-medium",
+                gradient ? "text-text-inverse" : "text-brand-primary",
+              )}
+            >
+              {action.label}
+              {action.expanded === undefined ? (
+                <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+              ) : (
+                <ChevronDown
+                  className={cn("h-3.5 w-3.5 transition-transform", action.expanded && "rotate-180")}
+                  aria-hidden
+                />
+              )}
+            </span>
+          ) : null}
         </div>
       )}
     </div>

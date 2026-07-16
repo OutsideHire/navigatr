@@ -52,6 +52,12 @@ describe("MonthlyPerformance drill-down", () => {
     fireEvent.click(screen.getByRole("button", { name: /Jul/ }));
     expect(navigateMock).toHaveBeenCalledWith("/pipeline?stage=won");
   });
+
+  it("the 'View won' header action navigates to the won-deals list", () => {
+    render(<MonthlyPerformance months={months} />);
+    fireEvent.click(screen.getByRole("button", { name: /view won/i }));
+    expect(navigateMock).toHaveBeenCalledWith("/pipeline?stage=won");
+  });
 });
 
 describe("LeadSources drill-down", () => {
