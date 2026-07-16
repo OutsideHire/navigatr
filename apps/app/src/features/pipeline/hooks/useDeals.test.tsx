@@ -89,6 +89,17 @@ describe("useDeals", () => {
         // Absent on the row → mapper defaults it to null (not undefined),
         // so toEqual needs it spelled out explicitly here.
         followupCalendarSyncStatus: null,
+        // Activity-to-Win snapshot columns — absent on this row → null.
+        closedWonAt: null,
+        firstActivityAt: null,
+        activityCountTotal: null,
+        activityCountCall: null,
+        activityCountEmail: null,
+        activityCountDropin: null,
+        activityCountAppointment: null,
+        timeToWinBusinessDays: null,
+        timeToWinCalendarDays: null,
+        industry: null,
       },
     ]);
   });

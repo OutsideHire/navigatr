@@ -84,6 +84,19 @@ export interface Deal {
    *  Google Calendar event and stamps this column. Null when the deal has
    *  no follow-up to sync or the column isn't populated yet (older rows). */
   followupCalendarSyncStatus?: "pending" | "synced" | "error" | null;
+  /** Activity-to-Win snapshots (set once at Closed Won by the DB trigger in
+   *  migration 20260716000001; null on open deals / older rows). */
+  closedWonAt?: string | null;
+  firstActivityAt?: string | null;
+  activityCountTotal?: number | null;
+  activityCountCall?: number | null;
+  activityCountEmail?: number | null;
+  activityCountDropin?: number | null;
+  activityCountAppointment?: number | null;
+  timeToWinBusinessDays?: number | null;
+  timeToWinCalendarDays?: number | null;
+  /** ICP industry for cohort filtering (deals.industry). */
+  industry?: string | null;
 }
 
 // Static "today" so subsequent renders don't shift cards' relative dates.
