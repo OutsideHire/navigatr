@@ -41,7 +41,13 @@ beforeEach(() => {
 describe("useOrganization", () => {
   it("maps invite_code → inviteCode and returns the org row", async () => {
     singleMock.mockResolvedValueOnce({
-      data: { id: "org-1", name: "Outside Hire", invite_code: "NAV-LAUNCH-001" },
+      data: {
+        id: "org-1",
+        name: "Outside Hire",
+        invite_code: "NAV-LAUNCH-001",
+        aw_value_band_low_cents: 50_000_00,
+        aw_value_band_high_cents: 250_000_00,
+      },
       error: null,
     });
     const { result } = renderHook(() => useOrganization(), { wrapper });
@@ -50,7 +56,20 @@ describe("useOrganization", () => {
       id: "org-1",
       name: "Outside Hire",
       inviteCode: "NAV-LAUNCH-001",
+      valueBandLowCents: 50_000_00,
+      valueBandHighCents: 250_000_00,
     });
+  });
+
+  it("defaults value bands to null when the columns are absent", async () => {
+    singleMock.mockResolvedValueOnce({
+      data: { id: "org-1", name: "Outside Hire", invite_code: "NAV-LAUNCH-001" },
+      error: null,
+    });
+    const { result } = renderHook(() => useOrganization(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.valueBandLowCents).toBeNull();
+    expect(result.current.data?.valueBandHighCents).toBeNull();
   });
 
   it("filters by the user's profile org_id", async () => {

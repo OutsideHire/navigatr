@@ -14,10 +14,11 @@ import { ArrowLeft, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, Select, Badge, Button, Checkbox } from "@/components/navigatr";
 import { useProfile } from "@/features/auth/useProfile";
+import { useOrganization } from "@/features/auth/useOrganization";
 import { useOrgMemberNames } from "../hooks/useOrgMemberNames";
 import { useActivityToWin, useActivityToLost } from "../hooks/useActivityToWin";
 import {
-  VALUE_BANDS,
+  buildValueBands,
   activityToWinTrend,
   activityToWinRowsToCsv,
   type AwFilters,
@@ -118,13 +119,21 @@ export function ActivityToWinReport() {
   // resolveRange captures "now" per window selection (not per render).
   const range = React.useMemo(() => resolveRange(windowKey, new Date()), [windowKey]);
 
+  // Value bands come from the org's configured thresholds (admin-set in
+  // Settings), falling back to the app defaults when unset.
+  const org = useOrganization();
+  const bands = React.useMemo(
+    () => buildValueBands(org.data?.valueBandLowCents, org.data?.valueBandHighCents),
+    [org.data?.valueBandLowCents, org.data?.valueBandHighCents],
+  );
+
   const filters = React.useMemo<AwFilters>(() => {
-    const band = VALUE_BANDS.find((b) => b.key === bandKey);
+    const band = bands.find((b) => b.key === bandKey);
     return {
       source: source === SOURCE_ALL ? undefined : source,
       valueBand: band ? { minCents: band.minCents, maxCents: band.maxCents } : undefined,
     };
-  }, [source, bandKey]);
+  }, [source, bandKey, bands]);
 
   // Window-only pass drives the source dropdown options (all sources in the
   // window, independent of the active source filter). Filtered pass drives
@@ -152,8 +161,16 @@ export function ActivityToWinReport() {
 
   const bandOptions = [
     { value: BAND_ANY, label: "Any value" },
-    ...VALUE_BANDS.map((b) => ({ value: b.key, label: b.label })),
+    ...bands.map((b) => ({ value: b.key, label: b.label })),
   ];
+
+  // If the org's bands change (config edit), a stale bandKey could point at a
+  // key that no longer exists — fall back to "Any value".
+  React.useEffect(() => {
+    if (bandKey !== BAND_ANY && !bands.some((b) => b.key === bandKey)) {
+      setBandKey(BAND_ANY);
+    }
+  }, [bands, bandKey]);
 
   const rows = React.useMemo(
     () => [...agg.rows].sort((a, b) => b.closedWonAt.localeCompare(a.closedWonAt)),

@@ -12,6 +12,11 @@ vi.mock("react-router-dom", async (orig) => {
 
 let role: "rep" | "manager" | "admin" | undefined = "manager";
 vi.mock("@/features/auth/useProfile", () => ({ useProfile: () => ({ data: { role } }) }));
+
+let orgBands: { valueBandLowCents: number | null; valueBandHighCents: number | null };
+vi.mock("@/features/auth/useOrganization", () => ({
+  useOrganization: () => ({ data: orgBands }),
+}));
 vi.mock("../hooks/useOrgMemberNames", () => ({
   useOrgMemberNames: () => new Map([["u1", "Sarah Lim"], ["u2", "Marcus Tan"]]),
 }));
@@ -69,6 +74,7 @@ beforeEach(() => {
   role = "manager";
   agg = populated();
   lostSummary = { sampleSize: 5, insufficientData: false, medianTotal: 3, medianBusinessDays: 22 };
+  orgBands = { valueBandLowCents: null, valueBandHighCents: null };
 });
 
 describe("ActivityToWinReport", () => {
@@ -171,6 +177,14 @@ describe("ActivityToWinReport", () => {
     clickSpy.mockRestore();
     URL.createObjectURL = origCreate;
     URL.revokeObjectURL = origRevoke;
+  });
+
+  it("renders with the org's custom value bands without error", () => {
+    orgBands = { valueBandLowCents: 50_000_00, valueBandHighCents: 250_000_00 };
+    renderReport();
+    // window + source + value-band dropdowns still present; custom bands feed
+    // the value-band options (option labels covered by buildValueBands unit tests).
+    expect(screen.getAllByRole("combobox")).toHaveLength(3);
   });
 
   it("disables export when there are no rows", () => {

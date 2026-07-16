@@ -96,12 +96,47 @@ export interface ActivityToWinAggregate {
 
 export const MIN_SAMPLE = 3;
 
-/** Default (tenant-configurable) deal-value bands, in cents. */
-export const VALUE_BANDS = [
+export interface ValueBand {
+  key: string;
+  label: string;
+  minCents?: number;
+  maxCents?: number;
+}
+
+/** Default deal-value bands, in cents (used when an org hasn't set its own). */
+export const VALUE_BANDS: readonly ValueBand[] = [
   { key: "lt25k", label: "< $25K", minCents: undefined, maxCents: 25_000_00 },
   { key: "25kto100k", label: "$25K-$100K", minCents: 25_000_00, maxCents: 100_000_00 },
   { key: "gt100k", label: "> $100K", minCents: 100_000_00, maxCents: undefined },
-] as const;
+];
+
+/** Compact USD label for a cents amount: "$25K", "$1.5M", "$500". Plain hyphens. */
+export function formatBandUsd(cents: number): string {
+  const dollars = cents / 100;
+  if (dollars >= 1_000_000) {
+    const m = dollars / 1_000_000;
+    return `$${Number.isInteger(m) ? m : m.toFixed(1)}M`;
+  }
+  if (dollars >= 1_000) {
+    const k = dollars / 1_000;
+    return `$${Number.isInteger(k) ? k : k.toFixed(1)}K`;
+  }
+  return `$${dollars}`;
+}
+
+/**
+ * The three value bands from optional org thresholds (cents): < low, low..high,
+ * > high. Falls back to the app defaults when either threshold is unset, so a
+ * tenant that never configured bands keeps the original buckets/keys.
+ */
+export function buildValueBands(lowCents?: number | null, highCents?: number | null): ValueBand[] {
+  if (lowCents == null || highCents == null) return VALUE_BANDS.map((b) => ({ ...b }));
+  return [
+    { key: "lt", label: `< ${formatBandUsd(lowCents)}`, maxCents: lowCents },
+    { key: "mid", label: `${formatBandUsd(lowCents)}-${formatBandUsd(highCents)}`, minCents: lowCents, maxCents: highCents },
+    { key: "gt", label: `> ${formatBandUsd(highCents)}`, minCents: highCents },
+  ];
+}
 
 export function leadSourceBucket(leadSource: string | null | undefined): string {
   const t = (leadSource ?? "").trim();

@@ -17,12 +17,17 @@ export interface Organization {
   id: string;
   name: string;
   inviteCode: string;
+  /** Activity-to-Win value-band thresholds (cents); null = use app defaults. */
+  valueBandLowCents: number | null;
+  valueBandHighCents: number | null;
 }
 
 interface OrgRow {
   id: string;
   name: string;
   invite_code: string;
+  aw_value_band_low_cents: number | null;
+  aw_value_band_high_cents: number | null;
 }
 
 export const ORGANIZATION_QUERY_KEY = (userId: string | undefined, orgId: string | undefined) =>
@@ -39,12 +44,18 @@ export function useOrganization() {
     queryFn: async (): Promise<Organization> => {
       const { data, error } = await supabase
         .from("organizations")
-        .select("id, name, invite_code")
+        .select("id, name, invite_code, aw_value_band_low_cents, aw_value_band_high_cents")
         .eq("id", orgId!)
         .single();
       if (error) throw error;
       const row = data as unknown as OrgRow;
-      return { id: row.id, name: row.name, inviteCode: row.invite_code };
+      return {
+        id: row.id,
+        name: row.name,
+        inviteCode: row.invite_code,
+        valueBandLowCents: row.aw_value_band_low_cents ?? null,
+        valueBandHighCents: row.aw_value_band_high_cents ?? null,
+      };
     },
     // The invite_code rotates rarely (admin action). Long staleTime to
     // avoid refetches on every consumer mount.

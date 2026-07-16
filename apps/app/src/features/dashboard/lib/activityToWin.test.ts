@@ -10,6 +10,9 @@ import {
   leadSourceBucket,
   activityToWinTrend,
   activityToWinRowsToCsv,
+  buildValueBands,
+  formatBandUsd,
+  VALUE_BANDS,
   type AwFilters,
   type ActivityToWinRow,
 } from "./activityToWin";
@@ -394,6 +397,34 @@ describe("computeActivityToLost", () => {
     expect(s.medianTotal).toBeNull();
     expect(s.medianBusinessDays).toBeNull();
     expect(s.insufficientData).toBe(true);
+  });
+});
+
+describe("formatBandUsd", () => {
+  it("formats K and M compactly, trimming whole numbers", () => {
+    expect(formatBandUsd(25_000_00)).toBe("$25K");
+    expect(formatBandUsd(100_000_00)).toBe("$100K");
+    expect(formatBandUsd(1_500_000_00)).toBe("$1.5M");
+    expect(formatBandUsd(2_000_000_00)).toBe("$2M");
+    expect(formatBandUsd(500_00)).toBe("$500");
+    expect(formatBandUsd(30_000_00)).toBe("$30K");
+  });
+});
+
+describe("buildValueBands", () => {
+  it("returns the app defaults (by value) when either threshold is unset", () => {
+    expect(buildValueBands(null, null)).toEqual(VALUE_BANDS.map((b) => ({ ...b })));
+    expect(buildValueBands(25_000_00, null)).toEqual(VALUE_BANDS.map((b) => ({ ...b })));
+    expect(buildValueBands(undefined, 100_000_00)).toEqual(VALUE_BANDS.map((b) => ({ ...b })));
+  });
+
+  it("builds three half-open bands from custom thresholds", () => {
+    const bands = buildValueBands(50_000_00, 250_000_00);
+    expect(bands).toEqual([
+      { key: "lt", label: "< $50K", maxCents: 50_000_00 },
+      { key: "mid", label: "$50K-$250K", minCents: 50_000_00, maxCents: 250_000_00 },
+      { key: "gt", label: "> $250K", minCents: 250_000_00 },
+    ]);
   });
 });
 

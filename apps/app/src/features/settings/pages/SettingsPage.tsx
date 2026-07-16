@@ -48,6 +48,8 @@ import { supabase } from "@/lib/supabase";
 import { useOrganization } from "@/features/auth/useOrganization";
 import { useProfile } from "@/features/auth/useProfile";
 import { useRotateInviteCode } from "@/features/admin/hooks/useRotateInviteCode";
+import { useUpdateOrgValueBands } from "@/features/settings/hooks/useUpdateOrgValueBands";
+import { buildValueBands } from "@/features/dashboard/lib/activityToWin";
 import { DeleteAccountDialog } from "@/features/account/DeleteAccountDialog";
 
 // Debounce delay for text-input auto-save. 500ms is the standard "fast
@@ -733,9 +735,110 @@ function AutoSavePill({ state }: { state: "idle" | "saving" | "saved" }) {
 
 // ── Page ─────────────────────────────────────────────────────────────
 
+// ── Deal value bands (Activity-to-Win) ───────────────────────────────────
+// Admin/manager-only. Two thresholds group won/lost deals into three size
+// bands on the Activity-to-Win report. Empty = the app defaults.
+export function ValueBandsSection() {
+  const org = useOrganization();
+  const update = useUpdateOrgValueBands();
+  const [low, setLow] = React.useState("");
+  const [high, setHigh] = React.useState("");
+
+  // Seed the inputs (dollars) from the org's stored cents whenever they load
+  // or change server-side.
+  React.useEffect(() => {
+    setLow(org.data?.valueBandLowCents != null ? String(org.data.valueBandLowCents / 100) : "");
+    setHigh(org.data?.valueBandHighCents != null ? String(org.data.valueBandHighCents / 100) : "");
+  }, [org.data?.valueBandLowCents, org.data?.valueBandHighCents]);
+
+  const lowNum = Number(low);
+  const highNum = Number(high);
+  const bothFilled = low.trim() !== "" && high.trim() !== "";
+  const valid =
+    bothFilled && !Number.isNaN(lowNum) && !Number.isNaN(highNum) && lowNum >= 0 && highNum > lowNum;
+
+  // Live preview of the resulting bands (defaults until the inputs are valid).
+  const preview = valid
+    ? buildValueBands(Math.round(lowNum * 100), Math.round(highNum * 100))
+    : buildValueBands(null, null);
+
+  const handleSave = async () => {
+    if (!valid) {
+      toast.error("Enter two amounts with the upper greater than the lower.");
+      return;
+    }
+    try {
+      await update.mutateAsync({
+        lowCents: Math.round(lowNum * 100),
+        highCents: Math.round(highNum * 100),
+      });
+      toast.success("Value bands saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't save value bands. Try again.");
+    }
+  };
+
+  const handleReset = async () => {
+    try {
+      await update.mutateAsync({ lowCents: null, highCents: null });
+      toast.success("Reset to default bands");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't reset. Try again.");
+    }
+  };
+
+  return (
+    <Card padding="md">
+      <SectionHeader
+        title="Deal value bands"
+        subtitle="Group Activity-to-Win deals by size. Leave blank to use the defaults (< $25K / $25K-$100K / > $100K)."
+      />
+      <div className="mt-4 flex flex-col gap-4">
+        <div className="flex flex-wrap gap-4">
+          <FormField htmlFor="band-low" label="Lower threshold ($)">
+            <Input
+              id="band-low"
+              type="number"
+              min={0}
+              inputMode="numeric"
+              placeholder="25000"
+              value={low}
+              onChange={(e) => setLow(e.target.value)}
+            />
+          </FormField>
+          <FormField htmlFor="band-high" label="Upper threshold ($)">
+            <Input
+              id="band-high"
+              type="number"
+              min={0}
+              inputMode="numeric"
+              placeholder="100000"
+              value={high}
+              onChange={(e) => setHigh(e.target.value)}
+            />
+          </FormField>
+        </div>
+        <p className="text-caption text-text-muted">
+          Bands: <span className="text-text-default">{preview.map((b) => b.label).join(" · ")}</span>
+        </p>
+        <div className="flex items-center gap-3">
+          <Button onClick={handleSave} disabled={!valid || update.isPending}>
+            Save bands
+          </Button>
+          <Button variant="tertiary" onClick={handleReset} disabled={update.isPending}>
+            Reset to defaults
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export function SettingsPage() {
   const user = useAuth((s) => s.user);
   const showTeamSection = canInviteTeam(user);
+  const role = useProfile().data?.role;
+  const canEditBands = role === "manager" || role === "admin";
 
   // No page-level chrome here — the H1 + subtitle live in PersonalTab.
   // SettingsPage just renders sections in order.
@@ -746,6 +849,7 @@ export function SettingsPage() {
       <AppearanceSection />
       <NotificationsSection />
       {showTeamSection && <TeamSection />}
+      {canEditBands && <ValueBandsSection />}
       <SessionSection />
       <DangerZoneSection />
     </div>
