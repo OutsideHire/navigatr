@@ -842,10 +842,14 @@ export function ValueBandsSection() {
 // showing a button that would fail for everyone else.
 export function DemoToolsSection() {
   const enabled = useDemoResetEnabled();
-  const isAdmin = useProfile().data?.role === "admin";
+  // Manager OR admin — must match reset_demo_data()'s server-side gate
+  // (which allows both). Gating tighter than the RPC just hides the button
+  // from people the function would actually accept.
+  const role = useProfile().data?.role;
+  const canReset = role === "manager" || role === "admin";
   const reset = useResetDemoData();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
-  if (!enabled || !isAdmin) return null;
+  if (!enabled || !canReset) return null;
 
   const handleReset = async () => {
     try {

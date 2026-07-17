@@ -1,7 +1,7 @@
-// DemoToolsSection — flag + admin-gated "Reset demo data" card in Settings.
-// Verifies: hidden when the demo_reset flag is off; hidden for non-admins
-// even when the flag is on; and that confirming the dialog calls the
-// reset mutation.
+// DemoToolsSection — flag + role-gated "Reset demo data" card in Settings.
+// Verifies: hidden when the demo_reset flag is off; hidden for reps but shown
+// for managers/admins (matching reset_demo_data's server-side gate) when the
+// flag is on; and that confirming the dialog calls the reset mutation.
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
@@ -56,11 +56,18 @@ describe("DemoToolsSection", () => {
     expect(screen.queryByText(/Demo tools/i)).toBeNull();
   });
 
-  it("renders nothing when the user is not an admin, even with the flag on", () => {
+  it("renders nothing for a rep, even with the flag on", () => {
+    flagEnabled = true;
+    role = "rep";
+    render(<DemoToolsSection />);
+    expect(screen.queryByText(/Demo tools/i)).toBeNull();
+  });
+
+  it("shows the card for a manager (matches the reset function's gate)", () => {
     flagEnabled = true;
     role = "manager";
     render(<DemoToolsSection />);
-    expect(screen.queryByText(/Demo tools/i)).toBeNull();
+    expect(screen.getByText(/Demo tools/i)).toBeInTheDocument();
   });
 
   it("opens a confirm dialog and calls the reset mutation on confirm", async () => {
