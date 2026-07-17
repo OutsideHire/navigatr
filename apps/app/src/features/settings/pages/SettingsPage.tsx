@@ -49,6 +49,8 @@ import { useOrganization } from "@/features/auth/useOrganization";
 import { useProfile } from "@/features/auth/useProfile";
 import { useRotateInviteCode } from "@/features/admin/hooks/useRotateInviteCode";
 import { useUpdateOrgValueBands } from "@/features/settings/hooks/useUpdateOrgValueBands";
+import { useDemoResetEnabled } from "@/features/settings/hooks/useDemoResetEnabled";
+import { useResetDemoData } from "@/features/settings/hooks/useResetDemoData";
 import { buildValueBands } from "@/features/dashboard/lib/activityToWin";
 import { DeleteAccountDialog } from "@/features/account/DeleteAccountDialog";
 
@@ -834,6 +836,56 @@ export function ValueBandsSection() {
   );
 }
 
+// ── Demo tools ───────────────────────────────────────────────────────
+// Flag-gated (org_features.demo_reset) + admin-only. The reset_demo_data
+// RPC itself re-enforces both checks server-side; this UI just avoids
+// showing a button that would fail for everyone else.
+export function DemoToolsSection() {
+  const enabled = useDemoResetEnabled();
+  const isAdmin = useProfile().data?.role === "admin";
+  const reset = useResetDemoData();
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+  if (!enabled || !isAdmin) return null;
+
+  const handleReset = async () => {
+    try {
+      await reset.mutateAsync();
+      toast.success("Demo data reset");
+      setConfirmOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't reset demo data. Try again.");
+    }
+  };
+
+  return (
+    <Card padding="md">
+      <SectionHeader title="Demo tools" subtitle="Clear this account and reload the curated demo dataset." />
+      <div className="mt-4">
+        <Button variant="destructive" onClick={() => setConfirmOpen(true)} disabled={reset.isPending}>
+          Reset demo data
+        </Button>
+      </div>
+      <Dialog.Root open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/40" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 w-[90vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-radius-md bg-surface-elevated p-6 shadow-lg">
+            <Dialog.Title className="text-heading-sm text-text-default">Reset demo data?</Dialog.Title>
+            <Dialog.Description className="mt-2 text-body-sm text-text-muted">
+              This clears all current data in this account and reloads the demo set. This can&apos;t be undone.
+            </Dialog.Description>
+            <div className="mt-5 flex justify-end gap-3">
+              <Button variant="secondary" onClick={() => setConfirmOpen(false)}>Cancel</Button>
+              <Button variant="destructive" onClick={handleReset} disabled={reset.isPending}>
+                {reset.isPending ? "Resetting…" : "Reset"}
+              </Button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </Card>
+  );
+}
+
 export function SettingsPage() {
   const user = useAuth((s) => s.user);
   const showTeamSection = canInviteTeam(user);
@@ -851,6 +903,7 @@ export function SettingsPage() {
       {showTeamSection && <TeamSection />}
       {canEditBands && <ValueBandsSection />}
       <SessionSection />
+      <DemoToolsSection />
       <DangerZoneSection />
     </div>
   );
