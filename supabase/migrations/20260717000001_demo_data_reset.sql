@@ -56,7 +56,404 @@ begin
   -- org-scoped data. It has no org_id column and is shared read-only across
   -- every tenant, so it is out of scope for a single-org demo reset.
 
-  -- Reseed (later task fills this in)
+  -- Reseed: curated demo fixture (18 deals across the funnel, matching
+  -- activities, stage history, partners + attributions, and two upcoming
+  -- appointments). Every column is set explicitly below because triggers
+  -- are OFF for this transaction (session_replication_role = replica) --
+  -- nothing else will backfill denormalized/snapshot columns.
+  --
+  -- Deal ids a0000000-...-000000000001 .. 18 map 1:1 to the company list
+  -- below (3 new, 3 contacted, 2 qualified, 1 proposal, 6 won, 3 lost).
+  -- Partner ids b0000000-...-000000000001..3.
+
+  -- ── 1. Deals ──
+  insert into deals (
+    id, org_id, owner_id, company_name, address, industry, employee_count_range,
+    contact_name, contact_title, contact_email, contact_phone,
+    value_cents, stage, probability, expected_close, lead_source, notes,
+    last_activity_at, next_followup_at, created_at, updated_at,
+    closed_won_at, first_activity_at, first_call_at, first_email_at, first_dropin_at, first_appointment_at,
+    activity_count_total, activity_count_call, activity_count_email, activity_count_dropin, activity_count_appointment,
+    time_to_win_business_days, time_to_win_calendar_days,
+    closed_lost_at, time_to_lost_business_days, time_to_lost_calendar_days,
+    lost_reason_category, lost_reason_notes
+  ) values
+  -- Deal 1: new
+  ('a0000000-0000-0000-0000-000000000001', v_org_id, v_owner, 'Riverside Diner', '214 Elm St, Fairhaven', 'Restaurant', '11-50',
+    'Marco Diaz', 'Owner', 'marco@riversidediner.example.com', '+14155550101',
+    15_000_00, 'new', 20, current_date + 45, 'Referral', null,
+    now() - interval '3 days', now() + interval '2 days', now() - interval '5 days', now() - interval '3 days',
+    null, now() - interval '3 days', now() - interval '3 days', null, null, null,
+    null, null, null, null, null,
+    null, null,
+    null, null, null,
+    null, null),
+  -- Deal 2: new
+  ('a0000000-0000-0000-0000-000000000002', v_org_id, v_owner, 'Bloom & Petal Florist', '88 Blossom Ave, Fairhaven', 'Retail/Floral', '1-10',
+    'Carla Nguyen', 'Owner', 'carla@bloomandpetal.example.com', '+14155550102',
+    8_500_00, 'new', 20, current_date + 40, 'Cold', null,
+    now() - interval '6 days', now() + interval '4 days', now() - interval '8 days', now() - interval '6 days',
+    null, now() - interval '6 days', null, now() - interval '6 days', null, null,
+    null, null, null, null, null,
+    null, null,
+    null, null, null,
+    null, null),
+  -- Deal 3: new
+  ('a0000000-0000-0000-0000-000000000003', v_org_id, v_owner, 'Ace Hardware Downtown', '500 Main St, Fairhaven', 'Retail/Hardware', '11-50',
+    'Tom Reilly', 'Store Manager', 'tom.reilly@acehardwaredt.example.com', '+14155550103',
+    32_000_00, 'new', 20, current_date + 35, 'Website', null,
+    now() - interval '4 days', now() + interval '7 days', now() - interval '12 days', now() - interval '4 days',
+    null, now() - interval '10 days', now() - interval '10 days', null, now() - interval '4 days', null,
+    null, null, null, null, null,
+    null, null,
+    null, null, null,
+    null, null),
+  -- Deal 4: contacted
+  ('a0000000-0000-0000-0000-000000000004', v_org_id, v_owner, 'Sunrise Yoga Studio', '12 Sunrise Blvd, Cedar Ridge', 'Health & Wellness', '1-10',
+    'Priya Shah', 'Owner', 'priya@sunriseyoga.example.com', '+14155550104',
+    22_000_00, 'contacted', 40, current_date + 30, 'Partner', null,
+    now() - interval '5 days', now() + interval '1 day', now() - interval '14 days', now() - interval '5 days',
+    null, now() - interval '12 days', now() - interval '12 days', now() - interval '5 days', null, null,
+    null, null, null, null, null,
+    null, null,
+    null, null, null,
+    null, null),
+  -- Deal 5: contacted
+  ('a0000000-0000-0000-0000-000000000005', v_org_id, v_owner, 'Metro Auto Repair', '900 Industrial Pkwy, Cedar Ridge', 'Automotive', '11-50',
+    'Dave Kowalski', 'Owner', 'dave@metroautorepair.example.com', '+14155550105',
+    48_000_00, 'contacted', 40, current_date + 25, 'Event', null,
+    now() - interval '4 days', now() + interval '3 days', now() - interval '22 days', now() - interval '4 days',
+    null, now() - interval '20 days', now() - interval '20 days', now() - interval '12 days', now() - interval '4 days', null,
+    null, null, null, null, null,
+    null, null,
+    null, null, null,
+    null, null),
+  -- Deal 6: contacted
+  ('a0000000-0000-0000-0000-000000000006', v_org_id, v_owner, 'The Corner Bakery', '45 Baker St, Fairhaven', 'Food & Beverage', '1-10',
+    'Lena Ortiz', 'Owner', 'lena@thecornerbakery.example.com', '+14155550106',
+    12_000_00, 'contacted', 40, current_date + 35, 'Referral', null,
+    now() - interval '6 days', now() + interval '10 days', now() - interval '17 days', now() - interval '6 days',
+    null, now() - interval '15 days', now() - interval '6 days', now() - interval '15 days', null, null,
+    null, null, null, null, null,
+    null, null,
+    null, null, null,
+    null, null),
+  -- Deal 7: qualified
+  ('a0000000-0000-0000-0000-000000000007', v_org_id, v_owner, 'Lakeside Dental Group', '300 Lakeside Dr, Cedar Ridge', 'Healthcare/Dental', '11-50',
+    'Dr. Susan Whitfield', 'Practice Manager', 'susan@lakesidedental.example.com', '+14155550107',
+    95_000_00, 'qualified', 60, current_date + 18, 'Cold', null,
+    now() - interval '5 days', now() + interval '2 days', now() - interval '27 days', now() - interval '5 days',
+    null, now() - interval '25 days', now() - interval '25 days', now() - interval '5 days', null, now() - interval '14 days',
+    null, null, null, null, null,
+    null, null,
+    null, null, null,
+    null, null),
+  -- Deal 8: qualified
+  ('a0000000-0000-0000-0000-000000000008', v_org_id, v_owner, 'Pinnacle Fitness Center', '77 Summit Rd, Cedar Ridge', 'Health & Wellness', '51-200',
+    'Marcus Bell', 'General Manager', 'marcus@pinnaclefitness.example.com', '+14155550108',
+    61_000_00, 'qualified', 60, current_date + 14, 'Website', null,
+    now() - interval '3 days', now() + interval '5 days', now() - interval '32 days', now() - interval '3 days',
+    null, now() - interval '30 days', now() - interval '30 days', now() - interval '20 days', now() - interval '10 days', null,
+    null, null, null, null, null,
+    null, null,
+    null, null, null,
+    null, null),
+  -- Deal 9: proposal
+  ('a0000000-0000-0000-0000-000000000009', v_org_id, v_owner, 'Harbor View Realty', '150 Harbor View Way, Fairhaven', 'Real Estate', '11-50',
+    'Angela Kim', 'Managing Broker', 'angela@harborviewrealty.example.com', '+14155550109',
+    140_000_00, 'proposal', 80, current_date + 7, 'Partner', null,
+    now() - interval '2 days', now() + interval '1 day', now() - interval '37 days', now() - interval '2 days',
+    null, now() - interval '35 days', now() - interval '35 days', now() - interval '22 days', null, now() - interval '12 days',
+    null, null, null, null, null,
+    null, null,
+    null, null, null,
+    null, null),
+  -- Deal 10: won (closed 5 days ago)
+  ('a0000000-0000-0000-0000-000000000010', v_org_id, v_owner, 'Golden Gate Cafe', '22 Bay St, Fairhaven', 'Food & Beverage', '1-10',
+    'Nina Alvarez', 'Owner', 'nina@goldengatecafe.example.com', '+14155550110',
+    27_500_00, 'won', 100, (now() - interval '5 days')::date, 'Event', null,
+    now() - interval '6 days', null, now() - interval '26 days', now() - interval '5 days',
+    now() - interval '5 days', now() - interval '23 days', now() - interval '23 days', now() - interval '18 days', now() - interval '9 days', null,
+    5, 2, 2, 1, 0,
+    13, 18,
+    null, null, null,
+    null, null),
+  -- Deal 11: won (closed 12 days ago)
+  ('a0000000-0000-0000-0000-000000000011', v_org_id, v_owner, 'Summit Legal Services', '400 Court St, Cedar Ridge', 'Professional Services/Legal', '11-50',
+    'Robert Hayes', 'Managing Partner', 'robert@summitlegal.example.com', '+14155550111',
+    88_000_00, 'won', 100, (now() - interval '12 days')::date, 'Referral', null,
+    now() - interval '13 days', null, now() - interval '36 days', now() - interval '12 days',
+    now() - interval '12 days', now() - interval '33 days', now() - interval '33 days', now() - interval '28 days', now() - interval '18 days', now() - interval '15 days',
+    6, 2, 2, 1, 1,
+    15, 21,
+    null, null, null,
+    null, null),
+  -- Deal 12: won (closed 22 days ago)
+  ('a0000000-0000-0000-0000-000000000012', v_org_id, v_owner, 'Cascade Coffee Roasters', '60 Roaster Ln, Fairhaven', 'Food & Beverage', '1-10',
+    'Ingrid Larsen', 'Owner', 'ingrid@cascadecoffee.example.com', '+14155550112',
+    19_000_00, 'won', 100, (now() - interval '22 days')::date, 'Cold', null,
+    now() - interval '23 days', null, now() - interval '49 days', now() - interval '22 days',
+    now() - interval '22 days', now() - interval '46 days', now() - interval '46 days', now() - interval '36 days', now() - interval '28 days', null,
+    4, 1, 2, 1, 0,
+    17, 24,
+    null, null, null,
+    null, null),
+  -- Deal 13: won (closed 40 days ago)
+  ('a0000000-0000-0000-0000-000000000013', v_org_id, v_owner, 'Maple Street Barbershop', '18 Maple St, Fairhaven', 'Personal Services', '1-10',
+    'Jamal Carter', 'Owner', 'jamal@maplestreetbarber.example.com', '+14155550113',
+    155_000_00, 'won', 100, (now() - interval '40 days')::date, 'Website', null,
+    now() - interval '42 days', null, now() - interval '71 days', now() - interval '40 days',
+    now() - interval '40 days', now() - interval '68 days', now() - interval '68 days', now() - interval '61 days', now() - interval '49 days', now() - interval '45 days',
+    8, 3, 3, 1, 1,
+    20, 28,
+    null, null, null,
+    null, null),
+  -- Deal 14: won (closed 60 days ago)
+  ('a0000000-0000-0000-0000-000000000014', v_org_id, v_owner, 'Northside Veterinary Clinic', '210 North Ave, Cedar Ridge', 'Healthcare/Veterinary', '11-50',
+    'Dr. Emily Chan', 'Practice Owner', 'emily@northsidevet.example.com', '+14155550114',
+    42_000_00, 'won', 100, (now() - interval '60 days')::date, 'Partner', null,
+    now() - interval '62 days', null, now() - interval '82 days', now() - interval '60 days',
+    now() - interval '60 days', now() - interval '79 days', now() - interval '79 days', now() - interval '75 days', now() - interval '71 days', now() - interval '66 days',
+    5, 2, 1, 1, 1,
+    14, 19,
+    null, null, null,
+    null, null),
+  -- Deal 15: won (closed 85 days ago)
+  ('a0000000-0000-0000-0000-000000000015', v_org_id, v_owner, 'Union Square Dry Cleaners', '5 Union Sq, Fairhaven', 'Retail Services', '1-10',
+    'Grace Park', 'Owner', 'grace@unionsquaredc.example.com', '+14155550115',
+    9_800_00, 'won', 100, (now() - interval '85 days')::date, 'Event', null,
+    now() - interval '87 days', null, now() - interval '113 days', now() - interval '85 days',
+    now() - interval '85 days', now() - interval '110 days', now() - interval '110 days', now() - interval '106 days', now() - interval '98 days', null,
+    7, 2, 3, 2, 0,
+    18, 25,
+    null, null, null,
+    null, null),
+  -- Deal 16: lost (closed 10 days ago, price)
+  ('a0000000-0000-0000-0000-000000000016', v_org_id, v_owner, 'Redwood Landscaping Co', '800 Timber Rd, Cedar Ridge', 'Landscaping', '11-50',
+    'Sam Torres', 'Owner', 'sam@redwoodlandscaping.example.com', '+14155550116',
+    36_000_00, 'lost', 0, (now() - interval '10 days')::date, 'Referral', null,
+    now() - interval '12 days', null, now() - interval '27 days', now() - interval '10 days',
+    null, now() - interval '24 days', now() - interval '24 days', now() - interval '17 days', now() - interval '12 days', null,
+    3, 1, 1, 1, 0,
+    null, null,
+    now() - interval '10 days', 10, 14,
+    'price', 'Owner said the price was too high compared to their current processor.'),
+  -- Deal 17: lost (closed 30 days ago, competitor)
+  ('a0000000-0000-0000-0000-000000000017', v_org_id, v_owner, 'Ivy Lane Boutique', '33 Ivy Ln, Fairhaven', 'Retail/Apparel', '1-10',
+    'Michelle Wu', 'Owner', 'michelle@ivylaneboutique.example.com', '+14155550117',
+    21_000_00, 'lost', 0, (now() - interval '30 days')::date, 'Cold', null,
+    now() - interval '32 days', null, now() - interval '54 days', now() - interval '30 days',
+    null, now() - interval '51 days', now() - interval '51 days', now() - interval '37 days', null, now() - interval '44 days',
+    4, 2, 1, 0, 1,
+    null, null,
+    now() - interval '30 days', 15, 21,
+    'competitor', 'Owner signed with a competing processor.'),
+  -- Deal 18: lost (closed 55 days ago, timing)
+  ('a0000000-0000-0000-0000-000000000018', v_org_id, v_owner, 'Cobblestone Pizzeria', '99 Cobblestone Ct, Fairhaven', 'Food & Beverage', '11-50',
+    'Vincent Russo', 'Owner', 'vincent@cobblestonepizzeria.example.com', '+14155550118',
+    210_000_00, 'lost', 0, (now() - interval '55 days')::date, 'Website', null,
+    now() - interval '58 days', null, now() - interval '68 days', now() - interval '55 days',
+    null, now() - interval '65 days', now() - interval '65 days', now() - interval '58 days', null, null,
+    2, 1, 1, 0, 0,
+    null, null,
+    now() - interval '55 days', 7, 10,
+    'timing', 'Owner wanted to revisit after their fiscal year budget freeze lifts.');
+
+  -- ── 2. Activities (occurred_at back-dated; created_at defaults to now(),
+  -- reflecting that the demo reset writes the row today). ──
+  insert into activities (
+    org_id, deal_id, logged_by, type, disposition, duration_minutes, outcome_notes, occurred_at, follow_up_date
+  ) values
+  -- Deal 1
+  (v_org_id, 'a0000000-0000-0000-0000-000000000001', v_owner, 'call', 'connected_with_dm', 12, 'Initial call; contact was open to learning more about processing rates.', now() - interval '3 days', (current_date + 2)),
+  -- Deal 2
+  (v_org_id, 'a0000000-0000-0000-0000-000000000002', v_owner, 'email', 'future_potential', null, 'Sent intro email with navigatr overview.', now() - interval '6 days', (current_date + 4)),
+  -- Deal 3
+  (v_org_id, 'a0000000-0000-0000-0000-000000000003', v_owner, 'call', 'dm_unavailable', 8, 'Called; decision-maker was out, left a message.', now() - interval '10 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000003', v_owner, 'drop_in', 'connected_with_dm', null, 'Stopped by in person; spoke briefly with the manager.', now() - interval '4 days', (current_date + 7)),
+  -- Deal 4
+  (v_org_id, 'a0000000-0000-0000-0000-000000000004', v_owner, 'call', 'connected_with_dm', 15, 'Introductory call; walked through the current processing setup.', now() - interval '12 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000004', v_owner, 'email', 'followup_requested', null, 'Sent recap email with next steps.', now() - interval '5 days', (current_date + 1)),
+  -- Deal 5
+  (v_org_id, 'a0000000-0000-0000-0000-000000000005', v_owner, 'call', 'connected_with_dm', 18, 'Discussed pain points with current processor.', now() - interval '20 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000005', v_owner, 'email', 'positive_engagement', null, 'Sent comparison sheet; contact responded positively.', now() - interval '12 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000005', v_owner, 'drop_in', 'followup_requested', null, 'Stopped by; owner asked for a formal quote.', now() - interval '4 days', (current_date + 3)),
+  -- Deal 6
+  (v_org_id, 'a0000000-0000-0000-0000-000000000006', v_owner, 'email', 'positive_engagement', null, 'Sent intro email; got a reply expressing interest.', now() - interval '15 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000006', v_owner, 'call', 'connected_with_dm', 14, 'Follow-up call to schedule a walkthrough.', now() - interval '6 days', (current_date + 10)),
+  -- Deal 7
+  (v_org_id, 'a0000000-0000-0000-0000-000000000007', v_owner, 'call', 'connected_with_dm', 20, 'Deep-dive call on fee structure.', now() - interval '25 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000007', v_owner, 'appointment', 'positive_engagement', 45, 'On-site meeting with the practice manager; reviewed statement.', now() - interval '14 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000007', v_owner, 'email', 'followup_requested', null, 'Sent updated rate proposal.', now() - interval '5 days', (current_date + 2)),
+  -- Deal 8
+  (v_org_id, 'a0000000-0000-0000-0000-000000000008', v_owner, 'call', 'connected_with_dm', 16, 'Initial qualifying call.', now() - interval '30 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000008', v_owner, 'email', 'positive_engagement', null, 'Sent a case study for a similar gym client.', now() - interval '20 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000008', v_owner, 'drop_in', 'connected_with_dm', null, 'Stopped by; met the GM in person.', now() - interval '10 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000008', v_owner, 'call', 'followup_requested', 22, 'Discussed rollout timeline.', now() - interval '3 days', (current_date + 5)),
+  -- Deal 9
+  (v_org_id, 'a0000000-0000-0000-0000-000000000009', v_owner, 'call', 'connected_with_dm', 19, 'First call with the managing broker.', now() - interval '35 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000009', v_owner, 'email', 'positive_engagement', null, 'Sent formal proposal draft.', now() - interval '22 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000009', v_owner, 'appointment', 'positive_engagement', 40, 'In-office meeting to review the proposal terms.', now() - interval '12 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000009', v_owner, 'call', 'followup_requested', 15, 'Final questions before signing.', now() - interval '2 days', (current_date + 1)),
+  -- Deal 10 (won)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000010', v_owner, 'call', 'connected_with_dm', 14, 'Intro call about processing needs.', now() - interval '23 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000010', v_owner, 'email', 'positive_engagement', null, 'Sent pricing overview.', now() - interval '18 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000010', v_owner, 'call', 'followup_requested', 17, 'Reviewed proposal details.', now() - interval '13 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000010', v_owner, 'drop_in', 'positive_engagement', null, 'Stopped by to finalize paperwork.', now() - interval '9 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000010', v_owner, 'email', 'statement_secured', null, 'Signed agreement; statement secured, deal won.', now() - interval '6 days', null),
+  -- Deal 11 (won)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000011', v_owner, 'call', 'connected_with_dm', 20, 'Initial call with the managing partner.', now() - interval '33 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000011', v_owner, 'email', 'positive_engagement', null, 'Sent proposal and case studies.', now() - interval '28 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000011', v_owner, 'call', 'followup_requested', 18, 'Answered questions on fees.', now() - interval '23 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000011', v_owner, 'drop_in', 'connected_with_dm', null, 'Stopped by the office.', now() - interval '18 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000011', v_owner, 'appointment', 'positive_engagement', 45, 'On-site review of the current statement.', now() - interval '15 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000011', v_owner, 'email', 'statement_secured', null, 'Contract signed; statement secured.', now() - interval '13 days', null),
+  -- Deal 12 (won)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000012', v_owner, 'call', 'connected_with_dm', 12, 'Intro call with the owner.', now() - interval '46 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000012', v_owner, 'email', 'positive_engagement', null, 'Sent pricing comparison.', now() - interval '36 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000012', v_owner, 'drop_in', 'followup_requested', null, 'Stopped by; owner wanted to think it over.', now() - interval '28 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000012', v_owner, 'email', 'statement_secured', null, 'Owner signed on; statement secured.', now() - interval '23 days', null),
+  -- Deal 13 (won)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000013', v_owner, 'call', 'connected_with_dm', 15, 'First outreach call.', now() - interval '68 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000013', v_owner, 'call', 'dm_unavailable', 5, 'Owner was busy with clients; called back later.', now() - interval '65 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000013', v_owner, 'email', 'positive_engagement', null, 'Sent intro materials.', now() - interval '61 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000013', v_owner, 'email', 'positive_engagement', null, 'Sent rate comparison.', now() - interval '57 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000013', v_owner, 'email', 'followup_requested', null, 'Sent updated proposal.', now() - interval '53 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000013', v_owner, 'drop_in', 'connected_with_dm', null, 'Stopped by the shop in person.', now() - interval '49 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000013', v_owner, 'appointment', 'positive_engagement', 30, 'Met to review the agreement.', now() - interval '45 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000013', v_owner, 'call', 'statement_secured', 10, 'Final signature call; statement secured.', now() - interval '42 days', null),
+  -- Deal 14 (won)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000014', v_owner, 'call', 'connected_with_dm', 17, 'Intro call with the clinic owner.', now() - interval '79 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000014', v_owner, 'email', 'positive_engagement', null, 'Sent processing overview.', now() - interval '75 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000014', v_owner, 'drop_in', 'followup_requested', null, 'Stopped by the clinic.', now() - interval '71 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000014', v_owner, 'appointment', 'positive_engagement', 35, 'On-site review of the statement.', now() - interval '66 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000014', v_owner, 'call', 'statement_secured', 12, 'Closing call; statement secured.', now() - interval '62 days', null),
+  -- Deal 15 (won)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000015', v_owner, 'call', 'connected_with_dm', 10, 'First call with the owner.', now() - interval '110 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000015', v_owner, 'email', 'positive_engagement', null, 'Sent intro info.', now() - interval '106 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000015', v_owner, 'email', 'followup_requested', null, 'Sent proposal.', now() - interval '102 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000015', v_owner, 'drop_in', 'connected_with_dm', null, 'Stopped by the store.', now() - interval '98 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000015', v_owner, 'email', 'positive_engagement', null, 'Sent updated pricing.', now() - interval '94 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000015', v_owner, 'drop_in', 'followup_requested', null, 'Stopped by to finalize details.', now() - interval '90 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000015', v_owner, 'call', 'statement_secured', 14, 'Signed on; statement secured.', now() - interval '87 days', null),
+  -- Deal 16 (lost, price)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000016', v_owner, 'call', 'connected_with_dm', 14, 'Intro call about processing rates.', now() - interval '24 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000016', v_owner, 'email', 'positive_engagement', null, 'Sent proposal.', now() - interval '17 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000016', v_owner, 'drop_in', 'closed_lost', null, 'Owner said the price was too high compared to their current processor.', now() - interval '12 days', null),
+  -- Deal 17 (lost, competitor)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000017', v_owner, 'call', 'connected_with_dm', 16, 'Intro call with the boutique owner.', now() - interval '51 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000017', v_owner, 'appointment', 'positive_engagement', 30, 'On-site meeting to review options.', now() - interval '44 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000017', v_owner, 'email', 'followup_requested', null, 'Sent follow-up proposal.', now() - interval '37 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000017', v_owner, 'call', 'closed_lost', 8, 'Owner signed with a competing processor.', now() - interval '32 days', null),
+  -- Deal 18 (lost, timing)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000018', v_owner, 'call', 'connected_with_dm', 11, 'Intro call about processing needs.', now() - interval '65 days', null),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000018', v_owner, 'email', 'closed_lost', null, 'Owner said timing was bad; revisiting after their fiscal year.', now() - interval '58 days', null);
+
+  -- ── 3. Deal stage history (ascending transitioned_at; last row lands on
+  -- the deal's current stage; from_stage null only for the creation row). ──
+  insert into deal_stage_history (org_id, deal_id, from_stage, to_stage, transitioned_at, transitioned_by) values
+  -- Deal 1 (new)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000001', null, 'new', now() - interval '5 days', v_owner),
+  -- Deal 2 (new)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000002', null, 'new', now() - interval '8 days', v_owner),
+  -- Deal 3 (new)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000003', null, 'new', now() - interval '12 days', v_owner),
+  -- Deal 4 (contacted)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000004', null, 'new', now() - interval '14 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000004', 'new', 'contacted', now() - interval '11 days', v_owner),
+  -- Deal 5 (contacted)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000005', null, 'new', now() - interval '22 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000005', 'new', 'contacted', now() - interval '19 days', v_owner),
+  -- Deal 6 (contacted)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000006', null, 'new', now() - interval '17 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000006', 'new', 'contacted', now() - interval '13 days', v_owner),
+  -- Deal 7 (qualified)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000007', null, 'new', now() - interval '27 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000007', 'new', 'contacted', now() - interval '22 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000007', 'contacted', 'qualified', now() - interval '16 days', v_owner),
+  -- Deal 8 (qualified)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000008', null, 'new', now() - interval '32 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000008', 'new', 'contacted', now() - interval '25 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000008', 'contacted', 'qualified', now() - interval '18 days', v_owner),
+  -- Deal 9 (proposal)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000009', null, 'new', now() - interval '37 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000009', 'new', 'contacted', now() - interval '30 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000009', 'contacted', 'qualified', now() - interval '22 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000009', 'qualified', 'proposal', now() - interval '14 days', v_owner),
+  -- Deal 10 (won)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000010', null, 'new', now() - interval '26 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000010', 'new', 'contacted', now() - interval '21 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000010', 'contacted', 'qualified', now() - interval '16 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000010', 'qualified', 'proposal', now() - interval '10 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000010', 'proposal', 'won', now() - interval '5 days', v_owner),
+  -- Deal 11 (won)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000011', null, 'new', now() - interval '36 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000011', 'new', 'contacted', now() - interval '30 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000011', 'contacted', 'qualified', now() - interval '24 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000011', 'qualified', 'proposal', now() - interval '18 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000011', 'proposal', 'won', now() - interval '12 days', v_owner),
+  -- Deal 12 (won)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000012', null, 'new', now() - interval '49 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000012', 'new', 'contacted', now() - interval '43 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000012', 'contacted', 'qualified', now() - interval '37 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000012', 'qualified', 'proposal', now() - interval '29 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000012', 'proposal', 'won', now() - interval '22 days', v_owner),
+  -- Deal 13 (won)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000013', null, 'new', now() - interval '71 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000013', 'new', 'contacted', now() - interval '63 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000013', 'contacted', 'qualified', now() - interval '55 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000013', 'qualified', 'proposal', now() - interval '47 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000013', 'proposal', 'won', now() - interval '40 days', v_owner),
+  -- Deal 14 (won)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000014', null, 'new', now() - interval '82 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000014', 'new', 'contacted', now() - interval '76 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000014', 'contacted', 'qualified', now() - interval '70 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000014', 'qualified', 'proposal', now() - interval '64 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000014', 'proposal', 'won', now() - interval '60 days', v_owner),
+  -- Deal 15 (won)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000015', null, 'new', now() - interval '113 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000015', 'new', 'contacted', now() - interval '105 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000015', 'contacted', 'qualified', now() - interval '97 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000015', 'qualified', 'proposal', now() - interval '91 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000015', 'proposal', 'won', now() - interval '85 days', v_owner),
+  -- Deal 16 (lost; skipped proposal)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000016', null, 'new', now() - interval '27 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000016', 'new', 'contacted', now() - interval '21 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000016', 'contacted', 'qualified', now() - interval '15 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000016', 'qualified', 'lost', now() - interval '10 days', v_owner),
+  -- Deal 17 (lost; full funnel)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000017', null, 'new', now() - interval '54 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000017', 'new', 'contacted', now() - interval '47 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000017', 'contacted', 'qualified', now() - interval '40 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000017', 'qualified', 'proposal', now() - interval '35 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000017', 'proposal', 'lost', now() - interval '30 days', v_owner),
+  -- Deal 18 (lost; quick fail)
+  (v_org_id, 'a0000000-0000-0000-0000-000000000018', null, 'new', now() - interval '68 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000018', 'new', 'contacted', now() - interval '60 days', v_owner),
+  (v_org_id, 'a0000000-0000-0000-0000-000000000018', 'contacted', 'lost', now() - interval '55 days', v_owner);
+
+  -- ── 4. Partners ──
+  insert into partners (id, org_id, created_by, name, company, type, status, phone, email, city, last_touch_at) values
+  ('b0000000-0000-0000-0000-000000000001', v_org_id, v_owner, 'Jane Whitfield', 'Whitfield & Associates CPA', 'cpa', 'active', '+14155550201', 'jane@whitfieldcpa.example.com', 'Cedar Ridge', now() - interval '9 days'),
+  ('b0000000-0000-0000-0000-000000000002', v_org_id, v_owner, 'Derek Osei', 'First Cedar Bank', 'banker', 'active', '+14155550202', 'derek@firstcedarbank.example.com', 'Fairhaven', now() - interval '11 days'),
+  ('b0000000-0000-0000-0000-000000000003', v_org_id, v_owner, 'Monica Ferreira', 'Ferreira Law Group', 'attorney', 'active', '+14155550203', 'monica@ferreiralaw.example.com', 'Cedar Ridge', now() - interval '60 days');
+
+  -- ── 5. Partner deals (attribution on won/proposal deals) ──
+  insert into partner_deals (partner_id, deal_id, org_id, attributed_by) values
+  ('b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000009', v_org_id, v_owner), -- Harbor View Realty (proposal)
+  ('b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000010', v_org_id, v_owner), -- Golden Gate Cafe (won)
+  ('b0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000011', v_org_id, v_owner), -- Summit Legal Services (won)
+  ('b0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000013', v_org_id, v_owner), -- Maple Street Barbershop (won)
+  ('b0000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000014', v_org_id, v_owner); -- Northside Veterinary Clinic (won)
+
+  -- ── 6. Scheduled appointments (two upcoming, on open deals) ──
+  insert into scheduled_appointments (
+    org_id, owner_id, deal_id, title, start_at, end_at, location_address, status, calendar_event_id, calendar_sync_status
+  ) values
+  (v_org_id, v_owner, 'a0000000-0000-0000-0000-000000000007', 'Onboarding walkthrough - Lakeside Dental Group',
+    now() + interval '1 day', now() + interval '1 day' + interval '30 minutes', '300 Lakeside Dr, Cedar Ridge', 'scheduled', 'gcal_demo_0001', 'synced'),
+  (v_org_id, v_owner, 'a0000000-0000-0000-0000-000000000009', 'Proposal review - Harbor View Realty',
+    now() + interval '2 days', now() + interval '2 days' + interval '30 minutes', '150 Harbor View Way, Fairhaven', 'scheduled', 'gcal_demo_0002', 'synced');
 
 end $$;
 
