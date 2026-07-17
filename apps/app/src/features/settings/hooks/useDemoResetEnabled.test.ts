@@ -11,7 +11,7 @@ const maybeSingleMock = vi.fn(() => Promise.resolve(maybeSingleResult));
 const eqMock2 = vi.fn(() => ({ maybeSingle: maybeSingleMock }));
 const eqMock1 = vi.fn(() => ({ eq: eqMock2 }));
 const selectMock = vi.fn(() => ({ eq: eqMock1 }));
-const fromMock = vi.fn(() => ({ select: selectMock }));
+const fromMock = vi.fn((..._args: unknown[]) => ({ select: selectMock }));
 
 vi.mock("@/lib/supabase", () => ({
   supabase: { from: (...args: unknown[]) => fromMock(...args) },
