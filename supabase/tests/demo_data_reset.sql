@@ -1,0 +1,23 @@
+-- Manual assertions for reset_demo_data() (migration 20260717000001).
+-- reset_demo_data() derives the org from auth.uid(), so it needs a real
+-- signed-in session; run these checks with the demo account's JWT context
+-- (e.g. via the app calling the RPC, or psql with request.jwt.claims set).
+--
+--   psql "$SUPABASE_DB_URL" -f supabase/tests/demo_data_reset.sql
+--
+-- Expected AFTER a successful reset on the flagged demo org <ORG>:
+--   select count(*) from deals where org_id = '<ORG>';                          -- 18
+--   select count(*) from deals where org_id = '<ORG>' and stage = 'won';        -- 6
+--   select count(*) from deals where org_id = '<ORG>' and stage = 'lost';       -- 3
+--   select count(*) from partners where org_id = '<ORG>';                       -- 3
+--   select count(*) from scheduled_appointments where org_id = '<ORG>';         -- 2
+--   -- Activity-to-Win populates: every won/lost deal has matching snapshot cols
+--   select count(*) from deals
+--     where org_id = '<ORG>' and stage in ('won','lost')
+--       and activity_count_total = (
+--         select count(*) from activities a where a.deal_id = deals.id);         -- 9 (all match)
+--
+-- Safety: calling reset_demo_data() as an org WITHOUT the demo_reset flag must
+--   raise 'demo_reset_not_enabled' and change zero rows. As a non-admin in the
+--   flagged org it must raise 'not_authorized'.
+\echo 'demo_data_reset.sql: assertions documented; run against a DB with a real session.'
