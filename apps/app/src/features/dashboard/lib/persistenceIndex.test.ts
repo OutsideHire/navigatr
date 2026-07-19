@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { computeFollowUpDiscipline, computeTouchCadence, computePersistenceIndex } from "./persistenceIndex";
+import {
+  computeFollowUpDiscipline,
+  computeTouchCadence,
+  computePersistenceIndex,
+  computeTeamPersistenceIndex,
+} from "./persistenceIndex";
 import type { Deal, DealStage } from "@/features/pipeline/mockData";
 import type { Activity } from "@/features/activities/mockData";
 
@@ -194,5 +199,48 @@ describe("computePersistenceIndex", () => {
     expect(result.followUp.hasSample).toBe(true);
     expect(result.cadence.hasSample).toBe(false);
     expect(result.composite).toBe(Math.round((result.followUp.points / result.followUp.max) * 100));
+  });
+});
+
+describe("computeTeamPersistenceIndex", () => {
+  const TEAM_NOW = new Date("2026-07-01T00:00:00.000Z");
+  // Two reps, each with a kept follow-up on an owned qualified deal -> each scores.
+  function repDeal(id: string, owner: string): Deal {
+    return deal({ id, owner_id: owner, stage: "qualified" });
+  }
+  function keptPair(dealId: string, base: string): Activity[] {
+    return [
+      activity({ id: `${dealId}-s`, dealId, occurredAt: `${base}T10:00:00Z`, followUpDate: "2026-06-20" }),
+      activity({ id: `${dealId}-k`, dealId, occurredAt: "2026-06-19T10:00:00Z" }),
+    ];
+  }
+
+  it("team composite is the median of rep composites; range = min/max; repCount counts scored reps", () => {
+    const deals = [repDeal("d1", "rep1"), repDeal("d2", "rep2")];
+    const activities = [...keptPair("d1", "2026-06-05"), ...keptPair("d2", "2026-06-06")];
+    const t = computeTeamPersistenceIndex(deals, activities, { now: TEAM_NOW });
+    expect(t.repCount).toBe(2);
+    expect(t.composite).not.toBeNull();
+    expect(t.range).not.toBeNull();
+    expect(t.range!.min).toBeLessThanOrEqual(t.range!.max);
+    expect(t.responseVelocity.comingSoon).toBe(true);
+  });
+
+  it("excludes reps with no computable score", () => {
+    const deals = [repDeal("d1", "rep1"), repDeal("d2", "rep2")];
+    // only rep1 has activity; rep2's deal has none -> rep2 not scored
+    const t = computeTeamPersistenceIndex(deals, keptPair("d1", "2026-06-05"), { now: TEAM_NOW });
+    expect(t.repCount).toBe(1);
+    expect(t.range).toBeNull(); // <2 scored reps
+  });
+
+  it("returns null composite when no rep has data", () => {
+    const t = computeTeamPersistenceIndex(
+      [deal({ id: "d1", owner_id: "rep1", stage: "qualified" })],
+      [],
+      { now: TEAM_NOW },
+    );
+    expect(t.composite).toBeNull();
+    expect(t.repCount).toBe(0);
   });
 });

@@ -212,3 +212,46 @@ export function computePersistenceIndex(
     targetScore: TARGET_SCORE,
   };
 }
+
+// ── Team Roll-up ─────────────────────────────────────────────────────────
+
+export interface TeamPersistenceIndexResult {
+  composite: number | null;
+  followUp: { points: number | null; max: number };
+  cadence: { points: number | null; max: number };
+  responseVelocity: { comingSoon: true };
+  repCount: number;
+  range: { min: number; max: number } | null;
+  windowDays: number;
+  targetScore: number;
+}
+
+/**
+ * The team-aggregate Persistence Index for a manager/admin: the median of
+ * each distinct deal owner's individual composite, plus the min/max range
+ * across scored reps and how many reps had enough data to score.
+ */
+export function computeTeamPersistenceIndex(
+  deals: Deal[],
+  activities: Activity[],
+  opts: { now: Date; windowDays?: number },
+): TeamPersistenceIndexResult {
+  const windowDays = opts.windowDays ?? WINDOW_DAYS;
+  const owners = [...new Set(deals.map((d) => d.owner_id).filter((x): x is string => x != null))];
+  const scored = owners
+    .map((ownerId) => computePersistenceIndex(deals, activities, { ownerId, now: opts.now, windowDays }))
+    .filter((r) => r.composite != null);
+  const composites = scored.map((r) => r.composite as number);
+  const fuPts = scored.filter((r) => r.followUp.hasSample).map((r) => r.followUp.points);
+  const cadPts = scored.filter((r) => r.cadence.hasSample).map((r) => r.cadence.points);
+  return {
+    composite: composites.length ? Math.round(median(composites) as number) : null,
+    followUp: { points: fuPts.length ? Math.round(median(fuPts) as number) : null, max: FOLLOWUP_MAX },
+    cadence: { points: cadPts.length ? Math.round(median(cadPts) as number) : null, max: CADENCE_MAX },
+    responseVelocity: { comingSoon: true },
+    repCount: scored.length,
+    range: composites.length >= 2 ? { min: Math.min(...composites), max: Math.max(...composites) } : null,
+    windowDays,
+    targetScore: TARGET_SCORE,
+  };
+}
