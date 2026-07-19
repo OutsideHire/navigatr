@@ -156,3 +156,59 @@ export function computeTouchCadence(
     activeDeals: perWeek.length,
   };
 }
+
+// ── Composite ──────────────────────────────────────────────────────────────
+
+export interface PersistenceOptions {
+  ownerId: string;
+  now: Date;
+  windowDays?: number;
+}
+
+export interface PersistenceIndexResult {
+  composite: number | null;
+  followUp: FollowUpResult;
+  cadence: CadenceResult;
+  responseVelocity: { comingSoon: true };
+  windowDays: number;
+  targetScore: number;
+}
+
+/**
+ * The blended Persistence Index: a 0-100 composite scaled over whichever
+ * sub-components have a sample in the trailing window (response velocity is
+ * a placeholder for a later slice and never contributes points). Null when
+ * no component has enough data to score.
+ */
+export function computePersistenceIndex(
+  deals: Deal[],
+  activities: Activity[],
+  opts: PersistenceOptions,
+): PersistenceIndexResult {
+  const windowDays = opts.windowDays ?? WINDOW_DAYS;
+  const windowEnd = opts.now;
+  const windowStart = new Date(opts.now.getTime() - windowDays * DAY_MS);
+
+  const followUp = computeFollowUpDiscipline(deals, activities, opts.ownerId, windowStart, windowEnd);
+  const cadence = computeTouchCadence(deals, activities, opts.ownerId, windowStart, windowEnd);
+
+  let availPoints = 0;
+  let availMax = 0;
+  if (followUp.hasSample) {
+    availPoints += followUp.points;
+    availMax += followUp.max;
+  }
+  if (cadence.hasSample) {
+    availPoints += cadence.points;
+    availMax += cadence.max;
+  }
+
+  return {
+    composite: availMax > 0 ? Math.round((availPoints / availMax) * 100) : null,
+    followUp,
+    cadence,
+    responseVelocity: { comingSoon: true },
+    windowDays,
+    targetScore: TARGET_SCORE,
+  };
+}

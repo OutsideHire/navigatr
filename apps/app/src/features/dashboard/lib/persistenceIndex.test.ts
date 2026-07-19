@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeFollowUpDiscipline, computeTouchCadence } from "./persistenceIndex";
+import { computeFollowUpDiscipline, computeTouchCadence, computePersistenceIndex } from "./persistenceIndex";
 import type { Deal, DealStage } from "@/features/pipeline/mockData";
 import type { Activity } from "@/features/activities/mockData";
 
@@ -151,5 +151,48 @@ describe("computeTouchCadence", () => {
     expect(result.points).toBe(0);
     expect(result.activeDeals).toBe(0);
     expect(result.medianTouchesPerWeek).toBeNull();
+  });
+});
+
+const NOW = new Date("2026-07-01T00:00:00.000Z");
+
+describe("computePersistenceIndex", () => {
+  it("blends follow-up discipline and touch cadence into a composite out of 100", () => {
+    const deals = [deal({ id: "d1" })]; // qualified, eligible for both components
+    const activities = [
+      activity({ id: "a1", dealId: "d1", occurredAt: "2026-06-05T00:00:00.000Z", followUpDate: "2026-06-10" }),
+      activity({ id: "a2", dealId: "d1", occurredAt: "2026-06-09T00:00:00.000Z", followUpDate: null }),
+    ];
+    const result = computePersistenceIndex(deals, activities, { ownerId: OWNER, now: NOW });
+
+    expect(result.followUp.hasSample).toBe(true);
+    expect(result.cadence.hasSample).toBe(true);
+    expect(result.responseVelocity).toEqual({ comingSoon: true });
+    expect(result.windowDays).toBe(30);
+    expect(result.targetScore).toBe(75);
+
+    const availPoints = result.followUp.points + result.cadence.points;
+    const availMax = result.followUp.max + result.cadence.max;
+    expect(result.composite).toBe(Math.round((availPoints / availMax) * 100));
+  });
+
+  it("returns a null composite when there is no data at all", () => {
+    const result = computePersistenceIndex([], [], { ownerId: OWNER, now: NOW });
+    expect(result.composite).toBeNull();
+    expect(result.followUp.hasSample).toBe(false);
+    expect(result.cadence.hasSample).toBe(false);
+  });
+
+  it("scales off only the sampled component when a won deal excludes cadence", () => {
+    const deals = [deal({ id: "d1", stage: "won" })];
+    const activities = [
+      activity({ id: "a1", dealId: "d1", occurredAt: "2026-06-05T00:00:00.000Z", followUpDate: "2026-06-10" }),
+      activity({ id: "a2", dealId: "d1", occurredAt: "2026-06-09T00:00:00.000Z", followUpDate: null }),
+    ];
+    const result = computePersistenceIndex(deals, activities, { ownerId: OWNER, now: NOW });
+
+    expect(result.followUp.hasSample).toBe(true);
+    expect(result.cadence.hasSample).toBe(false);
+    expect(result.composite).toBe(Math.round((result.followUp.points / result.followUp.max) * 100));
   });
 });
