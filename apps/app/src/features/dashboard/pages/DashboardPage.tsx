@@ -88,6 +88,7 @@ import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { useOrgMemberNames } from "../hooks/useOrgMemberNames";
 import { KpiBreakdownPanel } from "../components/KpiBreakdownPanel";
 import { type KpiMetric } from "../lib/kpiBreakdown";
+import { PersistenceIndexWidget } from "../components/PersistenceIndexWidget";
 
 // ───────────────────────────────────────────────────────────────────────
 // Empty state — copied from Session 11. Lives here so the page picks
@@ -656,34 +657,6 @@ export function MonthlyPerformance({ months }: { months: DashboardData["monthlyP
   );
 }
 
-// Section 8: Persistence index (3 mini-stats) — first one live, other
-// two flagged as comingSoon (the dim card variant). The reasons are in
-// the hook's comments: follow-up rate needs scheduled-vs-completed
-// activity tracking; response window needs inbound-email timestamps.
-function PersistenceIndex({ stats }: { stats: DashboardData["persistenceIndex"] }) {
-  return (
-    <Card padding="lg" shadow="sm">
-      <SectionHeader title="Persistence index" />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {stats.map((stat) => (
-          <div
-            key={stat.eyebrow}
-            className={cn(
-              "flex flex-col gap-1 rounded-radius-md bg-surface-sunken p-4",
-              stat.comingSoon && "opacity-60",
-            )}
-            aria-disabled={stat.comingSoon || undefined}
-          >
-            <span className="text-eyebrow text-text-subtle">{stat.eyebrow}</span>
-            <span className="text-kpi-md tabular-nums text-text-default">{stat.value}</span>
-            <span className="text-caption text-text-muted">{stat.caption}</span>
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
 // Section 9: Top Partners leaderboard — live data.
 export function TopPartners({ topPartners }: { topPartners: DashboardData["topPartners"] }) {
   const navigate = useNavigate();
@@ -899,9 +872,10 @@ function PopulatedDashboard({ firstName: _firstName }: { firstName: string }) {
           {/* LIVE — last 4 months of won deals bucketed by updated_at
               as a proxy for "won_at" until deal_stage_history ships */}
           <MonthlyPerformance months={data.monthlyPerformance} />
-          {/* LIVE (partial) — touches-before-win is real; the other
-              two stats are explicitly marked comingSoon by the hook. */}
-          <PersistenceIndex stats={data.persistenceIndex} />
+          {/* BETA — follow-up discipline + touch cadence are live; response
+              velocity is an explicit comingSoon row (needs inbound-email
+              timestamps). Reads its own hook, not useDashboardData. */}
+          <PersistenceIndexWidget />
           {/* SP2a — rep logging-coverage widget (reads its own coverage_snapshot) */}
           <CoverageWidget />
           {/* LIVE */}
