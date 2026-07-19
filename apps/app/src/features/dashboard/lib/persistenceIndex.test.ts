@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeFollowUpDiscipline } from "./persistenceIndex";
+import { computeFollowUpDiscipline, computeTouchCadence } from "./persistenceIndex";
 import type { Deal, DealStage } from "@/features/pipeline/mockData";
 import type { Activity } from "@/features/activities/mockData";
 
@@ -99,5 +99,57 @@ describe("computeFollowUpDiscipline", () => {
     const result = computeFollowUpDiscipline(deals, activities, OWNER, WINDOW_START, WINDOW_END);
     expect(result.dueCount).toBe(0);
     expect(result.hasSample).toBe(false);
+  });
+});
+
+/** ISO timestamp `n` days after window start (day 0 = window start). */
+function dayOffset(n: number): string {
+  const d = new Date(WINDOW_START);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString();
+}
+
+describe("computeTouchCadence", () => {
+  it("scores an on-target deal (well above target cadence) at max points", () => {
+    const deals = [deal({ id: "d1" })];
+    // 16 touches every 2 days across the 30-day window -> well above 3.5/wk.
+    const activities = Array.from({ length: 16 }, (_, i) =>
+      activity({ id: `a${i}`, dealId: "d1", occurredAt: dayOffset(i * 2) }),
+    );
+    const result = computeTouchCadence(deals, activities, OWNER, WINDOW_START, WINDOW_END);
+    expect(result.activeDeals).toBe(1);
+    expect(result.hasSample).toBe(true);
+    expect(result.points).toBe(30);
+  });
+
+  it("excludes won deals from active deals and scores a below-target deal partway", () => {
+    const deals = [deal({ id: "d1" }), deal({ id: "d2", stage: "won" })];
+    const activities = [
+      // d1: 2 touches across the window -> well below target cadence.
+      activity({ id: "a1", dealId: "d1", occurredAt: dayOffset(0) }),
+      activity({ id: "a2", dealId: "d1", occurredAt: dayOffset(15) }),
+      // d2 is won -> excluded even though it has plenty of activity.
+      activity({ id: "a3", dealId: "d2", occurredAt: dayOffset(0) }),
+      activity({ id: "a4", dealId: "d2", occurredAt: dayOffset(2) }),
+      activity({ id: "a5", dealId: "d2", occurredAt: dayOffset(4) }),
+    ];
+    const result = computeTouchCadence(deals, activities, OWNER, WINDOW_START, WINDOW_END);
+    expect(result.activeDeals).toBe(1);
+    expect(result.hasSample).toBe(true);
+    expect(result.points).toBeGreaterThan(0);
+    expect(result.points).toBeLessThan(30);
+  });
+
+  it("has no sample when the only deal with activity is won", () => {
+    const deals = [deal({ id: "d2", stage: "won" })];
+    const activities = [
+      activity({ id: "a3", dealId: "d2", occurredAt: dayOffset(0) }),
+      activity({ id: "a4", dealId: "d2", occurredAt: dayOffset(2) }),
+    ];
+    const result = computeTouchCadence(deals, activities, OWNER, WINDOW_START, WINDOW_END);
+    expect(result.hasSample).toBe(false);
+    expect(result.points).toBe(0);
+    expect(result.activeDeals).toBe(0);
+    expect(result.medianTouchesPerWeek).toBeNull();
   });
 });
