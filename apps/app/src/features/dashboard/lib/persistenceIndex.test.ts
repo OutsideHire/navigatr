@@ -4,6 +4,9 @@ import {
   computeTouchCadence,
   computePersistenceIndex,
   computeTeamPersistenceIndex,
+  computePersistenceHistory,
+  historyDelta,
+  RANGE_PRESETS,
 } from "./persistenceIndex";
 import type { Deal, DealStage } from "@/features/pipeline/mockData";
 import type { Activity } from "@/features/activities/mockData";
@@ -242,5 +245,54 @@ describe("computeTeamPersistenceIndex", () => {
     );
     expect(t.composite).toBeNull();
     expect(t.repCount).toBe(0);
+  });
+});
+
+describe("computePersistenceHistory", () => {
+  const NOW = new Date("2026-07-01T00:00:00.000Z");
+
+  it("returns one point per day in the range, newest last", () => {
+    const pts = computePersistenceHistory([], [], { now: NOW, rangeDays: 7, ownerId: "rep1" });
+    expect(pts).toHaveLength(7);
+    expect(pts[0].date).toBe("2026-06-25");
+    expect(pts[6].date).toBe("2026-07-01");
+    expect(pts.every((p) => p.composite === null)).toBe(true); // no data
+  });
+
+  it("per-day composite matches a direct individual computation", () => {
+    const deals = [deal({ id: "d1", owner_id: "rep1", stage: "qualified" })];
+    const activities = [
+      activity({ id: "a1", dealId: "d1", followUpDate: "2026-06-20", occurredAt: "2026-06-05T10:00:00Z" }),
+      activity({ id: "a2", dealId: "d1", followUpDate: null, occurredAt: "2026-06-19T10:00:00Z" }),
+    ];
+    const pts = computePersistenceHistory(deals, activities, { now: NOW, rangeDays: 30, ownerId: "rep1" });
+    const last = pts[pts.length - 1];
+    const direct = computePersistenceIndex(deals, activities, { ownerId: "rep1", now: NOW });
+    expect(last.composite).toBe(direct.composite);
+  });
+
+  it("counts that day's activities for the volume series", () => {
+    const deals = [deal({ id: "d1", owner_id: "rep1", stage: "qualified" })];
+    const activities = [
+      activity({ id: "a1", dealId: "d1", followUpDate: null, occurredAt: "2026-06-30T09:00:00Z" }),
+      activity({ id: "a2", dealId: "d1", followUpDate: null, occurredAt: "2026-06-30T15:00:00Z" }),
+      activity({ id: "a3", dealId: "d1", followUpDate: null, occurredAt: "2026-07-01T09:00:00Z" }),
+    ];
+    const pts = computePersistenceHistory(deals, activities, { now: NOW, rangeDays: 7, ownerId: "rep1" });
+    expect(pts.find((p) => p.date === "2026-06-30")!.activityCount).toBe(2);
+    expect(pts.find((p) => p.date === "2026-07-01")!.activityCount).toBe(1);
+  });
+
+  it("historyDelta = last minus first non-null composite; null when <2", () => {
+    expect(historyDelta([{ date: "a", composite: null, activityCount: 0 }])).toBeNull();
+    expect(historyDelta([
+      { date: "a", composite: 60, activityCount: 0 },
+      { date: "b", composite: null, activityCount: 0 },
+      { date: "c", composite: 72, activityCount: 0 },
+    ])).toBe(12);
+  });
+
+  it("exposes range presets with 1M = 30 days", () => {
+    expect(RANGE_PRESETS.find((r) => r.key === "1M")!.days).toBe(30);
   });
 });

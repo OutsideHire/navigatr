@@ -255,3 +255,69 @@ export function computeTeamPersistenceIndex(
     targetScore: TARGET_SCORE,
   };
 }
+
+// ── History (Slice 3) ───────────────────────────────────────────────────────
+
+export interface PersistencePoint {
+  date: string; // YYYY-MM-DD (UTC)
+  composite: number | null;
+  activityCount: number;
+}
+
+export const RANGE_PRESETS = [
+  { key: "1W", days: 7 },
+  { key: "1M", days: 30 },
+  { key: "3M", days: 90 },
+  { key: "6M", days: 180 },
+  { key: "1Y", days: 365 },
+] as const;
+
+export type RangeKey = (typeof RANGE_PRESETS)[number]["key"];
+
+export interface HistoryOptions {
+  now: Date;
+  rangeDays: number;
+  ownerId?: string; // required unless team
+  team?: boolean;
+  windowDays?: number;
+}
+
+/**
+ * Client-side daily Persistence Index series: recomputes the composite as of
+ * each day in the trailing `rangeDays` window (newest last), plus that day's
+ * activity count for the volume sub-chart. Individual mode scopes volume to
+ * the viewer's own deals; team mode counts everything in scope.
+ */
+export function computePersistenceHistory(
+  deals: Deal[],
+  activities: Activity[],
+  opts: HistoryOptions,
+): PersistencePoint[] {
+  const windowDays = opts.windowDays ?? WINDOW_DAYS;
+  // Activities scoped to the viewer: for an individual, only their deals'
+  // activities count toward the daily volume; for a team, everything in scope.
+  const ownerDealIds = opts.team
+    ? null
+    : new Set(deals.filter((d) => d.owner_id === opts.ownerId).map((d) => d.id));
+
+  const points: PersistencePoint[] = [];
+  for (let i = opts.rangeDays - 1; i >= 0; i--) {
+    const d = new Date(opts.now.getTime() - i * DAY_MS);
+    const dateStr = d.toISOString().slice(0, 10);
+    const composite = opts.team
+      ? computeTeamPersistenceIndex(deals, activities, { now: d, windowDays }).composite
+      : computePersistenceIndex(deals, activities, { ownerId: opts.ownerId as string, now: d, windowDays }).composite;
+    const activityCount = activities.filter(
+      (a) => a.occurredAt.slice(0, 10) === dateStr && (ownerDealIds ? ownerDealIds.has(a.dealId) : true),
+    ).length;
+    points.push({ date: dateStr, composite, activityCount });
+  }
+  return points;
+}
+
+/** Trend delta: last minus first non-null composite; null when fewer than 2 scored days. */
+export function historyDelta(points: PersistencePoint[]): number | null {
+  const scored = points.filter((p) => p.composite != null).map((p) => p.composite as number);
+  if (scored.length < 2) return null;
+  return scored[scored.length - 1] - scored[0];
+}
