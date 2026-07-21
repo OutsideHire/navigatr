@@ -4,6 +4,8 @@
  * layout, role-framed labels. Response Velocity is a "coming soon" row; the
  * bars are structured to accept peer-benchmark markers later.
  */
+import type { ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/navigatr";
 import { useProfile } from "@/features/auth/useProfile";
 import { usePersistenceIndex } from "../hooks/usePersistenceIndex";
@@ -50,17 +52,31 @@ function ComingSoonRow() {
   );
 }
 
+function WidgetButton({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary rounded-radius-md"
+    >
+      <div className="flex flex-col gap-4">{children}</div>
+    </button>
+  );
+}
+
 export function PersistenceIndexWidget() {
+  const navigate = useNavigate();
   const role = useProfile().data?.role;
   const isManager = role === "manager" || role === "admin";
   const individual = usePersistenceIndex();
   const team = useTeamPersistenceIndex();
+  const openDetail = () => navigate("/dashboard/persistence-index");
 
   if (isManager) {
     const t = team;
     return (
       <Card padding="lg" shadow="sm">
-        <div className="flex flex-col gap-4">
+        <WidgetButton onClick={openDetail}>
           <Header subtitle="Your team · last 30 days" />
           {t.composite == null ? (
             <p className="text-body-sm text-text-muted">
@@ -80,7 +96,7 @@ export function PersistenceIndexWidget() {
               </p>
             </>
           )}
-        </div>
+        </WidgetButton>
       </Card>
     );
   }
@@ -88,7 +104,7 @@ export function PersistenceIndexWidget() {
   const pi = individual;
   return (
     <Card padding="lg" shadow="sm">
-      <div className="flex flex-col gap-4">
+      <WidgetButton onClick={openDetail}>
         <Header subtitle="You · last 30 days" />
         {pi == null || pi.composite == null ? (
           <p className="text-body-sm text-text-muted">
@@ -113,7 +129,7 @@ export function PersistenceIndexWidget() {
             </p>
           </>
         )}
-      </div>
+      </WidgetButton>
     </Card>
   );
 }

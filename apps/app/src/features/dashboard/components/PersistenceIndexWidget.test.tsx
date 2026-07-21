@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { PersistenceIndexWidget } from "./PersistenceIndexWidget";
 import type { PersistenceIndexResult, TeamPersistenceIndexResult } from "../lib/persistenceIndex";
+
+const navigateMock = vi.fn();
+vi.mock("react-router-dom", async (orig) => {
+  const actual = await orig<typeof import("react-router-dom")>();
+  return { ...actual, useNavigate: () => navigateMock };
+});
 
 let individual: PersistenceIndexResult | null;
 let team: TeamPersistenceIndexResult;
@@ -24,9 +30,16 @@ const teamFull: TeamPersistenceIndexResult = {
   windowDays: 30, targetScore: 75,
 };
 
-beforeEach(() => { individual = indFull; team = teamFull; role = "rep"; });
+beforeEach(() => { navigateMock.mockReset(); individual = indFull; team = teamFull; role = "rep"; });
 
 describe("PersistenceIndexWidget", () => {
+  it("opens the detail page when clicked", () => {
+    role = "rep";
+    render(<PersistenceIndexWidget />);
+    fireEvent.click(screen.getByRole("button", { name: /persistence index/i }));
+    expect(navigateMock).toHaveBeenCalledWith("/dashboard/persistence-index");
+  });
+
   it("rep sees the individual score", () => {
     role = "rep";
     render(<PersistenceIndexWidget />);
