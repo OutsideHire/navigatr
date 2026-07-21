@@ -9,11 +9,12 @@
  * Style: a purpose-built style (buildPathMapStyle) rather than recoloring a
  * stock style, so every color and road width is ours. The palette tracks
  * Google Maps' light "Default" look:
- *   land #f5f3ef · water #aadaff · parks #c8e6c9 (woods/grass #dcecd8) ·
- *   buildings #e9e6df (fade in from z14) · roads #ffffff with #d6d6d6 casing ·
- *   labels #5f6368 with a subtle white halo.
- * White roads on the near-white land read via the gray casing + the green
- * parks/buildings around them — the same figure-ground Google Maps uses.
+ *   land #efece5 · water #aadaff · parks #c8e6c9 (woods/grass #d7ead0) ·
+ *   buildings #e6e2da (fade in from z14) · roads: minor/tertiary #ffffff,
+ *   primary/secondary #fdeeb0 (pale yellow), motorway/trunk #f2c56b (orange),
+ *   all with #cfccc4 casing · labels #5f6368 with a subtle white halo.
+ * The warm road skeleton on the off-gray land, with green parks/buildings, is
+ * the figure-ground Google Maps uses.
  *
  * Tiles: OpenFreeMap (https://openfreemap.org) — free, keyless, no signup,
  * OpenMapTiles vector schema. To move to MapTiler (or any OpenMapTiles host),
@@ -55,13 +56,15 @@ export interface MerchantMapProps {
 
 // ── The exact Path map palette ─────────────────────────────────────
 const COLOR = {
-  land: "#f5f3ef",
+  land: "#efece5",
   water: "#aadaff",
   park: "#c8e6c9",
-  landcover: "#dcecd8",
-  building: "#e9e6df",
-  road: "#ffffff",
-  roadCasing: "#d6d6d6",
+  landcover: "#d7ead0",
+  building: "#e6e2da",
+  road: "#ffffff", // minor + tertiary streets
+  roadHighway: "#f2c56b", // motorway/trunk — Google's warm orange
+  roadArterial: "#fdeeb0", // primary/secondary — pale yellow
+  roadCasing: "#cfccc4",
   label: "#5f6368",
   labelHalo: "#ffffff",
 } as const;
@@ -127,14 +130,14 @@ function buildPathMapStyle(): StyleSpecification {
         source: "omt",
         "source-layer": "landcover",
         filter: ["match", ["get", "class"], ["wood", "grass", "scrub", "forest"], true, false],
-        paint: { "fill-color": COLOR.landcover, "fill-opacity": 0.7 },
+        paint: { "fill-color": COLOR.landcover, "fill-opacity": 0.85 },
       },
       {
         id: "park",
         type: "fill",
         source: "omt",
         "source-layer": "park",
-        paint: { "fill-color": COLOR.park, "fill-opacity": 0.85 },
+        paint: { "fill-color": COLOR.park, "fill-opacity": 1 },
       },
       // Building footprints fade in at street zoom (Google shows these).
       {
@@ -209,7 +212,15 @@ function buildPathMapStyle(): StyleSpecification {
         filter: ["match", ["get", "class"], MAJOR_ROADS, true, false],
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
-          "line-color": COLOR.road,
+          // Google's road skeleton: motorways/trunks orange, primary/secondary
+          // pale yellow, tertiary white (falls through).
+          "line-color": [
+            "match",
+            ["get", "class"],
+            ["motorway", "trunk"], COLOR.roadHighway,
+            ["primary", "secondary"], COLOR.roadArterial,
+            COLOR.road,
+          ] as unknown as ExpressionSpecification,
           "line-width": widthRamp([
             [6, 0.5],
             [12, 2.5],
