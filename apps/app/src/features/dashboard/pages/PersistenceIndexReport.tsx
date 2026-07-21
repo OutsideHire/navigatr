@@ -11,7 +11,15 @@ import { ArrowLeft, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { Card } from "@/components/navigatr";
 import { useProfile } from "@/features/auth/useProfile";
 import { usePersistenceHistory } from "../hooks/usePersistenceHistory";
-import { RANGE_PRESETS, TARGET_SCORE, historyDelta, type RangeKey } from "../lib/persistenceIndex";
+import { usePerRepPersistence } from "../hooks/usePerRepPersistence";
+import { useOrgMemberNames } from "@/features/dashboard/hooks/useOrgMemberNames";
+import {
+  RANGE_PRESETS,
+  TARGET_SCORE,
+  historyDelta,
+  type RangeKey,
+  type PerRepScore,
+} from "../lib/persistenceIndex";
 
 function TrendChart({ points }: { points: { composite: number | null }[] }) {
   const W = 640;
@@ -84,13 +92,59 @@ function VolumeChart({ points }: { points: { activityCount: number }[] }) {
   );
 }
 
+function RepRoster({
+  rows,
+  names,
+  onSelect,
+}: {
+  rows: PerRepScore[];
+  names: Map<string, string>;
+  onSelect: (id: string) => void;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <Card padding="lg" shadow="sm">
+      <div className="flex flex-col gap-3">
+        <span className="text-body-sm font-medium text-text-default">By rep</span>
+        <div className="flex flex-col divide-y divide-border-subtle">
+          {rows.map((r) => (
+            <button
+              key={r.ownerId}
+              type="button"
+              onClick={() => onSelect(r.ownerId)}
+              className="flex items-center gap-3 py-2 text-left transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+            >
+              <span className="flex-1 truncate text-body-sm text-text-default">
+                {names.get(r.ownerId) ?? "Unknown rep"}
+              </span>
+              {r.composite == null ? (
+                <span className="text-caption text-text-subtle">no data yet</span>
+              ) : (
+                <>
+                  <div className="h-1.5 w-24 overflow-hidden rounded-radius-full bg-surface-sunken">
+                    <div className="h-full rounded-radius-full bg-brand-primary" style={{ width: `${r.composite}%` }} />
+                  </div>
+                  <span className="w-8 text-right text-body-sm tabular-nums text-text-default">{r.composite}</span>
+                </>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export function PersistenceIndexReport() {
   const navigate = useNavigate();
   const role = useProfile().data?.role;
-  const isTeam = role === "manager" || role === "admin";
+  const isManager = role === "manager" || role === "admin";
   const [rangeKey, setRangeKey] = React.useState<RangeKey>("1M");
+  const [selectedRep, setSelectedRep] = React.useState<string | null>(null);
   const rangeDays = RANGE_PRESETS.find((r) => r.key === rangeKey)!.days;
-  const points = usePersistenceHistory(rangeDays);
+  const points = usePersistenceHistory(rangeDays, selectedRep ?? undefined);
+  const roster = usePerRepPersistence();
+  const names = useOrgMemberNames(isManager);
 
   const scored = points.filter((p) => p.composite != null);
   const current = scored.length ? (scored[scored.length - 1].composite as number) : null;
@@ -108,7 +162,20 @@ export function PersistenceIndexReport() {
             <ArrowLeft className="h-4 w-4" aria-hidden /> Dashboard
           </button>
           <h1 className="text-heading-md text-text-default">Persistence index</h1>
-          <p className="text-body-sm text-text-muted">{isTeam ? "Your team" : "You"} · trailing 30-day score</p>
+          {selectedRep ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-body-sm text-text-muted">{names.get(selectedRep) ?? "Rep"} · trailing 30-day score</p>
+              <button
+                type="button"
+                onClick={() => setSelectedRep(null)}
+                className="text-body-sm text-brand-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+              >
+                Back to team
+              </button>
+            </div>
+          ) : (
+            <p className="text-body-sm text-text-muted">{isManager ? "Your team" : "You"} · trailing 30-day score</p>
+          )}
         </div>
 
         <Card padding="lg" shadow="sm">
@@ -162,6 +229,8 @@ export function PersistenceIndexReport() {
             )}
           </div>
         </Card>
+
+        {isManager && !selectedRep && <RepRoster rows={roster} names={names} onSelect={setSelectedRep} />}
       </div>
     </div>
   );

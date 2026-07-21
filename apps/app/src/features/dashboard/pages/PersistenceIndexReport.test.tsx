@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { PersistenceIndexReport } from "./PersistenceIndexReport";
-import type { PersistencePoint } from "../lib/persistenceIndex";
+import type { PersistencePoint, PerRepScore } from "../lib/persistenceIndex";
 
 const navigateMock = vi.fn();
 vi.mock("react-router-dom", async (orig) => {
@@ -15,11 +15,19 @@ vi.mock("@/features/auth/useProfile", () => ({ useProfile: () => ({ data: { role
 
 let series: PersistencePoint[];
 let lastRangeDays = 0;
+let lastTargetOwner: string | undefined;
 vi.mock("../hooks/usePersistenceHistory", () => ({
-  usePersistenceHistory: (rangeDays: number) => {
+  usePersistenceHistory: (rangeDays: number, targetOwnerId?: string) => {
     lastRangeDays = rangeDays;
+    lastTargetOwner = targetOwnerId;
     return series;
   },
+}));
+
+let roster: PerRepScore[];
+vi.mock("../hooks/usePerRepPersistence", () => ({ usePerRepPersistence: () => roster }));
+vi.mock("@/features/dashboard/hooks/useOrgMemberNames", () => ({
+  useOrgMemberNames: () => new Map([["u1", "Sarah Lim"], ["u2", "Marcus Tan"]]),
 }));
 
 function mkSeries(n: number, base = 60): PersistencePoint[] {
@@ -42,6 +50,11 @@ beforeEach(() => {
   navigateMock.mockReset();
   role = "rep";
   series = mkSeries(30);
+  roster = [
+    { ownerId: "u1", composite: 82, followUpPoints: 34, cadencePoints: 24 },
+    { ownerId: "u2", composite: 60, followUpPoints: 20, cadencePoints: 18 },
+  ];
+  lastTargetOwner = undefined;
 });
 
 describe("PersistenceIndexReport", () => {
@@ -74,5 +87,31 @@ describe("PersistenceIndexReport", () => {
     renderReport();
     fireEvent.click(screen.getByRole("button", { name: /dashboard/i }));
     expect(navigateMock).toHaveBeenCalledWith("/dashboard");
+  });
+
+  it("shows the By-rep roster for a manager", () => {
+    role = "manager";
+    renderReport();
+    expect(screen.getByText(/by rep/i)).toBeInTheDocument();
+    expect(screen.getByText("Sarah Lim")).toBeInTheDocument();
+    expect(screen.getByText("Marcus Tan")).toBeInTheDocument();
+  });
+
+  it("does not show the roster for a rep", () => {
+    role = "rep";
+    renderReport();
+    expect(screen.queryByText(/by rep/i)).toBeNull();
+  });
+
+  it("clicking a rep drills into their trend and shows Back to team", () => {
+    role = "manager";
+    renderReport();
+    fireEvent.click(screen.getByText("Sarah Lim"));
+    expect(lastTargetOwner).toBe("u1");
+    expect(screen.getByText(/Sarah Lim/)).toBeInTheDocument();
+    const back = screen.getByRole("button", { name: /back to team/i });
+    expect(back).toBeInTheDocument();
+    fireEvent.click(back);
+    expect(screen.getByText(/by rep/i)).toBeInTheDocument(); // roster returns
   });
 });
