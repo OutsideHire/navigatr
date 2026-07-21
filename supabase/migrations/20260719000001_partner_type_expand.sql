@@ -1,8 +1,37 @@
--- Demo data reset (single account, flag-gated). Wipes the caller's working
--- data and reseeds a curated fixture. Gated by the 'demo_reset' org feature
--- flag so it can only ever affect an org that has been explicitly opted in.
--- Idempotent by nature (delete-then-insert). Apply via the Supabase SQL editor.
+-- Partner type: enum -> flexible text.
+--
+-- partner_type was a rigid 6-value enum ('cpa', 'banker', 'attorney',
+-- 'insurance', 'consultant', 'other'). The product now supports 15 partner
+-- types (accountant, cpa_bookkeeper, business_banker_commercial_lender,
+-- benefits_broker, commercial_insurance_agent, pos_dealer, var, isv,
+-- small_business_attorney, web_developer, hr_consultant,
+-- equipment_leasing_finance, chamber_of_commerce, trade_association, other)
+-- and the list is expected to keep growing. Rather than alter the enum
+-- (and ship a migration every time the list changes), convert the column
+-- to text: the app owns and validates the list (see
+-- apps/app/src/features/partners/components/partnerForm.ts), so no CHECK
+-- constraint is added here either. Apply via the Supabase SQL editor.
 
+-- 1. Column type: enum -> text. One-time; naturally idempotent (re-running
+-- against an already-text column is a no-op cast).
+alter table partners alter column type type text using type::text;
+
+-- 2. Remap existing rows to the new keys. Safe to re-run: rows already on
+-- a new key (including 'other') fall through the else branch unchanged.
+update partners set type = case type
+  when 'cpa'        then 'cpa_bookkeeper'
+  when 'banker'      then 'business_banker_commercial_lender'
+  when 'attorney'    then 'small_business_attorney'
+  when 'insurance'   then 'commercial_insurance_agent'
+  when 'consultant'  then 'hr_consultant'
+  else type
+end;
+
+-- 3. Re-create reset_demo_data() with the new partner keys so future demo
+-- resets seed valid, current type values. Body copied verbatim from
+-- 20260717000001_demo_data_reset.sql, with only the 3 partner `type`
+-- literals below changed ('cpa' -> 'cpa_bookkeeper', 'banker' ->
+-- 'business_banker_commercial_lender', 'attorney' -> 'small_business_attorney').
 create or replace function reset_demo_data()
 returns void
 language plpgsql security definer set search_path = public
