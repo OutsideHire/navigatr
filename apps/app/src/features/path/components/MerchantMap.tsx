@@ -7,12 +7,13 @@
  * features individually with a vector renderer, not a raster tile + CSS filter.
  *
  * Style: a purpose-built style (buildPathMapStyle) rather than recoloring a
- * stock style, so every color and road width is ours. The exact palette comes
- * from the design's Google-Maps style:
- *   land #f9f5ed · water #aee0f4 · road #f5f5f5 · road casing #c9c9c9 ·
- *   labels #878787 (no halo).
- * Roads #f5f5f5 are nearly the land color on purpose (the source style is that
- * minimal), so the #c9c9c9 casing is what actually makes the road network read.
+ * stock style, so every color and road width is ours. The palette tracks
+ * Google Maps' light "Default" look:
+ *   land #f5f3ef · water #aadaff · parks #c8e6c9 (woods/grass #dcecd8) ·
+ *   buildings #e9e6df (fade in from z14) · roads #ffffff with #d6d6d6 casing ·
+ *   labels #5f6368 with a subtle white halo.
+ * White roads on the near-white land read via the gray casing + the green
+ * parks/buildings around them — the same figure-ground Google Maps uses.
  *
  * Tiles: OpenFreeMap (https://openfreemap.org) — free, keyless, no signup,
  * OpenMapTiles vector schema. To move to MapTiler (or any OpenMapTiles host),
@@ -54,11 +55,15 @@ export interface MerchantMapProps {
 
 // ── The exact Path map palette ─────────────────────────────────────
 const COLOR = {
-  land: "#f9f5ed",
-  water: "#aee0f4",
-  road: "#f5f5f5",
-  roadCasing: "#c9c9c9",
-  label: "#878787",
+  land: "#f5f3ef",
+  water: "#aadaff",
+  park: "#c8e6c9",
+  landcover: "#dcecd8",
+  building: "#e9e6df",
+  road: "#ffffff",
+  roadCasing: "#d6d6d6",
+  label: "#5f6368",
+  labelHalo: "#ffffff",
 } as const;
 
 const REP_COLOR = "#2456E6"; // signal blue — "you are here" + route line
@@ -112,6 +117,36 @@ function buildPathMapStyle(): StyleSpecification {
         source: "omt",
         "source-layer": "water",
         paint: { "fill-color": COLOR.water },
+      },
+      // Green: woods/grass (landcover) then parks — the biggest "Google Maps"
+      // tell after white roads. Both are standard OpenMapTiles source-layers;
+      // where a tile has no such feature the layer simply draws nothing.
+      {
+        id: "landcover",
+        type: "fill",
+        source: "omt",
+        "source-layer": "landcover",
+        filter: ["match", ["get", "class"], ["wood", "grass", "scrub", "forest"], true, false],
+        paint: { "fill-color": COLOR.landcover, "fill-opacity": 0.7 },
+      },
+      {
+        id: "park",
+        type: "fill",
+        source: "omt",
+        "source-layer": "park",
+        paint: { "fill-color": COLOR.park, "fill-opacity": 0.85 },
+      },
+      // Building footprints fade in at street zoom (Google shows these).
+      {
+        id: "building",
+        type: "fill",
+        source: "omt",
+        "source-layer": "building",
+        minzoom: 14,
+        paint: {
+          "fill-color": COLOR.building,
+          "fill-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0, 16, 0.7],
+        },
       },
       // Casings first (drawn under the bodies) so roads get a gray edge.
       {
@@ -196,7 +231,7 @@ function buildPathMapStyle(): StyleSpecification {
           "text-font": ["Noto Sans Regular"],
           "text-size": 11,
         },
-        paint: { "text-color": COLOR.label, "text-halo-width": 0 },
+        paint: { "text-color": COLOR.label, "text-halo-color": COLOR.labelHalo, "text-halo-width": 1.1, "text-halo-blur": 0.4 },
       },
       {
         id: "water-labels",
@@ -208,7 +243,7 @@ function buildPathMapStyle(): StyleSpecification {
           "text-font": ["Noto Sans Italic"],
           "text-size": 12,
         },
-        paint: { "text-color": COLOR.label, "text-halo-width": 0 },
+        paint: { "text-color": COLOR.label, "text-halo-color": COLOR.labelHalo, "text-halo-width": 1.1, "text-halo-blur": 0.4 },
       },
       {
         id: "place-labels",
@@ -228,7 +263,7 @@ function buildPathMapStyle(): StyleSpecification {
             ["match", ["get", "class"], "city", 20, 14],
           ],
         },
-        paint: { "text-color": COLOR.label, "text-halo-width": 0 },
+        paint: { "text-color": COLOR.label, "text-halo-color": COLOR.labelHalo, "text-halo-width": 1.1, "text-halo-blur": 0.4 },
       },
     ],
   };
