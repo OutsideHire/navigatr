@@ -50,7 +50,7 @@ describe("useCreatePartner", () => {
     await result.current.mutateAsync({
       name: "Sarah Johnson",
       company: "Johnson & Boyle CPAs",
-      type: "cpa",
+      type: "cpa_bookkeeper",
       phone: "+12025550101",
       email: "sarah@johnson.com",
       city: "Austin, TX",
@@ -65,7 +65,7 @@ describe("useCreatePartner", () => {
       created_by: "user-1",
       name: "Sarah Johnson",
       company: "Johnson & Boyle CPAs",
-      type: "cpa",
+      type: "cpa_bookkeeper",
       // default status when not provided
       status: "active",
       phone: "+12025550101",

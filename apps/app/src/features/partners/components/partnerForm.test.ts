@@ -5,12 +5,14 @@ import {
   digitsOnly,
   formatUSPhone,
   stripUsCountryCode,
+  TYPE_OPTIONS,
 } from "./partnerForm";
+import { TYPE_LABEL } from "../mockData";
 
 const validAdd = {
   name: "Sarah Johnson",
   company: "Johnson & Boyle CPAs",
-  type: "cpa" as const,
+  type: "cpa_bookkeeper" as const,
   phone: "(202) 555-0101",
   email: "sarah@jbcpa.com",
   city: "Austin, TX",
@@ -65,6 +67,26 @@ describe("editPartnerSchema", () => {
   });
 });
 
+describe("TYPE_OPTIONS", () => {
+  it("has all 15 partner types", () => {
+    expect(TYPE_OPTIONS).toHaveLength(15);
+  });
+
+  it("every option value has a TYPE_LABEL entry", () => {
+    for (const opt of TYPE_OPTIONS) {
+      expect(TYPE_LABEL[opt.value as keyof typeof TYPE_LABEL]).toBeTruthy();
+    }
+  });
+
+  it("every option value is accepted by partnerFormSchema", () => {
+    for (const opt of TYPE_OPTIONS) {
+      expect(
+        partnerFormSchema.safeParse({ ...validAdd, type: opt.value }).success,
+      ).toBe(true);
+    }
+  });
+});
+
 describe("phone helpers", () => {
   it("digitsOnly strips non-digits", () => {
     expect(digitsOnly("+1 (202) 555-0101")).toBe("12025550101");
@@ -85,7 +107,7 @@ describe("editPartnerSchema — optional phone/email (unblock legacy edits)", ()
   const validEdit = {
     name: "Sarah Johnson",
     company: "Johnson & Boyle CPAs",
-    type: "cpa" as const,
+    type: "cpa_bookkeeper" as const,
     status: "active" as const,
     followupCadence: "none",
     phone: "",

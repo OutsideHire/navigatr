@@ -21,12 +21,21 @@ import {
 export { digitsOnly, formatUSPhone, stripUsCountryCode } from "@/lib/contactValidation";
 
 export const TYPE_OPTIONS: SelectOption[] = [
-  { value: "cpa",        label: "CPA" },
-  { value: "banker",     label: "Banker" },
-  { value: "attorney",   label: "Attorney" },
-  { value: "insurance",  label: "Insurance" },
-  { value: "consultant", label: "Consultant" },
-  { value: "other",      label: "Other" },
+  { value: "accountant",                         label: "Accountant" },
+  { value: "cpa_bookkeeper",                     label: "CPA/Bookkeeper" },
+  { value: "business_banker_commercial_lender",  label: "Business Banker / Commercial Lender" },
+  { value: "benefits_broker",                    label: "Benefits Broker" },
+  { value: "commercial_insurance_agent",         label: "Commercial Insurance Agent" },
+  { value: "pos_dealer",                         label: "POS Dealer" },
+  { value: "var",                                label: "VAR" },
+  { value: "isv",                                label: "ISV" },
+  { value: "small_business_attorney",            label: "Small Business Attorney" },
+  { value: "web_developer",                      label: "Web Developer" },
+  { value: "hr_consultant",                      label: "HR Consultant" },
+  { value: "equipment_leasing_finance",          label: "Equipment Leasing / Finance Company" },
+  { value: "chamber_of_commerce",                label: "Chamber of Commerce" },
+  { value: "trade_association",                  label: "Trade Association" },
+  { value: "other",                              label: "Other" },
 ];
 
 export const STATUS_OPTIONS: SelectOption[] = [
@@ -49,7 +58,23 @@ export const CADENCE_OPTIONS: SelectOption[] = [
 export const partnerFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
   company: z.string().min(1, "Company is required"),
-  type: z.enum(["cpa", "banker", "attorney", "insurance", "consultant", "other"]),
+  type: z.enum([
+    "accountant",
+    "cpa_bookkeeper",
+    "business_banker_commercial_lender",
+    "benefits_broker",
+    "commercial_insurance_agent",
+    "pos_dealer",
+    "var",
+    "isv",
+    "small_business_attorney",
+    "web_developer",
+    "hr_consultant",
+    "equipment_leasing_finance",
+    "chamber_of_commerce",
+    "trade_association",
+    "other",
+  ]),
   phone: requiredPhoneSchema,
   email: requiredEmailSchema,
   city: z.string().optional(),

@@ -11,7 +11,7 @@ vi.mock("./usePartners", () => ({
 
 function partner(overrides: Partial<Partner>): Partner {
   return {
-    id: "p", name: "N", company: "C", type: "cpa", status: "active",
+    id: "p", name: "N", company: "C", type: "cpa_bookkeeper", status: "active",
     phone: "", email: "", city: "", lastTouch: null, nextFollowup: null,
     attributedDealIds: [], outboundDealIds: [], notes: "",
     createdAt: "2020-01-01T12:00:00Z",

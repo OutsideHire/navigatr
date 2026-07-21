@@ -62,7 +62,7 @@ function partner(args: {
     id: args.id,
     name: args.name,
     company: `${args.name.split(" ")[0]} & Co`,
-    type: "cpa",
+    type: "cpa_bookkeeper",
     status: args.status ?? "active",
     phone: "+12025550100",
     email: `${args.id}@example.com`,

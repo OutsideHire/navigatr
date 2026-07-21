@@ -126,7 +126,7 @@ function PartnerCard({ partner, revenue }: { partner: Partner; revenue: number }
             <div className="flex min-w-0 flex-col">
               <p className="truncate text-body-strong text-text-default">{partner.name}</p>
               <p className="truncate text-caption text-text-muted">
-                {TYPE_LABEL[partner.type]} · {partner.company}
+                {TYPE_LABEL[partner.type] ?? partner.type} · {partner.company}
               </p>
             </div>
             <Badge kind={STATUS_BADGE_KIND[partner.status]}>

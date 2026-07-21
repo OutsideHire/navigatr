@@ -123,7 +123,7 @@ function HeroCard({
         <Avatar alt={partner.name} size="lg" />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <p className="text-eyebrow text-text-muted">
-            PARTNER · {TYPE_LABEL[partner.type].toUpperCase()}
+            PARTNER · {(TYPE_LABEL[partner.type] ?? partner.type).toUpperCase()}
           </p>
           <h1 className="text-heading-lg text-text-default">{partner.name}</h1>
           <p className="text-body-md text-text-muted">

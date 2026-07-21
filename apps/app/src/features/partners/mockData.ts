@@ -17,11 +17,20 @@
 import type { BadgeKind } from "@/components/navigatr";
 
 export type PartnerType =
-  | "cpa"
-  | "banker"
-  | "attorney"
-  | "insurance"
-  | "consultant"
+  | "accountant"
+  | "cpa_bookkeeper"
+  | "business_banker_commercial_lender"
+  | "benefits_broker"
+  | "commercial_insurance_agent"
+  | "pos_dealer"
+  | "var"
+  | "isv"
+  | "small_business_attorney"
+  | "web_developer"
+  | "hr_consultant"
+  | "equipment_leasing_finance"
+  | "chamber_of_commerce"
+  | "trade_association"
   | "other";
 
 export type PartnerStatus = "active" | "cooling" | "inactive";
@@ -106,38 +115,47 @@ function partner(
 // so the Partner Detail page can render real deal cards from the pipeline.
 export const MOCK_PARTNERS: Partner[] = [
   // ── Star performers (active + multiple referrals) ──────────────────
-  partner("p-001", "Sarah Johnson",     "Johnson & Boyle CPAs",     "cpa",        "active",   "0101", "Austin, TX",  2,  3,  ["d-206", "d-301", "d-401"], "Best CPA in our network. Refers exclusively merchant services to us — never tries to upsell into other services."),
-  partner("p-002", "Marcus Thompson",   "Thompson Capital Bank",    "banker",     "active",   "0102", "Austin, TX",  4,  7,  ["d-302"],                     "VP of small business banking. Friday lunches work — get a calendar invite out 2 weeks ahead."),
-  partner("p-003", "Aisha Patel",       "Patel Law Firm",           "attorney",   "active",   "0103", "Round Rock",  6,  10, ["d-105"],                     "Estate planning attorney with strong restaurant client base."),
-  partner("p-004", "David Chen",        "Chen Wealth Advisors",     "consultant", "active",   "0104", "Cedar Park",  3,  5,  ["d-307"],                     "Hits commercial real estate hard. His clients are usually merchant services targets too."),
+  partner("p-001", "Sarah Johnson",     "Johnson & Boyle CPAs",     "cpa_bookkeeper",                     "active",   "0101", "Austin, TX",  2,  3,  ["d-206", "d-301", "d-401"], "Best CPA in our network. Refers exclusively merchant services to us — never tries to upsell into other services."),
+  partner("p-002", "Marcus Thompson",   "Thompson Capital Bank",    "business_banker_commercial_lender", "active",   "0102", "Austin, TX",  4,  7,  ["d-302"],                     "VP of small business banking. Friday lunches work — get a calendar invite out 2 weeks ahead."),
+  partner("p-003", "Aisha Patel",       "Patel Law Firm",           "small_business_attorney",           "active",   "0103", "Round Rock",  6,  10, ["d-105"],                     "Estate planning attorney with strong restaurant client base."),
+  partner("p-004", "David Chen",        "Chen Wealth Advisors",     "hr_consultant",                      "active",   "0104", "Cedar Park",  3,  5,  ["d-307"],                     "Hits commercial real estate hard. His clients are usually merchant services targets too."),
 
   // ── Active, single referral ────────────────────────────────────────
-  partner("p-005", "Brandon Mitchell",  "Mitchell Insurance Group", "insurance", "active",   "0105", "Austin, TX",  5,  14, ["d-202"],                     "Health benefits broker. SMB focus."),
-  partner("p-006", "Linda Park",        "Park & Associates",        "cpa",       "active",   "0106", "Pflugerville",8,  21, ["d-208"],                     "Smaller firm but every referral has been gold."),
+  partner("p-005", "Brandon Mitchell",  "Mitchell Insurance Group", "commercial_insurance_agent",        "active",   "0105", "Austin, TX",  5,  14, ["d-202"],                     "Health benefits broker. SMB focus."),
+  partner("p-006", "Linda Park",        "Park & Associates",        "cpa_bookkeeper",                    "active",   "0106", "Pflugerville",8,  21, ["d-208"],                     "Smaller firm but every referral has been gold."),
 
   // ── Cooling — last touch >30 days, no recent referrals ─────────────
-  partner("p-007", "Robert Garcia",     "Garcia Financial",         "banker",    "cooling",  "0107", "Austin, TX",  45, 4,  [],                            "Was hot in Q3, gone quiet. Try a coffee meeting."),
-  partner("p-008", "Jennifer Wu",       "Wu Tax Services",          "cpa",       "cooling",  "0108", "Round Rock",  38, 7,  [],                            "Used to refer 1-2/month. New baby; reduced practice."),
-  partner("p-009", "Tom O'Brien",       "O'Brien Legal",            "attorney",  "cooling",  "0109", "Bee Cave",    52, 14, [],                            "Moved offices. Reconnect with a value-add intro."),
+  partner("p-007", "Robert Garcia",     "Garcia Financial",         "business_banker_commercial_lender", "cooling",  "0107", "Austin, TX",  45, 4,  [],                            "Was hot in Q3, gone quiet. Try a coffee meeting."),
+  partner("p-008", "Jennifer Wu",       "Wu Tax Services",          "cpa_bookkeeper",                    "cooling",  "0108", "Round Rock",  38, 7,  [],                            "Used to refer 1-2/month. New baby; reduced practice."),
+  partner("p-009", "Tom O'Brien",       "O'Brien Legal",            "small_business_attorney",           "cooling",  "0109", "Bee Cave",    52, 14, [],                            "Moved offices. Reconnect with a value-add intro."),
 
   // ── Inactive — no touches in 90+ days, deprioritized but kept ──────
-  partner("p-010", "Maria Rodriguez",   "Rodriguez & Co",           "cpa",       "inactive", "0110", "Austin, TX",  120, null, [],                          "Retired last year per LinkedIn."),
-  partner("p-011", "Eric Nguyen",       "Nguyen Insurance",         "insurance", "inactive", "0111", "Leander",     180, null, [],                          "Switched industries; no longer SMB."),
+  partner("p-010", "Maria Rodriguez",   "Rodriguez & Co",           "cpa_bookkeeper",                    "inactive", "0110", "Austin, TX",  120, null, [],                          "Retired last year per LinkedIn."),
+  partner("p-011", "Eric Nguyen",       "Nguyen Insurance",         "commercial_insurance_agent",        "inactive", "0111", "Leander",     180, null, [],                          "Switched industries; no longer SMB."),
 
   // ── New (recently added, no touches yet) ───────────────────────────
-  partner("p-012", "Hannah Liu",        "Liu Strategy Group",       "consultant","active",   "0112", "Austin, TX",  null, 3, [],                            "New intro from David Chen. Strong network."),
-  partner("p-013", "Wes Calloway",      "Calloway Bookkeeping",     "cpa",       "active",   "0113", "Cedar Park",  null, 5, [],                            "Small bookkeeping shop, lots of micro-merchants."),
-  partner("p-014", "Iris Donovan",      "Donovan Capital",          "banker",    "active",   "0114", "Austin, TX",  null, 7, [],                            "Met at chamber event 2 weeks back."),
+  partner("p-012", "Hannah Liu",        "Liu Strategy Group",       "hr_consultant",                     "active",   "0112", "Austin, TX",  null, 3, [],                            "New intro from David Chen. Strong network."),
+  partner("p-013", "Wes Calloway",      "Calloway Bookkeeping",     "cpa_bookkeeper",                    "active",   "0113", "Cedar Park",  null, 5, [],                            "Small bookkeeping shop, lots of micro-merchants."),
+  partner("p-014", "Iris Donovan",      "Donovan Capital",          "business_banker_commercial_lender", "active",   "0114", "Austin, TX",  null, 7, [],                            "Met at chamber event 2 weeks back."),
 ];
 
 // ── Formatters / helpers ──────────────────────────────────────────────
 
 export const TYPE_LABEL: Record<PartnerType, string> = {
-  cpa: "CPA",
-  banker: "Banker",
-  attorney: "Attorney",
-  insurance: "Insurance",
-  consultant: "Consultant",
+  accountant: "Accountant",
+  cpa_bookkeeper: "CPA/Bookkeeper",
+  business_banker_commercial_lender: "Business Banker / Commercial Lender",
+  benefits_broker: "Benefits Broker",
+  commercial_insurance_agent: "Commercial Insurance Agent",
+  pos_dealer: "POS Dealer",
+  var: "VAR",
+  isv: "ISV",
+  small_business_attorney: "Small Business Attorney",
+  web_developer: "Web Developer",
+  hr_consultant: "HR Consultant",
+  equipment_leasing_finance: "Equipment Leasing / Finance Company",
+  chamber_of_commerce: "Chamber of Commerce",
+  trade_association: "Trade Association",
   other: "Other",
 };
 

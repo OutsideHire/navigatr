@@ -109,7 +109,7 @@ function partner(args: {
     id: args.id,
     name: "Pat Partner",
     company: "Pat & Co",
-    type: "cpa",
+    type: "cpa_bookkeeper",
     status: "active",
     phone: "+12025550100",
     email: `${args.id}@example.com`,

@@ -32,7 +32,7 @@ function partner(overrides: Partial<Partner> = {}): Partner {
     id: "p-1",
     name: "Sarah Johnson",
     company: "Johnson & Boyle CPAs",
-    type: "cpa",
+    type: "cpa_bookkeeper",
     status: "active",
     phone: "+12025550101",
     email: "sarah@jbcpa.com",

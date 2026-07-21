@@ -51,7 +51,7 @@ export function AddPartnerSheet({ open, onOpenChange, onAdded }: AddPartnerSheet
     defaultValues: {
       name: "",
       company: "",
-      type: "cpa",
+      type: "accountant",
       phone: "",
       email: "",
       city: "",
