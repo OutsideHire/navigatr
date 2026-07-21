@@ -321,3 +321,41 @@ export function historyDelta(points: PersistencePoint[]): number | null {
   if (scored.length < 2) return null;
   return scored[scored.length - 1] - scored[0];
 }
+
+// ── Per-Rep Roster (Slice 4) ─────────────────────────────────────────────
+
+export interface PerRepScore {
+  ownerId: string;
+  composite: number | null;
+  followUpPoints: number | null;
+  cadencePoints: number | null;
+}
+
+/**
+ * Each distinct deal owner's individual Persistence Index, for the manager
+ * roster on the detail page. Sorted by composite descending; reps with no
+ * computable score sort last with a null composite.
+ */
+export function computePerRepPersistence(
+  deals: Deal[],
+  activities: Activity[],
+  opts: { now: Date; windowDays?: number },
+): PerRepScore[] {
+  const windowDays = opts.windowDays ?? WINDOW_DAYS;
+  const owners = [...new Set(deals.map((d) => d.owner_id).filter((x): x is string => x != null))];
+  const rows = owners.map((ownerId) => {
+    const r = computePersistenceIndex(deals, activities, { ownerId, now: opts.now, windowDays });
+    return {
+      ownerId,
+      composite: r.composite,
+      followUpPoints: r.followUp.hasSample ? r.followUp.points : null,
+      cadencePoints: r.cadence.hasSample ? r.cadence.points : null,
+    };
+  });
+  return rows.sort((a, b) => {
+    if (a.composite == null && b.composite == null) return 0;
+    if (a.composite == null) return 1;
+    if (b.composite == null) return -1;
+    return b.composite - a.composite;
+  });
+}

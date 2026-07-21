@@ -5,6 +5,7 @@ import {
   computePersistenceIndex,
   computeTeamPersistenceIndex,
   computePersistenceHistory,
+  computePerRepPersistence,
   historyDelta,
   RANGE_PRESETS,
 } from "./persistenceIndex";
@@ -294,5 +295,48 @@ describe("computePersistenceHistory", () => {
 
   it("exposes range presets with 1M = 30 days", () => {
     expect(RANGE_PRESETS.find((r) => r.key === "1M")!.days).toBe(30);
+  });
+});
+
+describe("computePerRepPersistence", () => {
+  const NOW = new Date("2026-07-01T00:00:00.000Z");
+  function kept(dealId: string): Activity[] {
+    return [
+      activity({ id: `${dealId}-s`, dealId, occurredAt: "2026-06-05T10:00:00Z", followUpDate: "2026-06-20" }),
+      activity({ id: `${dealId}-k`, dealId, occurredAt: "2026-06-19T10:00:00Z" }),
+    ];
+  }
+
+  it("returns one row per owner, sorted by composite descending", () => {
+    const deals = [
+      deal({ id: "d1", owner_id: "repA", stage: "qualified" }),
+      deal({ id: "d2", owner_id: "repB", stage: "qualified" }),
+    ];
+    // repA: kept follow-up (high follow-up). repB: a missed follow-up (lower).
+    const activities = [
+      ...kept("d1"),
+      activity({ id: "b-s", dealId: "d2", occurredAt: "2026-06-05T10:00:00Z", followUpDate: "2026-06-10" }),
+      activity({ id: "b-late", dealId: "d2", occurredAt: "2026-06-25T10:00:00Z" }),
+    ];
+    const rows = computePerRepPersistence(deals, activities, { now: NOW });
+    expect(rows).toHaveLength(2);
+    expect(rows[0].composite! >= rows[1].composite!).toBe(true); // sorted desc
+    expect(new Set(rows.map((r) => r.ownerId))).toEqual(new Set(["repA", "repB"]));
+  });
+
+  it("sorts reps with no computable score last with null composite", () => {
+    const deals = [
+      deal({ id: "d1", owner_id: "repA", stage: "qualified" }),
+      deal({ id: "d2", owner_id: "repZ", stage: "qualified" }),
+    ];
+    const rows = computePerRepPersistence(deals, [...kept("d1")], { now: NOW }); // repZ has no activity
+    expect(rows[rows.length - 1].ownerId).toBe("repZ");
+    expect(rows[rows.length - 1].composite).toBeNull();
+  });
+
+  it("nulls sub-component points when that sub-component has no sample", () => {
+    const deals = [deal({ id: "d1", owner_id: "repA", stage: "qualified" })];
+    const rows = computePerRepPersistence(deals, [...kept("d1")], { now: NOW });
+    expect(rows[0].followUpPoints).not.toBeNull(); // has a follow-up sample
   });
 });
