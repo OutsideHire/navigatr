@@ -13,7 +13,9 @@ import type { LeaderboardRow } from "../hooks/useTeamLeaderboard";
 const h = vi.hoisted(() => ({
   rows: [] as unknown[],
   authUserId: undefined as string | undefined,
+  callerRoleLevel: undefined as string | undefined,
   setManagerMutate: vi.fn(),
+  setRoleLevelMutate: vi.fn(),
 }));
 
 vi.mock("../hooks/useTeamLeaderboard", () => ({
@@ -31,6 +33,20 @@ vi.mock("../hooks/useSetMemberManager", () => ({
     mutate: h.setManagerMutate,
     mutateAsync: vi.fn(),
     isPending: false,
+  }),
+}));
+
+vi.mock("../hooks/useSetRoleLevel", () => ({
+  useSetRoleLevel: () => ({
+    mutate: h.setRoleLevelMutate,
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
+}));
+
+vi.mock("@/features/auth/useProfile", () => ({
+  useProfile: () => ({
+    data: h.callerRoleLevel ? { role_level: h.callerRoleLevel } : null,
   }),
 }));
 
@@ -108,6 +124,7 @@ const SARAH = () =>
     full_name: "Sarah Lim",
     email: "sarah@acme.com",
     role: "rep",
+    role_level: "sales_professional",
     status: "active",
     manager_id: "mgr-1",
     open_deals: 23,
@@ -143,7 +160,9 @@ beforeAll(() => {
 
 beforeEach(() => {
   h.setManagerMutate.mockReset();
+  h.setRoleLevelMutate.mockReset();
   h.authUserId = "admin-1"; // admin caller by default
+  h.callerRoleLevel = "administrator"; // caller can assignRoleLevels by default
   h.rows = [
     SARAH(),
     row({ agent_id: "mgr-1", full_name: "Mike Manager", role: "manager", status: "active" }),
@@ -203,7 +222,7 @@ describe("AgentDetailPage / reports-to control", () => {
     expect(screen.getByText("Reports to")).toBeInTheDocument();
 
     // Open the Radix select and inspect the options.
-    fireEvent.click(screen.getByRole("combobox"));
+    fireEvent.click(screen.getByRole("combobox", { name: "Reports to" }));
     expect(screen.getByRole("option", { name: "No manager" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "Mike Manager" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "Nora Manager" })).toBeTruthy();
@@ -228,7 +247,7 @@ describe("AgentDetailPage / reports-to control", () => {
 
   it("passes null when the admin picks 'No manager' (unassign)", () => {
     renderPage();
-    fireEvent.click(screen.getByRole("combobox"));
+    fireEvent.click(screen.getByRole("combobox", { name: "Reports to" }));
     fireEvent.click(screen.getByRole("option", { name: "No manager" }));
     expect(h.setManagerMutate).toHaveBeenCalledTimes(1);
     expect(h.setManagerMutate.mock.calls[0][0]).toEqual({
@@ -256,9 +275,10 @@ describe("AgentDetailPage / reports-to control", () => {
 
   it("shows the current manager read-only to a non-admin caller", () => {
     h.authUserId = "mgr-2"; // a manager, not an admin
+    h.callerRoleLevel = "sales_manager"; // lacks assignRoleLevels too
     renderPage();
     expect(screen.getByText("Reports to")).toBeInTheDocument();
-    // No editable control for non-admins.
+    // No editable control for non-admins (neither reports-to nor role level).
     expect(screen.queryByRole("combobox")).toBeNull();
     // The current manager's name is shown read-only.
     expect(screen.getByText("Mike Manager")).toBeInTheDocument();
@@ -273,7 +293,7 @@ describe("AgentDetailPage / reports-to control", () => {
       row({ agent_id: "admin-1", full_name: "Amy Admin", role: "admin", status: "active" }),
     ];
     renderPage();
-    fireEvent.click(screen.getByRole("combobox"));
+    fireEvent.click(screen.getByRole("combobox", { name: "Reports to" }));
     // Other managers/admins are offered…
     expect(screen.getByRole("option", { name: "Nora Manager" })).toBeTruthy();
     // …but the viewed manager is NOT an option for themselves.
@@ -290,7 +310,7 @@ describe("AgentDetailPage / reports-to control", () => {
       row({ agent_id: "admin-1", full_name: "Amy Admin", role: "admin", status: "active" }),
     ];
     renderPage();
-    fireEvent.click(screen.getByRole("combobox"));
+    fireEvent.click(screen.getByRole("combobox", { name: "Reports to" }));
     expect(screen.getByRole("option", { name: "Nora Manager" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "Sub Manager" })).toBeNull();
   });
@@ -304,7 +324,7 @@ describe("AgentDetailPage / reports-to control", () => {
       row({ agent_id: "admin-1", full_name: "Amy Admin", role: "admin", status: "active" }),
     ];
     renderPage();
-    fireEvent.click(screen.getByRole("combobox"));
+    fireEvent.click(screen.getByRole("combobox", { name: "Reports to" }));
     // The current (now-inactive) manager is still shown, flagged.
     expect(screen.getByRole("option", { name: /Mike Manager \(inactive\)/ })).toBeTruthy();
   });
@@ -318,5 +338,56 @@ describe("AgentDetailPage / reports-to control", () => {
     renderPage();
     expect(screen.getByText("Reports to")).toBeInTheDocument();
     expect(screen.queryByRole("combobox")).toBeNull();
+  });
+});
+
+describe("AgentDetailPage / role-level control", () => {
+  it("lets an admin caller pick a member's role level, preselected, and fires the hook", () => {
+    renderPage();
+    expect(screen.getByText("Role level")).toBeInTheDocument();
+
+    // The role-level combobox is distinct from the reports-to one.
+    const combo = screen.getByRole("combobox", { name: "Role level" });
+    fireEvent.click(combo);
+
+    // All 7 levels are offered, current one preselected.
+    expect(screen.getByRole("option", { name: "Administrator" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Sales Manager" })).toBeTruthy();
+    expect(
+      screen.getByRole("option", { name: "Sales Professional" }).getAttribute("data-state"),
+    ).toBe("checked");
+
+    // Choosing a level calls the hook with { profileId, level }.
+    fireEvent.click(screen.getByRole("option", { name: "Sales Manager" }));
+    expect(h.setRoleLevelMutate).toHaveBeenCalledTimes(1);
+    expect(h.setRoleLevelMutate.mock.calls[0][0]).toEqual({
+      profileId: "test-agent-id",
+      level: "sales_manager",
+    });
+  });
+
+  it("shows the role level read-only (no Select) to a caller who can't assign levels", () => {
+    h.authUserId = "mgr-1";
+    h.callerRoleLevel = "sales_manager"; // lacks assignRoleLevels
+    renderPage();
+    expect(screen.getByText("Role level")).toBeInTheDocument();
+    // No editable control for non-administrators.
+    expect(screen.queryByRole("combobox", { name: "Role level" })).toBeNull();
+    // The current level label is shown read-only.
+    expect(screen.getByText("Sales Professional")).toBeInTheDocument();
+  });
+
+  it("shows the role level read-only when an admin views their OWN row (self-guard)", () => {
+    // Amy Admin views her own detail page: role level is not self-editable
+    // (admin_set_role_level rejects changing your own role server-side too).
+    h.rows = [
+      row({ agent_id: "test-agent-id", full_name: "Amy Admin", role: "admin", role_level: "administrator", status: "active" }),
+    ];
+    h.authUserId = "test-agent-id";
+    h.callerRoleLevel = "administrator";
+    renderPage();
+    expect(screen.getByText("Role level")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Role level" })).toBeNull();
+    expect(screen.getByText("Administrator")).toBeInTheDocument();
   });
 });

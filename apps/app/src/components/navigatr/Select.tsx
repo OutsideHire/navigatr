@@ -82,6 +82,8 @@ export interface SelectProps {
   name?: string;
   /** Trigger `id` — bound from FormField context when present. */
   id?: string;
+  /** Accessible name for the trigger when no visible `<label>` is associated. */
+  "aria-label"?: string;
   /** Forward className for trigger overrides. */
   className?: string;
   /** Typed but not implemented yet — chip-based multi-select lands later. */
@@ -100,6 +102,7 @@ export function Select({
   fullWidth = true,
   name,
   id,
+  "aria-label": ariaLabel,
   className,
   multi: _multi, // prop reserved, not implemented this session
 }: SelectProps) {
@@ -123,6 +126,7 @@ export function Select({
     >
       <RadixSelect.Trigger
         id={effectiveId}
+        aria-label={ariaLabel}
         aria-invalid={isInvalid || undefined}
         aria-describedby={ctx?.helperId}
         aria-required={ctx?.isRequired || undefined}

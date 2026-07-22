@@ -12,8 +12,15 @@ import { Badge, Button, Card, Select } from "@/components/navigatr";
 import type { BadgeKind } from "@/components/navigatr/Badge";
 import { useTeamLeaderboard } from "../hooks/useTeamLeaderboard";
 import { useSetMemberManager } from "../hooks/useSetMemberManager";
+import { useSetRoleLevel } from "../hooks/useSetRoleLevel";
 import { useActivitiesForOrg } from "@/features/activities/hooks/useActivities";
 import { useAuth } from "@/stores/auth";
+import { useProfile } from "@/features/auth/useProfile";
+import {
+  ROLE_LEVEL_OPTIONS,
+  profileCan,
+  type RoleLevel,
+} from "@/features/auth/capabilities";
 import type { ActivityType } from "@/features/activities/mockData";
 import { formatMoney, formatRelative } from "@/features/pipeline/mockData";
 import { toast } from "sonner";
@@ -33,6 +40,19 @@ const MANAGER_ERROR_COPY: Record<string, string> = {
   member_not_found: "That member is no longer available.",
   forbidden: "Only an admin can change reporting.",
 };
+
+// Friendly copy for admin_set_role_level RPC error codes.
+const ROLE_LEVEL_ERROR_COPY: Record<string, string> = {
+  cannot_change_own_role: "You can't change your own role level.",
+  cannot_demote_sole_admin: "You can't demote the only administrator.",
+  forbidden: "Only an administrator can set role levels.",
+  profile_not_found: "That member is no longer available.",
+  not_authenticated: "Please sign in again.",
+};
+
+function roleLevelLabel(level: RoleLevel | null | undefined): string {
+  return ROLE_LEVEL_OPTIONS.find((o) => o.value === level)?.label ?? "Not set";
+}
 
 const WINDOW_OPTIONS: { label: string; value: number }[] = [
   { label: "7 days", value: 7 },
@@ -111,7 +131,11 @@ export function AgentDetailPage() {
   );
 
   const setManager = useSetMemberManager();
+  const setRoleLevel = useSetRoleLevel();
   const userId = useAuth((s) => s.user?.id);
+  const { data: profile } = useProfile();
+  // Only an Administrator may assign role levels (server enforces this too).
+  const canAssignRoleLevels = profileCan(profile, "assignRoleLevels");
   const callerRole = React.useMemo(
     () => leaderboardRows.find((r) => r.agent_id === userId)?.role,
     [leaderboardRows, userId],
@@ -242,6 +266,7 @@ export function AgentDetailPage() {
           <div className="mt-1 max-w-xs">
             <Select
               id="agent-manager"
+              aria-label="Reports to"
               value={agent.manager_id ?? NO_MANAGER}
               onValueChange={(v) => {
                 setManager.mutate(
@@ -265,6 +290,40 @@ export function AgentDetailPage() {
               const m = leaderboardRows.find((r) => r.agent_id === agent.manager_id);
               return m ? (m.full_name ?? m.email) : "No manager";
             })()}
+          </p>
+        )}
+      </Card>
+
+      {/* Role level — the member's place in the 7-level hierarchy. Editable only
+          by an Administrator, and never for your own row (admin_set_role_level
+          rejects that server-side; we hide the control to match). */}
+      <Card padding="md">
+        <p className="text-eyebrow text-text-subtle uppercase tracking-wider">Role level</p>
+        {canAssignRoleLevels && agent.status === "active" && agentId !== userId && agent.role_level ? (
+          <div className="mt-1 max-w-xs">
+            <Select
+              id="agent-role-level"
+              aria-label="Role level"
+              value={agent.role_level}
+              onValueChange={(v) => {
+                setRoleLevel.mutate(
+                  { profileId: agentId!, level: v as RoleLevel },
+                  {
+                    onSuccess: () => toast.success("Role level updated"),
+                    onError: (e) =>
+                      toast.error(
+                        (e instanceof Error && ROLE_LEVEL_ERROR_COPY[e.message]) ||
+                          "Could not update role level",
+                      ),
+                  },
+                );
+              }}
+              options={ROLE_LEVEL_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            />
+          </div>
+        ) : (
+          <p className="mt-1 text-body-md text-text-default">
+            {roleLevelLabel(agent.role_level)}
           </p>
         )}
       </Card>
