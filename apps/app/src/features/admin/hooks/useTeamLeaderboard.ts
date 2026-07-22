@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
+import type { RoleLevel } from "@/features/auth/capabilities";
 
 export type LeaderboardStatus = "active" | "invited" | "revoked";
 
@@ -9,6 +10,7 @@ export interface LeaderboardRow {
   full_name: string | null;
   email: string;
   role: "rep" | "manager" | "admin";
+  role_level: RoleLevel | null;
   status: LeaderboardStatus;
   manager_id: string | null;
   open_deals: number;

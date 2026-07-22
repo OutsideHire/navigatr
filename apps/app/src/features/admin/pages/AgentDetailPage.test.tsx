@@ -88,6 +88,7 @@ function row(
     full_name: overrides.full_name ?? null,
     email: overrides.email ?? `${overrides.agent_id}@acme.com`,
     role: overrides.role ?? "rep",
+    role_level: overrides.role_level ?? null,
     status: overrides.status ?? "active",
     manager_id: overrides.manager_id ?? null,
     open_deals: overrides.open_deals ?? 0,

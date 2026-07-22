@@ -24,6 +24,8 @@ const DEFAULT_ROWS: Array<Record<string, unknown>> = [
     full_name: "Alice",
     email: "a@x.com",
     role: "rep",
+    role_level: "sales_professional",
+    manager_id: null,
     status: "active",
     open_deals: 3,
     pipeline_cents: 100_000,
@@ -135,6 +137,26 @@ describe("AgentsPage", () => {
     expect(headerText).toMatch(/Last active/i);
   });
 
+  it("toggles to the org-chart view and shows the reporting tree", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <AgentsPage />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    // Default view is the list (table present).
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    // Switch to the org chart.
+    await user.click(screen.getByRole("button", { name: "Org chart" }));
+    // Table is gone; the org-chart section renders the person + role-level label.
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    const chart = screen.getByRole("region", { name: "Org chart" });
+    expect(within(chart).getByText("Alice")).toBeInTheDocument();
+    expect(within(chart).getByText("Sales Professional")).toBeInTheDocument();
+  });
+
   it("lets an admin promote a rep via the row menu (confirmed)", async () => {
     // Caller is an active admin present in the leaderboard, plus a separate rep row.
     authUserId.current = "p_admin";
@@ -144,6 +166,7 @@ describe("AgentsPage", () => {
         full_name: "Admin Adam",
         email: "admin@x.com",
         role: "admin",
+        role_level: "administrator",
         status: "active",
         open_deals: 0,
         pipeline_cents: 0,
@@ -159,6 +182,8 @@ describe("AgentsPage", () => {
         full_name: "Rep Rita",
         email: "rep@x.com",
         role: "rep",
+        role_level: "sales_professional",
+        manager_id: "p_admin",
         status: "active",
         open_deals: 1,
         pipeline_cents: 10_000,
@@ -206,6 +231,7 @@ describe("AgentsPage", () => {
         full_name: "Admin Adam",
         email: "admin@x.com",
         role: "admin",
+        role_level: "administrator",
         status: "active",
         open_deals: 0,
         pipeline_cents: 0,
@@ -221,6 +247,8 @@ describe("AgentsPage", () => {
         full_name: "Rep Rita",
         email: "rep@x.com",
         role: "rep",
+        role_level: "sales_professional",
+        manager_id: "p_admin",
         status: "active",
         open_deals: 1,
         pipeline_cents: 10_000,

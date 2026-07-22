@@ -18,6 +18,7 @@ import { AgentCard } from "../components/AgentCard";
 import { SeatUsageBadge } from "../components/SeatUsageBadge";
 import { InviteAgentModal } from "../components/InviteAgentModal";
 import { RevokeAgentDialog } from "../components/RevokeAgentDialog";
+import { OrgChartTree } from "../components/OrgChartTree";
 import { TeamCoverageCard } from "@/features/coverage/components/TeamCoverageCard";
 
 type SortKey =
@@ -81,6 +82,7 @@ export function AgentsPage() {
   const [windowDays, setWindowDays] = React.useState<number>(30);
   const [sortKey, setSortKey] = React.useState<SortKey>("pipeline_cents");
   const [sortDir, setSortDir] = React.useState<SortDir>("desc");
+  const [view, setView] = React.useState<"list" | "org">("list");
 
   const { data: rows = [], isLoading } = useTeamLeaderboard(windowDays);
   const resend = useResendInvite();
@@ -180,6 +182,24 @@ export function AgentsPage() {
             Import CSV
           </Button>
           <div className="ml-2 flex items-center gap-1 border-l border-border-subtle pl-2">
+            <Button
+              variant={view === "list" ? "secondary" : "tertiary"}
+              size="sm"
+              aria-pressed={view === "list"}
+              onClick={() => setView("list")}
+            >
+              List
+            </Button>
+            <Button
+              variant={view === "org" ? "secondary" : "tertiary"}
+              size="sm"
+              aria-pressed={view === "org"}
+              onClick={() => setView("org")}
+            >
+              Org chart
+            </Button>
+          </div>
+          <div className="ml-2 flex items-center gap-1 border-l border-border-subtle pl-2">
             {WINDOW_OPTIONS.map((opt) => (
               <Button
                 key={opt.value}
@@ -202,6 +222,15 @@ export function AgentsPage() {
 
       {isLoading ? (
         <p className="text-body-md text-text-muted">Loading…</p>
+      ) : view === "org" ? (
+        /* Org chart: the same leaderboard rows arranged by reporting line
+           (manager_id → role_level). Selecting a person opens their detail. */
+        <section aria-label="Org chart" className="overflow-x-auto">
+          <OrgChartTree
+            rows={rows}
+            onSelect={(agentId) => navigate(`/admin/agents/${agentId}`)}
+          />
+        </section>
       ) : (
         <>
         {/* Desktop: the full leaderboard table. Cards take over below md so
