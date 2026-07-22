@@ -12,11 +12,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
+import type { RoleLevel } from "./capabilities";
 
 export interface Profile {
   id: string;
   org_id: string;
   role: "rep" | "manager" | "admin";
+  role_level: RoleLevel;
+  view_as_enabled: boolean;
   full_name: string | null;
   created_at: string;
 }
@@ -29,7 +32,7 @@ export function useProfile() {
     queryFn: async (): Promise<Profile | null> => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, org_id, role, full_name, created_at")
+        .select("id, org_id, role, role_level, view_as_enabled, full_name, created_at")
         .eq("id", userId!)
         .maybeSingle();
       if (error) throw error;

@@ -97,3 +97,17 @@ describe("useProfile", () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
   });
 });
+
+describe("useProfile role_level", () => {
+  it("returns role_level and view_as_enabled", async () => {
+    maybeSingleMock.mockResolvedValueOnce({
+      data: { id: "u1", org_id: "o1", role: "manager", role_level: "sales_manager", view_as_enabled: true, full_name: "A", created_at: "2026-01-01" },
+      error: null,
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => useProfile(), { wrapper: makeWrapper(client) });
+    await waitFor(() => expect(result.current.data).toBeTruthy());
+    expect(result.current.data!.role_level).toBe("sales_manager");
+    expect(result.current.data!.view_as_enabled).toBe(true);
+  });
+});
