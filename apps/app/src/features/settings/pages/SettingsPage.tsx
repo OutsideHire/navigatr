@@ -838,15 +838,12 @@ export function ValueBandsSection() {
 
 // ── Demo tools ───────────────────────────────────────────────────────
 // Flag-gated (org_features.demo_reset) + admin-only. The reset_demo_data
-// RPC itself re-enforces both checks server-side; this UI just avoids
-// showing a button that would fail for everyone else.
+// RPC itself re-enforces both checks server-side (administrator only);
+// this UI mirrors that exactly via the capability map.
 export function DemoToolsSection() {
   const enabled = useDemoResetEnabled();
-  // Manager OR admin — must match reset_demo_data()'s server-side gate
-  // (which allows both). Gating tighter than the RPC just hides the button
-  // from people the function would actually accept.
-  const role = useProfile().data?.role;
-  const canReset = role === "manager" || role === "admin";
+  const profile = useProfile().data;
+  const canReset = profileCan(profile, "useDemoTools");
   const reset = useResetDemoData();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   if (!enabled || !canReset) return null;
@@ -893,8 +890,7 @@ export function DemoToolsSection() {
 export function SettingsPage() {
   const profile = useProfile().data;
   const showTeamSection = profileCan(profile, "inviteUsers");
-  const role = profile?.role;
-  const canEditBands = role === "manager" || role === "admin";
+  const canEditBands = profileCan(profile, "editOrgSettings");
 
   // No page-level chrome here — the H1 + subtitle live in PersonalTab.
   // SettingsPage just renders sections in order.

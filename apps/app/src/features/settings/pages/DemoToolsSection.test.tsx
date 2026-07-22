@@ -1,11 +1,14 @@
 // DemoToolsSection — flag + role-gated "Reset demo data" card in Settings.
 // Verifies: hidden when the demo_reset flag is off; hidden for reps but shown
-// for managers/admins (matching reset_demo_data's server-side gate) when the
-// flag is on; and that confirming the dialog calls the reset mutation.
+// for administrators (matching reset_demo_data's server-side gate, which is
+// admin-only per PRD 6.8.A's permission matrix) when the flag is on; that the
+// card is NOT shown for sales_manager or cso_cro (manager-band roles no longer
+// qualify); and that confirming the dialog calls the reset mutation.
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import type { RoleLevel } from "@/features/auth/capabilities";
 
 // Radix Dialog uses Pointer Capture + scrollIntoView; jsdom lacks both.
 beforeAll(() => {
@@ -16,7 +19,7 @@ beforeAll(() => {
 });
 
 let flagEnabled: boolean;
-let role: "rep" | "manager" | "admin";
+let roleLevel: RoleLevel;
 const mutateAsync = vi.fn(() => Promise.resolve());
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
@@ -28,7 +31,7 @@ vi.mock("@/features/settings/hooks/useResetDemoData", () => ({
   useResetDemoData: () => ({ mutateAsync, isPending: false }),
 }));
 vi.mock("@/features/auth/useProfile", () => ({
-  useProfile: () => ({ data: { role } }),
+  useProfile: () => ({ data: { role_level: roleLevel } }),
 }));
 vi.mock("sonner", () => ({
   toast: Object.assign((...args: unknown[]) => toastSuccess(...args), {
@@ -41,7 +44,7 @@ import { DemoToolsSection } from "./SettingsPage";
 
 beforeEach(() => {
   flagEnabled = true;
-  role = "admin";
+  roleLevel = "administrator";
   mutateAsync.mockClear();
   toastSuccess.mockClear();
   toastError.mockClear();
@@ -51,28 +54,40 @@ afterEach(() => cleanup());
 describe("DemoToolsSection", () => {
   it("renders nothing when the demo_reset flag is off", () => {
     flagEnabled = false;
-    role = "admin";
+    roleLevel = "administrator";
     render(<DemoToolsSection />);
     expect(screen.queryByText(/Demo tools/i)).toBeNull();
   });
 
-  it("renders nothing for a rep, even with the flag on", () => {
+  it("renders nothing for a sales rep, even with the flag on", () => {
     flagEnabled = true;
-    role = "rep";
+    roleLevel = "sales_professional";
     render(<DemoToolsSection />);
     expect(screen.queryByText(/Demo tools/i)).toBeNull();
   });
 
-  it("shows the card for a manager (matches the reset function's gate)", () => {
+  it("shows the card for administrator, but not for sales_manager or cso_cro", () => {
     flagEnabled = true;
-    role = "manager";
-    render(<DemoToolsSection />);
+
+    roleLevel = "administrator";
+    const admin = render(<DemoToolsSection />);
     expect(screen.getByText(/Demo tools/i)).toBeInTheDocument();
+    admin.unmount();
+
+    roleLevel = "sales_manager";
+    const manager = render(<DemoToolsSection />);
+    expect(screen.queryByText(/Demo tools/i)).toBeNull();
+    manager.unmount();
+
+    roleLevel = "cso_cro";
+    const cso = render(<DemoToolsSection />);
+    expect(screen.queryByText(/Demo tools/i)).toBeNull();
+    cso.unmount();
   });
 
   it("opens a confirm dialog and calls the reset mutation on confirm", async () => {
     flagEnabled = true;
-    role = "admin";
+    roleLevel = "administrator";
     const user = userEvent.setup();
     render(<DemoToolsSection />);
 
