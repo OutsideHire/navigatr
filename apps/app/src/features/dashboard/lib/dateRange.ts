@@ -9,7 +9,7 @@
  * ISO-8601 timestamps (fixed-width, zero-padded, Z suffix).
  */
 
-export type RangeKey = "7d" | "30d" | "90d" | "all";
+export type RangeKey = "7d" | "30d" | "90d" | "6mo" | "all";
 
 export interface DateRange {
   /** Inclusive lower bound (ISO). null === all time (no lower bound). */
@@ -22,17 +22,19 @@ export const RANGE_OPTIONS: { key: RangeKey; label: string }[] = [
   { key: "7d", label: "Last 7 days" },
   { key: "30d", label: "Last 30 days" },
   { key: "90d", label: "Last 90 days" },
+  { key: "6mo", label: "Last 6 months" },
   { key: "all", label: "All time" },
 ];
 
-const DAYS: Record<Exclude<RangeKey, "all">, number> = { "7d": 7, "30d": 30, "90d": 90 };
+const DAYS: Record<"7d" | "30d" | "90d", number> = { "7d": 7, "30d": 30, "90d": 90 };
 
 /** Resolve a range key into concrete ISO bounds, anchored at `now`. */
 export function resolveRange(key: RangeKey, now: Date): DateRange {
   const toIso = now.toISOString();
   if (key === "all") return { fromIso: null, toIso };
   const from = new Date(now);
-  from.setDate(from.getDate() - DAYS[key]);
+  if (key === "6mo") from.setMonth(from.getMonth() - 6);
+  else from.setDate(from.getDate() - DAYS[key]);
   return { fromIso: from.toISOString(), toIso };
 }
 

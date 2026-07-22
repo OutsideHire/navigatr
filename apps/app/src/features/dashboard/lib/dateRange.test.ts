@@ -20,6 +20,19 @@ describe("resolveRange", () => {
     expect(resolveRange("30d", NOW).fromIso).toBe("2026-05-26T12:00:00.000Z");
     expect(resolveRange("90d", NOW).fromIso).toBe("2026-03-27T12:00:00.000Z");
   });
+
+  it("resolves the 6-month window to ~182 days before now", () => {
+    const now = new Date("2026-07-01T00:00:00.000Z");
+    const r = resolveRange("6mo", now);
+    expect(r.toIso).toBe(now.toISOString());
+    // 6 months back from 2026-07-01 is 2026-01-01 (calendar-month math).
+    expect(r.fromIso).toBe(new Date("2026-01-01T00:00:00.000Z").toISOString());
+  });
+
+  it("includes 6mo in the range options with a human label", () => {
+    expect(RANGE_OPTIONS.map((o) => o.key)).toContain("6mo");
+    expect(rangeLabel("6mo")).toBe("Last 6 months");
+  });
 });
 
 describe("withinRange", () => {
