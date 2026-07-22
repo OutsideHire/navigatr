@@ -10,6 +10,20 @@ export type RoleLevel =
   | "administrator" | "cso_cro" | "svp_sales" | "vp_sales"
   | "director_sales" | "sales_manager" | "sales_professional";
 
+/**
+ * Human labels for the 7 role levels, ordered top-to-bottom of the hierarchy.
+ * Shared by the invite modal + CSV import so the admin picks a role LEVEL.
+ */
+export const ROLE_LEVEL_OPTIONS: { value: RoleLevel; label: string }[] = [
+  { value: "administrator", label: "Administrator" },
+  { value: "cso_cro", label: "CSO / CRO" },
+  { value: "svp_sales", label: "SVP of Sales" },
+  { value: "vp_sales", label: "VP of Sales" },
+  { value: "director_sales", label: "Director of Sales" },
+  { value: "sales_manager", label: "Sales Manager" },
+  { value: "sales_professional", label: "Sales Professional" },
+];
+
 export type Capability =
   | "inviteUsers" | "assignRoleLevels" | "setReportingLines" | "deactivateUsers"
   | "editOrgSettings" | "manageIntegrations" | "manageBilling" | "useDemoTools"

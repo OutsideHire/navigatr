@@ -1,4 +1,4 @@
-email,full_name,role
-alice@example.com,Alice Johnson,rep
-bob@example.com,Bob Williams,rep
-manager@example.com,Mia Manager,manager
+email,full_name,role_level,reports_to_email
+alice@example.com,Alice Johnson,sales_professional,manager@example.com
+bob@example.com,Bob Williams,sales_professional,manager@example.com
+manager@example.com,Mia Manager,sales_manager,

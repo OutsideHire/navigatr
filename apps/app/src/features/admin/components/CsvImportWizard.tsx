@@ -85,7 +85,9 @@ export function CsvImportWizard() {
         <Upload className="mx-auto h-8 w-8 text-text-muted" aria-hidden />
         <h2 className="mt-3 text-heading-sm">Upload an agents CSV</h2>
         <p className="mt-1 text-body-md text-text-muted">
-          Required column: <code>email</code>. Optional: <code>full_name</code>, <code>role</code>.
+          Required column: <code>email</code>. Optional: <code>full_name</code>,{" "}
+          <code>role_level</code> (one of the 7 role levels),{" "}
+          <code>reports_to_email</code> (an existing member's email).
         </p>
         <input
           type="file"

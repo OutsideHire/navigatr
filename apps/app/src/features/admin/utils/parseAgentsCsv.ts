@@ -1,8 +1,11 @@
 /**
  * Parse a CSV string of agent invitations into validated rows + errors.
  *
- * Required column: email. Optional: full_name, role.
- * Accepted role values: "rep" (default), "manager". Case-insensitive.
+ * Required column: email. Optional: full_name, role_level, reports_to_email.
+ * Accepted role_level values: the 7 hierarchy levels (see ROLE_LEVEL_OPTIONS),
+ * case-insensitive; defaults to "sales_professional" when absent/blank.
+ * reports_to_email carries through as reports_to (an existing member's email);
+ * the RPC validates it resolves — the parser does not check existence.
  *
  * Header detection is forgiving: "Email Address" / "Email" / "email" all
  * map to email; "Full Name" / "Name" / "full_name" all map to full_name.
@@ -10,11 +13,16 @@
  * Pure function — no React, no Supabase. Used by the CSV import wizard.
  */
 import Papa from "papaparse";
+import { ROLE_LEVEL_OPTIONS, type RoleLevel } from "@/features/auth/capabilities";
+
+const VALID_ROLE_LEVELS = new Set<RoleLevel>(ROLE_LEVEL_OPTIONS.map((o) => o.value));
 
 export interface ParsedAgent {
   email: string;
   full_name: string | null;
-  role: "rep" | "manager";
+  role_level: RoleLevel;
+  /** An existing member's email (RPC validates it resolves). Omitted when blank. */
+  reports_to?: string;
 }
 
 export interface ParseError {
@@ -23,7 +31,7 @@ export interface ParseError {
   reason:
     | "missing_email"
     | "invalid_email"
-    | "invalid_role"
+    | "invalid_role_level"
     | "duplicate_in_file";
   raw: string;
 }
@@ -67,18 +75,25 @@ export function parseAgentsCsv(csv: string): ParseResult {
       return;
     }
 
-    const rawRole = (row.role ?? "rep").trim().toLowerCase();
-    if (rawRole !== "rep" && rawRole !== "manager") {
-      errors.push({ row: rowNumber, reason: "invalid_role", raw: rawText });
-      return;
+    const rawRoleLevel = (row.rolelevel ?? "").trim().toLowerCase();
+    let role_level: RoleLevel = "sales_professional";
+    if (rawRoleLevel) {
+      if (!VALID_ROLE_LEVELS.has(rawRoleLevel as RoleLevel)) {
+        errors.push({ row: rowNumber, reason: "invalid_role_level", raw: rawText });
+        return;
+      }
+      role_level = rawRoleLevel as RoleLevel;
     }
-    const role = rawRole as ParsedAgent["role"];
 
     const fullName =
       (row.fullname ?? row.name ?? "").trim() || null;
 
+    const reports_to = (row.reportstoemail ?? "").trim() || undefined;
+
     seen.add(email);
-    valid.push({ email, full_name: fullName, role });
+    const agent: ParsedAgent = { email, full_name: fullName, role_level };
+    if (reports_to) agent.reports_to = reports_to;
+    valid.push(agent);
   });
 
   return { valid, errors };

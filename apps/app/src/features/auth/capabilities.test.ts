@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CAPABILITIES, can, profileCan, type RoleLevel, type Capability } from "./capabilities";
+import { CAPABILITIES, ROLE_LEVEL_OPTIONS, can, profileCan, type RoleLevel, type Capability } from "./capabilities";
 
 const ALL: RoleLevel[] = [
   "administrator","cso_cro","svp_sales","vp_sales","director_sales","sales_manager","sales_professional",
@@ -46,6 +46,22 @@ describe("capability map", () => {
 
   it("can() is false for an unknown capability on any role", () => {
     expect(can("administrator", "nope" as Capability)).toBe(false);
+  });
+});
+
+describe("ROLE_LEVEL_OPTIONS", () => {
+  it("has one entry per role level (7 total)", () => {
+    expect(ROLE_LEVEL_OPTIONS).toHaveLength(7);
+  });
+
+  it("maps administrator to the 'Administrator' label", () => {
+    const admin = ROLE_LEVEL_OPTIONS.find((o) => o.value === "administrator");
+    expect(admin?.label).toBe("Administrator");
+  });
+
+  it("covers every role level value exactly once", () => {
+    const values = ROLE_LEVEL_OPTIONS.map((o) => o.value).sort();
+    expect(values).toEqual([...ALL].sort());
   });
 });
 
