@@ -61,6 +61,13 @@ vi.mock("@/stores/auth", async (importOriginal) => {
   };
 });
 
+// showTeamSection now gates on role_level (capabilities.ts). This suite's
+// Team-section test expects the invite UI to render, so mock an
+// administrator profile.
+vi.mock("@/features/auth/useProfile", () => ({
+  useProfile: () => ({ data: { role: "admin", role_level: "administrator" } }),
+}));
+
 import { SettingsPage } from "./SettingsPage";
 
 function renderPage() {

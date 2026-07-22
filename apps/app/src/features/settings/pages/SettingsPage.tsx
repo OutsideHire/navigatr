@@ -37,7 +37,6 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button, Card, Checkbox, FormField, Input } from "@/components/navigatr";
 import {
-  canInviteTeam,
   getFullName,
   getProfession,
   useAuth,
@@ -45,6 +44,7 @@ import {
 } from "@/stores/auth";
 import { useTheme, type Theme } from "@/stores/theme";
 import { supabase } from "@/lib/supabase";
+import { profileCan } from "@/features/auth/capabilities";
 import { useOrganization } from "@/features/auth/useOrganization";
 import { useProfile } from "@/features/auth/useProfile";
 import { useRotateInviteCode } from "@/features/admin/hooks/useRotateInviteCode";
@@ -891,9 +891,9 @@ export function DemoToolsSection() {
 }
 
 export function SettingsPage() {
-  const user = useAuth((s) => s.user);
-  const showTeamSection = canInviteTeam(user);
-  const role = useProfile().data?.role;
+  const profile = useProfile().data;
+  const showTeamSection = profileCan(profile, "inviteUsers");
+  const role = profile?.role;
   const canEditBands = role === "manager" || role === "admin";
 
   // No page-level chrome here — the H1 + subtitle live in PersonalTab.

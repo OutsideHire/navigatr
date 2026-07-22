@@ -63,7 +63,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  canInviteTeam,
   getFirstName,
   hasDismissedOnboarding,
   useAuth,
@@ -84,6 +83,7 @@ import { STAGE_BADGE_KIND } from "@/features/pipeline/mockData";
 import { useTerm } from "@/features/profession/useTerm";
 import { CoverageWidget } from "@/features/coverage/components/CoverageWidget";
 import { useProfile } from "@/features/auth/useProfile";
+import { profileCan } from "@/features/auth/capabilities";
 import { scopeLabel } from "../lib/scopeLabel";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { useOrgMemberNames } from "../hooks/useOrgMemberNames";
@@ -114,8 +114,8 @@ const SETUP_CARDS: SetupCard[] = [
 ];
 
 function EmptyDashboard({ firstName, onSkip }: { firstName: string; onSkip: () => void }) {
-  const user = useAuth((s) => s.user);
-  const showInvite = canInviteTeam(user);
+  const profile = useProfile().data;
+  const showInvite = profileCan(profile, "inviteUsers");
   const cards = SETUP_CARDS.filter((c) => !c.requiresInvitePermission || showInvite);
   const navigate = useNavigate();
   return (

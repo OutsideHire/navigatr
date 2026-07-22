@@ -48,3 +48,11 @@ export function can(role: RoleLevel | null | undefined, capability: Capability):
   if (!role) return false;
   return CAPABILITIES[role]?.has(capability) ?? false;
 }
+
+/** Capability check off a profile-shaped object ({ role_level }). */
+export function profileCan(
+  profile: { role_level: RoleLevel } | null | undefined,
+  capability: Capability,
+): boolean {
+  return can(profile?.role_level, capability);
+}

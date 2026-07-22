@@ -19,6 +19,9 @@ beforeAll(() => {
 });
 
 let role: "rep" | "manager" | "admin";
+// showTeamSection now gates on role_level (capabilities.ts), not the legacy
+// `role` column. Administrator/CSO can invite; manager/rep cannot.
+let roleLevel: "administrator" | "sales_manager";
 const rotateAsync = vi.fn(() => Promise.resolve("newcode1"));
 
 vi.mock("@/lib/supabase", () => ({
@@ -36,8 +39,6 @@ vi.mock("@/stores/auth", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/stores/auth")>();
   return {
     ...actual,
-    // Force the Team section to render regardless of profession heuristics.
-    canInviteTeam: () => true,
     useAuth: Object.assign(
       (selector: (s: Record<string, unknown>) => unknown) =>
         selector({
@@ -55,7 +56,7 @@ vi.mock("@/stores/auth", async (importOriginal) => {
 });
 
 vi.mock("@/features/auth/useProfile", () => ({
-  useProfile: () => ({ data: { role } }),
+  useProfile: () => ({ data: { role, role_level: roleLevel } }),
 }));
 vi.mock("@/features/auth/useOrganization", () => ({
   useOrganization: () => ({ data: { id: "o1", name: "Acme", inviteCode: "oldcode1" }, isLoading: false, isError: false }),
@@ -82,18 +83,20 @@ function renderPage() {
   );
 }
 
-beforeEach(() => { role = "admin"; rotateAsync.mockClear(); });
+beforeEach(() => { role = "admin"; roleLevel = "administrator"; rotateAsync.mockClear(); });
 afterEach(() => cleanup());
 
 describe("SettingsPage Team section — invite-link rotation", () => {
   it("hides Regenerate for non-admins (manager)", () => {
     role = "manager";
+    roleLevel = "sales_manager";
     renderPage();
     expect(screen.queryByRole("button", { name: /regenerate/i })).toBeNull();
   });
 
   it("shows Regenerate for admins and rotates on confirm", async () => {
     role = "admin";
+    roleLevel = "administrator";
     const user = userEvent.setup();
     renderPage();
 

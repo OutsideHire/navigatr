@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CAPABILITIES, can, type RoleLevel, type Capability } from "./capabilities";
+import { CAPABILITIES, can, profileCan, type RoleLevel, type Capability } from "./capabilities";
 
 const ALL: RoleLevel[] = [
   "administrator","cso_cro","svp_sales","vp_sales","director_sales","sales_manager","sales_professional",
@@ -46,5 +46,13 @@ describe("capability map", () => {
 
   it("can() is false for an unknown capability on any role", () => {
     expect(can("administrator", "nope" as Capability)).toBe(false);
+  });
+});
+
+describe("profileCan", () => {
+  it("reads role_level off a profile-like object", () => {
+    expect(profileCan({ role_level: "cso_cro" }, "inviteUsers")).toBe(true);
+    expect(profileCan({ role_level: "sales_manager" }, "inviteUsers")).toBe(false);
+    expect(profileCan(null, "inviteUsers")).toBe(false);
   });
 });
