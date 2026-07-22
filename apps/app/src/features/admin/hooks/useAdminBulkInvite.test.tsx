@@ -49,6 +49,38 @@ describe("useAdminBulkInvite", () => {
     });
   });
 
+  it("forwards role_level and reports_to when present on a row", async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: [{ email: "b@x.com", id: "i2", ok: true, error: null }],
+      error: null,
+    });
+    const { result } = renderHook(() => useAdminBulkInvite(), {
+      wrapper: makeWrapper(new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })),
+    });
+    await result.current.mutateAsync([
+      {
+        email: "b@x.com",
+        full_name: "Bob",
+        role: "manager",
+        role_level: "sales_manager",
+        reports_to: "manager@x.com",
+      },
+    ]);
+    expect(rpcMock).toHaveBeenCalledWith("admin_bulk_invite", {
+      p_invites: [
+        {
+          email: "b@x.com",
+          full_name: "Bob",
+          role: "manager",
+          role_level: "sales_manager",
+          reports_to: "manager@x.com",
+        },
+      ],
+    });
+  });
+
   it("invalidates the leaderboard cache prefix on success", async () => {
     rpcMock.mockResolvedValueOnce({ data: [], error: null });
     const client = new QueryClient({

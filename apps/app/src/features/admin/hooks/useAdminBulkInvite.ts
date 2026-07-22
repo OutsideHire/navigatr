@@ -12,11 +12,18 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
+import type { RoleLevel } from "@/features/auth/capabilities";
 
 export interface InviteInput {
   email: string;
   full_name: string | null;
   role: "rep" | "manager";
+  // Optional hierarchy fields (PRD 6.8.A). role_level is one of the 7 role
+  // levels; reports_to is a profile id OR the email of an existing member.
+  // Both are forwarded only when present so the RPC applies its own
+  // defaults when omitted.
+  role_level?: RoleLevel;
+  reports_to?: string;
 }
 
 export interface InviteResult {
