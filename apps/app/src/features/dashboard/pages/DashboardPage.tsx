@@ -39,6 +39,7 @@ import {
   Clock4,
   Compass,
   DollarSign,
+  FileBarChart,
   Handshake,
   MapPin,
   TrendingUp,
@@ -834,6 +835,32 @@ export function ConversionFunnel({ funnel }: { funnel: DashboardData["conversion
   );
 }
 
+// Section 12: Additional reports - dashboard entry point(s) into the deeper
+// reports. Currently the Activities Report (Closed Won activity analysis).
+export function AdditionalReports() {
+  const navigate = useNavigate();
+  return (
+    <Card padding="none" shadow="sm">
+      <div className="px-6 pt-5">
+        <h2 className="text-heading-sm text-text-default">Additional reports</h2>
+      </div>
+      <div className="mt-2 flex flex-col">
+        <ListRow
+          onClick={() => navigate("/dashboard/activity-to-win")}
+          leading={
+            <span className="flex h-9 w-9 items-center justify-center rounded-radius-md bg-accent-violet-20 text-accent-violet">
+              <FileBarChart className="h-4 w-4" />
+            </span>
+          }
+          title="Activities Report"
+          subtitle="Closed Won deals - activity analysis"
+          trailing={<ChevronRight className="h-5 w-5 text-text-subtle" />}
+        />
+      </div>
+    </Card>
+  );
+}
+
 // ───────────────────────────────────────────────────────────────────────
 // Populated Dashboard composer
 // ───────────────────────────────────────────────────────────────────────
@@ -882,6 +909,8 @@ function PopulatedDashboard({ firstName: _firstName }: { firstName: string }) {
           <TopPartners topPartners={data.topPartners} />
           {/* LIVE */}
           <LeadSources leadSources={data.leadSources} />
+          {/* Entry point into the Activities Report */}
+          <AdditionalReports />
           {/* LIVE — computed from deal_stage_history rolled up to
               "ever entered" counts per stage. */}
           <div className="lg:col-span-2">
