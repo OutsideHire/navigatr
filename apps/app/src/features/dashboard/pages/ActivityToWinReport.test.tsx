@@ -28,9 +28,13 @@ let lostSummary: {
   medianTotal: number | null;
   medianBusinessDays: number | null;
 };
+let lostFilters: unknown;
 vi.mock("../hooks/useActivityToWin", () => ({
   useActivityToWin: () => agg,
-  useActivityToLost: () => lostSummary,
+  useActivityToLost: (_range: unknown, filters: unknown) => {
+    lostFilters = filters;
+    return lostSummary;
+  },
 }));
 
 function row(o: Partial<ActivityToWinAggregate["rows"][number]> & { dealId: string; companyName: string }) {
@@ -75,6 +79,7 @@ beforeEach(() => {
   agg = populated();
   lostSummary = { sampleSize: 5, insufficientData: false, medianTotal: 3, medianBusinessDays: 22 };
   orgBands = { valueBandLowCents: null, valueBandHighCents: null };
+  lostFilters = undefined;
 });
 
 describe("ActivityToWinReport (Activities Report)", () => {
@@ -199,5 +204,13 @@ describe("ActivityToWinReport (Activities Report)", () => {
     agg = { ...populated(), rows: [], sampleSize: 0, insufficientData: true };
     renderReport();
     expect(screen.getByRole("button", { name: /export csv/i })).toBeDisabled();
+  });
+
+  it("scopes Compare-to-Lost to the chosen salesperson", () => {
+    renderReport();
+    const salesperson = screen.getAllByRole("combobox")[0]!;
+    fireEvent.click(salesperson);
+    fireEvent.click(screen.getByRole("option", { name: /Marcus Tan/i }));
+    expect(lostFilters).toMatchObject({ ownerId: "u2" });
   });
 });

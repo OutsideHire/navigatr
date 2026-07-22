@@ -186,7 +186,15 @@ export function ActivityToWinReport() {
 
   const windowOnly = useActivityToWin(range);
   const agg = useActivityToWin(range, filters);
-  const lost = useActivityToLost(range, filters);
+  // Compare-to-Lost honors the salesperson selector too, so a per-rep view
+  // compares that rep's wins against that rep's losses (not the whole team).
+  // The UNASSIGNED sentinel can't be expressed as an ownerId filter, so it
+  // falls back to the window-wide lost cohort.
+  const lostFilters = React.useMemo<AwFilters>(
+    () => (ownerKey === OWNER_ALL || ownerKey === UNASSIGNED ? filters : { ...filters, ownerId: ownerKey }),
+    [filters, ownerKey],
+  );
+  const lost = useActivityToLost(range, lostFilters);
 
   // Source dropdown options (all sources in the window).
   const sourceOptions = React.useMemo(() => {
@@ -391,7 +399,11 @@ export function ActivityToWinReport() {
                       const active = sort.column === c.key;
                       const Arrow = sort.dir === "asc" ? ArrowUp : ArrowDown;
                       return (
-                        <th key={c.key} className={cn("px-3 py-2.5 font-medium", c.numeric && "text-right")}>
+                        <th
+                          key={c.key}
+                          aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+                          className={cn("px-3 py-2.5 font-medium", c.numeric && "text-right")}
+                        >
                           <button
                             type="button"
                             onClick={() => toggleSort(c.key)}
@@ -436,8 +448,8 @@ export function ActivityToWinReport() {
               <h2 className="mb-3 text-heading-sm text-text-default">Key insights</h2>
               {insights.length > 0 ? (
                 <ul className="flex flex-col gap-2 border-l-4 border-accent-blue bg-accent-blue-20/40 py-2 pl-4">
-                  {insights.map((text, i) => (
-                    <li key={i} className="text-body-sm text-text-default">{text}</li>
+                  {insights.map((text) => (
+                    <li key={text} className="text-body-sm text-text-default">{text}</li>
                   ))}
                 </ul>
               ) : (
