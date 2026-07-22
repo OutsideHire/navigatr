@@ -31,7 +31,12 @@ update profiles set role_level = case role
 end;
 
 alter table profiles alter column role_level set not null;
-alter table profiles alter column role_level set default 'sales_professional';
+-- NOTE: deliberately NO column default. A DEFAULT is applied by Postgres when
+-- the tuple is formed, BEFORE the before-insert trigger runs, which would make
+-- fill_role_level_from_role() a no-op (NEW.role_level would never be null).
+-- Leaving it null-until-trigger lets the trigger derive role_level from role on
+-- every insert path. The NOT NULL constraint is checked AFTER the trigger, so
+-- the trigger always satisfies it.
 
 -- view_as_enabled: PRD default true for L2-L6 (cso..sales_manager),
 -- false for L1 (administrator) and L7 (sales_professional). Used in a later
