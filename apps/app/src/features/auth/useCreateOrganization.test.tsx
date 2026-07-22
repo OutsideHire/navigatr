@@ -34,7 +34,7 @@ beforeEach(() => {
 describe("useCreateOrganization", () => {
   it("calls the RPC with the trimmed name and returns the row", async () => {
     rpcMock.mockResolvedValueOnce({
-      data: [{ org_id: "org-1", role: "manager", invite_code: "abc12345" }],
+      data: [{ org_id: "org-1", role: "admin", invite_code: "abc12345" }],
       error: null,
     });
     const { result } = renderHook(() => useCreateOrganization(), {
@@ -46,12 +46,12 @@ describe("useCreateOrganization", () => {
     const out = await result.current.mutateAsync("Acme Payments");
 
     expect(rpcMock).toHaveBeenCalledWith("create_organization", { p_name: "Acme Payments" });
-    expect(out).toEqual({ org_id: "org-1", role: "manager", invite_code: "abc12345" });
+    expect(out).toEqual({ org_id: "org-1", role: "admin", invite_code: "abc12345" });
   });
 
   it("supports single-object responses (in case supabase-js stops wrapping)", async () => {
     rpcMock.mockResolvedValueOnce({
-      data: { org_id: "org-2", role: "manager", invite_code: "deadbeef" },
+      data: { org_id: "org-2", role: "admin", invite_code: "deadbeef" },
       error: null,
     });
     const { result } = renderHook(() => useCreateOrganization(), {
@@ -77,7 +77,7 @@ describe("useCreateOrganization", () => {
 
   it("invalidates the profile query on success", async () => {
     rpcMock.mockResolvedValueOnce({
-      data: [{ org_id: "org-1", role: "manager", invite_code: "x" }],
+      data: [{ org_id: "org-1", role: "admin", invite_code: "x" }],
       error: null,
     });
     const client = new QueryClient({

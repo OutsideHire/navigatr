@@ -12,7 +12,8 @@ import { useAuth } from "@/stores/auth";
 
 export interface CreateOrganizationResult {
   org_id: string;
-  role: "manager";
+  // The org creator is now seeded as the Administrator (L1) of the new org.
+  role: "admin";
   invite_code: string;
 }
 
