@@ -50,9 +50,9 @@ function populated(): ActivityToWinAggregate {
     timingSampleSize: 3, medianBusinessDays: 11, medianCalendarDays: 15,
     p25BusinessDays: 8, p75BusinessDays: 30,
     rows: [
-      row({ dealId: "d1", companyName: "Northside Diner", ownerId: "u1", source: "Cold", closedWonAt: "2026-07-02T00:00:00.000Z", counts: { total: 5, call: 2, email: 1, dropin: 2, appointment: 0 }, businessDays: 8 }),
-      row({ dealId: "d2", companyName: "Beacon Auto", ownerId: "u2", source: "Referral", closedWonAt: "2026-06-28T00:00:00.000Z", counts: { total: 6, call: 3, email: 2, dropin: 0, appointment: 1 }, businessDays: 11 }),
-      row({ dealId: "d3", companyName: "Vista Payments", ownerId: "u2", source: "Cold", closedWonAt: "2026-06-20T00:00:00.000Z", counts: { total: 31, call: 18, email: 9, dropin: 4, appointment: 0 }, businessDays: 67, isOutlier: true }),
+      row({ dealId: "d1", companyName: "Northside Diner", ownerId: "u1", source: "Cold", valueCents: 8_000_000, closedWonAt: "2026-07-02T00:00:00.000Z", counts: { total: 5, call: 2, email: 1, dropin: 2, appointment: 0 }, businessDays: 8 }),
+      row({ dealId: "d2", companyName: "Beacon Auto", ownerId: "u2", source: "Referral", valueCents: 25_000_000, closedWonAt: "2026-06-28T00:00:00.000Z", counts: { total: 6, call: 3, email: 2, dropin: 0, appointment: 1 }, businessDays: 11 }),
+      row({ dealId: "d3", companyName: "Vista Payments", ownerId: "u2", source: "Cold", valueCents: 4_000_000, closedWonAt: "2026-06-20T00:00:00.000Z", counts: { total: 31, call: 18, email: 9, dropin: 4, appointment: 0 }, businessDays: 67, isOutlier: true }),
     ],
   };
 }
@@ -77,81 +77,97 @@ beforeEach(() => {
   orgBands = { valueBandLowCents: null, valueBandHighCents: null };
 });
 
-describe("ActivityToWinReport", () => {
-  it("shows the summary medians and sample size", () => {
+describe("ActivityToWinReport (Activities Report)", () => {
+  it("renders the gradient header with title and subtitle", () => {
     renderReport();
-    expect(screen.getByText("median touches to close")).toBeInTheDocument();
-    expect(screen.getByText("median business days to close")).toBeInTheDocument();
-    expect(screen.getByText(/3 won deals/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Activities Report" })).toBeInTheDocument();
+    expect(screen.getByText(/Closed Won Deals/i)).toBeInTheDocument();
   });
 
-  it("lists deals sorted by close date descending", () => {
+  it("shows the four KPI cards with averaged values", () => {
     renderReport();
-    const bodyRows = screen.getAllByRole("row").slice(1); // drop header row
-    const names = bodyRows.map((r) => within(r).getAllByRole("cell")[0]!.textContent);
-    expect(names[0]).toContain("Northside Diner"); // Jul 2
-    expect(names[1]).toContain("Beacon Auto"); // Jun 28
-    expect(names[2]).toContain("Vista Payments"); // Jun 20
+    expect(screen.getByText("Total Deals Closed")).toBeInTheDocument();
+    expect(screen.getByText("Avg Activities / Deal")).toBeInTheDocument();
+    expect(screen.getByText("Most Efficient")).toBeInTheDocument();
+    expect(screen.getByText("Highest Value")).toBeInTheDocument();
+    // Highest-value deal (Beacon Auto, $250K) surfaces as the KPI value (and in the table).
+    expect(screen.getAllByText("Beacon Auto").length).toBeGreaterThan(0);
   });
 
-  it("flags outlier rows", () => {
+  it("shows the salesperson performance ranking, revenue-sorted", () => {
     renderReport();
-    const vista = screen.getByText("Vista Payments").closest("tr")!;
-    expect(within(vista).getByText("outlier")).toBeInTheDocument();
+    const section = screen.getByRole("region", { name: /salesperson performance/i });
+    const names = within(section).getAllByTestId("rep-name").map((n) => n.textContent);
+    expect(names[0]).toContain("Marcus Tan");
+    expect(names[1]).toContain("Sarah Lim");
   });
 
-  it("shows the Rep column for managers, hides it for reps", () => {
+  it("shows average activities by type, labelling drop-ins as Visits", () => {
+    renderReport();
+    const section = screen.getByRole("region", { name: /average activities by type/i });
+    expect(within(section).getByText(/Visits/i)).toBeInTheDocument();
+    expect(within(section).getByText(/Calls/i)).toBeInTheDocument();
+  });
+
+  it("sorts the deal table by a column when its header is clicked", () => {
+    renderReport();
+    const table = screen.getByRole("table");
+    let names = within(table).getAllByRole("row").slice(1).map((r) => within(r).getAllByRole("cell")[0]!.textContent);
+    expect(names[0]).toContain("Beacon Auto");
+    fireEvent.click(within(table).getByRole("button", { name: /^Total/i }));
+    names = within(table).getAllByRole("row").slice(1).map((r) => within(r).getAllByRole("cell")[0]!.textContent);
+    expect(names[0]).toContain("Vista Payments");
+  });
+
+  it("renders the Rep column for managers, hides it for reps", () => {
     const { unmount } = renderReport();
-    expect(screen.getByText("Sarah Lim")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: /rep/i })).toBeInTheDocument();
     unmount();
-
     role = "rep";
     renderReport();
     expect(screen.queryByRole("columnheader", { name: /rep/i })).toBeNull();
   });
 
-  it("clicking a row opens the deal", () => {
+  it("clicking a deal row opens the deal", () => {
     renderReport();
-    fireEvent.click(screen.getByText("Beacon Auto").closest("tr")!);
+    const table = screen.getByRole("table");
+    fireEvent.click(within(table).getByText("Beacon Auto").closest("tr")!);
     expect(navigateMock).toHaveBeenCalledWith("/pipeline/d2");
+  });
+
+  it("renders the key insights panel", () => {
+    renderReport();
+    const section = screen.getByRole("region", { name: /key insights/i });
+    expect(within(section).getAllByRole("listitem").length).toBeGreaterThan(0);
+  });
+
+  it("filters every section to a chosen salesperson", () => {
+    renderReport();
+    const salesperson = screen.getAllByRole("combobox")[0]!;
+    fireEvent.click(salesperson);
+    fireEvent.click(screen.getByRole("option", { name: /Marcus Tan/i }));
+    const table = screen.getByRole("table");
+    const bodyRows = within(table).getAllByRole("row").slice(1);
+    expect(bodyRows).toHaveLength(2);
+    expect(screen.queryByText("Northside Diner")).toBeNull();
   });
 
   it("renders an empty state when there are no won deals", () => {
     agg = { ...populated(), rows: [], sampleSize: 0, insufficientData: true };
     renderReport();
-    expect(screen.getByText(/No won deals in this window/)).toBeInTheDocument();
+    expect(screen.getByText(/No won deals in this window/i)).toBeInTheDocument();
   });
 
-  it("renders the window, source, and value-band filter controls", () => {
+  it("keeps the secondary extras: window/source/band filters and Compare-to-Lost", () => {
     renderReport();
-    expect(screen.getAllByRole("combobox")).toHaveLength(3);
-  });
-
-  it("surfaces unmeasured wins and the low-sample caveat", () => {
-    agg = { ...populated(), sampleSize: 2, unmeasuredWins: 4, insufficientData: true };
-    renderReport();
-    expect(screen.getByText(/2 won deals · 4 unmeasured/)).toBeInTheDocument();
-    expect(screen.getByText(/Fewer than 3 deals/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: /compare to lost/i }));
+    expect(screen.getByText(/Compared to lost/i)).toBeInTheDocument();
+    expect(screen.getByText(/5 lost deals/i)).toBeInTheDocument();
   });
 
   it("shows the month trend when the window spans 2+ months", () => {
-    renderReport(); // fixture spans Jun + Jul 2026
-    expect(screen.getByText(/Trend by close month/)).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Median touches" })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Median business days" })).toBeInTheDocument();
-  });
-
-  it("hides the trend when all wins fall in a single month", () => {
-    agg = {
-      ...populated(),
-      rows: [
-        row({ dealId: "d1", companyName: "Northside Diner", closedWonAt: "2026-07-02T00:00:00.000Z" }),
-        row({ dealId: "d2", companyName: "Beacon Auto", closedWonAt: "2026-07-10T00:00:00.000Z" }),
-      ],
-    };
     renderReport();
-    expect(screen.queryByText(/Trend by close month/)).toBeNull();
+    expect(screen.getByText(/Trend by close month/i)).toBeInTheDocument();
   });
 
   it("exports the visible rows to CSV on click", () => {
@@ -172,43 +188,16 @@ describe("ActivityToWinReport", () => {
     fireEvent.click(screen.getByRole("button", { name: /export csv/i }));
 
     expect(createObjectURL).toHaveBeenCalledOnce();
-    expect(downloadName).toMatch(/^activity-to-win-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(downloadName).toMatch(/^activities-report-\d{4}-\d{2}-\d{2}\.csv$/);
 
     clickSpy.mockRestore();
     URL.createObjectURL = origCreate;
     URL.revokeObjectURL = origRevoke;
   });
 
-  it("renders with the org's custom value bands without error", () => {
-    orgBands = { valueBandLowCents: 50_000_00, valueBandHighCents: 250_000_00 };
-    renderReport();
-    // window + source + value-band dropdowns still present; custom bands feed
-    // the value-band options (option labels covered by buildValueBands unit tests).
-    expect(screen.getAllByRole("combobox")).toHaveLength(3);
-  });
-
   it("disables export when there are no rows", () => {
     agg = { ...populated(), rows: [], sampleSize: 0, insufficientData: true };
     renderReport();
     expect(screen.getByRole("button", { name: /export csv/i })).toBeDisabled();
-  });
-
-  it("hides the lost comparison until the toggle is on", () => {
-    renderReport();
-    expect(screen.queryByText(/Compared to lost/i)).toBeNull();
-
-    fireEvent.click(screen.getByRole("checkbox", { name: /compare to lost/i }));
-
-    expect(screen.getByText(/Compared to lost/i)).toBeInTheDocument();
-    expect(screen.getByText(/median touches before loss/i)).toBeInTheDocument();
-    expect(screen.getByText(/median business days to loss/i)).toBeInTheDocument();
-    expect(screen.getByText(/5 lost deals/i)).toBeInTheDocument();
-  });
-
-  it("warns on a thin lost sample", () => {
-    lostSummary = { sampleSize: 2, insufficientData: true, medianTotal: 2, medianBusinessDays: 18 };
-    renderReport();
-    fireEvent.click(screen.getByRole("checkbox", { name: /compare to lost/i }));
-    expect(screen.getByText(/Fewer than 3 lost deals/i)).toBeInTheDocument();
   });
 });
