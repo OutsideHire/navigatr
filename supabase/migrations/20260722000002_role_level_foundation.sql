@@ -15,13 +15,18 @@
 -- Apply via the Supabase SQL editor (not db push). DB change ships and is
 -- applied BEFORE the frontend that reads role_level.
 
--- 1) The enum + columns.
-create type role_level as enum (
-  'administrator','cso_cro','svp_sales','vp_sales','director_sales','sales_manager','sales_professional'
-);
+-- 1) The enum + columns. Guarded so the whole script is re-runnable (a
+--    partial prior run may have created the type / columns already).
+do $$ begin
+  if not exists (select 1 from pg_type where typname = 'role_level') then
+    create type role_level as enum (
+      'administrator','cso_cro','svp_sales','vp_sales','director_sales','sales_manager','sales_professional'
+    );
+  end if;
+end $$;
 
-alter table profiles add column role_level role_level;
-alter table profiles add column view_as_enabled boolean not null default false;
+alter table profiles add column if not exists role_level role_level;
+alter table profiles add column if not exists view_as_enabled boolean not null default false;
 
 -- 2) Backfill role_level from the legacy role.
 update profiles set role_level = case role
@@ -91,6 +96,7 @@ begin
   return NEW;
 end $$;
 
+drop trigger if exists profiles_fill_role_level on profiles;
 create trigger profiles_fill_role_level
   before insert on profiles
   for each row execute function public.fill_role_level_from_role();
