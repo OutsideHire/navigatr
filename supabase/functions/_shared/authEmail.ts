@@ -34,7 +34,7 @@ export function authEmailContent(actionType: string): AuthEmailContent {
       return {
         subject: "Your navigatr sign-in link",
         heading: "Sign in to navigatr",
-        bodyLines: ["Tap the button below to sign in. This link expires shortly."],
+        bodyLines: ["Enter this 6-digit code on the sign-in screen, or tap the button below. It expires shortly."],
         ctaLabel: "Sign in to navigatr",
         footnote: "If this wasn't you, you can safely ignore this email.",
       };

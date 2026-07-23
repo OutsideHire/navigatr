@@ -45,4 +45,13 @@ describe("renderEmail", () => {
     const bodyMatches = out.html.match(/class="em-body"/g) ?? [];
     expect(bodyMatches.length).toBe(2);
   });
+
+  it("renders a prominent code block when a code is given, and omits it otherwise", () => {
+    const withCode = renderEmail({ ...base, code: "482913" });
+    expect(withCode.html).toContain("482913");
+    expect(withCode.text).toContain("Code: 482913");
+    const without = renderEmail(base);
+    expect(without.html).not.toContain("482913");
+    expect(without.text).not.toContain("Code:");
+  });
 });

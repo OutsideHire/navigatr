@@ -30,6 +30,7 @@ Deno.serve(async (req) => {
   const body = JSON.parse(payload) as {
     user: { email: string };
     email_data: {
+      token: string;
       token_hash: string;
       redirect_to: string;
       email_action_type: string;
@@ -53,6 +54,7 @@ Deno.serve(async (req) => {
     ctaLabel: content.ctaLabel,
     ctaUrl,
     footnote: content.footnote,
+    code: d.email_action_type === "magiclink" ? d.token : undefined,
   });
 
   try {

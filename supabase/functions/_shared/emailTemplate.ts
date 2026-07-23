@@ -15,6 +15,8 @@ export interface EmailOptions {
   ctaUrl: string;
   /** Small footer note (expiry / "wasn't you"). */
   footnote: string;
+  /** Optional prominent one-time code (magic-link / OTP), shown above the button. */
+  code?: string;
 }
 
 const LOGO_URL = "https://app.getnavigatr.io/icons/icon-192x192.png";
@@ -38,6 +40,12 @@ export function renderEmail(opts: EmailOptions): { html: string; text: string } 
     .map((l) => `<p class="em-body" style="margin:0 0 12px;font-size:14px;line-height:1.55;color:#56607A;">${esc(l)}</p>`)
     .join("");
 
+  const codeHtml = opts.code
+    ? `<tr><td style="padding:4px 28px 0;">
+        <div style="background:#F0F2F7;border:1px solid #E8EBF2;border-radius:10px;padding:16px;text-align:center;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:26px;font-weight:700;letter-spacing:6px;color:#0B1220;">${esc(opts.code)}</div>
+      </td></tr>`
+    : "";
+
   const html = `<!doctype html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="color-scheme" content="light only"></head>
@@ -56,6 +64,7 @@ export function renderEmail(opts: EmailOptions): { html: string; text: string } 
         <h1 style="margin:0 0 10px;font-size:20px;line-height:1.25;color:#0B1220;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${esc(opts.heading)}</h1>
         <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${bodyHtml}</div>
       </td></tr>
+      ${codeHtml}
       <tr><td style="padding:8px 28px 4px;">
         <table role="presentation" cellpadding="0" cellspacing="0">
           <tr><td style="background:#5856EB;border-radius:9px;">
@@ -79,6 +88,7 @@ export function renderEmail(opts: EmailOptions): { html: string; text: string } 
     opts.heading,
     "",
     ...opts.bodyLines,
+    ...(opts.code ? ["", `Code: ${opts.code}`] : []),
     "",
     `${opts.ctaLabel}: ${opts.ctaUrl}`,
     "",
