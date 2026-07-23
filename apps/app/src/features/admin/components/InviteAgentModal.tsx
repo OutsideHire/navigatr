@@ -16,12 +16,19 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button, FormField, Input, Select, type SelectOption } from "@/components/navigatr";
 import { ROLE_LEVEL_OPTIONS, type RoleLevel } from "@/features/auth/capabilities";
-import { useOrgMemberNames } from "@/features/dashboard/hooks/useOrgMemberNames";
 import { useAdminBulkInvite } from "../hooks/useAdminBulkInvite";
 import { useSendInviteEmails } from "../hooks/useSendInviteEmails";
+import { useTeamLeaderboard } from "../hooks/useTeamLeaderboard";
 
 // Sentinel for the "No manager" option (Radix Select disallows empty values).
 const NO_MANAGER = "__none__";
+
+// A reports-to target must be someone who can actually manage: an active
+// member at manager level or above. Reps (sales_professional) and pending
+// invites (no profile, role_level null) can never be a manager.
+const MANAGER_ROLE_LEVELS = new Set<RoleLevel>([
+  "administrator", "cso_cro", "svp_sales", "vp_sales", "director_sales", "sales_manager",
+]);
 
 const ROLE_LEVEL_SELECT_OPTIONS: SelectOption[] = ROLE_LEVEL_OPTIONS.map((o) => ({
   value: o.value,
@@ -41,10 +48,13 @@ type Values = z.infer<typeof schema>;
 export function InviteAgentModal({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const invite = useAdminBulkInvite();
   const sendEmails = useSendInviteEmails();
-  const memberNames = useOrgMemberNames(true);
+  const leaderboard = useTeamLeaderboard();
   const managerOptions: SelectOption[] = [
     { value: NO_MANAGER, label: "No manager" },
-    ...Array.from(memberNames, ([id, name]) => ({ value: id, label: name })),
+    ...(leaderboard.data ?? [])
+      .filter((r) => r.status === "active" && r.role_level !== null && MANAGER_ROLE_LEVELS.has(r.role_level))
+      .map((r) => ({ value: r.agent_id, label: r.full_name ?? r.email }))
+      .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" })),
   ];
   const { register, handleSubmit, control, reset, formState: { errors, isSubmitting } } = useForm<Values>({
     resolver: zodResolver(schema),
@@ -61,8 +71,19 @@ export function InviteAgentModal({ open, onOpenChange }: { open: boolean; onOpen
       }]);
       const row = results[0];
       if (row.ok && row.id) {
-        try { await sendEmails.mutateAsync([row.id]); } catch { /* non-fatal */ }
-        toast.success(`Invite sent to ${row.email}`);
+        // The invite exists now. Email delivery is best-effort: the mutation
+        // can throw (edge function down) or resolve with ok:false for this id.
+        // Either way we keep the invite and just warn the admin.
+        let emailOk = false;
+        try {
+          const emailResults = await sendEmails.mutateAsync([row.id]);
+          emailOk = emailResults.some((e) => e.id === row.id && e.ok);
+        } catch { emailOk = false; }
+        if (emailOk) {
+          toast.success(`Invite sent to ${row.email}`);
+        } else {
+          toast.warning(`Invite created for ${row.email}, but the email could not be sent. You can resend it from the Team page.`);
+        }
         reset();
         onOpenChange(false);
       } else {

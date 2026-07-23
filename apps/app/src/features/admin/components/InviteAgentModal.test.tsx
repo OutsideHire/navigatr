@@ -13,13 +13,18 @@ vi.mock("../hooks/useSendInviteEmails", () => ({
   useSendInviteEmails: () => ({ mutateAsync: vi.fn().mockResolvedValue([]) }),
 }));
 
-// Org members that populate the "Reports to" select.
-vi.mock("@/features/dashboard/hooks/useOrgMemberNames", () => ({
-  useOrgMemberNames: () =>
-    new Map<string, string>([
-      ["mgr-1", "Mike Manager"],
-      ["mgr-2", "Nora Manager"],
-    ]),
+// Leaderboard rows populate the "Reports to" select. Mix of manager-and-above
+// (admin + manager, both active), a rep, and a manager-level pending invite —
+// only the first two may be picked as a manager.
+vi.mock("../hooks/useTeamLeaderboard", () => ({
+  useTeamLeaderboard: () => ({
+    data: [
+      { agent_id: "mgr-1", full_name: "Mike Manager", email: "mike@x.com", role_level: "sales_manager", status: "active" },
+      { agent_id: "adm-1", full_name: "Alice Admin", email: "alice@x.com", role_level: "administrator", status: "active" },
+      { agent_id: "rep-1", full_name: "Rita Rep", email: "rita@x.com", role_level: "sales_professional", status: "active" },
+      { agent_id: "inv-1", full_name: "Ivan Invited", email: "ivan@x.com", role_level: "sales_manager", status: "invited" },
+    ],
+  }),
 }));
 
 // Radix Select uses pointer APIs + scrollIntoView that jsdom lacks.
@@ -46,6 +51,18 @@ describe("InviteAgentModal", () => {
     expect(mutateAsyncMock).toHaveBeenCalledWith([
       { email: "a@x.com", full_name: null, role_level: "sales_professional" },
     ]);
+  });
+
+  it("reports-to offers only manager-and-above active members plus No manager", () => {
+    render(<InviteAgentModal open onOpenChange={() => {}} />);
+    fireEvent.click(screen.getByLabelText(/reports to/i));
+
+    expect(screen.getByRole("option", { name: "No manager" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Alice Admin" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Mike Manager" })).toBeInTheDocument();
+    // A rep and a pending invite can never be a manager.
+    expect(screen.queryByRole("option", { name: "Rita Rep" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Ivan Invited" })).not.toBeInTheDocument();
   });
 
   it("submits the chosen role_level and reports_to when a manager is picked", async () => {

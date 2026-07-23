@@ -27,6 +27,7 @@ interface FinalResult {
   invited: number;
   skipped: number;
   failed: number;
+  emailsFailed: number;
   failedRows: Array<{ email: string; error: string }>;
 }
 
@@ -66,15 +67,24 @@ export function CsvImportWizard() {
       setProgress({ done: Math.min(i + chunk.length, total), total });
     }
 
-    // Fire emails for successful inserts.
+    // Fire emails for successful inserts. Delivery is best-effort: a throw
+    // (edge function down) means none of them emailed; otherwise count the
+    // ids whose result came back ok:false or missing. The invites still exist.
     const ids = allResults.filter((r) => r.ok && r.id).map((r) => r.id!);
+    let emailsFailed = 0;
     if (ids.length > 0) {
-      try { await sendEmails.mutateAsync(ids); } catch { /* non-fatal: admin can resend */ }
+      try {
+        const emailResults = await sendEmails.mutateAsync(ids);
+        const okIds = new Set(emailResults.filter((e) => e.ok).map((e) => e.id));
+        emailsFailed = ids.filter((id) => !okIds.has(id)).length;
+      } catch {
+        emailsFailed = ids.length; // admin can resend from the Team page
+      }
     }
 
     const invited = allResults.filter((r) => r.ok).length;
     const failedRows = allResults.filter((r) => !r.ok).map((r) => ({ email: r.email, error: r.error ?? "unknown" }));
-    setFinalResult({ invited, skipped: parsed.errors.length, failed: failedRows.length, failedRows });
+    setFinalResult({ invited, skipped: parsed.errors.length, failed: failedRows.length, emailsFailed, failedRows });
     setStep("done");
   };
 
@@ -163,6 +173,7 @@ export function CsvImportWizard() {
         <li className="flex items-center gap-2"><Check className="h-4 w-4 text-status-success" /> {r.invited} invites sent</li>
         {r.skipped > 0 && <li className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-status-warning" /> {r.skipped} skipped (invalid rows in CSV)</li>}
         {r.failed > 0 && <li className="flex items-center gap-2"><X className="h-4 w-4 text-status-danger" /> {r.failed} failed at server (already-invited / over cap)</li>}
+        {r.emailsFailed > 0 && <li className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-status-warning" /> {r.emailsFailed} invite(s) created but their emails could not be sent - resend from the Team page.</li>}
       </ul>
       <div className="flex gap-2">
         {r.failed > 0 && <Button variant="secondary" size="md" onClick={downloadFailures}>Download failures CSV</Button>}
