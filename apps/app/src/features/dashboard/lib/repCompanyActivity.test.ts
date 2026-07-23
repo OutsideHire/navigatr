@@ -71,6 +71,14 @@ describe("repCompanyAggregate", () => {
     expect(reps).toHaveLength(1);
     expect(reps[0]!.ownerId).toBeNull();
   });
+
+  it("breaks company-total ties alphabetically", () => {
+    const { reps } = repCompanyAggregate([
+      { ownerId: "u1", companyName: "Zeta", type: "call" as const },
+      { ownerId: "u1", companyName: "Alpha", type: "call" as const },
+    ]);
+    expect(reps[0]!.companies.map((c) => c.companyName)).toEqual(["Alpha", "Zeta"]);
+  });
 });
 
 describe("sortReps", () => {
@@ -85,6 +93,22 @@ describe("sortReps", () => {
     expect(byTotal[0]!.ownerId).toBe("u2");
     const byEmail = sortReps(reps, "email", nameOf);
     expect(byEmail[0]!.ownerId).toBe("u2");
+  });
+
+  it("breaks metric ties by total desc, then name asc", () => {
+    const { reps } = repCompanyAggregate([
+      // u1 and u2 tie on calls (1 each); u1 has an extra email so higher total
+      { ownerId: "u1", companyName: "A", type: "call" as const },
+      { ownerId: "u1", companyName: "A", type: "email" as const },
+      { ownerId: "u2", companyName: "A", type: "call" as const },
+      // u3 also 1 call, same total as u2 -> falls to name tie-break
+      { ownerId: "u3", companyName: "A", type: "call" as const },
+    ]);
+    const names: Record<string, string> = { u1: "Beta", u2: "Yara", u3: "Alan" };
+    const nameOf = (id: string | null) => (id ? names[id]! : "Unassigned");
+    const byCall = sortReps(reps, "call", nameOf);
+    // u1 first (call tie with others but higher total); then u2 vs u3 tie on call+total -> name asc: Alan(u3) before Yara(u2)
+    expect(byCall.map((r) => r.ownerId)).toEqual(["u1", "u3", "u2"]);
   });
 });
 
