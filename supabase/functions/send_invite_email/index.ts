@@ -15,6 +15,22 @@ const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 const FROM_ADDRESS = Deno.env.get("FROM_ADDRESS") ?? "invites@navigatr.app";
 const APP_BASE_URL = Deno.env.get("APP_BASE_URL") ?? "https://navigatr.app";
 
+// Browser callers (supabase-js functions.invoke) trigger a CORS preflight;
+// without these headers + an OPTIONS handler the browser blocks the call
+// before the function runs. Mirrors the geocode function's CORS handling.
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+  });
+}
+
 const resend = new Resend(RESEND_API_KEY);
 
 interface Invite {
@@ -25,16 +41,24 @@ interface Invite {
   org_id: string;
 }
 
-interface OrgRow { name: string }
-
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: CORS_HEADERS });
+  }
+
+  console.log("send_invite_email config:", {
+    from: FROM_ADDRESS,
+    appBase: APP_BASE_URL,
+    hasKey: RESEND_API_KEY ? "yes" : "no",
+  });
+
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
-    return new Response(JSON.stringify({ error: "missing_authorization" }), { status: 401 });
+    return json({ error: "missing_authorization" }, 401);
   }
   const body = await req.json().catch(() => null) as { invite_ids?: string[] } | null;
   if (!body?.invite_ids || !Array.isArray(body.invite_ids)) {
-    return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400 });
+    return json({ error: "invalid_body" }, 400);
   }
 
   // Query using the user's JWT so RLS applies.
@@ -49,11 +73,12 @@ Deno.serve(async (req) => {
     .is("accepted_at", null)
     .is("revoked_at", null);
   if (iErr) {
-    return new Response(JSON.stringify({ error: iErr.message }), { status: 400 });
+    console.error("invite lookup error:", iErr.message);
+    return json({ error: iErr.message }, 400);
   }
+  console.log("invites found:", invites?.length ?? 0);
 
-  // Org names for personalization. RLS gives the caller their own org only,
-  // so this returns 0 or 1 row.
+  // Org name for personalization. RLS gives the caller their own org only.
   const { data: orgs } = await userClient
     .from("organizations")
     .select("id, name")
@@ -72,18 +97,19 @@ Deno.serve(async (req) => {
       <p style="color:#888;font-size:12px">This invite expires in 14 days. Reply if anything looks wrong.</p>
     `;
     try {
-      const send = await resend.emails.send({
-        from: FROM_ADDRESS, to: inv.email, subject, html,
-      });
+      const send = await resend.emails.send({ from: FROM_ADDRESS, to: inv.email, subject, html });
       if ((send as { error?: unknown }).error) {
+        console.error("RESEND REJECTED for", inv.email, ":", JSON.stringify((send as { error: unknown }).error));
         results.push({ id: inv.id, ok: false, error: String((send as { error: unknown }).error) });
       } else {
+        console.log("RESEND OK for", inv.email);
         results.push({ id: inv.id, ok: true });
       }
     } catch (e) {
+      console.error("RESEND THREW for", inv.email, ":", e instanceof Error ? e.message : String(e));
       results.push({ id: inv.id, ok: false, error: e instanceof Error ? e.message : String(e) });
     }
   }
 
-  return new Response(JSON.stringify({ results }), { status: 200, headers: { "Content-Type": "application/json" } });
+  return json({ results });
 });
