@@ -28,4 +28,11 @@ describe("useRepCompanyActivity", () => {
     expect(result.current.nameOf("u1")).toBe("Dana W");
     expect(result.current.grandTotal.total).toBe(2);
   });
+
+  it("nameOf falls back to Unassigned (null) and Unknown rep (missing id)", () => {
+    const range = resolveRange("all", new Date("2026-06-01T00:00:00.000Z"));
+    const { result } = renderHook(() => useRepCompanyActivity(range));
+    expect(result.current.nameOf(null)).toBe("Unassigned");
+    expect(result.current.nameOf("u999")).toBe("Unknown rep");
+  });
 });
