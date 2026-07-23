@@ -13,6 +13,7 @@ import { useSendInviteEmails } from "../hooks/useSendInviteEmails";
 import { useRevokeMember } from "../hooks/useRevokeMember";
 import { useSetMemberRole } from "../hooks/useSetMemberRole";
 import type { UserRole } from "../lib/roleActions";
+import { hasNoReports } from "../lib/teamScope";
 import { useAuth } from "@/stores/auth";
 import { AgentListRow } from "../components/AgentListRow";
 import { AgentCard } from "../components/AgentCard";
@@ -92,6 +93,7 @@ export function AgentsPage() {
   const setRole = useSetMemberRole();
 
   const userId = useAuth((s) => s.user?.id);
+  const soloTeam = !isLoading && hasNoReports(rows, userId);
   const callerRole = rows.find((r) => r.agent_id === userId)?.role as UserRole | undefined;
   const activeAdminCount = rows.filter((r) => r.role === "admin" && r.status === "active").length;
 
@@ -238,6 +240,12 @@ export function AgentsPage() {
 
       {/* SP2b — team logging-coverage rollup (manager/admin) */}
       <TeamCoverageCard />
+
+      {soloTeam && (
+        <p className="text-body-sm text-text-muted" role="status">
+          No one reports to you yet. As you assign reps to your team, they will appear here.
+        </p>
+      )}
 
       {isLoading ? (
         <p className="text-body-md text-text-muted">Loading…</p>
