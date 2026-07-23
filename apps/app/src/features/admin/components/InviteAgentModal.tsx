@@ -75,14 +75,20 @@ export function InviteAgentModal({ open, onOpenChange }: { open: boolean; onOpen
         // can throw (edge function down) or resolve with ok:false for this id.
         // Either way we keep the invite and just warn the admin.
         let emailOk = false;
+        let emailErr = "";
         try {
           const emailResults = await sendEmails.mutateAsync([row.id]);
-          emailOk = emailResults.some((e) => e.id === row.id && e.ok);
-        } catch { emailOk = false; }
+          const r = emailResults.find((e) => e.id === row.id);
+          emailOk = Boolean(r?.ok);
+          if (!emailOk) emailErr = r?.error ?? "the email service returned no result for this invite";
+        } catch (e) {
+          emailOk = false;
+          emailErr = e instanceof Error ? e.message : String(e);
+        }
         if (emailOk) {
           toast.success(`Invite sent to ${row.email}`);
         } else {
-          toast.warning(`Invite created for ${row.email}, but the email could not be sent. You can resend it from the Team page.`);
+          toast.warning(`Invite created for ${row.email}, but email failed: ${emailErr}`);
         }
         reset();
         onOpenChange(false);
