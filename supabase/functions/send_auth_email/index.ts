@@ -15,6 +15,13 @@ const HOOK_SECRET = (Deno.env.get("SEND_EMAIL_HOOK_SECRET") ?? "").replace("v1,w
 
 const resend = new Resend(RESEND_API_KEY);
 
+// Supabase's Send-Email hook parses the response as JSON; without an explicit
+// application/json content-type it treats a successful send as a malformed
+// response ("Invalid JSON response ... text/plain") even though the email went.
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+}
+
 Deno.serve(async (req) => {
   const payload = await req.text();
   const headers = Object.fromEntries(req.headers);
@@ -24,7 +31,7 @@ Deno.serve(async (req) => {
     new Webhook(HOOK_SECRET).verify(payload, headers);
   } catch (e) {
     console.error("hook signature verify failed:", e instanceof Error ? e.message : String(e));
-    return new Response(JSON.stringify({ error: "invalid_signature" }), { status: 401 });
+    return json({ error: "invalid_signature" }, 401);
   }
 
   const body = JSON.parse(payload) as {
@@ -66,12 +73,12 @@ Deno.serve(async (req) => {
       // Return 200 so Supabase does not also fall back to its own email; the
       // error is logged for us. (To prefer Supabase's fallback on failure,
       // return a non-200 here instead.)
-      return new Response(JSON.stringify({ ok: false }), { status: 200 });
+      return json({}, 200);
     }
   } catch (e) {
     console.error("RESEND THREW:", e instanceof Error ? e.message : String(e));
-    return new Response(JSON.stringify({ ok: false }), { status: 200 });
+    return json({}, 200);
   }
 
-  return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  return json({}, 200);
 });
