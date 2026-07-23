@@ -63,6 +63,11 @@ const ActivityToWinReport = lazy(() =>
 const PersistenceIndexReport = lazy(() =>
   import("@/features/dashboard/pages/PersistenceIndexReport").then((m) => ({ default: m.PersistenceIndexReport })),
 );
+const ActivitiesByRepCompanyReport = lazy(() =>
+  import("@/features/dashboard/pages/ActivitiesByRepCompanyReport").then((m) => ({
+    default: m.ActivitiesByRepCompanyReport,
+  })),
+);
 const PipelinePage = lazy(() =>
   import("@/features/pipeline/pages/PipelinePage").then((m) => ({ default: m.PipelinePage })),
 );
@@ -261,6 +266,14 @@ export function App() {
             element={
               <ProtectedRoute>
                 <PersistenceIndexReport />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard/activities-by-rep"
+            element={
+              <ProtectedRoute>
+                <ActivitiesByRepCompanyReport />
               </ProtectedRoute>
             }
           />

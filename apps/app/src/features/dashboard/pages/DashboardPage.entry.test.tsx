@@ -8,6 +8,10 @@ vi.mock("react-router-dom", async (orig) => {
   const actual = await orig<typeof import("react-router-dom")>();
   return { ...actual, useNavigate: () => navigateMock };
 });
+// AdditionalReports now gates a second row on the manager capability, so it
+// reads the profile. Default to no profile (gate off) to preserve this
+// file's original rep-facing assertions unchanged.
+vi.mock("@/features/auth/useProfile", () => ({ useProfile: () => ({ data: null }) }));
 
 beforeEach(() => navigateMock.mockReset());
 

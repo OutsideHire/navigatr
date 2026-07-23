@@ -839,6 +839,8 @@ export function ConversionFunnel({ funnel }: { funnel: DashboardData["conversion
 // reports. Currently the Activities Report (Closed Won activity analysis).
 export function AdditionalReports() {
   const navigate = useNavigate();
+  const profile = useProfile().data;
+  const showRepCompany = profileCan(profile, "viewTeamPage");
   return (
     <Card padding="none" shadow="sm">
       <div className="px-6 pt-5">
@@ -855,7 +857,21 @@ export function AdditionalReports() {
           title="Activities Report"
           subtitle="Closed Won deals - activity analysis"
           trailing={<ChevronRight className="h-5 w-5 text-text-subtle" />}
+          divider={showRepCompany}
         />
+        {showRepCompany && (
+          <ListRow
+            onClick={() => navigate("/dashboard/activities-by-rep")}
+            leading={
+              <span className="flex h-9 w-9 items-center justify-center rounded-radius-md bg-accent-blue-20 text-accent-blue">
+                <Users className="h-4 w-4" />
+              </span>
+            }
+            title="Activities by Sales Rep and Company"
+            subtitle="Team activity volume by rep, drill into companies"
+            trailing={<ChevronRight className="h-5 w-5 text-text-subtle" />}
+          />
+        )}
       </div>
     </Card>
   );
