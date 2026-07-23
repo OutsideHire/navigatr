@@ -200,6 +200,7 @@ export function ActivitiesByRepCompanyReport() {
             <button
               key={t.key}
               type="button"
+              aria-pressed={active}
               onClick={() => setMetric(t.key)}
               className={cn(
                 "rounded-radius-md border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary",

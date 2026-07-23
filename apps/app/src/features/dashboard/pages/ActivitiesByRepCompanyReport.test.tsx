@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ActivitiesByRepCompanyReport } from "./ActivitiesByRepCompanyReport";
-import type { RepActivity } from "../lib/repCompanyActivity";
+import type { RepActivity, RcaCounts } from "../lib/repCompanyActivity";
 
 // This project's vitest env doesn't ship a fully-functional jsdom
 // localStorage (missing .clear); install an in-memory shim so the
@@ -32,13 +32,15 @@ const reps: RepActivity[] = [
 ];
 const grandTotal = { call: 11, email: 11, drop_in: 0, appointment: 0, total: 22 };
 
+const nameOf = (id: string | null) => (id === "u1" ? "Dana W" : id === "u2" ? "Marcus B" : "Unassigned");
+const zero: RcaCounts = { call: 0, email: 0, drop_in: 0, appointment: 0, total: 0 };
+
+let mockRca: { reps: RepActivity[]; grandTotal: RcaCounts; isLoading: boolean; nameOf: (id: string | null) => string };
+
 let mockProfile: { role_level: string } | null = { role_level: "sales_manager" };
 vi.mock("@/features/auth/useProfile", () => ({ useProfile: () => ({ data: mockProfile }) }));
 vi.mock("../hooks/useRepCompanyActivity", () => ({
-  useRepCompanyActivity: () => ({
-    reps, grandTotal, isLoading: false,
-    nameOf: (id: string | null) => (id === "u1" ? "Dana W" : id === "u2" ? "Marcus B" : "Unassigned"),
-  }),
+  useRepCompanyActivity: () => mockRca,
 }));
 
 function renderReport() {
@@ -46,7 +48,11 @@ function renderReport() {
 }
 
 describe("ActivitiesByRepCompanyReport", () => {
-  beforeEach(() => { mockProfile = { role_level: "sales_manager" }; localStorage.clear(); });
+  beforeEach(() => {
+    mockProfile = { role_level: "sales_manager" };
+    localStorage.clear();
+    mockRca = { reps, grandTotal, isLoading: false, nameOf };
+  });
 
   it("lists reps ranked by total by default (Dana first)", () => {
     renderReport();
@@ -82,5 +88,32 @@ describe("ActivitiesByRepCompanyReport", () => {
     renderReport();
     expect(screen.getByText(/not available/i)).toBeInTheDocument();
     expect(screen.queryByText("Dana W")).not.toBeInTheDocument();
+  });
+
+  it("shows the empty state and hides the grand total when there is no activity", () => {
+    mockRca = { reps: [], grandTotal: zero, isLoading: false, nameOf };
+    renderReport();
+    expect(screen.getByText(/No activity logged in this period/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Grand total/i)).not.toBeInTheDocument();
+  });
+
+  it("renders an unassigned-owner rep and toggles it", () => {
+    mockRca = {
+      reps: [{ ownerId: null, companyCount: 1, counts: { call: 3, email: 0, drop_in: 0, appointment: 0, total: 3 },
+        companies: [{ companyName: "NoOwner Co", counts: { call: 3, email: 0, drop_in: 0, appointment: 0, total: 3 } }] }],
+      grandTotal: { call: 3, email: 0, drop_in: 0, appointment: 0, total: 3 }, isLoading: false, nameOf,
+    };
+    renderReport();
+    expect(screen.getByText("Unassigned")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("rep-row-unassigned"));
+    expect(screen.getByText("NoOwner Co")).toBeInTheDocument();
+  });
+
+  it("keeps multiple reps expanded independently", () => {
+    renderReport();
+    fireEvent.click(screen.getByTestId("rep-row-u1"));
+    fireEvent.click(screen.getByTestId("rep-row-u2"));
+    expect(screen.getByText("Acme")).toBeInTheDocument();
+    expect(screen.getByText("Beta")).toBeInTheDocument();
   });
 });
