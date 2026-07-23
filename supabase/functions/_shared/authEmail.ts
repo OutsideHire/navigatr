@@ -55,6 +55,9 @@ export function buildVerifyUrl(p: {
   type: string;
   redirectTo: string;
 }): string {
-  const base = `${p.siteUrl}/auth/v1/verify?token=${encodeURIComponent(p.tokenHash)}&type=${encodeURIComponent(p.type)}`;
+  // Supabase's hook `site_url` may already end with /auth/v1; strip it so we
+  // don't double the path (.../auth/v1/auth/v1/verify).
+  const apiBase = p.siteUrl.replace(/\/auth\/v1\/?$/, "");
+  const base = `${apiBase}/auth/v1/verify?token=${encodeURIComponent(p.tokenHash)}&type=${encodeURIComponent(p.type)}`;
   return p.redirectTo ? `${base}&redirect_to=${encodeURIComponent(p.redirectTo)}` : base;
 }

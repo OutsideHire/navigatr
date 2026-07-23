@@ -41,4 +41,22 @@ describe("buildVerifyUrl", () => {
     const url = buildVerifyUrl({ siteUrl: "https://s.co", tokenHash: "t", type: "signup", redirectTo: "" });
     expect(url).toBe("https://s.co/auth/v1/verify?token=t&type=signup");
   });
+  it("does not double /auth/v1 when site_url already includes it", () => {
+    const url = buildVerifyUrl({
+      siteUrl: "https://xyz.supabase.co/auth/v1",
+      tokenHash: "t",
+      type: "magiclink",
+      redirectTo: "",
+    });
+    expect(url).toBe("https://xyz.supabase.co/auth/v1/verify?token=t&type=magiclink");
+  });
+  it("strips a trailing slash after /auth/v1 too", () => {
+    const url = buildVerifyUrl({
+      siteUrl: "https://xyz.supabase.co/auth/v1/",
+      tokenHash: "t",
+      type: "signup",
+      redirectTo: "",
+    });
+    expect(url).toBe("https://xyz.supabase.co/auth/v1/verify?token=t&type=signup");
+  });
 });
