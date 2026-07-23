@@ -9,6 +9,7 @@ import { ChevronUp, ChevronDown, ChevronsUpDown, Plus, Upload } from "lucide-rea
 import { Button } from "@/components/navigatr";
 import { useTeamLeaderboard, type LeaderboardRow } from "../hooks/useTeamLeaderboard";
 import { useResendInvite } from "../hooks/useResendInvite";
+import { useSendInviteEmails } from "../hooks/useSendInviteEmails";
 import { useRevokeMember } from "../hooks/useRevokeMember";
 import { useSetMemberRole } from "../hooks/useSetMemberRole";
 import type { UserRole } from "../lib/roleActions";
@@ -86,6 +87,7 @@ export function AgentsPage() {
 
   const { data: rows = [], isLoading } = useTeamLeaderboard(windowDays);
   const resend = useResendInvite();
+  const sendEmails = useSendInviteEmails();
   const revoke = useRevokeMember();
   const setRole = useSetMemberRole();
 
@@ -116,8 +118,25 @@ export function AgentsPage() {
 
   const handleResend = async (row: LeaderboardRow) => {
     try {
-      await resend.mutateAsync(row.agent_id);
-      toast.success(`Invite resent to ${row.email}`);
+      // admin_resend_invite refreshes the invite token/expiry and returns the
+      // invite id; then we actually send the email (this second step was
+      // previously missing, so "Resend" refreshed the link but sent nothing).
+      const res = await resend.mutateAsync(row.agent_id);
+      let emailOk = false;
+      let emailErr = "";
+      try {
+        const emailResults = await sendEmails.mutateAsync([res.id]);
+        const r = emailResults.find((e) => e.id === res.id);
+        emailOk = Boolean(r?.ok);
+        if (!emailOk) emailErr = r?.error ?? "the email service returned no result for this invite";
+      } catch (e) {
+        emailErr = e instanceof Error ? e.message : String(e);
+      }
+      if (emailOk) {
+        toast.success(`Invite re-sent to ${res.email}`);
+      } else {
+        toast.warning(`Invite refreshed for ${res.email}, but email failed: ${emailErr}`);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not resend invite");
     }
