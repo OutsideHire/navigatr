@@ -13,8 +13,8 @@ returns table (
   agent_id            uuid,
   full_name           text,
   email               text,
-  role                user_role,
-  role_level          role_level,
+  role                public.user_role,
+  role_level          public.role_level,
   status              text,           -- 'active' | 'revoked' | 'invited'
   manager_id          uuid,
   open_deals          int,
@@ -32,7 +32,7 @@ set search_path = public
 as $$
 declare
   v_org_id uuid;
-  v_caller user_role;
+  v_caller public.user_role;
   v_window int;
 begin
   if auth.uid() is null then
