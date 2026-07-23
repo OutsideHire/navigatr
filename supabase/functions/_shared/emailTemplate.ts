@@ -17,7 +17,7 @@ export interface EmailOptions {
   footnote: string;
 }
 
-const LOGO_URL = "https://app.getnavigatr.io/icons/navigatr-email-logo.png";
+const LOGO_URL = "https://app.getnavigatr.io/icons/icon-192x192.png";
 
 function esc(s: string): string {
   return s
@@ -47,7 +47,10 @@ export function renderEmail(opts: EmailOptions): { html: string; text: string } 
   <tr><td align="center">
     <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#FFFFFF;border:1px solid #E8EBF2;border-radius:14px;">
       <tr><td style="padding:24px 28px 8px;">
-        <img src="${LOGO_URL}" width="132" alt="navigatr" style="display:block;border:0;height:auto;">
+        <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+          <td style="vertical-align:middle;"><img src="${LOGO_URL}" width="30" height="30" alt="" style="display:block;border:0;border-radius:7px;"></td>
+          <td style="vertical-align:middle;padding-left:9px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#0B1220;letter-spacing:-0.01em;">navigatr</td>
+        </tr></table>
       </td></tr>
       <tr><td style="padding:12px 28px 4px;">
         <h1 style="margin:0 0 10px;font-size:20px;line-height:1.25;color:#0B1220;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${esc(opts.heading)}</h1>
