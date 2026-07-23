@@ -22,4 +22,7 @@ describe("hasNoReports", () => {
   it("is false when the current user id is unknown", () => {
     expect(hasNoReports([row("me", "active")], undefined)).toBe(false);
   });
+  it("is false when the current user's own row is absent but others are active", () => {
+    expect(hasNoReports([row("rep", "active")], "me")).toBe(false);
+  });
 });
