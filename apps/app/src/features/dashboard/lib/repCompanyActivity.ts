@@ -1,5 +1,5 @@
 /**
- * Activities by Sales Rep & Company — pure aggregation.
+ * Activities by Sales Rep and Company: pure aggregation.
  *
  * Attributes each logged activity to the OWNER of its deal (book of business)
  * and the deal's company, filtered to a date window, then rolls up
