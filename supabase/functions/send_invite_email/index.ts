@@ -8,6 +8,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Resend } from "resend";
+import { renderEmail } from "../_shared/emailTemplate.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -88,16 +89,16 @@ Deno.serve(async (req) => {
   const results: Array<{ id: string; ok: boolean; error?: string }> = [];
   for (const inv of (invites ?? []) as Invite[]) {
     const link = `${APP_BASE_URL}/accept-invite?token=${encodeURIComponent(inv.token)}`;
-    const subject = `You're invited to ${orgName} on navigatr`;
-    const html = `
-      <p>Hi${inv.full_name ? " " + inv.full_name : ""},</p>
-      <p>Your account at <strong>${orgName}</strong> on navigatr is ready.</p>
-      <p><a href="${link}" style="display:inline-block;padding:10px 18px;background:#2456E6;color:#fff;border-radius:6px;text-decoration:none">Sign in now</a></p>
-      <p>Or paste this link: ${link}</p>
-      <p style="color:#888;font-size:12px">This invite expires in 14 days. Reply if anything looks wrong.</p>
-    `;
+    const { html, text } = renderEmail({
+      preheader: `You're invited to ${orgName} on navigatr`,
+      heading: `You're invited to ${orgName}`,
+      bodyLines: [`${inv.full_name ? inv.full_name + ", your" : "Your"} navigatr account at ${orgName} is ready.`],
+      ctaLabel: "Accept invite",
+      ctaUrl: link,
+      footnote: "This invite expires in 14 days. If you weren't expecting it, you can ignore this email.",
+    });
     try {
-      const send = await resend.emails.send({ from: FROM_ADDRESS, to: inv.email, subject, html });
+      const send = await resend.emails.send({ from: FROM_ADDRESS, to: inv.email, subject: `You're invited to ${orgName} on navigatr`, html, text });
       if ((send as { error?: unknown }).error) {
         console.error("RESEND REJECTED for", inv.email, ":", JSON.stringify((send as { error: unknown }).error));
         results.push({ id: inv.id, ok: false, error: String((send as { error: unknown }).error) });
