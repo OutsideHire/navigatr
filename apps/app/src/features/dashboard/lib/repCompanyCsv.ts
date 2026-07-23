@@ -7,9 +7,18 @@ import type { RepActivity, RcaCounts } from "./repCompanyActivity";
 
 const HEADER = ["Rep", "Company", "Calls", "Emails", "Visits", "Appointments", "Total"];
 
-/** Quote a cell only if it contains a comma, quote, or newline (RFC 4180 style). */
+const FORMULA_TRIGGERS = /^[=+\-@\t\r]/;
+
+/**
+ * Make a string cell safe for CSV. Two concerns:
+ * 1. Formula injection: a value starting with =, +, -, @ (or tab/CR) can run as
+ *    a formula when opened in Excel/Sheets. Prefix a single quote to neutralize.
+ * 2. RFC 4180 quoting: wrap in quotes (doubling internal quotes) when the value
+ *    contains a comma, quote, CR, or LF.
+ */
 export function escapeCsvCell(value: string): string {
-  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+  const safe = FORMULA_TRIGGERS.test(value) ? `'${value}` : value;
+  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 function row(cells: (string | number)[]): string {

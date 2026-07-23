@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { repCompanyCsv } from "./repCompanyCsv";
+import { repCompanyCsv, escapeCsvCell } from "./repCompanyCsv";
 import { repCompanyAggregate } from "./repCompanyActivity";
 
 describe("repCompanyCsv", () => {
@@ -21,5 +21,24 @@ describe("repCompanyCsv", () => {
   it("quotes cells containing commas", () => {
     const csv = repCompanyCsv(reps, nameOf, grandTotal);
     expect(csv).toContain('Dana W,"Beta, Inc",1,0,0,0,1');
+  });
+});
+
+describe("escapeCsvCell", () => {
+  it("leaves a plain value untouched", () => {
+    expect(escapeCsvCell("Acme")).toBe("Acme");
+  });
+  it("quotes and doubles internal quotes", () => {
+    expect(escapeCsvCell('O"Brien')).toBe('"O""Brien"');
+  });
+  it("quotes values with embedded newlines", () => {
+    expect(escapeCsvCell("line1\nline2")).toBe('"line1\nline2"');
+  });
+  it("neutralizes leading formula characters", () => {
+    expect(escapeCsvCell("=1+1")).toBe("'=1+1");
+    expect(escapeCsvCell("@SUM(A1)")).toBe("'@SUM(A1)");
+  });
+  it("neutralizes a formula and still quotes when it contains a comma", () => {
+    expect(escapeCsvCell("=1,2")).toBe('"\'=1,2"');
   });
 });
