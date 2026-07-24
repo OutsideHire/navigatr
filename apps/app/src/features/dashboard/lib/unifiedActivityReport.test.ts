@@ -71,6 +71,14 @@ describe("unifiedRepRows", () => {
     const rows = unifiedRepRows(acts2, deals2, range, "all");
     expect(rows.map((r) => r.ownerId).sort()).toEqual(["u1", "u2"]);
   });
+  it("keeps a rep with a scoped deal but no in-window activity", () => {
+    const rows = unifiedRepRows([], [deal("w9", "u9", "Zeta", "won", 7000)], range, "won");
+    const u9 = rows.find((r) => r.ownerId === "u9")!;
+    expect(u9).toBeDefined();
+    expect(u9.counts.total).toBe(0);
+    expect(u9.dealCount).toBe(1);
+    expect(u9.valueCents).toBe(7000);
+  });
 });
 
 describe("rankDivergence", () => {
