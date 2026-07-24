@@ -79,8 +79,10 @@ function TreeNode({
           onClick={() => onSelect?.(row.agent_id)}
           className="flex min-w-0 flex-1 items-center gap-2 rounded-radius-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
         >
-          <Avatar alt={name} size="xs" />
-          <span className="truncate text-body-md font-medium text-text-default hover:underline">
+          <span className="shrink-0">
+            <Avatar alt={name} size="xs" />
+          </span>
+          <span className="min-w-0 truncate text-body-md font-medium text-text-default hover:underline">
             {name}
           </span>
           <span className="shrink-0 rounded-radius-full border border-border-subtle px-2 py-0.5 text-caption text-text-muted">
