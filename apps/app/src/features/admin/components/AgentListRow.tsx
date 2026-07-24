@@ -22,6 +22,8 @@ import {
 import type { LeaderboardRow } from "../hooks/useTeamLeaderboard";
 import { settableRoles, roleChangeLabel, type UserRole } from "../lib/roleActions";
 import { formatMoney, formatRelative } from "@/features/pipeline/mockData";
+import { cn } from "@/lib/utils";
+import { isZeroMetric } from "../lib/metricDisplay";
 
 const STATUS_BADGE: Record<LeaderboardRow["status"], { label: string; kind: BadgeKind }> = {
   active:  { label: "Active",  kind: "status-on-track" },
@@ -63,26 +65,32 @@ export function AgentListRow({
           {row.full_name ?? "—"}
         </button>
       </td>
-      <td className="px-3 py-2 text-body-md text-text-muted">{row.email}</td>
+      <td className="px-3 py-2 text-body-md text-text-muted">
+        <span className="block max-w-[220px] truncate" title={row.email}>{row.email}</span>
+      </td>
       <td className="px-3 py-2"><Badge kind={status.kind}>{status.label}</Badge></td>
       <td className="px-3 py-2 text-body-md capitalize">{row.role}</td>
-      <td className="px-3 py-2 text-body-md tabular-nums">{row.open_deals}</td>
-      <td className="px-3 py-2 text-body-md tabular-nums">{formatMoney(row.pipeline_cents)}</td>
-      <td className="px-3 py-2 text-body-md tabular-nums">
-        {formatMoney(row.won_cents_window)}{" "}
-        <span className="text-text-muted">({row.won_deals_window})</span>
+      <td className={cn("px-3 py-2 text-body-md tabular-nums", isZeroMetric(row.open_deals) && "text-text-subtle")}>{row.open_deals}</td>
+      <td className={cn("px-3 py-2 text-body-md tabular-nums", isZeroMetric(row.pipeline_cents) && "text-text-subtle")}>{formatMoney(row.pipeline_cents)}</td>
+      <td className={cn("px-3 py-2 text-body-md tabular-nums", row.won_cents_window === 0 && row.won_deals_window === 0 && "text-text-subtle")}>
+        {formatMoney(row.won_cents_window)}
+        {(row.won_cents_window !== 0 || row.won_deals_window !== 0) && (
+          <span className="text-text-muted"> ({row.won_deals_window})</span>
+        )}
       </td>
-      <td className="px-3 py-2 text-body-md tabular-nums">
-        {formatMoney(row.lost_cents_window)}{" "}
-        <span className="text-text-muted">({row.lost_deals_window})</span>
+      <td className={cn("px-3 py-2 text-body-md tabular-nums", row.lost_cents_window === 0 && row.lost_deals_window === 0 && "text-text-subtle")}>
+        {formatMoney(row.lost_cents_window)}
+        {(row.lost_cents_window !== 0 || row.lost_deals_window !== 0) && (
+          <span className="text-text-muted"> ({row.lost_deals_window})</span>
+        )}
       </td>
-      <td className="px-3 py-2 text-body-md tabular-nums">
+      <td className={cn("px-3 py-2 text-body-md tabular-nums", (row.won_deals_window + row.lost_deals_window) === 0 && "text-text-subtle")}>
         {(() => {
           const denom = row.won_deals_window + row.lost_deals_window;
           return denom === 0 ? "—" : `${Math.round((row.won_deals_window / denom) * 100)}%`;
         })()}
       </td>
-      <td className="px-3 py-2 text-body-md tabular-nums">{row.activities_window}</td>
+      <td className={cn("px-3 py-2 text-body-md tabular-nums", isZeroMetric(row.activities_window) && "text-text-subtle")}>{row.activities_window}</td>
       <td className="px-3 py-2 text-body-md text-text-muted">{lastActive}</td>
       <td className="px-3 py-2">
         <DropdownMenu>

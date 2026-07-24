@@ -20,6 +20,8 @@ import {
 import type { LeaderboardRow } from "../hooks/useTeamLeaderboard";
 import { settableRoles, roleChangeLabel, type UserRole } from "../lib/roleActions";
 import { formatMoney } from "@/features/pipeline/mockData";
+import { cn } from "@/lib/utils";
+import { isZeroMetric } from "../lib/metricDisplay";
 
 const STATUS_BADGE: Record<LeaderboardRow["status"], { label: string; kind: BadgeKind }> = {
   active:  { label: "Active",  kind: "status-on-track" },
@@ -117,9 +119,9 @@ export function AgentCard({
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        <Stat label="Open deals" value={row.open_deals} />
-        <Stat label="Pipeline" value={formatMoney(row.pipeline_cents)} />
-        <Stat label="Win rate" value={winRateLabel(row)} />
+        <Stat label="Open deals" value={<span className={cn(isZeroMetric(row.open_deals) && "text-text-subtle")}>{row.open_deals}</span>} />
+        <Stat label="Pipeline" value={<span className={cn(isZeroMetric(row.pipeline_cents) && "text-text-subtle")}>{formatMoney(row.pipeline_cents)}</span>} />
+        <Stat label="Win rate" value={<span className={cn((row.won_deals_window + row.lost_deals_window) === 0 && "text-text-subtle")}>{winRateLabel(row)}</span>} />
       </div>
     </Card>
   );
