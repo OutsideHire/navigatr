@@ -9,6 +9,7 @@
 import type { Activity, ActivityType } from "@/features/activities/mockData";
 import type { Deal, DealStage } from "@/features/pipeline/mockData";
 import { withinRange, type DateRange } from "./dateRange";
+import { emptyCounts, type RcaCounts } from "./repCompanyActivity";
 
 export type Outcome = "won" | "lost" | "open";
 export type ReportScope = "all" | Outcome;
@@ -56,4 +57,80 @@ export function reconciliation(band: OutcomeBand): Reconciliation {
 /** True when an activity belongs in the active scope. "all" accepts everything. */
 export function inScope(outcome: Outcome, scope: ReportScope): boolean {
   return scope === "all" || outcome === scope;
+}
+
+export interface UnifiedRepCompany { companyName: string; counts: RcaCounts; dealCount: number; valueCents: number; }
+export interface UnifiedRepRow {
+  ownerId: string | null;
+  counts: RcaCounts;
+  companyCount: number;
+  dealCount: number;
+  valueCents: number;
+  companies: UnifiedRepCompany[];
+}
+
+function bump(counts: RcaCounts, type: ActivityType): void { counts[type] += 1; counts.total += 1; }
+
+/**
+ * Rep -> company rows for a scope. Activity counts come from the scoped
+ * OutcomeActivity rows (so they reconcile with the band); dealCount + valueCents
+ * come from the deals of that owner/company in the scope's outcome. In "all"
+ * scope, deal columns aggregate won deals (the outcome that carries revenue).
+ */
+export function unifiedRepRows(activities: Activity[], deals: Deal[], range: DateRange, scope: ReportScope): UnifiedRepRow[] {
+  const attributed = attributeActivitiesWithOutcome(activities, deals, range).filter((r) => inScope(r.outcome, scope));
+
+  const dealOutcomeFor: Outcome = scope === "all" ? "won" : scope;
+  const scopedDeals = deals.filter((d) => classifyDealOutcome(d.stage) === dealOutcomeFor);
+
+  const repMap = new Map<string, UnifiedRepRow>();
+  const keyOf = (id: string | null) => id ?? "__unassigned__";
+  const ensureRep = (ownerId: string | null): UnifiedRepRow => {
+    const k = keyOf(ownerId);
+    let rep = repMap.get(k);
+    if (!rep) { rep = { ownerId, counts: emptyCounts(), companyCount: 0, dealCount: 0, valueCents: 0, companies: [] }; repMap.set(k, rep); }
+    return rep;
+  };
+  const ensureCompany = (rep: UnifiedRepRow, companyName: string): UnifiedRepCompany => {
+    let c = rep.companies.find((x) => x.companyName === companyName);
+    if (!c) { c = { companyName, counts: emptyCounts(), dealCount: 0, valueCents: 0 }; rep.companies.push(c); }
+    return c;
+  };
+
+  for (const r of attributed) {
+    const rep = ensureRep(r.ownerId);
+    const c = ensureCompany(rep, r.companyName);
+    bump(c.counts, r.type); bump(rep.counts, r.type);
+  }
+  for (const d of scopedDeals) {
+    const rep = ensureRep(d.owner_id);
+    const c = ensureCompany(rep, d.companyName);
+    c.dealCount += 1; c.valueCents += d.valueCents; rep.dealCount += 1; rep.valueCents += d.valueCents;
+  }
+
+  const rows = [...repMap.values()];
+  for (const rep of rows) {
+    rep.companyCount = rep.companies.length;
+    rep.companies.sort((a, b) => b.counts.total - a.counts.total || a.companyName.localeCompare(b.companyName));
+  }
+  return rows.filter((r) => r.counts.total > 0 || r.dealCount > 0);
+}
+
+/** effort rank by activity total desc; outcome rank by valueCents desc. Returns only reps whose ranks differ by >=2. */
+export function rankDivergence(rows: Pick<UnifiedRepRow, "ownerId" | "counts" | "valueCents">[]): Map<string, { effortRank: number; outcomeRank: number }> {
+  const rankBy = (metric: (r: (typeof rows)[number]) => number) => {
+    const order = [...rows].sort((a, b) => metric(b) - metric(a));
+    const m = new Map<string, number>();
+    order.forEach((r, i) => m.set(r.ownerId ?? "__unassigned__", i + 1));
+    return m;
+  };
+  const effort = rankBy((r) => r.counts.total);
+  const outcome = rankBy((r) => r.valueCents);
+  const out = new Map<string, { effortRank: number; outcomeRank: number }>();
+  for (const r of rows) {
+    const k = r.ownerId ?? "__unassigned__";
+    const e = effort.get(k)!; const o = outcome.get(k)!;
+    if (Math.abs(e - o) >= 2) out.set(k, { effortRank: e, outcomeRank: o });
+  }
+  return out;
 }
