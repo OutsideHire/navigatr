@@ -9,7 +9,7 @@
 
 import type { Deal } from "@/features/pipeline/mockData";
 import type { Activity } from "@/features/activities/mockData";
-import { median } from "./activityToWin";
+import { median, mean, percentile } from "./activityToWin";
 
 export const TARGET_CADENCE = 3.5;
 export const TARGET_SCORE = 75;
@@ -358,4 +358,84 @@ export function computePerRepPersistence(
     if (b.composite == null) return -1;
     return b.composite - a.composite;
   });
+}
+
+// ── Detail display (Slice 5) ─────────────────────────────────────────────
+
+export type BenchmarkStrategy = "full" | "top-performer" | "small" | "solo";
+
+export interface BenchmarkResult {
+  repCount: number;
+  peerAvg: number | null;
+  topDecile: number | null;
+  topPerformer: number | null;
+  strategy: BenchmarkStrategy;
+}
+
+/**
+ * Peer benchmarks across scored reps, with small-tenant degradation:
+ * 10+ reps -> average + top decile; 5-9 -> average + top performer; 2-4 ->
+ * average only (small sample); <=1 -> solo (no peer benchmarks).
+ */
+export function persistenceBenchmarks(composites: (number | null)[]): BenchmarkResult {
+  const scored = composites.filter((c): c is number => c != null);
+  const n = scored.length;
+  if (n <= 1) {
+    return { repCount: n, peerAvg: null, topDecile: null, topPerformer: null, strategy: "solo" };
+  }
+  const peerAvg = Math.round(median(scored) as number);
+  if (n >= 10) {
+    return { repCount: n, peerAvg, topDecile: Math.round(percentile(scored, 0.9) as number), topPerformer: null, strategy: "full" };
+  }
+  if (n >= 5) {
+    return { repCount: n, peerAvg, topDecile: null, topPerformer: Math.round(Math.max(...scored)), strategy: "top-performer" };
+  }
+  return { repCount: n, peerAvg, topDecile: null, topPerformer: null, strategy: "small" };
+}
+
+export interface SubComponentPeerAverages {
+  followUpAvgPct: number | null;
+  cadenceAvgPct: number | null;
+  repCount: number;
+}
+
+/** Median sub-component points across reps, expressed as a % of each max, for the bar ticks. */
+export function subComponentPeerAverages(rows: PerRepScore[]): SubComponentPeerAverages {
+  const fu = rows.map((r) => r.followUpPoints).filter((p): p is number => p != null);
+  const cad = rows.map((r) => r.cadencePoints).filter((p): p is number => p != null);
+  return {
+    followUpAvgPct: fu.length ? Math.round(((median(fu) as number) / FOLLOWUP_MAX) * 100) : null,
+    cadenceAvgPct: cad.length ? Math.round(((median(cad) as number) / CADENCE_MAX) * 100) : null,
+    repCount: rows.filter((r) => r.composite != null).length,
+  };
+}
+
+export interface PersistenceStats {
+  high: number | null;
+  low: number | null;
+  periodAvg: number | null;
+  dailyActivityAvg: number;
+  daysAboveAvg: number | null;
+  scoredDays: number;
+}
+
+/** Period stats from the daily history: index high/low/avg, daily activity avg, days above peer average. */
+export function persistenceStats(points: PersistencePoint[], peerAvg: number | null): PersistenceStats {
+  const scored = points.filter((p) => p.composite != null).map((p) => p.composite as number);
+  const dailyActivityAvg = points.length
+    ? Math.round((points.reduce((s, p) => s + p.activityCount, 0) / points.length) * 10) / 10
+    : 0;
+  return {
+    high: scored.length ? Math.max(...scored) : null,
+    low: scored.length ? Math.min(...scored) : null,
+    periodAvg: scored.length ? Math.round(mean(scored) as number) : null,
+    dailyActivityAvg,
+    daysAboveAvg: peerAvg != null && scored.length ? scored.filter((c) => c > peerAvg).length : null,
+    scoredDays: scored.length,
+  };
+}
+
+/** Peer-average label by viewer scope. Admin sees the whole org; managers see their team. */
+export function benchmarkAvgLabel(role: string | undefined): string {
+  return role === "admin" ? "Company average" : "Team average";
 }
