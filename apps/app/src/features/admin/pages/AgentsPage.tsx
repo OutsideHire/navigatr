@@ -179,12 +179,15 @@ export function AgentsPage() {
 
   return (
     <div className="mx-auto w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
-      {/* Single-row header: title (left) + actions + window selector + seat usage (right).
-          Wraps on narrow viewports. Previously this was two rows with
-          inconsistent left/right groupings (title↔seats, then buttons↔window tabs)
-          which created a disjointed feel at desktop width. */}
+      {/* Single-row header: title + seat count chip (left), actions + window
+          selector (right). Wraps on narrow viewports. Seat usage sits next to
+          the title as a quiet chip rather than in the action cluster, since
+          it is a secondary detail, not something reps act on. */}
       <header className="mb-4 flex flex-wrap items-center gap-3">
-        <h1 className="text-heading-lg text-text-default">Team</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-heading-lg text-text-default">Team</h1>
+          <SeatUsageBadge />
+        </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <Button
             variant="primary"
@@ -232,14 +235,8 @@ export function AgentsPage() {
               </Button>
             ))}
           </div>
-          <div className="ml-2 border-l border-border-subtle pl-3">
-            <SeatUsageBadge />
-          </div>
         </div>
       </header>
-
-      {/* SP2b — team logging-coverage rollup (manager/admin) */}
-      <TeamCoverageCard />
 
       {soloTeam && (
         <p className="text-body-sm text-text-muted" role="status">
@@ -343,6 +340,9 @@ export function AgentsPage() {
         </div>
         </>
       )}
+
+      {/* Secondary insight: team logging coverage, below the roster */}
+      <TeamCoverageCard />
 
       <InviteAgentModal open={inviteOpen} onOpenChange={setInviteOpen} />
 
