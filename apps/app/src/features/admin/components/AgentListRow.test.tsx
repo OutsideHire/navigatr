@@ -39,4 +39,16 @@ describe("AgentListRow", () => {
     const cell = screen.getByText("$308K").closest("td")!;
     expect(cell.className).not.toMatch(/text-text-subtle/);
   });
+
+  it("drops the (count) suffix and dims won/lost when fully zero", () => {
+    renderRow(base); // all-zero
+    expect(screen.queryByText(/\(0\)/)).not.toBeInTheDocument();
+  });
+
+  it("shows the won value with its deal count when non-zero, undimmed", () => {
+    renderRow({ ...base, won_cents_window: 5000000, won_deals_window: 2 });
+    expect(screen.getByText(/\(2\)/)).toBeInTheDocument();
+    const cell = screen.getByText("$50K").closest("td")!;
+    expect(cell.className).not.toMatch(/text-text-subtle/);
+  });
 });
