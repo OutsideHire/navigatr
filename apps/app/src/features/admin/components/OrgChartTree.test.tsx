@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { OrgChartTree } from "./OrgChartTree";
@@ -80,5 +80,55 @@ describe("OrgChartTree", () => {
   it("renders an empty-state message when there are no rows", () => {
     render(<OrgChartTree rows={[]} />);
     expect(screen.getByText(/no team members/i)).toBeInTheDocument();
+  });
+
+  describe("rails, avatars, role chips, and report counts", () => {
+    const MANAGER_ROWS: LeaderboardRow[] = [
+      row({ agent_id: "u_sam", full_name: "Sam Vance", role_level: "svp_sales" }),
+      row({ agent_id: "u_vic", full_name: "Victor Pratt", role_level: "vp_sales", manager_id: "u_sam" }),
+      row({ agent_id: "u_vera", full_name: "Vera Powell", role_level: "vp_sales", manager_id: "u_sam" }),
+    ];
+
+    it("shows a manager's direct-report count with pluralization", () => {
+      render(<OrgChartTree rows={MANAGER_ROWS} />);
+      expect(screen.getByText("2 reports")).toBeInTheDocument();
+    });
+
+    it("uses the singular 'report' for one direct report", () => {
+      render(
+        <OrgChartTree
+          rows={[
+            row({ agent_id: "u_sam", full_name: "Sam Vance", role_level: "svp_sales" }),
+            row({ agent_id: "u_vic", full_name: "Victor Pratt", role_level: "vp_sales", manager_id: "u_sam" }),
+          ]}
+        />,
+      );
+      expect(screen.getByText("1 report")).toBeInTheDocument();
+    });
+
+    it("does not show a report count on a leaf node", () => {
+      render(<OrgChartTree rows={MANAGER_ROWS} />);
+      expect(screen.queryByText(/0 report/)).not.toBeInTheDocument();
+    });
+
+    it("renders an initials avatar and a role chip for a person", () => {
+      render(<OrgChartTree rows={MANAGER_ROWS} />);
+      expect(screen.getByText("SV")).toBeInTheDocument();
+      expect(screen.getByText("SVP of Sales")).toBeInTheDocument();
+    });
+
+    it("fires onSelect with the agent id when a name is clicked", () => {
+      const onSelect = vi.fn();
+      render(<OrgChartTree rows={MANAGER_ROWS} onSelect={onSelect} />);
+      fireEvent.click(screen.getByText("Sam Vance"));
+      expect(onSelect).toHaveBeenCalledWith("u_sam");
+    });
+
+    it("collapses a branch when the chevron is clicked", () => {
+      render(<OrgChartTree rows={MANAGER_ROWS} />);
+      expect(screen.getByText("Victor Pratt")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /Collapse Sam Vance/i }));
+      expect(screen.queryByText("Victor Pratt")).not.toBeInTheDocument();
+    });
   });
 });

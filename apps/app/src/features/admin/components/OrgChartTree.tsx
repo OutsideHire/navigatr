@@ -1,18 +1,20 @@
 /**
  * OrgChartTree — an indented, expandable reporting-line tree for the Team page.
  *
- * Renders buildOrgTree(rows) as nested rows: each person shows their display
- * name (email fallback), a role-level label, and a small status hint for
- * invited/revoked members. Nodes with reports get an expand/collapse chevron
- * (default expanded). Clicking a person fires onSelect(agent_id) so the page
- * can open that agent's detail. Keyboard/AT-accessible: the chevron and the
- * name are real buttons, and the toggle carries aria-expanded.
+ * Renders buildOrgTree(rows) as nested rows: each person shows an initials
+ * avatar, their display name (email fallback), a role-level chip, a
+ * direct-report count for managers, and a small status hint for
+ * invited/revoked members. Reporting lines are drawn as connector rails via
+ * the left border of each nested `<ul>`. Nodes with reports get an
+ * expand/collapse chevron (default expanded). Clicking a person fires
+ * onSelect(agent_id) so the page can open that agent's detail.
+ * Keyboard/AT-accessible: the chevron and the name are real buttons, and the
+ * toggle carries aria-expanded.
  */
 import * as React from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { Badge } from "@/components/navigatr";
+import { Avatar, Badge } from "@/components/navigatr";
 import type { BadgeKind } from "@/components/navigatr/Badge";
-import { cn } from "@/lib/utils";
 import { ROLE_LEVEL_OPTIONS, type RoleLevel } from "@/features/auth/capabilities";
 import type { LeaderboardRow } from "../hooks/useTeamLeaderboard";
 import { buildOrgTree, type OrgTreeNode } from "../lib/orgTree";
@@ -45,7 +47,7 @@ function TreeNode({
   onToggle: (id: string) => void;
   onSelect?: (agentId: string) => void;
 }) {
-  const { row, children, depth } = node;
+  const { row, children } = node;
   const hasChildren = children.length > 0;
   const isCollapsed = collapsed.has(row.agent_id);
   const hint = STATUS_HINT[row.status];
@@ -53,10 +55,7 @@ function TreeNode({
 
   return (
     <li>
-      <div
-        className="flex items-center gap-2 rounded-radius-sm py-1.5 pr-2 hover:bg-surface-sunken"
-        style={{ paddingLeft: `${depth * 20 + 4}px` }}
-      >
+      <div className="flex items-center gap-2 rounded-radius-sm py-1.5 pr-2 hover:bg-surface-sunken">
         {hasChildren ? (
           <button
             type="button"
@@ -80,10 +79,18 @@ function TreeNode({
           onClick={() => onSelect?.(row.agent_id)}
           className="flex min-w-0 flex-1 items-center gap-2 rounded-radius-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
         >
+          <Avatar alt={name} size="xs" />
           <span className="truncate text-body-md font-medium text-text-default hover:underline">
             {name}
           </span>
-          <span className="shrink-0 text-body-sm text-text-muted">{roleLabel(row.role_level)}</span>
+          <span className="shrink-0 rounded-radius-full border border-border-subtle px-2 py-0.5 text-caption text-text-muted">
+            {roleLabel(row.role_level)}
+          </span>
+          {hasChildren && (
+            <span className="shrink-0 text-caption text-text-muted">
+              {children.length} {children.length === 1 ? "report" : "reports"}
+            </span>
+          )}
           {hint && (
             <Badge kind={hint.kind} className="shrink-0">
               {hint.label}
@@ -93,7 +100,7 @@ function TreeNode({
       </div>
 
       {hasChildren && !isCollapsed && (
-        <ul className={cn("list-none")}>
+        <ul className="ml-2 list-none border-l border-border-subtle pl-3">
           {children.map((child) => (
             <TreeNode
               key={child.row.agent_id}
