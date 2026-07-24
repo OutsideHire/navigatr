@@ -9,9 +9,10 @@ vi.mock("react-router-dom", async (orig) => {
   return { ...actual, useNavigate: () => navigateMock };
 });
 
-// AdditionalReports renders only the manager-only "Activities by Sales Rep and
-// Company" report; the Closed-Won analysis lives on the Activity-to-Win widget,
-// so it is no longer duplicated here. Toggle the role to exercise both paths.
+// AdditionalReports renders only the manager-only "Activity performance"
+// entry, pointing at the unified report's "all" scope; the Closed-Won
+// analysis lives on the Activity-to-Win widget, so it is no longer
+// duplicated here. Toggle the role to exercise both paths.
 let mockRoleLevel: string | null = "sales_manager";
 vi.mock("@/features/auth/useProfile", () => ({
   useProfile: () => ({ data: mockRoleLevel ? { role_level: mockRoleLevel } : null }),
@@ -29,10 +30,10 @@ describe("AdditionalReports", () => {
     expect(screen.queryByText(/Closed Won/i)).not.toBeInTheDocument();
   });
 
-  it("shows the Activities by Sales Rep and Company entry for managers and navigates to it", () => {
+  it("shows the Activity performance entry for managers and navigates to it", () => {
     render(<MemoryRouter><AdditionalReports /></MemoryRouter>);
-    fireEvent.click(screen.getByText("Activities by Sales Rep and Company"));
-    expect(navigateMock).toHaveBeenCalledWith("/dashboard/activities-by-rep");
+    fireEvent.click(screen.getByText("Activity performance"));
+    expect(navigateMock).toHaveBeenCalledWith("/dashboard/activity-to-win?scope=all");
   });
 
   it("renders nothing for a non-manager (no empty card)", () => {

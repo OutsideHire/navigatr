@@ -835,11 +835,12 @@ export function ConversionFunnel({ funnel }: { funnel: DashboardData["conversion
 }
 
 // Section 12: Additional reports - dashboard entry point(s) into the deeper
-// reports. Currently the Activities Report (Closed Won activity analysis).
-// The Closed-Won activity analysis is reached via the Activity-to-Win widget
-// above, so it is intentionally NOT duplicated here. This card surfaces the
-// manager-only "Activities by Sales Rep and Company" report; for non-managers
-// there is nothing to show, so the whole card is omitted.
+// reports. The unified "Activity performance" report (rebuilt on top of the
+// former standalone rep/company report) is reached via the Activity-to-Win
+// widget above at the caller's own scope, so this card points managers at
+// the "all" scope of that same report instead of duplicating a separate
+// page. For non-managers there is nothing to show, so the whole card is
+// omitted.
 export function AdditionalReports() {
   const navigate = useNavigate();
   const profile = useProfile().data;
@@ -852,14 +853,14 @@ export function AdditionalReports() {
       </div>
       <div className="mt-2 flex flex-col">
         <ListRow
-          onClick={() => navigate("/dashboard/activities-by-rep")}
+          onClick={() => navigate("/dashboard/activity-to-win?scope=all")}
           leading={
             <span className="flex h-9 w-9 items-center justify-center rounded-radius-md bg-accent-blue-20 text-accent-blue">
               <Users className="h-4 w-4" />
             </span>
           }
-          title="Activities by Sales Rep and Company"
-          subtitle="Team activity volume by rep, drill into companies"
+          title="Activity performance"
+          subtitle="Activity by outcome, rep, and company"
           trailing={<ChevronRight className="h-5 w-5 text-text-subtle" />}
         />
       </div>

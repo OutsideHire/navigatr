@@ -14,7 +14,7 @@ describe("AdditionalReports rep-and-company entry", () => {
         <AdditionalReports />
       </MemoryRouter>,
     );
-    expect(screen.getByText("Activities by Sales Rep and Company")).toBeInTheDocument();
+    expect(screen.getByText("Activity performance")).toBeInTheDocument();
   });
 
   it("hides the entry for reps", () => {
@@ -24,6 +24,6 @@ describe("AdditionalReports rep-and-company entry", () => {
         <AdditionalReports />
       </MemoryRouter>,
     );
-    expect(screen.queryByText("Activities by Sales Rep and Company")).not.toBeInTheDocument();
+    expect(screen.queryByText("Activity performance")).not.toBeInTheDocument();
   });
 });
