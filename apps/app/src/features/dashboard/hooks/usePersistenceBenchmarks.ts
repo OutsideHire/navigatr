@@ -1,5 +1,5 @@
 /**
- * usePersistenceBenchmarks — peer benchmarks + sub-component peer averages for
+ * usePersistenceBenchmarks: peer benchmarks + sub-component peer averages for
  * the Persistence Index detail page, computed client-side across the reps the
  * viewer can see (RLS-scoped via usePerRepPersistence). A rep sees only
  * themselves -> "solo" (no peer benchmark); managers/admins get team/company
