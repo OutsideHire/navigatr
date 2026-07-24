@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { Activity } from "@/features/activities/mockData";
 import type { Deal } from "@/features/pipeline/mockData";
 import { classifyDealOutcome, attributeActivitiesWithOutcome, outcomeBand, reconciliation } from "./unifiedActivityReport";
-import { unifiedRepRows, rankDivergence } from "./unifiedActivityReport";
+import { unifiedRepRows, rankDivergence, unifiedMetricStrip } from "./unifiedActivityReport";
 
 const range = { fromIso: "2026-01-01T00:00:00.000Z", toIso: "2026-12-31T00:00:00.000Z" };
 const deal = (id: string, owner_id: string | null, companyName: string, stage: string, valueCents = 0): Deal =>
@@ -91,5 +91,32 @@ describe("rankDivergence", () => {
     const d = rankDivergence(rows);
     expect(d.get("a")).toEqual({ effortRank: 1, outcomeRank: 3 });
     expect(d.has("b")).toBe(false);
+  });
+});
+
+describe("unifiedMetricStrip", () => {
+  const mDeals = [deal("w", "u1", "Acme", "won", 20000), deal("l", "u1", "Beta", "lost", 0), deal("o", "u2", "Acme", "proposal", 5000)];
+  const mActs = [
+    act("w", "call", "2026-03-01T00:00:00.000Z"), act("w", "email", "2026-03-02T00:00:00.000Z"),
+    act("l", "call", "2026-03-03T00:00:00.000Z"), act("o", "call", "2026-03-04T00:00:00.000Z"),
+  ];
+  it("won scope: revenue won, touches per win, won deals", () => {
+    const m = unifiedMetricStrip(mActs, mDeals, range, "won");
+    expect(m.map((c) => c.label)).toEqual(["Revenue won", "Touches per win", "Won deals"]);
+    expect(m.find((c) => c.label === "Won deals")!.value).toBe("1");
+  });
+  it("all scope: total activity 4, win rate 50% (1 of 2 closed)", () => {
+    const m = unifiedMetricStrip(mActs, mDeals, range, "all");
+    expect(m.find((c) => c.label === "Total activity")!.value).toBe("4");
+    expect(m.find((c) => c.label === "Win rate")!.value).toBe("50%");
+  });
+  it("open scope: open pipeline, touches logged 1, open deals", () => {
+    const m = unifiedMetricStrip(mActs, mDeals, range, "open");
+    expect(m.map((c) => c.label)).toEqual(["Open pipeline", "Touches logged", "Open deals"]);
+    expect(m.find((c) => c.label === "Touches logged")!.value).toBe("1");
+  });
+  it("lost scope: revenue lost, touches per loss, win rate", () => {
+    const m = unifiedMetricStrip(mActs, mDeals, range, "lost");
+    expect(m.map((c) => c.label)).toEqual(["Revenue lost", "Touches per loss", "Win rate"]);
   });
 });

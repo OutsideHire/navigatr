@@ -10,6 +10,7 @@ import type { Activity, ActivityType } from "@/features/activities/mockData";
 import type { Deal, DealStage } from "@/features/pipeline/mockData";
 import { withinRange, type DateRange } from "./dateRange";
 import { emptyCounts, type RcaCounts } from "./repCompanyActivity";
+import { formatBandUsd } from "./activityToWin";
 
 export type Outcome = "won" | "lost" | "open";
 export type ReportScope = "all" | Outcome;
@@ -133,4 +134,52 @@ export function rankDivergence(rows: Pick<UnifiedRepRow, "ownerId" | "counts" | 
     if (Math.abs(e - o) >= 2) out.set(k, { effortRank: e, outcomeRank: o });
   }
   return out;
+}
+
+export interface MetricCell { label: string; value: string; }
+
+function pct(n: number): string { return `${Math.round(n * 100)}%`; }
+function num(n: number | null): string { return n == null ? "-" : Number.isInteger(n) ? String(n) : n.toFixed(1); }
+
+/**
+ * Scope-specific metric strip. Activity-date windowed (Phase 1). Revenue/day
+ * figures come from the deals in the window's scope; "touches per win" is the
+ * honest total-activity/wins figure (survivorship "touches on winners" is Phase 2).
+ */
+export function unifiedMetricStrip(activities: Activity[], deals: Deal[], range: DateRange, scope: ReportScope): MetricCell[] {
+  const rows = attributeActivitiesWithOutcome(activities, deals, range);
+  const band = outcomeBand(rows);
+  const dealsBy = (o: Outcome) => deals.filter((d) => classifyDealOutcome(d.stage) === o);
+  const won = dealsBy("won"); const lost = dealsBy("lost"); const open = dealsBy("open");
+  const sumValue = (ds: Deal[]) => ds.reduce((s, d) => s + d.valueCents, 0);
+  const closed = won.length + lost.length;
+  const winRate = closed > 0 ? won.length / closed : null;
+
+  switch (scope) {
+    case "won":
+      return [
+        { label: "Revenue won", value: formatBandUsd(sumValue(won)) },
+        { label: "Touches per win", value: won.length ? num(band.total / won.length) : "-" },
+        { label: "Won deals", value: String(won.length) },
+      ];
+    case "lost":
+      return [
+        { label: "Revenue lost", value: formatBandUsd(sumValue(lost)) },
+        { label: "Touches per loss", value: lost.length ? num(band.total / lost.length) : "-" },
+        { label: "Win rate", value: winRate == null ? "-" : pct(winRate) },
+      ];
+    case "open":
+      return [
+        { label: "Open pipeline", value: formatBandUsd(sumValue(open)) },
+        { label: "Touches logged", value: String(band.open) },
+        { label: "Open deals", value: String(open.length) },
+      ];
+    case "all":
+    default:
+      return [
+        { label: "Total activity", value: String(band.total) },
+        { label: "Deals won", value: String(won.length) },
+        { label: "Win rate", value: winRate == null ? "-" : pct(winRate) },
+      ];
+  }
 }
