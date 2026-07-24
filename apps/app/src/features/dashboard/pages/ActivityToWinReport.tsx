@@ -144,56 +144,62 @@ export function ActivityToWinReport() {
                   ))}
                 </div>
               </div>
-              <div className="mt-2 flex flex-col">
-                {sortedReps.map((rep) => {
-                  const k = keyOf(rep.ownerId);
-                  const isOpen = expanded.has(k);
-                  const div = divergence.get(k);
-                  return (
-                    <div key={k} className="border-t border-border-subtle">
-                      <button type="button" onClick={() => toggle(k)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary">
-                        {isOpen ? <ChevronDown className="h-4 w-4 shrink-0 text-text-subtle" /> : <ChevronRight className="h-4 w-4 shrink-0 text-text-subtle" />}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="truncate text-body-strong text-text-default">{repName(rep.ownerId)}</span>
-                            {div && <span className="shrink-0 rounded-radius-full border border-border-subtle px-2 py-0.5 text-caption text-text-muted">effort {div.effortRank} / outcome {div.outcomeRank}</span>}
+              {sortedReps.length === 0 ? (
+                <p className="px-4 pb-4 pt-2 text-body-sm text-text-muted">
+                  No {scope === "all" ? "activity" : `${scope} activity`} in this window.
+                </p>
+              ) : (
+                <div className="mt-2 flex flex-col">
+                  {sortedReps.map((rep) => {
+                    const k = keyOf(rep.ownerId);
+                    const isOpen = expanded.has(k);
+                    const div = divergence.get(k);
+                    return (
+                      <div key={k} className="border-t border-border-subtle">
+                        <button type="button" onClick={() => toggle(k)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary">
+                          {isOpen ? <ChevronDown className="h-4 w-4 shrink-0 text-text-subtle" /> : <ChevronRight className="h-4 w-4 shrink-0 text-text-subtle" />}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="truncate text-body-strong text-text-default">{repName(rep.ownerId)}</span>
+                              {div && <span className="shrink-0 rounded-radius-full border border-border-subtle px-2 py-0.5 text-caption text-text-muted">effort {div.effortRank} / outcome {div.outcomeRank}</span>}
+                            </div>
+                            <div className="mt-1 flex items-center gap-1" aria-hidden>
+                              {MIX.map((m) => (rep.counts[m.key] > 0 ? <span key={m.key} className={cn("h-1.5 w-1.5 rounded-radius-full", m.cls)} /> : null))}
+                            </div>
                           </div>
-                          <div className="mt-1 flex items-center gap-1" aria-hidden>
-                            {MIX.map((m) => (rep.counts[m.key] > 0 ? <span key={m.key} className={cn("h-1.5 w-1.5 rounded-radius-full", m.cls)} /> : null))}
+                          <div className="hidden gap-6 text-right sm:flex">
+                            <div><div className="text-caption text-text-muted">Deals</div><div className="tabular-nums text-text-default">{rep.dealCount}</div></div>
+                            <div><div className="text-caption text-text-muted">Touches</div><div className="tabular-nums text-text-default">{rep.counts.total}</div></div>
+                            <div><div className="text-caption text-text-muted">Value</div><div className="tabular-nums text-text-default">{formatBandUsd(rep.valueCents)}</div></div>
                           </div>
-                        </div>
-                        <div className="hidden gap-6 text-right sm:flex">
-                          <div><div className="text-caption text-text-muted">Deals</div><div className="tabular-nums text-text-default">{rep.dealCount}</div></div>
-                          <div><div className="text-caption text-text-muted">Touches</div><div className="tabular-nums text-text-default">{rep.counts.total}</div></div>
-                          <div><div className="text-caption text-text-muted">Value</div><div className="tabular-nums text-text-default">{formatBandUsd(rep.valueCents)}</div></div>
-                        </div>
-                      </button>
-                      {isOpen && (
-                        <div className="overflow-x-auto px-4 pb-3">
-                          <table className="w-full min-w-[520px] text-caption">
-                            <thead>
-                              <tr className="text-right text-text-muted">
-                                <th className="py-1 text-left font-normal">Company</th>
-                                <th className="font-normal">Calls</th><th className="font-normal">Emails</th><th className="font-normal">Visits</th><th className="font-normal">Appts</th>
-                                <th className="font-medium text-text-default">Total</th><th className="font-normal">Deals</th><th className="font-normal">Value</th>
-                              </tr>
-                            </thead>
-                            <tbody className="text-text-default tabular-nums">
-                              {rep.companies.map((c) => (
-                                <tr key={c.companyName} className="text-right">
-                                  <td className="py-1 text-left text-text-muted">{c.companyName}</td>
-                                  <td>{c.counts.call}</td><td>{c.counts.email}</td><td>{c.counts.drop_in}</td><td>{c.counts.appointment}</td>
-                                  <td className="font-medium">{c.counts.total}</td><td>{c.dealCount}</td><td>{formatBandUsd(c.valueCents)}</td>
+                        </button>
+                        {isOpen && (
+                          <div className="overflow-x-auto px-4 pb-3">
+                            <table className="w-full min-w-[520px] text-caption">
+                              <thead>
+                                <tr className="text-right text-text-muted">
+                                  <th className="py-1 text-left font-normal">Company</th>
+                                  <th className="font-normal">Calls</th><th className="font-normal">Emails</th><th className="font-normal">Visits</th><th className="font-normal">Appts</th>
+                                  <th className="font-medium text-text-default">Total</th><th className="font-normal">Deals</th><th className="font-normal">Value</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                              </thead>
+                              <tbody className="text-text-default tabular-nums">
+                                {rep.companies.map((c) => (
+                                  <tr key={c.companyName} className="text-right">
+                                    <td className="py-1 text-left text-text-muted">{c.companyName}</td>
+                                    <td>{c.counts.call}</td><td>{c.counts.email}</td><td>{c.counts.drop_in}</td><td>{c.counts.appointment}</td>
+                                    <td className="font-medium">{c.counts.total}</td><td>{c.dealCount}</td><td>{formatBandUsd(c.valueCents)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </Card>
 
             <div className="rounded-radius-md border border-border-subtle bg-surface-sunken px-4 py-3 text-caption text-text-muted">

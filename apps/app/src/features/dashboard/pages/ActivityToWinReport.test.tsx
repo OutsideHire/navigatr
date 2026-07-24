@@ -118,4 +118,18 @@ describe("ActivityToWinReport (unified activity performance)", () => {
     fireEvent.click(screen.getByText("You"));
     expect(screen.getByText("Northside Diner")).toBeInTheDocument();
   });
+
+  it("shows a per-scope empty state when the active scope has no reps but the band has activity", () => {
+    // Only won activity in this window (band.total > 0), no lost or open activity.
+    deals = [buildDeal({ id: "d1", companyName: "Northside Diner", stage: "won", valueCents: 500_000, owner_id: "u1" })];
+    activities = [
+      buildActivity({ id: "a1", dealId: "d1", type: "call", occurredAt: daysAgo(1) }),
+      buildActivity({ id: "a2", dealId: "d1", type: "email", occurredAt: daysAgo(2) }),
+    ];
+    renderReport();
+
+    fireEvent.click(screen.getByText("Lost"));
+    expect(screen.getByText(/No lost activity in this window\./)).toBeInTheDocument();
+    expect(screen.queryByText("You")).toBeNull();
+  });
 });
