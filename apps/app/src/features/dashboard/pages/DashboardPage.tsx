@@ -39,7 +39,6 @@ import {
   Clock4,
   Compass,
   DollarSign,
-  FileBarChart,
   Handshake,
   MapPin,
   TrendingUp,
@@ -837,10 +836,15 @@ export function ConversionFunnel({ funnel }: { funnel: DashboardData["conversion
 
 // Section 12: Additional reports - dashboard entry point(s) into the deeper
 // reports. Currently the Activities Report (Closed Won activity analysis).
+// The Closed-Won activity analysis is reached via the Activity-to-Win widget
+// above, so it is intentionally NOT duplicated here. This card surfaces the
+// manager-only "Activities by Sales Rep and Company" report; for non-managers
+// there is nothing to show, so the whole card is omitted.
 export function AdditionalReports() {
   const navigate = useNavigate();
   const profile = useProfile().data;
   const showRepCompany = profileCan(profile, "viewTeamPage");
+  if (!showRepCompany) return null;
   return (
     <Card padding="none" shadow="sm">
       <div className="px-6 pt-5">
@@ -848,30 +852,16 @@ export function AdditionalReports() {
       </div>
       <div className="mt-2 flex flex-col">
         <ListRow
-          onClick={() => navigate("/dashboard/activity-to-win")}
+          onClick={() => navigate("/dashboard/activities-by-rep")}
           leading={
-            <span className="flex h-9 w-9 items-center justify-center rounded-radius-md bg-accent-violet-20 text-accent-violet">
-              <FileBarChart className="h-4 w-4" />
+            <span className="flex h-9 w-9 items-center justify-center rounded-radius-md bg-accent-blue-20 text-accent-blue">
+              <Users className="h-4 w-4" />
             </span>
           }
-          title="Activities Report"
-          subtitle="Closed Won deals - activity analysis"
+          title="Activities by Sales Rep and Company"
+          subtitle="Team activity volume by rep, drill into companies"
           trailing={<ChevronRight className="h-5 w-5 text-text-subtle" />}
-          divider={showRepCompany}
         />
-        {showRepCompany && (
-          <ListRow
-            onClick={() => navigate("/dashboard/activities-by-rep")}
-            leading={
-              <span className="flex h-9 w-9 items-center justify-center rounded-radius-md bg-accent-blue-20 text-accent-blue">
-                <Users className="h-4 w-4" />
-              </span>
-            }
-            title="Activities by Sales Rep and Company"
-            subtitle="Team activity volume by rep, drill into companies"
-            trailing={<ChevronRight className="h-5 w-5 text-text-subtle" />}
-          />
-        )}
       </div>
     </Card>
   );
@@ -925,7 +915,7 @@ function PopulatedDashboard({ firstName: _firstName }: { firstName: string }) {
           <TopPartners topPartners={data.topPartners} />
           {/* LIVE */}
           <LeadSources leadSources={data.leadSources} />
-          {/* Entry point into the Activities Report */}
+          {/* Additional reports card (manager-only; null for others) */}
           <AdditionalReports />
           {/* LIVE — computed from deal_stage_history rolled up to
               "ever entered" counts per stage. */}
