@@ -30,6 +30,22 @@ vi.mock("@/features/dashboard/hooks/useOrgMemberNames", () => ({
   useOrgMemberNames: () => new Map([["u1", "Sarah Lim"], ["u2", "Marcus Tan"]]),
 }));
 
+// usePersistenceIndex / useTeamPersistenceIndex read live deals + activities
+// via react-query; mock them so the page test doesn't need a QueryClient.
+let ownIndex: any = {
+  composite: 70,
+  followUp: { points: 30, max: 40, hasSample: true },
+  cadence: { points: 20, max: 30, hasSample: true },
+};
+vi.mock("../hooks/usePersistenceIndex", () => ({ usePersistenceIndex: () => ownIndex }));
+
+let teamIndex: any = {
+  composite: 68,
+  followUp: { points: 28, max: 40 },
+  cadence: { points: 19, max: 30 },
+};
+vi.mock("../hooks/useTeamPersistenceIndex", () => ({ useTeamPersistenceIndex: () => teamIndex }));
+
 function mkSeries(n: number, base = 60): PersistencePoint[] {
   return Array.from({ length: n }, (_, i) => ({
     date: `2026-06-${String((i % 28) + 1).padStart(2, "0")}`,
@@ -75,6 +91,12 @@ describe("PersistenceIndexReport", () => {
   it("renders the trend chart as an SVG when there is data", () => {
     const { container } = renderReport();
     expect(container.querySelector("svg")).toBeTruthy();
+  });
+
+  it("renders the sub-component breakdown and stats grid for a populated view", () => {
+    renderReport();
+    expect(screen.getByText(/where your score comes from/i)).toBeInTheDocument();
+    expect(screen.getByText("This period")).toBeInTheDocument();
   });
 
   it("shows the empty state when every point is null", () => {

@@ -1,9 +1,10 @@
 /**
- * Persistence Index — history detail page (Slice 3). Client-side daily trend
- * over a selectable range, with a volume sub-chart and a target reference
- * line. Rep sees their own series; manager/admin sees the team median.
- * True peer-benchmark reference lines + the server-snapshot pipeline are a
- * later slice.
+ * Persistence Index — history detail page (Slice 3-5). Client-side daily
+ * trend over a selectable range, with a volume sub-chart, benchmark
+ * reference lines (peer average + top decile/performer where available),
+ * a sub-component breakdown card, and a "this period" stats grid. Rep sees
+ * their own series; manager/admin sees the team median. The server-snapshot
+ * pipeline is a later slice.
  */
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
@@ -13,37 +14,64 @@ import { useProfile } from "@/features/auth/useProfile";
 import { usePersistenceHistory } from "../hooks/usePersistenceHistory";
 import { usePerRepPersistence } from "../hooks/usePerRepPersistence";
 import { useOrgMemberNames } from "@/features/dashboard/hooks/useOrgMemberNames";
+import { usePersistenceBenchmarks } from "../hooks/usePersistenceBenchmarks";
+import { usePersistenceIndex } from "../hooks/usePersistenceIndex";
+import { useTeamPersistenceIndex } from "../hooks/useTeamPersistenceIndex";
 import {
   RANGE_PRESETS,
   TARGET_SCORE,
   historyDelta,
+  persistenceStats,
   type RangeKey,
   type PerRepScore,
 } from "../lib/persistenceIndex";
+import { PersistenceSubComponents } from "../components/PersistenceSubComponents";
+import { PersistenceStatsGrid } from "../components/PersistenceStatsGrid";
 
-function TrendChart({ points }: { points: { composite: number | null }[] }) {
+/** Line path plus its area-fill path (same points, closed down to the baseline). */
+function buildLineAndArea(pts: { x: number; y: number }[], baselineY: number): { line: string; area: string } {
+  const line = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const area = `${line} L${last.x.toFixed(1)},${baselineY.toFixed(1)} L${first.x.toFixed(1)},${baselineY.toFixed(1)} Z`;
+  return { line, area };
+}
+
+function TrendChart({
+  points,
+  referenceLines,
+}: {
+  points: { composite: number | null }[];
+  referenceLines: { value: number; label: string }[];
+}) {
   const W = 640;
   const H = 180;
   const n = points.length;
   const x = (i: number) => (n <= 1 ? 0 : (i / (n - 1)) * W);
   const y = (v: number) => H - (Math.max(0, Math.min(100, v)) / 100) * H;
 
-  // Build line segments, breaking on null gaps.
-  const segments: string[] = [];
-  let cur: string[] = [];
+  // Build line + area segments, breaking on null gaps.
+  const lines: string[] = [];
+  const areas: string[] = [];
+  let curPts: { x: number; y: number }[] = [];
   points.forEach((p, i) => {
     if (p.composite == null) {
-      if (cur.length) {
-        segments.push(cur.join(" "));
-        cur = [];
+      if (curPts.length) {
+        const { line, area } = buildLineAndArea(curPts, H);
+        lines.push(line);
+        areas.push(area);
+        curPts = [];
       }
       return;
     }
-    cur.push(`${cur.length === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.composite).toFixed(1)}`);
+    curPts.push({ x: x(i), y: y(p.composite) });
   });
-  if (cur.length) segments.push(cur.join(" "));
+  if (curPts.length) {
+    const { line, area } = buildLineAndArea(curPts, H);
+    lines.push(line);
+    areas.push(area);
+  }
 
-  const targetY = y(TARGET_SCORE);
   return (
     <svg
       viewBox={`0 0 ${W} ${H}`}
@@ -52,17 +80,23 @@ function TrendChart({ points }: { points: { composite: number | null }[] }) {
       role="img"
       aria-label="Persistence index trend"
     >
-      <line
-        x1={0}
-        y1={targetY}
-        x2={W}
-        y2={targetY}
-        stroke="currentColor"
-        strokeDasharray="4 4"
-        className="text-border-strong"
-        strokeWidth={1}
-      />
-      {segments.map((d, i) => (
+      {referenceLines.map((r, i) => (
+        <line
+          key={i}
+          x1={0}
+          y1={y(r.value)}
+          x2={W}
+          y2={y(r.value)}
+          stroke="currentColor"
+          strokeDasharray="4 4"
+          className="text-border-strong"
+          strokeWidth={1}
+        />
+      ))}
+      {areas.map((d, i) => (
+        <path key={`area-${i}`} d={d} stroke="none" fill="currentColor" fillOpacity={0.08} className="text-brand-primary" />
+      ))}
+      {lines.map((d, i) => (
         <path
           key={i}
           d={d}
@@ -145,10 +179,32 @@ export function PersistenceIndexReport() {
   const points = usePersistenceHistory(rangeDays, selectedRep ?? undefined);
   const roster = usePerRepPersistence();
   const names = useOrgMemberNames(isManager);
+  const own = usePersistenceIndex();
+  const team = useTeamPersistenceIndex();
+  const bench = usePersistenceBenchmarks();
 
   const scored = points.filter((p) => p.composite != null);
   const current = scored.length ? (scored[scored.length - 1].composite as number) : null;
   const delta = historyDelta(points);
+
+  const selectedRow = selectedRep ? roster.find((r) => r.ownerId === selectedRep) ?? null : null;
+  const subFollowUp = selectedRep
+    ? selectedRow?.followUpPoints ?? null
+    : isManager
+      ? team.followUp.points
+      : own?.followUp.hasSample ? own.followUp.points : null;
+  const subCadence = selectedRep
+    ? selectedRow?.cadencePoints ?? null
+    : isManager
+      ? team.cadence.points
+      : own?.cadence.hasSample ? own.cadence.points : null;
+  const showBenchmarks = bench.strategy !== "solo";
+  const topLabel = bench.strategy === "top-performer" ? "Top performer" : "Top 10%";
+  const topValue = bench.topDecile ?? bench.topPerformer;
+  const referenceLines = showBenchmarks
+    ? [{ value: bench.peerAvg as number, label: bench.avgLabel }, ...(topValue != null ? [{ value: topValue, label: topLabel }] : [])]
+    : [{ value: TARGET_SCORE, label: "Target" }];
+  const stats = persistenceStats(points, bench.peerAvg);
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-4 sm:px-6 sm:py-6">
@@ -219,8 +275,25 @@ export function PersistenceIndexReport() {
                 </div>
 
                 <div className="text-brand-primary">
-                  <TrendChart points={points} />
+                  <TrendChart points={points} referenceLines={referenceLines} />
                 </div>
+                {showBenchmarks && (
+                  <div className="flex flex-wrap items-center gap-3 text-caption text-text-muted">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-brand-primary" aria-hidden /> You {current}
+                    </span>
+                    {bench.peerAvg != null && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-text-muted" aria-hidden /> {bench.avgLabel} {bench.peerAvg}
+                      </span>
+                    )}
+                    {topValue != null && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-text-muted" aria-hidden /> {topLabel} {topValue}
+                      </span>
+                    )}
+                  </div>
+                )}
                 <VolumeChart points={points} />
                 <p className="text-caption text-text-subtle">
                   Daily score (trailing 30-day window) · bars show activity logged per day.
@@ -229,6 +302,24 @@ export function PersistenceIndexReport() {
             )}
           </div>
         </Card>
+
+        {current != null && (
+          <>
+            <PersistenceSubComponents
+              followUpPoints={subFollowUp}
+              cadencePoints={subCadence}
+              peerFollowUpPct={showBenchmarks ? bench.followUpAvgPct : null}
+              peerCadencePct={showBenchmarks ? bench.cadenceAvgPct : null}
+            />
+            <PersistenceStatsGrid
+              stats={stats}
+              peerAvg={bench.peerAvg}
+              topLabel={topLabel}
+              topValue={topValue}
+              showBenchmarks={showBenchmarks}
+            />
+          </>
+        )}
 
         {isManager && !selectedRep && <RepRoster rows={roster} names={names} onSelect={setSelectedRep} />}
       </div>
