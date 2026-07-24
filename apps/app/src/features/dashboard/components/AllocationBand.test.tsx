@@ -27,4 +27,15 @@ describe("AllocationBand", () => {
     render(<AllocationBand band={{ won: 0, open: 0, lost: 0, total: 0 }} scope="all" onScope={() => {}} />);
     expect(screen.getByText(/No activity logged/i)).toBeInTheDocument();
   });
+  it("omits a zero-count segment", () => {
+    render(<AllocationBand band={{ won: 10, open: 0, lost: 5, total: 15 }} scope="all" onScope={() => {}} />);
+    expect(screen.getByText("Won · 10")).toBeInTheDocument();
+    expect(screen.queryByText(/Open ·/)).not.toBeInTheDocument();
+    expect(screen.getByText("Lost · 5")).toBeInTheDocument();
+  });
+  it("marks the active segment with aria-pressed", () => {
+    render(<AllocationBand band={band} scope="won" onScope={() => {}} />);
+    expect(screen.getByText("Won · 34").closest("button")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Open · 20").closest("button")).toHaveAttribute("aria-pressed", "false");
+  });
 });

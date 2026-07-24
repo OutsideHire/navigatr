@@ -44,9 +44,11 @@ export function AllocationBand({ band, scope, onScope }: { band: OutcomeBand; sc
           })
         )}
       </div>
-      <p className="text-caption text-text-muted">
-        {total} {total === 1 ? "activity" : "activities"} logged this period. Click a segment to change scope.
-      </p>
+      {total > 0 && (
+        <p className="text-caption text-text-muted">
+          {total} {total === 1 ? "activity" : "activities"} logged this period. Click a segment to change scope.
+        </p>
+      )}
     </div>
   );
 }
