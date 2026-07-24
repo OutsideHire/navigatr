@@ -1,5 +1,5 @@
 /**
- * Persistence Index — history detail page (Slice 3-5). Client-side daily
+ * Persistence Index: history detail page (Slice 3-5). Client-side daily
  * trend over a selectable range, with a volume sub-chart, benchmark
  * reference lines (peer average + top decile/performer where available),
  * a sub-component breakdown card, and a "this period" stats grid. Rep sees
