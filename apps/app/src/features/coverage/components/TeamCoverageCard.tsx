@@ -35,9 +35,10 @@ export function TeamCoverageCard() {
   const team = teamCoverage(rows);
   const headline =
     team.band !== null && team.compositeCoverage !== null ? bandPresentation(team.band) : null;
+  const repsWithData = rows.filter((r) => isGradeable(r) && r.compositeCoverage !== null);
 
   return (
-    <Card padding="lg" shadow="sm" className="mb-4">
+    <Card padding="lg" shadow="sm" className="mt-6">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="text-heading-sm text-text-default">Team logging coverage</h2>
         {headline && (
@@ -57,17 +58,19 @@ export function TeamCoverageCard() {
         </p>
       )}
 
-      <ul className="flex flex-col gap-2">
-        {rows.map((r) => (
-          <li
-            key={r.userId}
-            className="flex items-center justify-between gap-3 rounded-radius-sm bg-surface-sunken px-3 py-2"
-          >
-            <span className="truncate text-label text-text-default">{r.fullName ?? "Unknown"}</span>
-            <RepChip r={r} />
-          </li>
-        ))}
-      </ul>
+      {repsWithData.length > 0 && (
+        <ul className="flex flex-col gap-2">
+          {repsWithData.map((r) => (
+            <li
+              key={r.userId}
+              className="flex items-center justify-between gap-3 rounded-radius-sm bg-surface-sunken px-3 py-2"
+            >
+              <span className="truncate text-label text-text-default">{r.fullName ?? "Unknown"}</span>
+              <RepChip r={r} />
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   );
 }

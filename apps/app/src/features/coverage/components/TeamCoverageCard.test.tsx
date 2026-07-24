@@ -17,7 +17,7 @@ const row = (over: Partial<CoverageRollupRow> = {}): CoverageRollupRow => ({
 beforeEach(() => { rows = []; });
 
 describe("TeamCoverageCard", () => {
-  it("shows the team headline band + reps-with-data and a chip per rep", () => {
+  it("shows the team headline band + reps-with-data and lists only reps with data", () => {
     rows = [
       row({ userId: "a", fullName: "Alex", compositeCoverage: 0.82, callEventCount: 30 }),
       row({ userId: "b", fullName: "Sam", compositeCoverage: null, confidenceLevel: null, callEventCount: null }),
@@ -26,18 +26,19 @@ describe("TeamCoverageCard", () => {
     expect(screen.getByText(/team logging coverage/i)).toBeInTheDocument();
     expect(screen.getByText(/1 of 2 reps/i)).toBeInTheDocument();
     expect(screen.getByText("Alex")).toBeInTheDocument();
-    expect(screen.getByText("Sam")).toBeInTheDocument();
-    expect(screen.getByText(/no data/i)).toBeInTheDocument();
+    expect(screen.queryByText("Sam")).not.toBeInTheDocument();
+    expect(screen.queryByText(/no data/i)).not.toBeInTheDocument();
     // headline pill (band label + rounded %) and Alex's gradeable chip
     expect(screen.getByText("Good · 82%")).toBeInTheDocument();
     expect(screen.getByText("Good 82%")).toBeInTheDocument();
   });
 
-  it("shows the instructional empty state when no rep has gradeable data", () => {
+  it("shows only the instructional empty state (no list) when no rep has gradeable data", () => {
     rows = [row({ fullName: "Sam", compositeCoverage: null, confidenceLevel: null, callEventCount: null })];
     render(<TeamCoverageCard />);
     expect(screen.getByText(/no team coverage data yet/i)).toBeInTheDocument();
-    expect(screen.getByText("Sam")).toBeInTheDocument();
+    expect(screen.queryByText("Sam")).not.toBeInTheDocument();
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
   });
 
   it("renders nothing when there are no reps at all", () => {
