@@ -34,7 +34,7 @@ import type { Merchant } from "../mockData";
 import { useTodayPath } from "../hooks/useTodayPath";
 import { PATH_DISPOSITION_KEYS } from "../lib/pathDispositions";
 import { todayISO } from "../lib/today";
-import { useCreateDeal } from "@/features/pipeline/hooks/useCreateDeal";
+import { useCreateDeal, DuplicateDealError } from "@/features/pipeline/hooks/useCreateDeal";
 import { useLogActivity } from "@/features/activities/hooks/useLogActivity";
 import { useFollowupSync } from "@/features/appointments/useFollowupSync";
 
@@ -121,6 +121,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
           probability: 20,
           leadSource: "path_dropin",
           notes: notes.trim() || undefined,
+          placeId: merchant.placeId,
         });
         await logActivity.mutateAsync({
           dealId,
@@ -140,8 +141,15 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
         // orphan deal exists with no drop-in activity / follow-up. We don't roll
         // back; the visit is recorded and dealCreated stays false, so the summary
         // won't over-count.
-      } catch {
-        toast.error("Couldn't finish logging — the visit was saved but the deal/follow-up may not have been.");
+      } catch (err) {
+        if (err instanceof DuplicateDealError) {
+          // Already in the team's pipeline (org-wide active-deal guard). The
+          // visit above is still recorded; we simply skip creating a duplicate
+          // deal and tell the rep calmly rather than flashing an error.
+          toast.info(`${merchant.name} is already in your team's pipeline.`);
+        } else {
+          toast.error("Couldn't finish logging — the visit was saved but the deal/follow-up may not have been.");
+        }
       }
     } else {
       toast.success(`Visit logged: ${DISPOSITIONS[disposition].label}`);

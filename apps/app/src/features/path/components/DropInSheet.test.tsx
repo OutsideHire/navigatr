@@ -12,8 +12,18 @@ import { render, screen, fireEvent, act, waitFor } from "@testing-library/react"
 const createDealMutateAsync = vi.fn().mockResolvedValue({ id: "deal-1" });
 const logActivityMutateAsync = vi.fn().mockResolvedValue({ id: "act-1" });
 
+const { DuplicateDealError } = vi.hoisted(() => {
+  class DuplicateDealError extends Error {
+    constructor() {
+      super("dup");
+      this.name = "DuplicateDealError";
+    }
+  }
+  return { DuplicateDealError };
+});
 vi.mock("@/features/pipeline/hooks/useCreateDeal", () => ({
   useCreateDeal: () => ({ mutateAsync: createDealMutateAsync }),
+  DuplicateDealError,
 }));
 
 vi.mock("@/features/activities/hooks/useLogActivity", () => ({
@@ -28,7 +38,7 @@ vi.mock("@/features/appointments/useFollowupSync", () => ({
 }));
 
 vi.mock("sonner", () => ({
-  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), info: vi.fn() }),
 }));
 
 const logVisit = vi.fn();
@@ -54,6 +64,7 @@ const merchant: Merchant = {
   employeeCountRange: "1-10",
   status: "untouched",
   lastActivity: null,
+  placeId: "gp-blue-1",
 };
 
 const onOpenChange = vi.fn();
@@ -129,7 +140,11 @@ describe("DropInSheet", () => {
     await act(async () => { fireEvent.click(logStopBtn()); });
     expect(logVisit).toHaveBeenCalledWith("m-1", "statement_secured");
     expect(createDealMutateAsync).toHaveBeenCalledWith(
-      expect.objectContaining({ contactName: "Bluewater", leadSource: "path_dropin" }),
+      expect.objectContaining({
+        contactName: "Bluewater",
+        leadSource: "path_dropin",
+        placeId: "gp-blue-1",
+      }),
     );
     expect(logActivityMutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -208,5 +223,21 @@ describe("DropInSheet", () => {
     expect(toast.error).toHaveBeenCalled();
     expect(onLogged).not.toHaveBeenCalled();
     expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("on a duplicate (DuplicateDealError): info toast, no error toast, no markDealCreated", async () => {
+    createDealMutateAsync.mockRejectedValueOnce(new DuplicateDealError());
+    const onLogged = vi.fn();
+    renderSheet({ onLogged });
+    fireEvent.click(screen.getByText("Statement Secured"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    expect(logVisit).toHaveBeenCalledWith("m-1", "statement_secured");
+    expect(toast.info).toHaveBeenCalledWith(
+      expect.stringContaining("already in your team's pipeline"),
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(markDealCreated).not.toHaveBeenCalled();
+    expect(onLogged).toHaveBeenCalledWith("statement_secured");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });
