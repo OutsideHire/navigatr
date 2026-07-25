@@ -43,9 +43,11 @@ The plan determines whether `v_org_id` is derived inside the RPC from `auth.uid(
 
 ## 5. Mechanism B: block on add (de-dupe guard)
 
-- The **partial unique index** (section 3) is the backstop.
-- The Drop-In create path is made dedupe-aware: before inserting, look up an existing ACTIVE deal by (org_id, place_id); if one exists, do NOT create a duplicate. Instead surface a clear message ("{business} is already in your team's pipeline") with an action to **open the existing deal**. If the insert still hits the unique index (a race, or an out-of-date client), catch the Postgres unique-violation (23505) and show the same friendly handling rather than a raw error.
-- Because Mechanism A already hides in-pipeline prospects, B mainly fires on edge cases (a prospect that entered the pipeline between search and drop-in, a concurrent double-add, or a manual overlap). It must never surface as a crash or a silent duplicate.
+- The **partial unique index** (section 3) is the true guarantee: it is enforced at the database level, org-wide, regardless of who can see whose deals. This is what actually prevents a duplicate.
+- The `useCreateDeal` hook catches the Postgres unique-violation (error code `23505`) and throws a typed `DuplicateDealError` instead of a raw database error.
+- The Drop-In create path catches `DuplicateDealError` and shows a calm, informational message ("{business} is already in your team's pipeline"). The visit is still logged; no duplicate deal is created; it reads as info, not an error.
+- Because Mechanism A already hides in-pipeline prospects, B mainly fires on edge cases (a prospect that entered the pipeline between search and drop-in, a concurrent double-add). It must never surface as a crash or a silent duplicate.
+- **Deliberately out of v1:** a pre-insert lookup that fetches the existing deal and an "open the existing deal" button. The index-plus-caught-error approach delivers the core guarantee (no duplicate, no scary error) without coupling the Path screen to pipeline navigation. Adding an "open existing" jump is a straightforward follow-up.
 
 ## 6. Non-goals (v1)
 
