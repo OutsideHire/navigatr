@@ -20,6 +20,19 @@ import { useFollowupSync } from "@/features/appointments/useFollowupSync";
 import { DEALS_QUERY_KEY } from "./useDeals";
 import type { DealStage } from "../mockData";
 
+/**
+ * Thrown by useCreateDeal when the deals_org_place_active_uidx partial unique
+ * index rejects the insert, i.e. an ACTIVE deal for this place_id already exists
+ * in the org. Callers catch this to show a friendly de-dupe message instead of a
+ * raw database error.
+ */
+export class DuplicateDealError extends Error {
+  constructor() {
+    super("This business is already in your team's pipeline.");
+    this.name = "DuplicateDealError";
+  }
+}
+
 export interface CreateDealInput {
   companyName: string;
   address?: string;
@@ -37,6 +50,9 @@ export interface CreateDealInput {
   notes?: string;
   nextFollowupAt?: string | null;    // ISO timestamp
   professionData?: Record<string, unknown>;
+  /** Google place_id of the source prospect. Present for deals created from Path
+   *  discovery; null for manually-entered deals. Anchors org-wide de-duplication. */
+  placeId?: string;
 }
 
 export function useCreateDeal() {
@@ -71,10 +87,19 @@ export function useCreateDeal() {
           notes:               input.notes ?? null,
           next_followup_at:    input.nextFollowupAt ?? null,
           profession_data:     input.professionData ?? {},
+          place_id:            input.placeId ?? null,
         })
         .select("id")
         .single();
-      if (error) throw error;
+      if (error) {
+        // Postgres unique_violation from deals_org_place_active_uidx: this
+        // business is already an ACTIVE deal somewhere in the org. Surface a
+        // typed error so callers can show a calm "already in pipeline" message.
+        if (error.code === "23505") {
+          throw new DuplicateDealError();
+        }
+        throw error;
+      }
       return { id: data.id as string };
     },
     onSuccess: (data, variables) => {

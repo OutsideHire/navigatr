@@ -8,7 +8,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
-import { useCreateDeal } from "./useCreateDeal";
+import { useCreateDeal, DuplicateDealError } from "./useCreateDeal";
 
 const singleMock = vi.fn();
 const selectMock = vi.fn(() => ({ single: singleMock }));
@@ -241,5 +241,46 @@ describe("useCreateDeal", () => {
     // Give onSuccess a tick to run.
     await new Promise((r) => setTimeout(r, 0));
     expect(syncFollowupMock).not.toHaveBeenCalled();
+  });
+
+  it("stamps place_id onto the insert payload when provided", async () => {
+    singleMock.mockResolvedValueOnce({ data: { id: "deal-pid" }, error: null });
+    const { result } = renderHook(() => useCreateDeal(), { wrapper });
+    await result.current.mutateAsync({
+      companyName: "Bluewater", contactName: "Bluewater",
+      contactPhone: "+12025550100", stage: "new", probability: 20,
+      leadSource: "path_dropin", placeId: "gp-blue-1",
+    });
+    const calls = insertMock.mock.calls as unknown as Array<[Record<string, unknown>]>;
+    expect(calls[0]?.[0]).toMatchObject({ place_id: "gp-blue-1" });
+  });
+
+  it("inserts null place_id when omitted (manual deal)", async () => {
+    singleMock.mockResolvedValueOnce({ data: { id: "deal-nopid" }, error: null });
+    const { result } = renderHook(() => useCreateDeal(), { wrapper });
+    await result.current.mutateAsync({
+      companyName: "Acme", contactName: "Jane", contactPhone: "+12025550100",
+      stage: "new", probability: 20,
+    });
+    const calls = insertMock.mock.calls as unknown as Array<[Record<string, unknown>]>;
+    expect(calls[0]?.[0]).toMatchObject({ place_id: null });
+  });
+
+  it("throws DuplicateDealError on a unique-violation (23505)", async () => {
+    singleMock.mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "deals_org_place_active_uidx"',
+      },
+    });
+    const { result } = renderHook(() => useCreateDeal(), { wrapper });
+    await expect(
+      result.current.mutateAsync({
+        companyName: "Dupe", contactName: "Dupe", contactPhone: "+12025550100",
+        stage: "new", probability: 20, placeId: "gp-dupe-1",
+      }),
+    ).rejects.toBeInstanceOf(DuplicateDealError);
   });
 });
