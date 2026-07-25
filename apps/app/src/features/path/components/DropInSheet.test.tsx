@@ -240,4 +240,18 @@ describe("DropInSheet", () => {
     expect(onLogged).toHaveBeenCalledWith("statement_secured");
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  it("on a duplicate with notes entered: info toast warns the note was not added", async () => {
+    createDealMutateAsync.mockRejectedValueOnce(new DuplicateDealError());
+    renderSheet();
+    fireEvent.change(
+      screen.getByPlaceholderText(/what happened on this visit/i),
+      { target: { value: "Talked to the owner, very interested." } },
+    );
+    fireEvent.click(screen.getByText("Statement Secured"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    expect(toast.info).toHaveBeenCalledWith(
+      expect.stringContaining("Your note was not added"),
+    );
+  });
 });

@@ -19,6 +19,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
 import { useFollowupSync } from "@/features/appointments/useFollowupSync";
+import { DuplicateDealError, isDuplicatePlaceDealError } from "./useCreateDeal";
 import { DEALS_QUERY_KEY } from "./useDeals";
 import { STAGE_HISTORY_QUERY_KEY } from "./useStageHistory";
 import type { DealStage, LostReasonCategory } from "../mockData";
@@ -89,7 +90,15 @@ export function useUpdateDeal() {
         .from("deals")
         .update(snakePatch)
         .eq("id", input.id);
-      if (error) throw error;
+      if (error) {
+        // Reopening a won/lost deal onto a place_id another active deal already
+        // holds hits the same active-deal uniqueness guard as create. Surface the
+        // same friendly error instead of a raw database message.
+        if (isDuplicatePlaceDealError(error)) {
+          throw new DuplicateDealError();
+        }
+        throw error;
+      }
     },
     onSuccess: (_data, variables) => {
       // Pipeline + dashboard

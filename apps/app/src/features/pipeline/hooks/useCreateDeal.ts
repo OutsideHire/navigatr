@@ -33,6 +33,18 @@ export class DuplicateDealError extends Error {
   }
 }
 
+/** Name of the partial unique index that enforces one active deal per
+ *  (org_id, place_id). Postgres embeds it in the 23505 error message. */
+const ACTIVE_PLACE_ID_CONSTRAINT = "deals_org_place_active_uidx";
+
+/** True only when a Postgres error is the active-deal place_id uniqueness
+ *  violation, as opposed to any other 23505 (e.g. a source-system dedupe). */
+export function isDuplicatePlaceDealError(
+  error: { code?: string; message?: string } | null | undefined,
+): boolean {
+  return error?.code === "23505" && (error.message ?? "").includes(ACTIVE_PLACE_ID_CONSTRAINT);
+}
+
 export interface CreateDealInput {
   companyName: string;
   address?: string;
@@ -92,10 +104,10 @@ export function useCreateDeal() {
         .select("id")
         .single();
       if (error) {
-        // Postgres unique_violation from deals_org_place_active_uidx: this
-        // business is already an ACTIVE deal somewhere in the org. Surface a
-        // typed error so callers can show a calm "already in pipeline" message.
-        if (error.code === "23505") {
+        // Only the active-deal place_id uniqueness violation maps to the calm
+        // "already in your team's pipeline" story. Any other unique violation or
+        // error is rethrown unchanged so it is not mislabeled.
+        if (isDuplicatePlaceDealError(error)) {
           throw new DuplicateDealError();
         }
         throw error;

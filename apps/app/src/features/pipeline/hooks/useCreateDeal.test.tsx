@@ -283,4 +283,50 @@ describe("useCreateDeal", () => {
       }),
     ).rejects.toBeInstanceOf(DuplicateDealError);
   });
+
+  it("rethrows a 23505 from a DIFFERENT unique constraint as-is (not a DuplicateDealError)", async () => {
+    singleMock.mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "deals_source_dedupe_idx"',
+      },
+    });
+    const { result } = renderHook(() => useCreateDeal(), { wrapper });
+    let caught: unknown;
+    try {
+      await result.current.mutateAsync({
+        companyName: "Dupe", contactName: "Dupe", contactPhone: "+12025550100",
+        stage: "new", probability: 20, placeId: "gp-dupe-1",
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).not.toBeInstanceOf(DuplicateDealError);
+    expect((caught as { code?: string })?.code).toBe("23505");
+    expect((caught as { message?: string })?.message).toContain("deals_source_dedupe_idx");
+  });
+
+  it("rethrows a non-23505 error as-is", async () => {
+    singleMock.mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: "23503",
+        message: "insert or update on table violates foreign key constraint",
+      },
+    });
+    const { result } = renderHook(() => useCreateDeal(), { wrapper });
+    let caught: unknown;
+    try {
+      await result.current.mutateAsync({
+        companyName: "Dupe", contactName: "Dupe", contactPhone: "+12025550100",
+        stage: "new", probability: 20, placeId: "gp-dupe-1",
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).not.toBeInstanceOf(DuplicateDealError);
+    expect((caught as { code?: string })?.code).toBe("23503");
+  });
 });

@@ -144,9 +144,11 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
       } catch (err) {
         if (err instanceof DuplicateDealError) {
           // Already in the team's pipeline (org-wide active-deal guard). The
-          // visit above is still recorded; we simply skip creating a duplicate
-          // deal and tell the rep calmly rather than flashing an error.
-          toast.info(`${merchant.name} is already in your team's pipeline.`);
+          // visit above is still recorded; we skip creating a duplicate deal.
+          // The drop_in activity did not run, so any typed note was not saved,
+          // tell the rep so it is not silently lost (v1 has no open-existing jump).
+          const base = `${merchant.name} is already in your team's pipeline.`;
+          toast.info(notes.trim() ? `${base} Your note was not added to it.` : base);
         } else {
           toast.error("Couldn't finish logging — the visit was saved but the deal/follow-up may not have been.");
         }

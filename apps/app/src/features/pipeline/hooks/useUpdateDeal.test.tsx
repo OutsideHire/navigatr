@@ -9,6 +9,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 import { useUpdateDeal } from "./useUpdateDeal";
+import { DuplicateDealError } from "./useCreateDeal";
 
 const eqMock = vi.fn();
 const updateMock = vi.fn(() => ({ eq: eqMock }));
@@ -220,5 +221,42 @@ describe("useUpdateDeal", () => {
     // Give onSuccess a tick to run.
     await new Promise((r) => setTimeout(r, 0));
     expect(syncFollowupMock).not.toHaveBeenCalled();
+  });
+
+  it("throws DuplicateDealError when reopening a deal collides with the active-place_id constraint", async () => {
+    eqMock.mockResolvedValueOnce({
+      error: {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "deals_org_place_active_uidx"',
+      },
+    });
+    const { result } = renderHook(() => useUpdateDeal(), {
+      wrapper: makeWrapper(new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })),
+    });
+    await expect(
+      result.current.mutateAsync({ id: "deal-1", patch: { stage: "qualified" } }),
+    ).rejects.toBeInstanceOf(DuplicateDealError);
+  });
+
+  it("rethrows a different error unchanged (not DuplicateDealError)", async () => {
+    eqMock.mockResolvedValueOnce({
+      error: { code: "23503", message: "fk violation" },
+    });
+    const { result } = renderHook(() => useUpdateDeal(), {
+      wrapper: makeWrapper(new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })),
+    });
+    let caught: unknown;
+    try {
+      await result.current.mutateAsync({ id: "deal-1", patch: { stage: "qualified" } });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).not.toBeInstanceOf(DuplicateDealError);
+    expect((caught as { code?: string })?.code).toBe("23503");
   });
 });
