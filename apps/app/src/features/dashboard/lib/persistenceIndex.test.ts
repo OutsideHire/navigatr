@@ -374,6 +374,46 @@ describe("computeReEngagement", () => {
     expect(result.points).toBe(0);
   });
 
+  it("does not count a deal whose silence onset lands just OUTSIDE the 30-day window (too old, never re-engaged)", () => {
+    const deals = [deal({ id: "d1" })];
+    const activities = [
+      // onset = 2026-06-04 + 21d = 2026-06-25, one day older than the window
+      // start (now-30d = 2026-06-26) -> does not qualify, deal not counted.
+      activity({ id: "a1", dealId: "d1", occurredAt: "2026-06-04T00:00:00Z" }),
+    ];
+    const result = computeReEngagement(deals, activities, OWNER, now);
+    expect(result.silentCount).toBe(0);
+    expect(result.reEngagedCount).toBe(0);
+  });
+
+  it("counts a deal whose silence onset lands just INSIDE the 30-day window", () => {
+    const deals = [deal({ id: "d1" })];
+    const activities = [
+      // onset = 2026-06-06 + 21d = 2026-06-27, one day inside the window
+      // start (now-30d = 2026-06-26) -> qualifies, deal counted as silent.
+      activity({ id: "a1", dealId: "d1", occurredAt: "2026-06-06T00:00:00Z" }),
+    ];
+    const result = computeReEngagement(deals, activities, OWNER, now);
+    expect(result.silentCount).toBe(1);
+    expect(result.reEngagedCount).toBe(0);
+  });
+
+  it("re-silenced after recovery: the latest QUALIFYING onset is the earlier gap-onset (re-engaged), not the fresh trailing one", () => {
+    const deals = [deal({ id: "d1" })];
+    const activities = [
+      // t0=2026-06-09: onset1 = t0+21d = 2026-06-30, inside [06-26, 07-19] ->
+      // qualifies. Gap to t1 is 22 days (> 21) -> that gap is re-engaged.
+      activity({ id: "a1", dealId: "d1", occurredAt: "2026-06-09T00:00:00Z" }),
+      // t1=2026-07-01: onset2 = t1+21d = 2026-07-22, AFTER the fairness
+      // cutoff (now-7d = 2026-07-19) -> fresh, fails fairness, excluded.
+      activity({ id: "a2", dealId: "d1", occurredAt: "2026-07-01T00:00:00Z" }),
+    ];
+    const result = computeReEngagement(deals, activities, OWNER, now);
+    expect(result.silentCount).toBe(1);
+    expect(result.reEngagedCount).toBe(1);
+    expect(result.points).toBe(30);
+  });
+
   it("excludes closed-lost deals from the denominator even with a qualifying silent gap", () => {
     const deals = [
       deal({ id: "d-lost", stage: "lost" }),
@@ -573,7 +613,7 @@ describe("subComponentPeerAverages (re-engagement)", () => {
     fu: number | null = null,
     cad: number | null = null,
     reEng: number | null = null,
-  ): PerRepScore => ({ ownerId: "x", composite, followUpPoints: fu, cadencePoints: cad, reEngagementPoints: reEng });
+  ): PerRepScore => ({ ownerId: "x", composite, followUpPoints: fu, cadencePoints: cad, reEngagementPoints: reEng, followUpBelowFloor: false });
 
   it("medians reEngagementPoints as a percentage of REENGAGEMENT_MAX", () => {
     const r = subComponentPeerAverages([rep(70, 40, 30, 24), rep(60, 20, 15, 18), rep(null, null, null, null)]);

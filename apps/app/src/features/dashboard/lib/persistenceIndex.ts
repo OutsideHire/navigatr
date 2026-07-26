@@ -454,6 +454,7 @@ export interface PerRepScore {
   followUpPoints: number | null;
   cadencePoints: number | null;
   reEngagementPoints: number | null;
+  followUpBelowFloor: boolean;
 }
 
 /**
@@ -476,6 +477,7 @@ export function computePerRepPersistence(
       followUpPoints: r.followUp.hasSample ? r.followUp.points : null,
       cadencePoints: r.cadence.hasSample ? r.cadence.points : null,
       reEngagementPoints: r.reEngagement.hasSample ? r.reEngagement.points : null,
+      followUpBelowFloor: r.caveats.followUpBelowFloor,
     };
   });
   return rows.sort((a, b) => {

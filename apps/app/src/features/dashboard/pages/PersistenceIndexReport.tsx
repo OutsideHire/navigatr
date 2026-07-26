@@ -206,6 +206,14 @@ export function PersistenceIndexReport() {
     : isManager
       ? team.reEngagement.points
       : own?.reEngagement.hasSample ? own.reEngagement.points : null;
+  // Mirrors the selectedRep -> team -> own resolution above. The team composite
+  // is a median across reps and doesn't carry a single below-floor state, so a
+  // team-level caveat is out of scope for SP-A (always false in that branch).
+  const followUpBelowFloor = selectedRep
+    ? selectedRow?.followUpBelowFloor ?? false
+    : isManager
+      ? false
+      : own?.caveats.followUpBelowFloor ?? false;
   const showBenchmarks = bench.strategy !== "solo";
   const topLabel = bench.strategy === "top-performer" ? "Top performer" : "Top 10%";
   const topValue = bench.topDecile ?? bench.topPerformer;
@@ -319,7 +327,7 @@ export function PersistenceIndexReport() {
                 { key: "cadence", label: "Touch cadence", points: subCadence, max: CADENCE_MAX, peerPct: showBenchmarks ? bench.cadenceAvgPct : null },
                 { key: "reEngagement", label: "Re-engagement after silence", points: subReEngagement, max: REENGAGEMENT_MAX, peerPct: showBenchmarks ? bench.reEngagementAvgPct : null },
               ]}
-              footnote={own?.caveats.followUpBelowFloor ? "Follow-up volume too low to score discipline; showing cadence and re-engagement only." : undefined}
+              footnote={followUpBelowFloor ? "Follow-up volume too low to score discipline; showing cadence and re-engagement only." : undefined}
             />
             <PersistenceStatsGrid
               stats={stats}

@@ -70,8 +70,8 @@ beforeEach(() => {
   role = "rep";
   series = mkSeries(30);
   roster = [
-    { ownerId: "u1", composite: 82, followUpPoints: 34, cadencePoints: 24, reEngagementPoints: 22 },
-    { ownerId: "u2", composite: 60, followUpPoints: 20, cadencePoints: 18, reEngagementPoints: 14 },
+    { ownerId: "u1", composite: 82, followUpPoints: 34, cadencePoints: 24, reEngagementPoints: 22, followUpBelowFloor: false },
+    { ownerId: "u2", composite: 60, followUpPoints: 20, cadencePoints: 18, reEngagementPoints: 14, followUpBelowFloor: false },
   ];
   lastTargetOwner = undefined;
 });
@@ -126,6 +126,27 @@ describe("PersistenceIndexReport", () => {
     role = "rep";
     renderReport();
     expect(screen.queryByText(/by rep/i)).toBeNull();
+  });
+
+  it("shows the below-floor footnote when the SELECTED rep is below floor", () => {
+    role = "manager";
+    roster = [
+      { ownerId: "u1", composite: 82, followUpPoints: null, cadencePoints: 24, reEngagementPoints: 22, followUpBelowFloor: true },
+      { ownerId: "u2", composite: 60, followUpPoints: 20, cadencePoints: 18, reEngagementPoints: 14, followUpBelowFloor: false },
+    ];
+    renderReport();
+    fireEvent.click(screen.getByText("Sarah Lim"));
+    expect(screen.getByText(/follow-up volume too low/i)).toBeInTheDocument();
+  });
+
+  it("does not leak the manager's own below-floor state onto the team view", () => {
+    role = "manager";
+    // The manager's own follow-up state is below floor, but the displayed
+    // data is the team aggregate, not the manager's own score, so the
+    // footnote must not appear.
+    ownIndex = { ...ownIndex, caveats: { followUpBelowFloor: true } };
+    renderReport();
+    expect(screen.queryByText(/follow-up volume too low/i)).toBeNull();
   });
 
   it("clicking a rep drills into their trend and shows Back to team", () => {
