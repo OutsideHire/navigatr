@@ -19,9 +19,16 @@ vi.mock("@/features/auth/useProfile", () => ({ useProfile: () => ({ data: { role
 
 const indFull: PersistenceIndexResult = {
   composite: 82,
-  followUp: { points: 34, max: 40, hasSample: true, completionRate: 0.85, dueCount: 12 },
+  followUp: { points: 34, max: 40, hasSample: true, completionRate: 0.85, dueCount: 12, belowFloor: false },
   cadence: { points: 24, max: 30, hasSample: true, medianTouchesPerWeek: 3.1, activeDeals: 7 },
-  responseVelocity: { comingSoon: true }, windowDays: 30, targetScore: 75,
+  reEngagement: { points: 24, max: 30, hasSample: true, rate: 0.8, silentCount: 5, reEngagedCount: 4 },
+  components: [
+    { key: "followUp", label: "Follow-up discipline", points: 34, max: 40, hasSample: true, belowFloor: false },
+    { key: "cadence", label: "Touch cadence", points: 24, max: 30, hasSample: true },
+    { key: "reEngagement", label: "Re-engagement after silence", points: 24, max: 30, hasSample: true },
+  ],
+  caveats: { followUpBelowFloor: false },
+  windowDays: 30, targetScore: 75, formulaVersion: 2,
 };
 const teamFull: TeamPersistenceIndexResult = {
   composite: 71,

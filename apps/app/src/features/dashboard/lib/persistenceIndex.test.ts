@@ -2,12 +2,18 @@ import { describe, it, expect } from "vitest";
 import {
   computeFollowUpDiscipline,
   computeTouchCadence,
+  computeReEngagement,
   computePersistenceIndex,
   computeTeamPersistenceIndex,
   computePersistenceHistory,
   computePerRepPersistence,
   historyDelta,
   RANGE_PRESETS,
+  SILENCE_THRESHOLD_DAYS,
+  FAIRNESS_WINDOW_DAYS,
+  REENGAGEMENT_MAX,
+  FOLLOWUP_FLOOR,
+  FORMULA_VERSION,
 } from "./persistenceIndex";
 import type { Deal, DealStage } from "@/features/pipeline/mockData";
 import type { Activity } from "@/features/activities/mockData";
@@ -67,7 +73,9 @@ describe("computeFollowUpDiscipline", () => {
     expect(result.dueCount).toBe(1);
     expect(result.completionRate).toBe(1);
     expect(result.points).toBe(40);
-    expect(result.hasSample).toBe(true);
+    // Below the FOLLOWUP_FLOOR (8 due), so it doesn't count as a sample yet.
+    expect(result.belowFloor).toBe(true);
+    expect(result.hasSample).toBe(false);
   });
 
   it("does not count a touch that lands after the due date as on-time", () => {
@@ -81,7 +89,9 @@ describe("computeFollowUpDiscipline", () => {
     expect(result.dueCount).toBe(1);
     expect(result.completionRate).toBe(0);
     expect(result.points).toBe(0);
-    expect(result.hasSample).toBe(true);
+    // Below the FOLLOWUP_FLOOR (8 due), so it doesn't count as a sample yet.
+    expect(result.belowFloor).toBe(true);
+    expect(result.hasSample).toBe(false);
   });
 
   it("excludes closed-lost deals and other reps' deals from the eligible set", () => {
@@ -108,6 +118,48 @@ describe("computeFollowUpDiscipline", () => {
     const result = computeFollowUpDiscipline(deals, activities, OWNER, WINDOW_START, WINDOW_END);
     expect(result.dueCount).toBe(0);
     expect(result.hasSample).toBe(false);
+  });
+});
+
+describe("computeFollowUpDiscipline volume floor", () => {
+  it("3 due (below FOLLOWUP_FLOOR of 8): not a sample yet, but points still computed", () => {
+    const deals = [deal({ id: "d1" }), deal({ id: "d2" }), deal({ id: "d3" })];
+    const activities = [
+      activity({ id: "a1", dealId: "d1", occurredAt: "2026-06-05T00:00:00.000Z", followUpDate: "2026-06-10" }),
+      activity({ id: "a2", dealId: "d2", occurredAt: "2026-06-05T00:00:00.000Z", followUpDate: "2026-06-10" }),
+      activity({ id: "a3", dealId: "d3", occurredAt: "2026-06-05T00:00:00.000Z", followUpDate: "2026-06-10" }),
+    ];
+    const result = computeFollowUpDiscipline(deals, activities, OWNER, WINDOW_START, WINDOW_END);
+    expect(result.dueCount).toBe(3);
+    expect(result.belowFloor).toBe(true);
+    expect(result.hasSample).toBe(false);
+    expect(typeof result.points).toBe("number");
+    expect(Number.isNaN(result.points)).toBe(false);
+  });
+
+  it("0 due: not a sample, and not below floor (nothing to floor)", () => {
+    const deals = [deal({ id: "d1" })];
+    const result = computeFollowUpDiscipline(deals, [], OWNER, WINDOW_START, WINDOW_END);
+    expect(result.dueCount).toBe(0);
+    expect(result.hasSample).toBe(false);
+    expect(result.belowFloor).toBe(false);
+  });
+
+  it("8+ due (meets FOLLOWUP_FLOOR): a real sample, scores normally", () => {
+    const deals = [deal({ id: "d1" })];
+    const activities: ReturnType<typeof activity>[] = [];
+    for (let i = 0; i < FOLLOWUP_FLOOR; i++) {
+      activities.push(
+        activity({ id: `due${i}`, dealId: "d1", occurredAt: dayOffset(3 * i), followUpDate: dayOffset(3 * i + 2).slice(0, 10) }),
+      );
+      activities.push(activity({ id: `kept${i}`, dealId: "d1", occurredAt: dayOffset(3 * i + 1), followUpDate: null }));
+    }
+    const result = computeFollowUpDiscipline(deals, activities, OWNER, WINDOW_START, WINDOW_END);
+    expect(result.dueCount).toBe(8);
+    expect(result.belowFloor).toBe(false);
+    expect(result.hasSample).toBe(true);
+    expect(result.completionRate).toBe(1);
+    expect(result.points).toBe(40);
   });
 });
 
@@ -166,22 +218,31 @@ describe("computeTouchCadence", () => {
 const NOW = new Date("2026-07-01T00:00:00.000Z");
 
 describe("computePersistenceIndex", () => {
-  it("blends follow-up discipline and touch cadence into a composite out of 100", () => {
-    const deals = [deal({ id: "d1" })]; // qualified, eligible for both components
-    const activities = [
-      activity({ id: "a1", dealId: "d1", occurredAt: "2026-06-05T00:00:00.000Z", followUpDate: "2026-06-10" }),
-      activity({ id: "a2", dealId: "d1", occurredAt: "2026-06-09T00:00:00.000Z", followUpDate: null }),
-    ];
+  it("blends follow-up discipline, touch cadence, and re-engagement into a composite out of 100", () => {
+    const deals = [deal({ id: "d1" })]; // qualified, eligible for all three components
+    // 8 due-and-kept follow-up pairs (meets FOLLOWUP_FLOOR) spread across the window,
+    // frequent enough to also max out cadence and leave no qualifying silence.
+    const activities: ReturnType<typeof activity>[] = [];
+    for (let i = 0; i < FOLLOWUP_FLOOR; i++) {
+      activities.push(
+        activity({ id: `due${i}`, dealId: "d1", occurredAt: dayOffset(3 * i), followUpDate: dayOffset(3 * i + 2).slice(0, 10) }),
+      );
+      activities.push(activity({ id: `kept${i}`, dealId: "d1", occurredAt: dayOffset(3 * i + 1), followUpDate: null }));
+    }
     const result = computePersistenceIndex(deals, activities, { ownerId: OWNER, now: NOW });
 
     expect(result.followUp.hasSample).toBe(true);
+    expect(result.followUp.belowFloor).toBe(false);
     expect(result.cadence.hasSample).toBe(true);
-    expect(result.responseVelocity).toEqual({ comingSoon: true });
+    expect(result.reEngagement.hasSample).toBe(true);
     expect(result.windowDays).toBe(30);
     expect(result.targetScore).toBe(75);
+    expect(result.formulaVersion).toBe(2);
+    expect("responseVelocity" in result).toBe(false);
+    expect(result.components.map((c) => c.key)).toEqual(["followUp", "cadence", "reEngagement"]);
 
-    const availPoints = result.followUp.points + result.cadence.points;
-    const availMax = result.followUp.max + result.cadence.max;
+    const availPoints = result.followUp.points + result.cadence.points + result.reEngagement.points;
+    const availMax = result.followUp.max + result.cadence.max + result.reEngagement.max;
     expect(result.composite).toBe(Math.round((availPoints / availMax) * 100));
   });
 
@@ -190,19 +251,143 @@ describe("computePersistenceIndex", () => {
     expect(result.composite).toBeNull();
     expect(result.followUp.hasSample).toBe(false);
     expect(result.cadence.hasSample).toBe(false);
+    expect(result.reEngagement.hasSample).toBe(false);
   });
 
-  it("scales off only the sampled component when a won deal excludes cadence", () => {
+  it("scales off only the sampled component when a won deal excludes cadence and re-engagement", () => {
     const deals = [deal({ id: "d1", stage: "won" })];
-    const activities = [
-      activity({ id: "a1", dealId: "d1", occurredAt: "2026-06-05T00:00:00.000Z", followUpDate: "2026-06-10" }),
-      activity({ id: "a2", dealId: "d1", occurredAt: "2026-06-09T00:00:00.000Z", followUpDate: null }),
-    ];
+    // 8 due-and-kept pairs so follow-up discipline meets the volume floor (won deals are
+    // still eligible for follow-up, only cadence/re-engagement exclude won/lost stages).
+    const activities: ReturnType<typeof activity>[] = [];
+    for (let i = 0; i < FOLLOWUP_FLOOR; i++) {
+      activities.push(
+        activity({ id: `due${i}`, dealId: "d1", occurredAt: dayOffset(3 * i), followUpDate: dayOffset(3 * i + 2).slice(0, 10) }),
+      );
+      activities.push(activity({ id: `kept${i}`, dealId: "d1", occurredAt: dayOffset(3 * i + 1), followUpDate: null }));
+    }
     const result = computePersistenceIndex(deals, activities, { ownerId: OWNER, now: NOW });
 
     expect(result.followUp.hasSample).toBe(true);
     expect(result.cadence.hasSample).toBe(false);
+    expect(result.reEngagement.hasSample).toBe(false);
     expect(result.composite).toBe(Math.round((result.followUp.points / result.followUp.max) * 100));
+  });
+
+  it("blends a composite from cadence + re-engagement alone when follow-up is below the volume floor", () => {
+    const deals = [
+      deal({ id: "d1", owner_id: "rep-floor" }),
+      deal({ id: "d2", owner_id: "rep-floor" }),
+      deal({ id: "d3", owner_id: "rep-floor" }),
+    ];
+    // Each deal gets exactly 1 due follow-up -> dueCount 3, below FOLLOWUP_FLOOR (8).
+    // Each deal also gets exactly 1 touch in-window, which is frequent enough for a
+    // cadence sample but too recent to have gone silent (re-engagement scores full).
+    const floorNow = new Date("2026-07-26T00:00:00Z");
+    const activities = [
+      activity({ id: "a1", dealId: "d1", occurredAt: "2026-07-10T00:00:00Z", followUpDate: "2026-07-15" }),
+      activity({ id: "a2", dealId: "d2", occurredAt: "2026-07-10T00:00:00Z", followUpDate: "2026-07-15" }),
+      activity({ id: "a3", dealId: "d3", occurredAt: "2026-07-10T00:00:00Z", followUpDate: "2026-07-15" }),
+    ];
+    const result = computePersistenceIndex(deals, activities, { ownerId: "rep-floor", now: floorNow });
+
+    expect(result.followUp.dueCount).toBe(3);
+    expect(result.followUp.belowFloor).toBe(true);
+    expect(result.followUp.hasSample).toBe(false);
+    expect(result.cadence.hasSample).toBe(true);
+    expect(result.reEngagement.hasSample).toBe(true);
+
+    expect(typeof result.composite).toBe("number");
+    expect(result.caveats.followUpBelowFloor).toBe(true);
+    expect(result.components).toHaveLength(3);
+    expect(result.components.map((c) => c.key)).toEqual(["followUp", "cadence", "reEngagement"]);
+    expect(result.formulaVersion).toBe(2);
+    expect("responseVelocity" in result).toBe(false);
+
+    // Composite is scaled only over the components with a sample (cadence + re-engagement).
+    const availPoints = result.cadence.points + result.reEngagement.points;
+    const availMax = result.cadence.max + result.reEngagement.max;
+    expect(result.composite).toBe(Math.round((availPoints / availMax) * 100));
+  });
+});
+
+describe("computeReEngagement", () => {
+  const now = new Date("2026-07-26T00:00:00Z");
+
+  it("exposes its tuning constants", () => {
+    expect(SILENCE_THRESHOLD_DAYS).toBe(21);
+    expect(FAIRNESS_WINDOW_DAYS).toBe(7);
+    expect(REENGAGEMENT_MAX).toBe(30);
+    expect(FOLLOWUP_FLOOR).toBe(8);
+    expect(FORMULA_VERSION).toBe(2);
+  });
+
+  it("counts a deal that went silent (25-day gap) and was later re-engaged", () => {
+    const deals = [deal({ id: "d1" })];
+    const activities = [
+      // 30 days before now: silence onset = 30-ago + 21 = 9 days before now,
+      // which falls inside [now-30, now-7] -> qualifies.
+      activity({ id: "a1", dealId: "d1", occurredAt: "2026-06-26T00:00:00Z" }),
+      // 5 days before now: the later touch that broke the 25-day silence gap.
+      activity({ id: "a2", dealId: "d1", occurredAt: "2026-07-21T00:00:00Z" }),
+    ];
+    const result = computeReEngagement(deals, activities, OWNER, now);
+    expect(result.silentCount).toBe(1);
+    expect(result.reEngagedCount).toBe(1);
+    expect(result.points).toBe(30);
+    expect(result.hasSample).toBe(true);
+  });
+
+  it("counts a deal that went silent (40 days ago) and is still silent (trailing, no later touch)", () => {
+    const deals = [deal({ id: "d1" })];
+    const activities = [
+      // 40 days before now: onset = 40-ago + 21 = 19 days before now, inside [now-30, now-7].
+      activity({ id: "a1", dealId: "d1", occurredAt: "2026-06-16T00:00:00Z" }),
+    ];
+    const result = computeReEngagement(deals, activities, OWNER, now);
+    expect(result.silentCount).toBe(1);
+    expect(result.reEngagedCount).toBe(0);
+    expect(result.points).toBe(0);
+    expect(result.hasSample).toBe(true);
+  });
+
+  it("does not count a deal whose silence onset is too recent to be fair (inside the fairness window)", () => {
+    const deals = [deal({ id: "d1" })];
+    const activities = [
+      // 25 days before now: onset = 25-ago + 21 = 4 days before now, AFTER the
+      // fairness cutoff (now-7) -> not yet a fair chance to re-engage.
+      activity({ id: "a1", dealId: "d1", occurredAt: "2026-07-01T00:00:00Z" }),
+    ];
+    const result = computeReEngagement(deals, activities, OWNER, now);
+    expect(result.silentCount).toBe(0);
+    // Zero silent deals with active deals present scores the full max, not "excluded".
+    expect(result.points).toBe(30);
+    expect(result.hasSample).toBe(true);
+  });
+
+  it("has no sample when the owner has no active deals", () => {
+    const deals = [deal({ id: "d1", stage: "won" })];
+    const activities = [activity({ id: "a1", dealId: "d1", occurredAt: "2026-06-16T00:00:00Z" })];
+    const result = computeReEngagement(deals, activities, OWNER, now);
+    expect(result.hasSample).toBe(false);
+    expect(result.points).toBe(0);
+  });
+
+  it("excludes closed-lost deals from the denominator even with a qualifying silent gap", () => {
+    const deals = [
+      deal({ id: "d-lost", stage: "lost" }),
+      deal({ id: "d-active", stage: "qualified" }),
+    ];
+    const activities = [
+      // d-lost has a clearly qualifying silent gap, but is excluded by stage.
+      activity({ id: "a1", dealId: "d-lost", occurredAt: "2026-06-16T00:00:00Z" }),
+      // d-active has one recent touch, not yet silent.
+      activity({ id: "a2", dealId: "d-active", occurredAt: "2026-07-21T00:00:00Z" }),
+    ];
+    const result = computeReEngagement(deals, activities, OWNER, now);
+    expect(result.silentCount).toBe(0);
+    expect(result.reEngagedCount).toBe(0);
+    expect(result.points).toBe(30);
+    expect(result.hasSample).toBe(true);
   });
 });
 
@@ -231,16 +416,21 @@ describe("computeTeamPersistenceIndex", () => {
   });
 
   it("excludes reps with no computable score", () => {
-    const deals = [repDeal("d1", "rep1"), repDeal("d2", "rep2")];
-    // only rep1 has activity; rep2's deal has none -> rep2 not scored
+    // rep2's deal is closed-lost (not just quiet), so none of the three components
+    // apply to it; an open-but-untouched deal would still score full re-engagement
+    // (zero silent deals isn't "excluded"), so this uses a closed deal to test the
+    // genuinely-no-data case.
+    const deals = [repDeal("d1", "rep1"), deal({ id: "d2", owner_id: "rep2", stage: "lost" })];
     const t = computeTeamPersistenceIndex(deals, keptPair("d1", "2026-06-05"), { now: TEAM_NOW });
     expect(t.repCount).toBe(1);
     expect(t.range).toBeNull(); // <2 scored reps
   });
 
   it("returns null composite when no rep has data", () => {
+    // Closed-lost so re-engagement (which would otherwise score a full, untouched,
+    // open deal as "zero silent deals") doesn't give this rep a computable score.
     const t = computeTeamPersistenceIndex(
-      [deal({ id: "d1", owner_id: "rep1", stage: "qualified" })],
+      [deal({ id: "d1", owner_id: "rep1", stage: "lost" })],
       [],
       { now: TEAM_NOW },
     );
@@ -325,9 +515,12 @@ describe("computePerRepPersistence", () => {
   });
 
   it("sorts reps with no computable score last with null composite", () => {
+    // repZ's deal is closed-lost: an open-but-untouched deal would still score full
+    // re-engagement (zero silent deals isn't "excluded"), so this uses a closed deal
+    // to represent genuinely no data.
     const deals = [
       deal({ id: "d1", owner_id: "repA", stage: "qualified" }),
-      deal({ id: "d2", owner_id: "repZ", stage: "qualified" }),
+      deal({ id: "d2", owner_id: "repZ", stage: "lost" }),
     ];
     const rows = computePerRepPersistence(deals, [...kept("d1")], { now: NOW }); // repZ has no activity
     expect(rows[rows.length - 1].ownerId).toBe("repZ");
@@ -335,8 +528,17 @@ describe("computePerRepPersistence", () => {
   });
 
   it("nulls sub-component points when that sub-component has no sample", () => {
+    // 8 due-and-kept pairs (meets FOLLOWUP_FLOOR) so follow-up discipline actually
+    // has a sample to check.
     const deals = [deal({ id: "d1", owner_id: "repA", stage: "qualified" })];
-    const rows = computePerRepPersistence(deals, [...kept("d1")], { now: NOW });
+    const activities: Activity[] = [];
+    for (let i = 0; i < FOLLOWUP_FLOOR; i++) {
+      activities.push(
+        activity({ id: `due${i}`, dealId: "d1", occurredAt: dayOffset(3 * i), followUpDate: dayOffset(3 * i + 2).slice(0, 10) }),
+      );
+      activities.push(activity({ id: `kept${i}`, dealId: "d1", occurredAt: dayOffset(3 * i + 1), followUpDate: null }));
+    }
+    const rows = computePerRepPersistence(deals, activities, { now: NOW });
     expect(rows[0].followUpPoints).not.toBeNull(); // has a follow-up sample
   });
 });

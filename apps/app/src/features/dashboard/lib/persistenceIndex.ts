@@ -2,9 +2,9 @@
  * Persistence Index metric engine (beta).
  *
  * Rewards reps who keep working an account rather than dropping it after a
- * single touch. Two components ship in this slice, both scaled 0..max and
- * summed into a composite out of 100 over only the components that have a
- * sample; a third (response velocity) is a placeholder for a later slice.
+ * single touch. Three components ship: Follow-Up Discipline, Touch Cadence,
+ * and Re-engagement After Silence, each scaled 0..max and summed into a
+ * composite out of 100 over only the components that have a sample.
  */
 
 import type { Deal } from "@/features/pipeline/mockData";
@@ -17,6 +17,14 @@ export const WINDOW_DAYS = 30;
 export const FOLLOWUP_MAX = 40;
 export const CADENCE_MAX = 30;
 export const DAY_MS = 24 * 60 * 60 * 1000;
+export const REENGAGEMENT_MAX = 30;
+export const SILENCE_THRESHOLD_DAYS = 21;
+export const FAIRNESS_WINDOW_DAYS = 7;
+export const FOLLOWUP_FLOOR = 8;
+/** v1 = Follow-Up/Response-Velocity/Cadence. v2 drops Response Velocity
+ *  (permanently uncomputable without inbound capture) for Re-engagement After
+ *  Silence. SP-B will drive this and the parameters above from a config table. */
+export const FORMULA_VERSION = 2;
 
 // ── Follow-Up Discipline ─────────────────────────────────────────────────
 
@@ -26,6 +34,7 @@ export interface FollowUpResult {
   hasSample: boolean;
   completionRate: number | null;
   dueCount: number;
+  belowFloor: boolean;
 }
 
 /**
@@ -64,7 +73,7 @@ export function computeFollowUpDiscipline(
   }
 
   if (due.length === 0) {
-    return { points: 0, max: FOLLOWUP_MAX, hasSample: false, completionRate: null, dueCount: 0 };
+    return { points: 0, max: FOLLOWUP_MAX, hasSample: false, completionRate: null, dueCount: 0, belowFloor: false };
   }
 
   let onTime = 0;
@@ -77,12 +86,14 @@ export function computeFollowUpDiscipline(
   }
 
   const rate = onTime / due.length;
+  const belowFloor = due.length < FOLLOWUP_FLOOR;
   return {
     points: Math.round(rate * FOLLOWUP_MAX),
     max: FOLLOWUP_MAX,
-    hasSample: true,
+    hasSample: !belowFloor,
     completionRate: rate,
     dueCount: due.length,
+    belowFloor,
   };
 }
 
@@ -157,6 +168,92 @@ export function computeTouchCadence(
   };
 }
 
+// ── Re-engagement After Silence ──────────────────────────────────────────
+
+export interface ReEngagementResult {
+  points: number;
+  max: number;
+  hasSample: boolean;
+  rate: number | null;
+  silentCount: number;
+  reEngagedCount: number;
+}
+
+/**
+ * Scores whether a rep gets back in touch with deals that went quiet. A deal
+ * "goes silent" when SILENCE_THRESHOLD_DAYS pass with no logged activity. The
+ * denominator is active deals whose silence began inside the trailing window
+ * and at least FAIRNESS_WINDOW_DAYS ago (a just-quiet deal has not had a fair
+ * chance to be recovered); the numerator is how many then got a later touch.
+ * Zero silent deals (with active deals present) scores the full max, not
+ * "excluded". Reassignment mid-silence is NOT modeled client-side (SP-B).
+ */
+export function computeReEngagement(
+  deals: Deal[],
+  activities: Activity[],
+  ownerId: string,
+  now: Date,
+  windowDays: number = WINDOW_DAYS,
+): ReEngagementResult {
+  const nowMs = now.getTime();
+  const windowStartMs = nowMs - windowDays * DAY_MS;
+  const fairnessCutoffMs = nowMs - FAIRNESS_WINDOW_DAYS * DAY_MS;
+  const silenceMs = SILENCE_THRESHOLD_DAYS * DAY_MS;
+
+  const activeDeals = deals.filter(
+    (d) => d.owner_id === ownerId && d.stage !== "won" && d.stage !== "lost",
+  );
+  if (activeDeals.length === 0) {
+    return { points: 0, max: REENGAGEMENT_MAX, hasSample: false, rate: null, silentCount: 0, reEngagedCount: 0 };
+  }
+
+  const byDeal = new Map<string, number[]>();
+  for (const a of activities) {
+    const t = new Date(a.occurredAt).getTime();
+    if (t > nowMs) continue;
+    const g = byDeal.get(a.dealId);
+    if (g) g.push(t);
+    else byDeal.set(a.dealId, [t]);
+  }
+
+  let silentCount = 0;
+  let reEngagedCount = 0;
+  for (const d of activeDeals) {
+    const times = (byDeal.get(d.id) ?? []).slice().sort((x, y) => x - y);
+    if (times.length === 0) continue;
+
+    let latestOnset: number | null = null;
+    let latestReEngaged = false;
+    for (let i = 0; i < times.length; i++) {
+      const onset = times[i] + silenceMs;
+      const next = i + 1 < times.length ? times[i + 1] : null;
+      let reEngaged: boolean;
+      if (next === null) {
+        if (onset > nowMs) continue; // not yet silent
+        reEngaged = false;
+      } else if (next - times[i] > silenceMs) {
+        reEngaged = true; // a later touch broke the silence
+      } else {
+        continue; // no silence in this interval
+      }
+      if (onset < windowStartMs || onset > fairnessCutoffMs) continue; // not a qualifying onset
+      if (latestOnset === null || onset > latestOnset) {
+        latestOnset = onset;
+        latestReEngaged = reEngaged;
+      }
+    }
+    if (latestOnset === null) continue;
+    silentCount += 1;
+    if (latestReEngaged) reEngagedCount += 1;
+  }
+
+  if (silentCount === 0) {
+    return { points: REENGAGEMENT_MAX, max: REENGAGEMENT_MAX, hasSample: true, rate: null, silentCount: 0, reEngagedCount: 0 };
+  }
+  const rate = reEngagedCount / silentCount;
+  return { points: Math.round(rate * REENGAGEMENT_MAX), max: REENGAGEMENT_MAX, hasSample: true, rate, silentCount, reEngagedCount };
+}
+
 // ── Composite ──────────────────────────────────────────────────────────────
 
 export interface PersistenceOptions {
@@ -165,20 +262,31 @@ export interface PersistenceOptions {
   windowDays?: number;
 }
 
+export interface ComponentView {
+  key: "followUp" | "cadence" | "reEngagement";
+  label: string;
+  points: number;
+  max: number;
+  hasSample: boolean;
+  belowFloor?: boolean;
+}
+
 export interface PersistenceIndexResult {
   composite: number | null;
   followUp: FollowUpResult;
   cadence: CadenceResult;
-  responseVelocity: { comingSoon: true };
+  reEngagement: ReEngagementResult;
+  components: ComponentView[];
+  caveats: { followUpBelowFloor: boolean };
   windowDays: number;
   targetScore: number;
+  formulaVersion: number;
 }
 
 /**
  * The blended Persistence Index: a 0-100 composite scaled over whichever
- * sub-components have a sample in the trailing window (response velocity is
- * a placeholder for a later slice and never contributes points). Null when
- * no component has enough data to score.
+ * sub-components have a sample in the trailing window. Null when no
+ * component has enough data to score.
  */
 export function computePersistenceIndex(
   deals: Deal[],
@@ -191,25 +299,33 @@ export function computePersistenceIndex(
 
   const followUp = computeFollowUpDiscipline(deals, activities, opts.ownerId, windowStart, windowEnd);
   const cadence = computeTouchCadence(deals, activities, opts.ownerId, windowStart, windowEnd);
+  const reEngagement = computeReEngagement(deals, activities, opts.ownerId, windowEnd, windowDays);
+
+  const components: ComponentView[] = [
+    { key: "followUp", label: "Follow-up discipline", points: followUp.points, max: followUp.max, hasSample: followUp.hasSample, belowFloor: followUp.belowFloor },
+    { key: "cadence", label: "Touch cadence", points: cadence.points, max: cadence.max, hasSample: cadence.hasSample },
+    { key: "reEngagement", label: "Re-engagement after silence", points: reEngagement.points, max: reEngagement.max, hasSample: reEngagement.hasSample },
+  ];
 
   let availPoints = 0;
   let availMax = 0;
-  if (followUp.hasSample) {
-    availPoints += followUp.points;
-    availMax += followUp.max;
-  }
-  if (cadence.hasSample) {
-    availPoints += cadence.points;
-    availMax += cadence.max;
+  for (const c of components) {
+    if (c.hasSample) {
+      availPoints += c.points;
+      availMax += c.max;
+    }
   }
 
   return {
     composite: availMax > 0 ? Math.round((availPoints / availMax) * 100) : null,
     followUp,
     cadence,
-    responseVelocity: { comingSoon: true },
+    reEngagement,
+    components,
+    caveats: { followUpBelowFloor: followUp.belowFloor },
     windowDays,
     targetScore: TARGET_SCORE,
+    formulaVersion: FORMULA_VERSION,
   };
 }
 
