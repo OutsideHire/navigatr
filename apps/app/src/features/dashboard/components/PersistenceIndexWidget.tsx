@@ -1,8 +1,9 @@
 /**
  * PersistenceIndexWidget — beta Persistence Index. Reps see their own score
  * (Slice 1); managers/admins see the team-aggregate median (Slice 2). Same
- * layout, role-framed labels. Response Velocity is a "coming soon" row; the
- * bars are structured to accept peer-benchmark markers later.
+ * layout, role-framed labels. Component rows render from the result's
+ * `components` descriptor so new sub-components (e.g. Re-engagement After
+ * Silence) show up without touching this file.
  */
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
@@ -43,15 +44,6 @@ function Score({ composite, targetScore }: { composite: number; targetScore: num
   );
 }
 
-function ComingSoonRow() {
-  return (
-    <div className="flex items-center justify-between text-body-sm opacity-60">
-      <span className="text-text-default">Response velocity</span>
-      <span className="text-caption text-text-muted">Coming soon</span>
-    </div>
-  );
-}
-
 function WidgetButton({ onClick, children }: { onClick: () => void; children: ReactNode }) {
   return (
     <button
@@ -86,9 +78,9 @@ export function PersistenceIndexWidget() {
             <>
               <Score composite={t.composite} targetScore={t.targetScore} />
               <div className="flex flex-col gap-3">
-                {t.followUp.points != null && <Bar label="Follow-up discipline" points={t.followUp.points} max={t.followUp.max} />}
-                {t.cadence.points != null && <Bar label="Touch cadence" points={t.cadence.points} max={t.cadence.max} />}
-                <ComingSoonRow />
+                {t.components.filter((c) => c.hasSample).map((c) => (
+                  <Bar key={c.key} label={c.label} points={c.points} max={c.max} />
+                ))}
               </div>
               <p className="text-caption text-text-subtle">
                 {t.repCount} {t.repCount === 1 ? "rep" : "reps"}
@@ -114,9 +106,9 @@ export function PersistenceIndexWidget() {
           <>
             <Score composite={pi.composite} targetScore={pi.targetScore} />
             <div className="flex flex-col gap-3">
-              <Bar label="Follow-up discipline" points={pi.followUp.points} max={pi.followUp.max} />
-              <Bar label="Touch cadence" points={pi.cadence.points} max={pi.cadence.max} />
-              <ComingSoonRow />
+              {pi.components.filter((c) => c.hasSample).map((c) => (
+                <Bar key={c.key} label={c.label} points={c.points} max={c.max} />
+              ))}
             </div>
             <p className="text-caption text-text-subtle">
               {pi.followUp.completionRate != null
@@ -127,6 +119,11 @@ export function PersistenceIndexWidget() {
                 ? `${pi.cadence.medianTouchesPerWeek.toFixed(1)} touches/week across ${pi.cadence.activeDeals} active ${pi.cadence.activeDeals === 1 ? "deal" : "deals"}`
                 : "no active deals"}
             </p>
+            {pi.caveats.followUpBelowFloor && (
+              <p className="text-caption text-text-subtle">
+                Follow-up volume too low to score discipline; showing cadence and re-engagement only.
+              </p>
+            )}
           </>
         )}
       </WidgetButton>

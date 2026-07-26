@@ -1,13 +1,10 @@
 /**
  * PersistenceSubComponents: the "where your score comes from" breakdown for
- * the Persistence Index detail page. Three rows: Follow-Up Discipline and
- * Touch Cadence (real, with a peer-average tick), plus Response Velocity shown
- * as a labeled "coming soon" row (it needs the deferred inbound-capture system,
- * so it never contributes points today).
+ * the Persistence Index detail page. Renders one row per descriptor passed in
+ * (Follow-Up Discipline, Touch Cadence, Re-engagement After Silence), each
+ * with a peer-average tick when available.
  */
 import { Card } from "@/components/navigatr";
-import { cn } from "@/lib/utils";
-import { FOLLOWUP_MAX, CADENCE_MAX } from "../lib/persistenceIndex";
 
 function Row({
   label, points, max, peerPct,
@@ -46,30 +43,19 @@ function Row({
 }
 
 export function PersistenceSubComponents({
-  followUpPoints, cadencePoints, peerFollowUpPct, peerCadencePct,
+  rows, footnote,
 }: {
-  followUpPoints: number | null;
-  cadencePoints: number | null;
-  peerFollowUpPct: number | null;
-  peerCadencePct: number | null;
+  rows: { key: string; label: string; points: number | null; max: number; peerPct: number | null }[];
+  footnote?: string;
 }) {
   return (
     <Card padding="lg" shadow="sm">
       <div className="flex flex-col gap-4">
         <span className="text-body-sm font-medium text-text-default">Where your score comes from</span>
-        <Row label="Follow-up discipline" points={followUpPoints} max={FOLLOWUP_MAX} peerPct={peerFollowUpPct} />
-        <div className={cn("opacity-60")}>
-          <div className="mb-1 flex items-center gap-2 text-body-sm">
-            <span className="text-text-default">Response velocity</span>
-            <span className="rounded-radius-full border border-border-subtle px-2 py-0.5 text-caption text-text-muted">Coming soon</span>
-            <span className="text-caption text-text-muted">needs inbound capture</span>
-          </div>
-          <div className="h-2 rounded-radius-full bg-surface-sunken" aria-hidden />
-        </div>
-        <Row label="Touch cadence" points={cadencePoints} max={CADENCE_MAX} peerPct={peerCadencePct} />
-        <p className="text-caption text-text-subtle">
-          Score currently reflects the 2 components we can measure today; response velocity joins once inbound capture ships.
-        </p>
+        {rows.map((r) => (
+          <Row key={r.key} label={r.label} points={r.points} max={r.max} peerPct={r.peerPct} />
+        ))}
+        {footnote && <p className="text-caption text-text-subtle">{footnote}</p>}
       </div>
     </Card>
   );

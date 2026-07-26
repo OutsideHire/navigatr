@@ -57,7 +57,6 @@ describe("PersistenceIndexWidget", () => {
     role = "rep";
     render(<PersistenceIndexWidget />);
     expect(screen.getByText("82")).toBeInTheDocument();
-    expect(screen.getByText(/coming soon/i)).toBeInTheDocument();
   });
 
   it("rep empty state when composite is null", () => {
@@ -79,5 +78,44 @@ describe("PersistenceIndexWidget", () => {
     role = "manager"; team = { ...teamFull, composite: null, repCount: 0, range: null };
     render(<PersistenceIndexWidget />);
     expect(screen.getByText(/not enough data/i)).toBeInTheDocument();
+  });
+
+  it("never renders response velocity or coming soon text, for rep or manager", () => {
+    role = "rep";
+    const { rerender } = render(<PersistenceIndexWidget />);
+    expect(screen.queryByText(/response velocity/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
+
+    role = "manager";
+    rerender(<PersistenceIndexWidget />);
+    expect(screen.queryByText(/response velocity/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
+  });
+
+  it("rep sees a re-engagement after silence row when scored", () => {
+    role = "rep";
+    render(<PersistenceIndexWidget />);
+    expect(screen.getByText("Re-engagement after silence")).toBeInTheDocument();
+  });
+
+  it("manager sees a re-engagement after silence row when scored", () => {
+    role = "manager";
+    render(<PersistenceIndexWidget />);
+    expect(screen.getByText("Re-engagement after silence")).toBeInTheDocument();
+  });
+
+  it("shows a follow-up-below-floor caveat when the rep's follow-up volume is too low to score", () => {
+    role = "rep";
+    individual = {
+      ...indFull,
+      caveats: { followUpBelowFloor: true },
+      components: [
+        { key: "followUp", label: "Follow-up discipline", points: 34, max: 40, hasSample: false, belowFloor: true },
+        { key: "cadence", label: "Touch cadence", points: 24, max: 30, hasSample: true },
+        { key: "reEngagement", label: "Re-engagement after silence", points: 24, max: 30, hasSample: true },
+      ],
+    };
+    render(<PersistenceIndexWidget />);
+    expect(screen.getByText(/Follow-up volume too low to score discipline/i)).toBeInTheDocument();
   });
 });
