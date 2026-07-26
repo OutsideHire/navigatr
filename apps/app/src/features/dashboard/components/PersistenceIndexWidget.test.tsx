@@ -33,7 +33,13 @@ const indFull: PersistenceIndexResult = {
 const teamFull: TeamPersistenceIndexResult = {
   composite: 71,
   followUp: { points: 30, max: 40 }, cadence: { points: 22, max: 30 },
-  responseVelocity: { comingSoon: true }, repCount: 5, range: { min: 58, max: 88 },
+  reEngagement: { points: 20, max: 30 },
+  components: [
+    { key: "followUp", label: "Follow-up discipline", points: 30, max: 40, hasSample: true },
+    { key: "cadence", label: "Touch cadence", points: 22, max: 30, hasSample: true },
+    { key: "reEngagement", label: "Re-engagement after silence", points: 20, max: 30, hasSample: true },
+  ],
+  repCount: 5, range: { min: 58, max: 88 },
   windowDays: 30, targetScore: 75,
 };
 

@@ -67,8 +67,8 @@ beforeEach(() => {
   role = "rep";
   series = mkSeries(30);
   roster = [
-    { ownerId: "u1", composite: 82, followUpPoints: 34, cadencePoints: 24 },
-    { ownerId: "u2", composite: 60, followUpPoints: 20, cadencePoints: 18 },
+    { ownerId: "u1", composite: 82, followUpPoints: 34, cadencePoints: 24, reEngagementPoints: 22 },
+    { ownerId: "u2", composite: 60, followUpPoints: 20, cadencePoints: 18, reEngagementPoints: 14 },
   ];
   lastTargetOwner = undefined;
 });

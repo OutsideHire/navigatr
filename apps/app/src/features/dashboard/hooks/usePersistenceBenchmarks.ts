@@ -18,6 +18,7 @@ import {
 export interface PersistenceBenchmarks extends BenchmarkResult {
   followUpAvgPct: number | null;
   cadenceAvgPct: number | null;
+  reEngagementAvgPct: number | null;
   avgLabel: string;
 }
 
@@ -31,6 +32,7 @@ export function usePersistenceBenchmarks(): PersistenceBenchmarks {
       ...base,
       followUpAvgPct: sub.followUpAvgPct,
       cadenceAvgPct: sub.cadenceAvgPct,
+      reEngagementAvgPct: sub.reEngagementAvgPct,
       avgLabel: benchmarkAvgLabel(role),
     };
   }, [rows, role]);

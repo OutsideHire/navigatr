@@ -335,7 +335,8 @@ export interface TeamPersistenceIndexResult {
   composite: number | null;
   followUp: { points: number | null; max: number };
   cadence: { points: number | null; max: number };
-  responseVelocity: { comingSoon: true };
+  reEngagement: { points: number | null; max: number };
+  components: ComponentView[];
   repCount: number;
   range: { min: number; max: number } | null;
   windowDays: number;
@@ -360,11 +361,18 @@ export function computeTeamPersistenceIndex(
   const composites = scored.map((r) => r.composite as number);
   const fuPts = scored.filter((r) => r.followUp.hasSample).map((r) => r.followUp.points);
   const cadPts = scored.filter((r) => r.cadence.hasSample).map((r) => r.cadence.points);
+  const reEngPts = scored.filter((r) => r.reEngagement.hasSample).map((r) => r.reEngagement.points);
+  const teamComponents: ComponentView[] = [
+    { key: "followUp", label: "Follow-up discipline", points: fuPts.length ? Math.round(median(fuPts) as number) : 0, max: FOLLOWUP_MAX, hasSample: fuPts.length > 0 },
+    { key: "cadence", label: "Touch cadence", points: cadPts.length ? Math.round(median(cadPts) as number) : 0, max: CADENCE_MAX, hasSample: cadPts.length > 0 },
+    { key: "reEngagement", label: "Re-engagement after silence", points: reEngPts.length ? Math.round(median(reEngPts) as number) : 0, max: REENGAGEMENT_MAX, hasSample: reEngPts.length > 0 },
+  ];
   return {
     composite: composites.length ? Math.round(median(composites) as number) : null,
     followUp: { points: fuPts.length ? Math.round(median(fuPts) as number) : null, max: FOLLOWUP_MAX },
     cadence: { points: cadPts.length ? Math.round(median(cadPts) as number) : null, max: CADENCE_MAX },
-    responseVelocity: { comingSoon: true },
+    reEngagement: { points: reEngPts.length ? Math.round(median(reEngPts) as number) : null, max: REENGAGEMENT_MAX },
+    components: teamComponents,
     repCount: scored.length,
     range: composites.length >= 2 ? { min: Math.min(...composites), max: Math.max(...composites) } : null,
     windowDays,
@@ -445,6 +453,7 @@ export interface PerRepScore {
   composite: number | null;
   followUpPoints: number | null;
   cadencePoints: number | null;
+  reEngagementPoints: number | null;
 }
 
 /**
@@ -466,6 +475,7 @@ export function computePerRepPersistence(
       composite: r.composite,
       followUpPoints: r.followUp.hasSample ? r.followUp.points : null,
       cadencePoints: r.cadence.hasSample ? r.cadence.points : null,
+      reEngagementPoints: r.reEngagement.hasSample ? r.reEngagement.points : null,
     };
   });
   return rows.sort((a, b) => {
@@ -512,6 +522,7 @@ export function persistenceBenchmarks(composites: (number | null)[]): BenchmarkR
 export interface SubComponentPeerAverages {
   followUpAvgPct: number | null;
   cadenceAvgPct: number | null;
+  reEngagementAvgPct: number | null;
   repCount: number;
 }
 
@@ -519,9 +530,11 @@ export interface SubComponentPeerAverages {
 export function subComponentPeerAverages(rows: PerRepScore[]): SubComponentPeerAverages {
   const fu = rows.map((r) => r.followUpPoints).filter((p): p is number => p != null);
   const cad = rows.map((r) => r.cadencePoints).filter((p): p is number => p != null);
+  const reEng = rows.map((r) => r.reEngagementPoints).filter((p): p is number => p != null);
   return {
     followUpAvgPct: fu.length ? Math.round(((median(fu) as number) / FOLLOWUP_MAX) * 100) : null,
     cadenceAvgPct: cad.length ? Math.round(((median(cad) as number) / CADENCE_MAX) * 100) : null,
+    reEngagementAvgPct: reEng.length ? Math.round(((median(reEng) as number) / REENGAGEMENT_MAX) * 100) : null,
     repCount: rows.filter((r) => r.composite != null).length,
   };
 }

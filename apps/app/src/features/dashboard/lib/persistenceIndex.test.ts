@@ -7,6 +7,7 @@ import {
   computeTeamPersistenceIndex,
   computePersistenceHistory,
   computePerRepPersistence,
+  subComponentPeerAverages,
   historyDelta,
   RANGE_PRESETS,
   SILENCE_THRESHOLD_DAYS,
@@ -15,6 +16,7 @@ import {
   FOLLOWUP_FLOOR,
   FORMULA_VERSION,
 } from "./persistenceIndex";
+import type { PerRepScore } from "./persistenceIndex";
 import type { Deal, DealStage } from "@/features/pipeline/mockData";
 import type { Activity } from "@/features/activities/mockData";
 
@@ -412,7 +414,14 @@ describe("computeTeamPersistenceIndex", () => {
     expect(t.composite).not.toBeNull();
     expect(t.range).not.toBeNull();
     expect(t.range!.min).toBeLessThanOrEqual(t.range!.max);
-    expect(t.responseVelocity.comingSoon).toBe(true);
+    expect("responseVelocity" in t).toBe(false);
+    // Both reps have a single recent touch and no qualifying silence, so
+    // re-engagement scores a real, non-null median.
+    expect(t.reEngagement.points).not.toBeNull();
+    expect(typeof t.reEngagement.points).toBe("number");
+    expect(t.reEngagement.max).toBe(REENGAGEMENT_MAX);
+    expect(t.components).toHaveLength(3);
+    expect(t.components.map((c) => c.key)).toEqual(["followUp", "cadence", "reEngagement"]);
   });
 
   it("excludes reps with no computable score", () => {
@@ -540,5 +549,40 @@ describe("computePerRepPersistence", () => {
     }
     const rows = computePerRepPersistence(deals, activities, { now: NOW });
     expect(rows[0].followUpPoints).not.toBeNull(); // has a follow-up sample
+  });
+
+  it("carries reEngagementPoints as a number when the rep has a sample, null otherwise", () => {
+    const deals = [
+      deal({ id: "d1", owner_id: "repA", stage: "qualified" }),
+      deal({ id: "d2", owner_id: "repZ", stage: "lost" }),
+    ];
+    // repA has a recent touch on an open deal -> no qualifying silence -> a real
+    // (non-null) re-engagement sample. repZ's only deal is closed-lost, so none
+    // of the three components apply -> reEngagementPoints stays null.
+    const rows = computePerRepPersistence(deals, [...kept("d1")], { now: NOW });
+    const repA = rows.find((r) => r.ownerId === "repA")!;
+    const repZ = rows.find((r) => r.ownerId === "repZ")!;
+    expect(typeof repA.reEngagementPoints).toBe("number");
+    expect(repZ.reEngagementPoints).toBeNull();
+  });
+});
+
+describe("subComponentPeerAverages (re-engagement)", () => {
+  const rep = (
+    composite: number | null,
+    fu: number | null = null,
+    cad: number | null = null,
+    reEng: number | null = null,
+  ): PerRepScore => ({ ownerId: "x", composite, followUpPoints: fu, cadencePoints: cad, reEngagementPoints: reEng });
+
+  it("medians reEngagementPoints as a percentage of REENGAGEMENT_MAX", () => {
+    const r = subComponentPeerAverages([rep(70, 40, 30, 24), rep(60, 20, 15, 18), rep(null, null, null, null)]);
+    // median(24, 18) = 21 -> 21/30 = 70%
+    expect(r.reEngagementAvgPct).toBe(70);
+    expect(r.repCount).toBe(2);
+  });
+
+  it("null when no rep has a re-engagement sample", () => {
+    expect(subComponentPeerAverages([rep(70, 40, 30, null)]).reEngagementAvgPct).toBeNull();
   });
 });
