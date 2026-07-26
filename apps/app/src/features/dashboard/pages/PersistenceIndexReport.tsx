@@ -3,8 +3,10 @@
  * trend over a selectable range, with a volume sub-chart, benchmark
  * reference lines (peer average + top decile/performer where available),
  * a sub-component breakdown card, and a "this period" stats grid. Rep sees
- * their own series; manager/admin sees the team median. The server-snapshot
- * pipeline is a later slice.
+ * their own series; manager/admin sees the team median. The daily company
+ * average / top decile reference lines come from the SP-B nightly snapshot
+ * pipeline (usePersistenceCompanySeries), falling back to the static SP-A
+ * benchmark until enough snapshots accrue.
  */
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
@@ -15,6 +17,7 @@ import { usePersistenceHistory } from "../hooks/usePersistenceHistory";
 import { usePerRepPersistence } from "../hooks/usePerRepPersistence";
 import { useOrgMemberNames } from "@/features/dashboard/hooks/useOrgMemberNames";
 import { usePersistenceBenchmarks } from "../hooks/usePersistenceBenchmarks";
+import { usePersistenceCompanySeries } from "../hooks/usePersistenceCompanySeries";
 import { usePersistenceIndex } from "../hooks/usePersistenceIndex";
 import { useTeamPersistenceIndex } from "../hooks/useTeamPersistenceIndex";
 import {
@@ -31,21 +34,54 @@ import {
 import { PersistenceSubComponents } from "../components/PersistenceSubComponents";
 import { PersistenceStatsGrid } from "../components/PersistenceStatsGrid";
 
+/** Point path (no fill), broken into `M`/`L` commands. */
+function buildLine(pts: { x: number; y: number }[]): string {
+  return pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+}
+
 /** Line path plus its area-fill path (same points, closed down to the baseline). */
 function buildLineAndArea(pts: { x: number; y: number }[], baselineY: number): { line: string; area: string } {
-  const line = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const line = buildLine(pts);
   const first = pts[0];
   const last = pts[pts.length - 1];
   const area = `${line} L${last.x.toFixed(1)},${baselineY.toFixed(1)} L${first.x.toFixed(1)},${baselineY.toFixed(1)} Z`;
   return { line, area };
 }
 
+/**
+ * Per-date reference series (e.g. the daily company average / top decile
+ * lines) plotted with the same x/y scale as the main composite line, broken
+ * into segments across null gaps (days with no snapshot yet).
+ */
+function buildDailyLineSegments(values: (number | null)[], x: (i: number) => number, y: (v: number) => number): string[] {
+  const segments: string[] = [];
+  let curPts: { x: number; y: number }[] = [];
+  values.forEach((v, i) => {
+    if (v == null) {
+      if (curPts.length > 1) segments.push(buildLine(curPts));
+      curPts = [];
+      return;
+    }
+    curPts.push({ x: x(i), y: y(v) });
+  });
+  if (curPts.length > 1) segments.push(buildLine(curPts));
+  return segments;
+}
+
 function TrendChart({
   points,
   referenceLines,
+  dailyReferenceLines,
 }: {
   points: { composite: number | null }[];
   referenceLines: { value: number; label: string }[];
+  /**
+   * Daily company-wide reference lines (SP-B), one polyline per series
+   * aligned to `points` by index. Takes precedence over the flat
+   * `referenceLines` when present (the SP-A static benchmark is the
+   * accrual-period fallback, passed via `referenceLines` instead).
+   */
+  dailyReferenceLines?: { label: string; values: (number | null)[] }[];
 }) {
   const W = 640;
   const H = 180;
@@ -75,6 +111,11 @@ function TrendChart({
     areas.push(area);
   }
 
+  const dailySegments = (dailyReferenceLines ?? []).map((dl) => ({
+    label: dl.label,
+    segments: buildDailyLineSegments(dl.values, x, y),
+  }));
+
   return (
     <svg
       viewBox={`0 0 ${W} ${H}`}
@@ -83,19 +124,35 @@ function TrendChart({
       role="img"
       aria-label="Persistence index trend"
     >
-      {referenceLines.map((r, i) => (
-        <line
-          key={i}
-          x1={0}
-          y1={y(r.value)}
-          x2={W}
-          y2={y(r.value)}
-          stroke="currentColor"
-          strokeDasharray="4 4"
-          className="text-border-strong"
-          strokeWidth={1}
-        />
-      ))}
+      {dailyReferenceLines && dailyReferenceLines.length > 0
+        ? dailySegments.map((dl, di) =>
+            dl.segments.map((d, si) => (
+              <path
+                key={`daily-${di}-${si}`}
+                d={d}
+                data-reference-label={dl.label}
+                fill="none"
+                stroke="currentColor"
+                strokeDasharray="4 4"
+                className="text-border-strong"
+                strokeWidth={1}
+                vectorEffect="non-scaling-stroke"
+              />
+            )),
+          )
+        : referenceLines.map((r, i) => (
+            <line
+              key={i}
+              x1={0}
+              y1={y(r.value)}
+              x2={W}
+              y2={y(r.value)}
+              stroke="currentColor"
+              strokeDasharray="4 4"
+              className="text-border-strong"
+              strokeWidth={1}
+            />
+          ))}
       {areas.map((d, i) => (
         <path key={`area-${i}`} d={d} stroke="none" fill="currentColor" fillOpacity={0.08} className="text-brand-primary" />
       ))}
@@ -185,6 +242,9 @@ export function PersistenceIndexReport() {
   const own = usePersistenceIndex();
   const team = useTeamPersistenceIndex();
   const bench = usePersistenceBenchmarks();
+  // Reps never render peer benchmarks (strategy "solo"), so skip the RPC for them.
+  const companySeriesQuery = usePersistenceCompanySeries(rangeDays, bench.strategy !== "solo");
+  const companySeries = companySeriesQuery.data ?? [];
 
   const scored = points.filter((p) => p.composite != null);
   const current = scored.length ? (scored[scored.length - 1].composite as number) : null;
@@ -221,6 +281,41 @@ export function PersistenceIndexReport() {
     ? [{ value: bench.peerAvg as number, label: bench.avgLabel }, ...(topValue != null ? [{ value: topValue, label: topLabel }] : [])]
     : [{ value: TARGET_SCORE, label: "Target" }];
   const stats = persistenceStats(points, bench.peerAvg);
+
+  // SP-B: once at least 2 dated nightly snapshots have accrued, replace the
+  // flat SP-A static benchmark with real daily company-wide reference lines
+  // (a beta simplification vs SP-A's team-scoped static benchmark, since the
+  // snapshot pipeline aggregates at the org level, not per-team).
+  const useDailyLines = showBenchmarks && companySeries.filter((p) => p.median != null).length >= 2;
+  const dateToIndex = React.useMemo(() => new Map(points.map((p, i) => [p.date, i] as const)), [points]);
+  const dailyMedianValues = React.useMemo(() => {
+    const arr: (number | null)[] = new Array(points.length).fill(null);
+    companySeries.forEach((row) => {
+      const idx = dateToIndex.get(row.date);
+      if (idx != null) arr[idx] = row.median;
+    });
+    return arr;
+  }, [companySeries, dateToIndex, points.length]);
+  const dailyP90Values = React.useMemo(() => {
+    const arr: (number | null)[] = new Array(points.length).fill(null);
+    companySeries.forEach((row) => {
+      const idx = dateToIndex.get(row.date);
+      if (idx != null) arr[idx] = row.p90;
+    });
+    return arr;
+  }, [companySeries, dateToIndex, points.length]);
+  const dailyReferenceLines = useDailyLines
+    ? [
+        { label: "Company average", values: dailyMedianValues },
+        { label: "Top decile", values: dailyP90Values },
+      ]
+    : undefined;
+  const companyMedianLatest = [...companySeries].reverse().find((p) => p.median != null)?.median ?? null;
+  const companyP90Latest = [...companySeries].reverse().find((p) => p.p90 != null)?.p90 ?? null;
+  const chartAvgLabel = useDailyLines ? "Company average" : bench.avgLabel;
+  const chartAvgValue = useDailyLines ? companyMedianLatest : bench.peerAvg;
+  const chartTopLabel = useDailyLines ? "Top decile" : topLabel;
+  const chartTopValue = useDailyLines ? companyP90Latest : topValue;
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-4 sm:px-6 sm:py-6">
@@ -291,21 +386,21 @@ export function PersistenceIndexReport() {
                 </div>
 
                 <div className="text-brand-primary">
-                  <TrendChart points={points} referenceLines={referenceLines} />
+                  <TrendChart points={points} referenceLines={referenceLines} dailyReferenceLines={dailyReferenceLines} />
                 </div>
                 {showBenchmarks && (
                   <div className="flex flex-wrap items-center gap-3 text-caption text-text-muted">
                     <span className="inline-flex items-center gap-1.5">
                       <span className="h-1.5 w-1.5 rounded-full bg-brand-primary" aria-hidden /> You {current}
                     </span>
-                    {bench.peerAvg != null && (
+                    {chartAvgValue != null && (
                       <span className="inline-flex items-center gap-1.5">
-                        <span className="h-1.5 w-1.5 rounded-full bg-text-muted" aria-hidden /> {bench.avgLabel} {bench.peerAvg}
+                        <span className="h-1.5 w-1.5 rounded-full bg-text-muted" aria-hidden /> {chartAvgLabel} {chartAvgValue}
                       </span>
                     )}
-                    {topValue != null && (
+                    {chartTopValue != null && (
                       <span className="inline-flex items-center gap-1.5">
-                        <span className="h-1.5 w-1.5 rounded-full bg-text-muted" aria-hidden /> {topLabel} {topValue}
+                        <span className="h-1.5 w-1.5 rounded-full bg-text-muted" aria-hidden /> {chartTopLabel} {chartTopValue}
                       </span>
                     )}
                   </div>

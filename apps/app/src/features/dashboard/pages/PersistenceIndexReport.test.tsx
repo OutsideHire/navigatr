@@ -49,6 +49,13 @@ let teamIndex: any = {
 };
 vi.mock("../hooks/useTeamPersistenceIndex", () => ({ useTeamPersistenceIndex: () => teamIndex }));
 
+// SP-B daily company-series: default empty so existing tests exercise the
+// unchanged SP-A static-benchmark fallback path.
+let companySeriesData: { date: string; median: number | null; p90: number | null; repCount: number }[] = [];
+vi.mock("../hooks/usePersistenceCompanySeries", () => ({
+  usePersistenceCompanySeries: () => ({ data: companySeriesData }),
+}));
+
 function mkSeries(n: number, base = 60): PersistencePoint[] {
   return Array.from({ length: n }, (_, i) => ({
     date: `2026-06-${String((i % 28) + 1).padStart(2, "0")}`,
@@ -74,6 +81,7 @@ beforeEach(() => {
     { ownerId: "u2", composite: 60, followUpPoints: 20, cadencePoints: 18, reEngagementPoints: 14, followUpBelowFloor: false },
   ];
   lastTargetOwner = undefined;
+  companySeriesData = [];
 });
 
 describe("PersistenceIndexReport", () => {
@@ -159,5 +167,41 @@ describe("PersistenceIndexReport", () => {
     expect(back).toBeInTheDocument();
     fireEvent.click(back);
     expect(screen.getByText(/by rep/i)).toBeInTheDocument(); // roster returns
+  });
+
+  it("uses the daily company-average + top-decile lines once the snapshot series has accrued", () => {
+    role = "manager";
+    // Dates align with the default mkSeries fixture ("2026-06-01", "2026-06-02", ...).
+    companySeriesData = [
+      { date: "2026-06-01", median: 55, p90: 92, repCount: 4 },
+      { date: "2026-06-02", median: 58, p90: 94, repCount: 4 },
+    ];
+    renderReport();
+    expect(screen.getByText(/company average/i)).toBeInTheDocument();
+    expect(screen.getByText(/top decile/i)).toBeInTheDocument();
+  });
+
+  it("falls back to the existing static SP-A benchmark when fewer than 2 dated points exist", () => {
+    role = "manager";
+    companySeriesData = [{ date: "2026-06-01", median: 55, p90: 92, repCount: 4 }]; // only 1 point
+    renderReport();
+    expect(screen.getByText(/team average/i)).toBeInTheDocument();
+    expect(screen.queryByText(/company average/i)).toBeNull();
+    expect(screen.queryByText(/top decile/i)).toBeNull();
+  });
+
+  it("drops snapshot dates outside the chart range without throwing", () => {
+    role = "manager";
+    // Two in-range dates plus one that is not in the history series: the
+    // out-of-range point must be silently dropped (the date-to-index miss
+    // branch), not throw or mis-plot, and the daily lines still render.
+    companySeriesData = [
+      { date: "2026-06-01", median: 55, p90: 92, repCount: 4 },
+      { date: "2026-06-02", median: 58, p90: 94, repCount: 4 },
+      { date: "2099-01-01", median: 60, p90: 95, repCount: 4 }, // not in the history points
+    ];
+    expect(() => renderReport()).not.toThrow();
+    expect(screen.getByText(/company average/i)).toBeInTheDocument();
+    expect(screen.getByText(/top decile/i)).toBeInTheDocument();
   });
 });
