@@ -41,6 +41,7 @@
     "../../supabase/functions/_shared/calendarProviders/google.ts",
     "../../supabase/functions/_shared/calendarProviders/microsoft.ts",
     "../../supabase/functions/_shared/coverage/config.ts",
-    "../../supabase/functions/_shared/coverage/score.ts"
+    "../../supabase/functions/_shared/coverage/score.ts",
+    "../../supabase/functions/_shared/persistence/score.ts"
   ]
 }
