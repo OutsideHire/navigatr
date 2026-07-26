@@ -20,6 +20,9 @@ import { useTeamPersistenceIndex } from "../hooks/useTeamPersistenceIndex";
 import {
   RANGE_PRESETS,
   TARGET_SCORE,
+  FOLLOWUP_MAX,
+  CADENCE_MAX,
+  REENGAGEMENT_MAX,
   historyDelta,
   persistenceStats,
   type RangeKey,
@@ -198,6 +201,11 @@ export function PersistenceIndexReport() {
     : isManager
       ? team.cadence.points
       : own?.cadence.hasSample ? own.cadence.points : null;
+  const subReEngagement = selectedRep
+    ? selectedRow?.reEngagementPoints ?? null
+    : isManager
+      ? team.reEngagement.points
+      : own?.reEngagement.hasSample ? own.reEngagement.points : null;
   const showBenchmarks = bench.strategy !== "solo";
   const topLabel = bench.strategy === "top-performer" ? "Top performer" : "Top 10%";
   const topValue = bench.topDecile ?? bench.topPerformer;
@@ -306,10 +314,12 @@ export function PersistenceIndexReport() {
         {current != null && (
           <>
             <PersistenceSubComponents
-              followUpPoints={subFollowUp}
-              cadencePoints={subCadence}
-              peerFollowUpPct={showBenchmarks ? bench.followUpAvgPct : null}
-              peerCadencePct={showBenchmarks ? bench.cadenceAvgPct : null}
+              rows={[
+                { key: "followUp", label: "Follow-up discipline", points: subFollowUp, max: FOLLOWUP_MAX, peerPct: showBenchmarks ? bench.followUpAvgPct : null },
+                { key: "cadence", label: "Touch cadence", points: subCadence, max: CADENCE_MAX, peerPct: showBenchmarks ? bench.cadenceAvgPct : null },
+                { key: "reEngagement", label: "Re-engagement after silence", points: subReEngagement, max: REENGAGEMENT_MAX, peerPct: showBenchmarks ? bench.reEngagementAvgPct : null },
+              ]}
+              footnote={own?.caveats.followUpBelowFloor ? "Follow-up volume too low to score discipline; showing cadence and re-engagement only." : undefined}
             />
             <PersistenceStatsGrid
               stats={stats}

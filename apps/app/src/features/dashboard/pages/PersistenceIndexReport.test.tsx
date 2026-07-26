@@ -36,6 +36,8 @@ let ownIndex: any = {
   composite: 70,
   followUp: { points: 30, max: 40, hasSample: true },
   cadence: { points: 20, max: 30, hasSample: true },
+  reEngagement: { points: 21, max: 30, hasSample: true },
+  caveats: { followUpBelowFloor: false },
 };
 vi.mock("../hooks/usePersistenceIndex", () => ({ usePersistenceIndex: () => ownIndex }));
 
@@ -43,6 +45,7 @@ let teamIndex: any = {
   composite: 68,
   followUp: { points: 28, max: 40 },
   cadence: { points: 19, max: 30 },
+  reEngagement: { points: 17, max: 30 },
 };
 vi.mock("../hooks/useTeamPersistenceIndex", () => ({ useTeamPersistenceIndex: () => teamIndex }));
 
