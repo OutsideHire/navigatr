@@ -17,8 +17,8 @@ function iso(daysAgo: number): string {
 // Rep-3: owns no deals at all -> no sampled component -> composite null.
 // (Exact values pinned by direct scoreRep() computation against this fixture.)
 const deals: ScoreDeal[] = [
-  { id: "d1", owner_id: "rep-1", stage: "open" },
-  { id: "d2", owner_id: "rep-2", stage: "open" },
+  { id: "d1", owner_id: "rep-1", stage: "open", owner_changed_at: null, has_future_appointment: false },
+  { id: "d2", owner_id: "rep-2", stage: "open", owner_changed_at: null, has_future_appointment: false },
 ];
 const activities: ScoreActivity[] = [
   { dealId: "d1", occurredAt: iso(2), followUpDate: null },

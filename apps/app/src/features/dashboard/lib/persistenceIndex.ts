@@ -186,7 +186,14 @@ export interface ReEngagementResult {
  * and at least FAIRNESS_WINDOW_DAYS ago (a just-quiet deal has not had a fair
  * chance to be recovered); the numerator is how many then got a later touch.
  * Zero silent deals (with active deals present) scores the full max, not
- * "excluded". Reassignment mid-silence is NOT modeled client-side (SP-B).
+ * "excluded". A deal with a future-dated appointment, or reassigned within
+ * the trailing `windowDays`, is excluded from the denominator entirely
+ * (addendum 3.5): it never had a fair chance to be judged silent.
+ *
+ * Counts one episode per deal: for each deal we dedupe to its most recent
+ * qualifying silence onset (see the loop below), so a deal that went silent
+ * and recovered more than once in the window still contributes exactly one
+ * entry to silentCount/reEngagedCount, not one per episode (addendum 3.8).
  */
 export function computeReEngagement(
   deals: Deal[],
@@ -199,6 +206,7 @@ export function computeReEngagement(
   const windowStartMs = nowMs - windowDays * DAY_MS;
   const fairnessCutoffMs = nowMs - FAIRNESS_WINDOW_DAYS * DAY_MS;
   const silenceMs = SILENCE_THRESHOLD_DAYS * DAY_MS;
+  const reassignLookbackMs = nowMs - windowDays * DAY_MS;
 
   const activeDeals = deals.filter(
     (d) => d.owner_id === ownerId && d.stage !== "won" && d.stage !== "lost",
@@ -219,6 +227,12 @@ export function computeReEngagement(
   let silentCount = 0;
   let reEngagedCount = 0;
   for (const d of activeDeals) {
+    // Addendum 3.5 exclusions: a future-dated appointment or a reassignment
+    // within the trailing lookback means the deal never had a fair chance
+    // to be judged silent, so it drops out of the denominator entirely.
+    if (d.has_future_appointment === true) continue;
+    if (d.owner_changed_at && new Date(d.owner_changed_at).getTime() > reassignLookbackMs) continue;
+
     const times = (byDeal.get(d.id) ?? []).slice().sort((x, y) => x - y);
     if (times.length === 0) continue;
 
@@ -273,6 +287,10 @@ export interface ComponentView {
 
 export interface PersistenceIndexResult {
   composite: number | null;
+  /** True when composite is null because follow-up discipline is below the
+   *  volume floor (see caveats.followUpBelowFloor). The composite is NOT
+   *  rescaled over the remaining components in that case; it is null. */
+  insufficientData: boolean;
   followUp: FollowUpResult;
   cadence: CadenceResult;
   reEngagement: ReEngagementResult;
@@ -316,8 +334,19 @@ export function computePersistenceIndex(
     }
   }
 
+  // Below the volume floor, the composite is NOT rescaled over the
+  // remaining components; it is forced to null and flagged insufficientData
+  // (addendum 4.3 / R-01). Component points themselves are untouched so a
+  // /60 partial can still be displayed.
+  const composite = followUp.belowFloor
+    ? null
+    : availMax > 0
+      ? Math.round((availPoints / availMax) * 100)
+      : null;
+
   return {
-    composite: availMax > 0 ? Math.round((availPoints / availMax) * 100) : null,
+    composite,
+    insufficientData: followUp.belowFloor,
     followUp,
     cadence,
     reEngagement,

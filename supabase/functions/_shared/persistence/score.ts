@@ -15,6 +15,14 @@ export interface ScoreDeal {
   id: string;
   owner_id: string | null;
   stage: string;
+  /** Timestamp of the last owner reassignment; null if never reassigned.
+   *  Re-engagement addendum 3.5: a deal reassigned within the trailing
+   *  windowDays is excluded from the re-engagement denominator. */
+  owner_changed_at: string | null;
+  /** Whether the deal has a scheduled_appointments row with
+   *  status = 'scheduled' and start_at in the future. Re-engagement
+   *  addendum 3.5: such a deal is excluded from the denominator. */
+  has_future_appointment: boolean;
 }
 
 export interface ScoreActivity {
@@ -49,6 +57,10 @@ export const DEFAULT_SCORE_PARAMS: ScoreParams = {
 
 export interface RepScore {
   composite: number | null;
+  /** True when composite is null because follow-up discipline is below the
+   *  volume floor (see followupBelowFloor). The composite is NOT rescaled
+   *  over the remaining components in that case; it is simply null. */
+  insufficientData: boolean;
   followupPoints: number;
   followupBelowFloor: boolean;
   followupDueCount: number;
@@ -204,6 +216,12 @@ interface ReEngagementResult {
   reEngagedCount: number;
 }
 
+/**
+ * Counts one episode per deal: for each deal we dedupe to its most recent
+ * qualifying silence onset (see the loop below), so a deal that went silent
+ * and recovered more than once in the window still contributes exactly one
+ * entry to silentCount/reEngagedCount, not one per episode (addendum 3.8).
+ */
 function computeReEngagement(
   deals: ScoreDeal[],
   activities: ScoreActivity[],
@@ -215,6 +233,7 @@ function computeReEngagement(
   const windowStartMs = nowMs - params.windowDays * DAY_MS;
   const fairnessCutoffMs = nowMs - params.fairnessWindowDays * DAY_MS;
   const silenceMs = params.silenceThresholdDays * DAY_MS;
+  const reassignLookbackMs = nowMs - params.windowDays * DAY_MS;
 
   const activeDeals = deals.filter(
     (d) => d.owner_id === ownerId && d.stage !== "won" && d.stage !== "lost",
@@ -235,6 +254,12 @@ function computeReEngagement(
   let silentCount = 0;
   let reEngagedCount = 0;
   for (const d of activeDeals) {
+    // Addendum 3.5 exclusions: a future-dated appointment or a reassignment
+    // within the trailing lookback means the deal never had a fair chance
+    // to be judged silent, so it drops out of the denominator entirely.
+    if (d.has_future_appointment === true) continue;
+    if (d.owner_changed_at && new Date(d.owner_changed_at).getTime() > reassignLookbackMs) continue;
+
     const times = (byDeal.get(d.id) ?? []).slice().sort((x, y) => x - y);
     if (times.length === 0) continue;
 
@@ -309,8 +334,19 @@ export function scoreRep(
     }
   }
 
+  // Below the volume floor, the composite is NOT rescaled over the
+  // remaining components; it is forced to null and flagged insufficientData
+  // (addendum 4.3 / R-01). Component points themselves are untouched so a
+  // /60 partial can still be displayed.
+  const composite = followUp.belowFloor
+    ? null
+    : availMax > 0
+      ? Math.round((availPoints / availMax) * 100)
+      : null;
+
   return {
-    composite: availMax > 0 ? Math.round((availPoints / availMax) * 100) : null,
+    composite,
+    insufficientData: followUp.belowFloor,
     followupPoints: followUp.points,
     followupBelowFloor: followUp.belowFloor,
     followupDueCount: followUp.dueCount,

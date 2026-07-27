@@ -103,6 +103,17 @@ export interface Deal {
   timeToLostCalendarDays?: number | null;
   /** ICP industry for cohort filtering (deals.industry). */
   industry?: string | null;
+  /** Timestamp of the last owner reassignment (trigger-stamped when
+   *  owner_id changes; Persistence Index Wave 1 addendum). Null for deals
+   *  never reassigned or created before the column existed. Optional here
+   *  since most Deal consumers don't need it; the Persistence Index
+   *  re-engagement scoring reads it to exclude recently-reassigned deals. */
+  owner_changed_at?: string | null;
+  /** Whether this deal has a scheduled_appointments row with
+   *  status = 'scheduled' and start_at in the future (Persistence Index
+   *  Wave 1 addendum). Populated by a small hook, not a deals column.
+   *  Optional; missing/undefined is treated as false. */
+  has_future_appointment?: boolean;
 }
 
 // Static "today" so subsequent renders don't shift cards' relative dates.

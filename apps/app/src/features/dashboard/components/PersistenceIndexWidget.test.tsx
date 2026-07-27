@@ -19,6 +19,7 @@ vi.mock("@/features/auth/useProfile", () => ({ useProfile: () => ({ data: { role
 
 const indFull: PersistenceIndexResult = {
   composite: 82,
+  insufficientData: false,
   followUp: { points: 34, max: 40, hasSample: true, completionRate: 0.85, dueCount: 12, belowFloor: false },
   cadence: { points: 24, max: 30, hasSample: true, medianTouchesPerWeek: 3.1, activeDeals: 7 },
   reEngagement: { points: 24, max: 30, hasSample: true, rate: 0.8, silentCount: 5, reEngagedCount: 4 },

@@ -45,6 +45,8 @@ function deal(o: Partial<Deal> & { id: string }): Deal {
     owner_id: o.owner_id === undefined ? OWNER : o.owner_id,
     lostReasonCategory: null,
     lostReasonNotes: null,
+    owner_changed_at: o.owner_changed_at,
+    has_future_appointment: o.has_future_appointment,
   };
 }
 
@@ -275,7 +277,7 @@ describe("computePersistenceIndex", () => {
     expect(result.composite).toBe(Math.round((result.followUp.points / result.followUp.max) * 100));
   });
 
-  it("blends a composite from cadence + re-engagement alone when follow-up is below the volume floor", () => {
+  it("forces a null composite (not a rescaled cadence + re-engagement blend) when follow-up is below the volume floor", () => {
     const deals = [
       deal({ id: "d1", owner_id: "rep-floor" }),
       deal({ id: "d2", owner_id: "rep-floor" }),
@@ -295,20 +297,35 @@ describe("computePersistenceIndex", () => {
     expect(result.followUp.dueCount).toBe(3);
     expect(result.followUp.belowFloor).toBe(true);
     expect(result.followUp.hasSample).toBe(false);
+    // Cadence + re-engagement still compute their own points (available for a /60
+    // partial display later); only the composite and insufficientData flag change.
     expect(result.cadence.hasSample).toBe(true);
     expect(result.reEngagement.hasSample).toBe(true);
+    expect(typeof result.cadence.points).toBe("number");
+    expect(typeof result.reEngagement.points).toBe("number");
 
-    expect(typeof result.composite).toBe("number");
+    expect(result.composite).toBeNull();
+    expect(result.insufficientData).toBe(true);
     expect(result.caveats.followUpBelowFloor).toBe(true);
     expect(result.components).toHaveLength(3);
     expect(result.components.map((c) => c.key)).toEqual(["followUp", "cadence", "reEngagement"]);
     expect(result.formulaVersion).toBe(2);
     expect("responseVelocity" in result).toBe(false);
+  });
 
-    // Composite is scaled only over the components with a sample (cadence + re-engagement).
-    const availPoints = result.cadence.points + result.reEngagement.points;
-    const availMax = result.cadence.max + result.reEngagement.max;
-    expect(result.composite).toBe(Math.round((availPoints / availMax) * 100));
+  it("insufficientData is false and composite is a number when follow-up is above the volume floor", () => {
+    const deals = [deal({ id: "d1" })];
+    const activities: ReturnType<typeof activity>[] = [];
+    for (let i = 0; i < FOLLOWUP_FLOOR; i++) {
+      activities.push(
+        activity({ id: `due${i}`, dealId: "d1", occurredAt: dayOffset(3 * i), followUpDate: dayOffset(3 * i + 2).slice(0, 10) }),
+      );
+      activities.push(activity({ id: `kept${i}`, dealId: "d1", occurredAt: dayOffset(3 * i + 1), followUpDate: null }));
+    }
+    const result = computePersistenceIndex(deals, activities, { ownerId: OWNER, now: NOW });
+    expect(result.followUp.belowFloor).toBe(false);
+    expect(result.insufficientData).toBe(false);
+    expect(typeof result.composite).toBe("number");
   });
 });
 
@@ -431,24 +448,157 @@ describe("computeReEngagement", () => {
     expect(result.points).toBe(30);
     expect(result.hasSample).toBe(true);
   });
+
+  it("excludes a deal with a future appointment from the denominator, even though it would otherwise be a silent miss", () => {
+    const deals = [deal({ id: "d1", has_future_appointment: true })];
+    const activities = [
+      // Single touch 29 days ago -> onset 8 days ago, within [30,7] window, no later
+      // touch: would otherwise be a silent miss, but the future appointment excludes it.
+      activity({ id: "a1", dealId: "d1", occurredAt: "2026-06-27T00:00:00Z" }),
+    ];
+    const result = computeReEngagement(deals, activities, OWNER, now);
+    expect(result.silentCount).toBe(0);
+    expect(result.reEngagedCount).toBe(0);
+    expect(result.points).toBe(30);
+  });
+
+  it("excludes a deal reassigned within the trailing 30 days from the denominator", () => {
+    const deals = [deal({ id: "d1", owner_changed_at: "2026-07-16T00:00:00Z" })]; // 10 days before `now`
+    const activities = [activity({ id: "a1", dealId: "d1", occurredAt: "2026-06-27T00:00:00Z" })];
+    const result = computeReEngagement(deals, activities, OWNER, now);
+    expect(result.silentCount).toBe(0);
+    expect(result.points).toBe(30);
+  });
+
+  it("includes a deal reassigned 40 days ago (outside the 30-day lookback) in the denominator", () => {
+    const deals = [deal({ id: "d1", owner_changed_at: "2026-06-16T00:00:00Z" })]; // 40 days before `now`
+    const activities = [activity({ id: "a1", dealId: "d1", occurredAt: "2026-06-27T00:00:00Z" })];
+    const result = computeReEngagement(deals, activities, OWNER, now);
+    expect(result.silentCount).toBe(1);
+    expect(result.reEngagedCount).toBe(0);
+  });
+});
+
+// ── Addendum 3.11: the 10 canonical re-engagement scenarios ────────────────
+//
+// Evaluation date D fixed at 2026-07-26T00:00:00Z. Each scenario is checked
+// via computeReEngagement's silentCount (denominator membership) and
+// reEngagedCount (hit/miss), per FR-METRIC-RE-06.
+describe("computeReEngagement: addendum 3.11 scenarios", () => {
+  const D = new Date("2026-07-26T00:00:00Z");
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  function daysBeforeD(days: number): string {
+    return new Date(D.getTime() - days * ONE_DAY_MS).toISOString();
+  }
+
+  it("1. never went quiet: last qualifying contact 12 days before D, no recovery -> NOT in denominator", () => {
+    const deals = [deal({ id: "d1" })];
+    const activities = [activity({ id: "a1", dealId: "d1", occurredAt: daysBeforeD(12) })];
+    const result = computeReEngagement(deals, activities, OWNER, D);
+    expect(result.silentCount).toBe(0);
+  });
+
+  it("2. crossed inside fairness window: last contact 25 days before D, no recovery -> NOT in denominator", () => {
+    const deals = [deal({ id: "d1" })];
+    const activities = [activity({ id: "a1", dealId: "d1", occurredAt: daysBeforeD(25) })];
+    const result = computeReEngagement(deals, activities, OWNER, D);
+    expect(result.silentCount).toBe(0);
+  });
+
+  it("3. silent, not recovered: last contact 35 days before D, no recovery -> in denominator, MISS", () => {
+    const deals = [deal({ id: "d1" })];
+    const activities = [activity({ id: "a1", dealId: "d1", occurredAt: daysBeforeD(35) })];
+    const result = computeReEngagement(deals, activities, OWNER, D);
+    expect(result.silentCount).toBe(1);
+    expect(result.reEngagedCount).toBe(0);
+  });
+
+  it("4. silent, recovered: last contact 40 days before D, a recovery contact 5 days before D -> in denominator, HIT", () => {
+    const deals = [deal({ id: "d1" })];
+    const activities = [
+      activity({ id: "a1", dealId: "d1", occurredAt: daysBeforeD(40) }),
+      activity({ id: "a2", dealId: "d1", occurredAt: daysBeforeD(5) }),
+    ];
+    const result = computeReEngagement(deals, activities, OWNER, D);
+    expect(result.silentCount).toBe(1);
+    expect(result.reEngagedCount).toBe(1);
+  });
+
+  it("5. silence too old: last contact 60 days before D, no recovery -> NOT in denominator", () => {
+    const deals = [deal({ id: "d1" })];
+    const activities = [activity({ id: "a1", dealId: "d1", occurredAt: daysBeforeD(60) })];
+    const result = computeReEngagement(deals, activities, OWNER, D);
+    expect(result.silentCount).toBe(0);
+  });
+
+  it("6. note only, no contact: last qualifying contact 35 days before D, a non-qualifying note-only event adds no activity -> in denominator, MISS", () => {
+    const deals = [deal({ id: "d1" })];
+    // A note is not a logged Activity in our model, so we simply don't add an
+    // activity for it: the last qualifying contact remains 35 days before D.
+    const activities = [activity({ id: "a1", dealId: "d1", occurredAt: daysBeforeD(35) })];
+    const result = computeReEngagement(deals, activities, OWNER, D);
+    expect(result.silentCount).toBe(1);
+    expect(result.reEngagedCount).toBe(0);
+  });
+
+  it("7. future appointment booked: last contact 35 days before D, has_future_appointment true (appt at D+6) -> NOT in denominator", () => {
+    const deals = [deal({ id: "d1", has_future_appointment: true })];
+    const activities = [activity({ id: "a1", dealId: "d1", occurredAt: daysBeforeD(35) })];
+    const result = computeReEngagement(deals, activities, OWNER, D);
+    expect(result.silentCount).toBe(0);
+  });
+
+  it("8. went quiet then closed lost: last contact 35 days before D, deal stage lost -> NOT in denominator", () => {
+    const deals = [deal({ id: "d1", stage: "lost" })];
+    const activities = [activity({ id: "a1", dealId: "d1", occurredAt: daysBeforeD(35) })];
+    const result = computeReEngagement(deals, activities, OWNER, D);
+    expect(result.silentCount).toBe(0);
+  });
+
+  it("9. reassigned mid-silence: last contact 35 days before D, owner_changed_at 10 days before D -> NOT in denominator", () => {
+    const deals = [deal({ id: "d1", owner_changed_at: daysBeforeD(10) })];
+    const activities = [activity({ id: "a1", dealId: "d1", occurredAt: daysBeforeD(35) })];
+    const result = computeReEngagement(deals, activities, OWNER, D);
+    expect(result.silentCount).toBe(0);
+  });
+
+  it("10. perfect cadence: all activity within the last 21 days (never silent) -> zero eligible episodes, scores the full 30", () => {
+    const deals = [deal({ id: "d1" })];
+    const activities = [
+      activity({ id: "a1", dealId: "d1", occurredAt: daysBeforeD(18) }),
+      activity({ id: "a2", dealId: "d1", occurredAt: daysBeforeD(10) }),
+      activity({ id: "a3", dealId: "d1", occurredAt: daysBeforeD(2) }),
+    ];
+    const result = computeReEngagement(deals, activities, OWNER, D);
+    expect(result.silentCount).toBe(0);
+    expect(result.points).toBe(30);
+    expect(result.hasSample).toBe(true);
+  });
 });
 
 describe("computeTeamPersistenceIndex", () => {
   const TEAM_NOW = new Date("2026-07-01T00:00:00.000Z");
-  // Two reps, each with a kept follow-up on an owned qualified deal -> each scores.
+  // Two reps, each with an owned qualified deal.
   function repDeal(id: string, owner: string): Deal {
     return deal({ id, owner_id: owner, stage: "qualified" });
   }
-  function keptPair(dealId: string, base: string): Activity[] {
-    return [
-      activity({ id: `${dealId}-s`, dealId, occurredAt: `${base}T10:00:00Z`, followUpDate: "2026-06-20" }),
-      activity({ id: `${dealId}-k`, dealId, occurredAt: "2026-06-19T10:00:00Z" }),
-    ];
+  // FOLLOWUP_FLOOR due-and-kept pairs spread across the window, so follow-up
+  // discipline clears the volume floor (a below-floor rep would score a null
+  // composite and be excluded from the team roll-up, per addendum 4.3).
+  function keptPair(dealId: string): Activity[] {
+    const acts: Activity[] = [];
+    for (let i = 0; i < FOLLOWUP_FLOOR; i++) {
+      acts.push(
+        activity({ id: `${dealId}-due${i}`, dealId, occurredAt: dayOffset(3 * i), followUpDate: dayOffset(3 * i + 2).slice(0, 10) }),
+      );
+      acts.push(activity({ id: `${dealId}-kept${i}`, dealId, occurredAt: dayOffset(3 * i + 1), followUpDate: null }));
+    }
+    return acts;
   }
 
   it("team composite is the median of rep composites; range = min/max; repCount counts scored reps", () => {
     const deals = [repDeal("d1", "rep1"), repDeal("d2", "rep2")];
-    const activities = [...keptPair("d1", "2026-06-05"), ...keptPair("d2", "2026-06-06")];
+    const activities = [...keptPair("d1"), ...keptPair("d2")];
     const t = computeTeamPersistenceIndex(deals, activities, { now: TEAM_NOW });
     expect(t.repCount).toBe(2);
     expect(t.composite).not.toBeNull();
@@ -470,7 +620,7 @@ describe("computeTeamPersistenceIndex", () => {
     // (zero silent deals isn't "excluded"), so this uses a closed deal to test the
     // genuinely-no-data case.
     const deals = [repDeal("d1", "rep1"), deal({ id: "d2", owner_id: "rep2", stage: "lost" })];
-    const t = computeTeamPersistenceIndex(deals, keptPair("d1", "2026-06-05"), { now: TEAM_NOW });
+    const t = computeTeamPersistenceIndex(deals, keptPair("d1"), { now: TEAM_NOW });
     expect(t.repCount).toBe(1);
     expect(t.range).toBeNull(); // <2 scored reps
   });
