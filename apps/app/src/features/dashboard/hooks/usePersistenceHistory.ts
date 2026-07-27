@@ -11,12 +11,14 @@ import { useActivitiesForOrg } from "@/features/activities/hooks/useActivities";
 import { useProfile } from "@/features/auth/useProfile";
 import { useAuth } from "@/stores/auth";
 import { computePersistenceHistory, type PersistencePoint } from "../lib/persistenceIndex";
+import { useFutureAppointmentDealIds, withFutureAppointmentFlag, EMPTY_DEAL_ID_SET } from "./useFutureAppointmentDealIds";
 
 export function usePersistenceHistory(rangeDays: number, targetOwnerId?: string): PersistencePoint[] {
   const { data: deals = [] } = useDeals();
   const { data: activities = [] } = useActivitiesForOrg();
   const role = useProfile().data?.role;
   const viewerId = useAuth((s) => s.user?.id);
+  const futureApptIds = useFutureAppointmentDealIds().data ?? EMPTY_DEAL_ID_SET;
 
   // Targeting a specific rep (drill-down) overrides the role-based default.
   const team = !targetOwnerId && (role === "manager" || role === "admin");
@@ -24,6 +26,6 @@ export function usePersistenceHistory(rangeDays: number, targetOwnerId?: string)
 
   return React.useMemo(() => {
     if (!team && !ownerId) return [];
-    return computePersistenceHistory(deals, activities, { now: new Date(), rangeDays, ownerId, team });
-  }, [deals, activities, team, ownerId, rangeDays]);
+    return computePersistenceHistory(withFutureAppointmentFlag(deals, futureApptIds), activities, { now: new Date(), rangeDays, ownerId, team });
+  }, [deals, activities, team, ownerId, rangeDays, futureApptIds]);
 }

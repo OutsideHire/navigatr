@@ -54,6 +54,11 @@ interface DealRow {
   time_to_lost_business_days?: number | null;
   time_to_lost_calendar_days?: number | null;
   industry?: string | null;
+  /** Persistence Index Wave 1 addendum: when this deal's owner was last
+   *  reassigned, so re-engagement scoring can exclude a deal reassigned
+   *  within the trailing lookback (it never had a fair chance to go silent
+   *  under its current owner). */
+  owner_changed_at?: string | null;
 }
 
 /**
@@ -106,6 +111,7 @@ export function toDeal(row: DealRow): Deal {
     timeToLostBusinessDays: row.time_to_lost_business_days ?? null,
     timeToLostCalendarDays: row.time_to_lost_calendar_days ?? null,
     industry: row.industry ?? null,
+    owner_changed_at: row.owner_changed_at ?? null,
   };
 }
 
@@ -130,7 +136,8 @@ export function useDeals() {
             "activity_count_call, activity_count_email, activity_count_dropin, " +
             "activity_count_appointment, time_to_win_business_days, " +
             "time_to_win_calendar_days, closed_lost_at, " +
-            "time_to_lost_business_days, time_to_lost_calendar_days, industry",
+            "time_to_lost_business_days, time_to_lost_calendar_days, industry, " +
+            "owner_changed_at",
         )
         .order("updated_at", { ascending: false });
       if (error) throw error;

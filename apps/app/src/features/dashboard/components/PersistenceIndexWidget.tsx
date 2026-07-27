@@ -56,6 +56,12 @@ function WidgetButton({ onClick, children }: { onClick: () => void; children: Re
   );
 }
 
+/** Reflects-what / not-yet-captured disclosure shown on the manager-only
+ *  beta widget, so managers don't mistake the score for a full activity
+ *  picture (email capture isn't automatic yet). */
+const CAPTURE_DISCLOSURE =
+  "Reflects calls, drop-ins, and appointments. Email is not yet captured automatically.";
+
 export function PersistenceIndexWidget() {
   const navigate = useNavigate();
   const role = useProfile().data?.role;
@@ -63,6 +69,11 @@ export function PersistenceIndexWidget() {
   const individual = usePersistenceIndex();
   const team = useTeamPersistenceIndex();
   const openDetail = () => navigate("/dashboard/persistence-index");
+
+  // Persistence Index is manager-only for beta (Wave 1 addendum): the
+  // individual/rep view below is kept in place, dead, for re-enablement
+  // once the metric is trusted enough to surface to reps directly.
+  if (!isManager) return null;
 
   if (isManager) {
     const t = team;
@@ -88,6 +99,7 @@ export function PersistenceIndexWidget() {
               </p>
             </>
           )}
+          <p className="text-caption text-text-subtle">{CAPTURE_DISCLOSURE}</p>
         </WidgetButton>
       </Card>
     );

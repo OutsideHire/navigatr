@@ -9,7 +9,10 @@ import {
 import type { PerRepScore, PersistencePoint } from "./persistenceIndex";
 
 const rep = (composite: number | null, fu: number | null = null, cad: number | null = null): PerRepScore =>
-  ({ ownerId: "x", composite, followUpPoints: fu, cadencePoints: cad, reEngagementPoints: null, followUpBelowFloor: false });
+  ({
+    ownerId: "x", composite, followUpPoints: fu, cadencePoints: cad, reEngagementPoints: null,
+    followUpBelowFloor: false, reEngagementSilentCount: null, reEngagementReEngagedCount: null,
+  });
 
 describe("persistenceBenchmarks", () => {
   it("solo (<=1 scored rep) yields no peer benchmarks", () => {

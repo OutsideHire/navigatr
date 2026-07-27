@@ -6,10 +6,17 @@
  */
 import { Card } from "@/components/navigatr";
 
+/** Eligible/recovered counts for the Re-engagement After Silence row (addendum):
+ *  how many deals went quiet in the window vs. how many got a later touch. */
+export interface ReEngagementCounts {
+  silentCount: number;
+  reEngagedCount: number;
+}
+
 function Row({
-  label, points, max, peerPct,
+  label, points, max, peerPct, counts,
 }: {
-  label: string; points: number | null; max: number; peerPct: number | null;
+  label: string; points: number | null; max: number; peerPct: number | null; counts?: ReEngagementCounts | null;
 }) {
   if (points == null) {
     return (
@@ -38,6 +45,11 @@ function Row({
           />
         )}
       </div>
+      {counts && (
+        <p className="mt-1 text-caption text-text-subtle">
+          {counts.silentCount} went quiet, {counts.reEngagedCount} brought back
+        </p>
+      )}
     </div>
   );
 }
@@ -45,7 +57,14 @@ function Row({
 export function PersistenceSubComponents({
   rows, footnote,
 }: {
-  rows: { key: string; label: string; points: number | null; max: number; peerPct: number | null }[];
+  rows: {
+    key: string;
+    label: string;
+    points: number | null;
+    max: number;
+    peerPct: number | null;
+    counts?: ReEngagementCounts | null;
+  }[];
   footnote?: string;
 }) {
   return (
@@ -53,7 +72,7 @@ export function PersistenceSubComponents({
       <div className="flex flex-col gap-4">
         <span className="text-body-sm font-medium text-text-default">Where your score comes from</span>
         {rows.map((r) => (
-          <Row key={r.key} label={r.label} points={r.points} max={r.max} peerPct={r.peerPct} />
+          <Row key={r.key} label={r.label} points={r.points} max={r.max} peerPct={r.peerPct} counts={r.counts} />
         ))}
         {footnote && <p className="text-caption text-text-subtle">{footnote}</p>}
       </div>

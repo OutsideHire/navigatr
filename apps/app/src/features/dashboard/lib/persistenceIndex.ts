@@ -364,7 +364,7 @@ export interface TeamPersistenceIndexResult {
   composite: number | null;
   followUp: { points: number | null; max: number };
   cadence: { points: number | null; max: number };
-  reEngagement: { points: number | null; max: number };
+  reEngagement: { points: number | null; max: number; silentCount: number; reEngagedCount: number };
   components: ComponentView[];
   repCount: number;
   range: { min: number; max: number } | null;
@@ -390,7 +390,12 @@ export function computeTeamPersistenceIndex(
   const composites = scored.map((r) => r.composite as number);
   const fuPts = scored.filter((r) => r.followUp.hasSample).map((r) => r.followUp.points);
   const cadPts = scored.filter((r) => r.cadence.hasSample).map((r) => r.cadence.points);
-  const reEngPts = scored.filter((r) => r.reEngagement.hasSample).map((r) => r.reEngagement.points);
+  const reEngRows = scored.filter((r) => r.reEngagement.hasSample);
+  const reEngPts = reEngRows.map((r) => r.reEngagement.points);
+  // Eligible/recovered counts (addendum): total across scored reps, not a
+  // median, since these are raw episode counts rather than a 0..max score.
+  const silentTotal = reEngRows.reduce((s, r) => s + r.reEngagement.silentCount, 0);
+  const reEngagedTotal = reEngRows.reduce((s, r) => s + r.reEngagement.reEngagedCount, 0);
   const teamComponents: ComponentView[] = [
     { key: "followUp", label: "Follow-up discipline", points: fuPts.length ? Math.round(median(fuPts) as number) : 0, max: FOLLOWUP_MAX, hasSample: fuPts.length > 0 },
     { key: "cadence", label: "Touch cadence", points: cadPts.length ? Math.round(median(cadPts) as number) : 0, max: CADENCE_MAX, hasSample: cadPts.length > 0 },
@@ -400,7 +405,12 @@ export function computeTeamPersistenceIndex(
     composite: composites.length ? Math.round(median(composites) as number) : null,
     followUp: { points: fuPts.length ? Math.round(median(fuPts) as number) : null, max: FOLLOWUP_MAX },
     cadence: { points: cadPts.length ? Math.round(median(cadPts) as number) : null, max: CADENCE_MAX },
-    reEngagement: { points: reEngPts.length ? Math.round(median(reEngPts) as number) : null, max: REENGAGEMENT_MAX },
+    reEngagement: {
+      points: reEngPts.length ? Math.round(median(reEngPts) as number) : null,
+      max: REENGAGEMENT_MAX,
+      silentCount: silentTotal,
+      reEngagedCount: reEngagedTotal,
+    },
     components: teamComponents,
     repCount: scored.length,
     range: composites.length >= 2 ? { min: Math.min(...composites), max: Math.max(...composites) } : null,
@@ -484,6 +494,8 @@ export interface PerRepScore {
   cadencePoints: number | null;
   reEngagementPoints: number | null;
   followUpBelowFloor: boolean;
+  reEngagementSilentCount: number | null;
+  reEngagementReEngagedCount: number | null;
 }
 
 /**
@@ -507,6 +519,8 @@ export function computePerRepPersistence(
       cadencePoints: r.cadence.hasSample ? r.cadence.points : null,
       reEngagementPoints: r.reEngagement.hasSample ? r.reEngagement.points : null,
       followUpBelowFloor: r.caveats.followUpBelowFloor,
+      reEngagementSilentCount: r.reEngagement.hasSample ? r.reEngagement.silentCount : null,
+      reEngagementReEngagedCount: r.reEngagement.hasSample ? r.reEngagement.reEngagedCount : null,
     };
   });
   return rows.sort((a, b) => {

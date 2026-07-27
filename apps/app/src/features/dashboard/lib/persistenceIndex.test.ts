@@ -636,6 +636,17 @@ describe("computeTeamPersistenceIndex", () => {
     expect(t.composite).toBeNull();
     expect(t.repCount).toBe(0);
   });
+
+  it("reEngagement carries silentCount/reEngagedCount totals across scored reps", () => {
+    // Both reps have a single recent touch and no qualifying silence (zero
+    // silent deals scores full re-engagement, silentCount 0), so the team
+    // totals should be exactly zero, not null/undefined.
+    const deals = [repDeal("d1", "rep1"), repDeal("d2", "rep2")];
+    const activities = [...keptPair("d1"), ...keptPair("d2")];
+    const t = computeTeamPersistenceIndex(deals, activities, { now: TEAM_NOW });
+    expect(t.reEngagement.silentCount).toBe(0);
+    expect(t.reEngagement.reEngagedCount).toBe(0);
+  });
 });
 
 describe("computePersistenceHistory", () => {
@@ -755,6 +766,20 @@ describe("computePerRepPersistence", () => {
     expect(typeof repA.reEngagementPoints).toBe("number");
     expect(repZ.reEngagementPoints).toBeNull();
   });
+
+  it("carries reEngagementSilentCount/reEngagementReEngagedCount as numbers when scored, null otherwise", () => {
+    const deals = [
+      deal({ id: "d1", owner_id: "repA", stage: "qualified" }),
+      deal({ id: "d2", owner_id: "repZ", stage: "lost" }),
+    ];
+    const rows = computePerRepPersistence(deals, [...kept("d1")], { now: NOW });
+    const repA = rows.find((r) => r.ownerId === "repA")!;
+    const repZ = rows.find((r) => r.ownerId === "repZ")!;
+    expect(typeof repA.reEngagementSilentCount).toBe("number");
+    expect(typeof repA.reEngagementReEngagedCount).toBe("number");
+    expect(repZ.reEngagementSilentCount).toBeNull();
+    expect(repZ.reEngagementReEngagedCount).toBeNull();
+  });
 });
 
 describe("subComponentPeerAverages (re-engagement)", () => {
@@ -763,7 +788,10 @@ describe("subComponentPeerAverages (re-engagement)", () => {
     fu: number | null = null,
     cad: number | null = null,
     reEng: number | null = null,
-  ): PerRepScore => ({ ownerId: "x", composite, followUpPoints: fu, cadencePoints: cad, reEngagementPoints: reEng, followUpBelowFloor: false });
+  ): PerRepScore => ({
+    ownerId: "x", composite, followUpPoints: fu, cadencePoints: cad, reEngagementPoints: reEng,
+    followUpBelowFloor: false, reEngagementSilentCount: null, reEngagementReEngagedCount: null,
+  });
 
   it("medians reEngagementPoints as a percentage of REENGAGEMENT_MAX", () => {
     const r = subComponentPeerAverages([rep(70, 40, 30, 24), rep(60, 20, 15, 18), rep(null, null, null, null)]);

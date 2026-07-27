@@ -77,8 +77,8 @@ beforeEach(() => {
   role = "rep";
   series = mkSeries(30);
   roster = [
-    { ownerId: "u1", composite: 82, followUpPoints: 34, cadencePoints: 24, reEngagementPoints: 22, followUpBelowFloor: false },
-    { ownerId: "u2", composite: 60, followUpPoints: 20, cadencePoints: 18, reEngagementPoints: 14, followUpBelowFloor: false },
+    { ownerId: "u1", composite: 82, followUpPoints: 34, cadencePoints: 24, reEngagementPoints: 22, followUpBelowFloor: false, reEngagementSilentCount: 4, reEngagementReEngagedCount: 3 },
+    { ownerId: "u2", composite: 60, followUpPoints: 20, cadencePoints: 18, reEngagementPoints: 14, followUpBelowFloor: false, reEngagementSilentCount: 2, reEngagementReEngagedCount: 1 },
   ];
   lastTargetOwner = undefined;
   companySeriesData = [];
@@ -139,8 +139,8 @@ describe("PersistenceIndexReport", () => {
   it("shows the below-floor footnote when the SELECTED rep is below floor", () => {
     role = "manager";
     roster = [
-      { ownerId: "u1", composite: 82, followUpPoints: null, cadencePoints: 24, reEngagementPoints: 22, followUpBelowFloor: true },
-      { ownerId: "u2", composite: 60, followUpPoints: 20, cadencePoints: 18, reEngagementPoints: 14, followUpBelowFloor: false },
+      { ownerId: "u1", composite: 82, followUpPoints: null, cadencePoints: 24, reEngagementPoints: 22, followUpBelowFloor: true, reEngagementSilentCount: 4, reEngagementReEngagedCount: 3 },
+      { ownerId: "u2", composite: 60, followUpPoints: 20, cadencePoints: 18, reEngagementPoints: 14, followUpBelowFloor: false, reEngagementSilentCount: 2, reEngagementReEngagedCount: 1 },
     ];
     renderReport();
     fireEvent.click(screen.getByText("Sarah Lim"));
@@ -188,6 +188,48 @@ describe("PersistenceIndexReport", () => {
     expect(screen.getByText(/team average/i)).toBeInTheDocument();
     expect(screen.queryByText(/company average/i)).toBeNull();
     expect(screen.queryByText(/top decile/i)).toBeNull();
+  });
+
+  it("shows the partial /60 score (not /100) with the caveat when follow-up is below floor", () => {
+    role = "rep";
+    ownIndex = {
+      ...ownIndex,
+      caveats: { followUpBelowFloor: true },
+      followUp: { points: 0, max: 40, hasSample: false },
+      cadence: { points: 20, max: 30, hasSample: true },
+      reEngagement: { points: 21, max: 30, hasSample: true, silentCount: 5, reEngagedCount: 3 },
+    };
+    renderReport();
+    expect(screen.getByText("41")).toBeInTheDocument(); // 20 cadence + 21 re-engagement
+    expect(screen.getByText(/\/ 60 · cadence \+ re-engagement only/)).toBeInTheDocument();
+    expect(screen.queryByText(/\/ 100/)).not.toBeInTheDocument();
+    expect(screen.getByText(/follow-up volume too low/i)).toBeInTheDocument();
+  });
+
+  it("shows the eligible/recovered counts near the re-engagement row", () => {
+    role = "rep";
+    ownIndex = {
+      ...ownIndex,
+      reEngagement: { points: 21, max: 30, hasSample: true, silentCount: 5, reEngagedCount: 3 },
+    };
+    renderReport();
+    expect(screen.getByText("5 went quiet, 3 brought back")).toBeInTheDocument();
+  });
+
+  it("breaks the trend line into multiple path segments on a null-composite gap in the middle of the series", () => {
+    role = "rep";
+    const withGap = mkSeries(30).map((p, i) => (i === 15 ? { ...p, composite: null } : p));
+    series = withGap;
+    const { container: withGapContainer } = renderReport();
+    const gappedPaths = withGapContainer.querySelectorAll("svg path");
+
+    series = mkSeries(30); // no gap
+    const { container: noGapContainer } = renderReport();
+    const contiguousPaths = noGapContainer.querySelectorAll("svg path");
+
+    // One internal null splits the single line+area pair into two, so the
+    // gapped chart renders twice as many path segments as the contiguous one.
+    expect(gappedPaths.length).toBeGreaterThan(contiguousPaths.length);
   });
 
   it("drops snapshot dates outside the chart range without throwing", () => {

@@ -104,8 +104,38 @@ describe("useDeals", () => {
         timeToLostBusinessDays: null,
         timeToLostCalendarDays: null,
         industry: null,
+        // Persistence Index Wave 1 addendum column, absent on this row, so null.
+        owner_changed_at: null,
       },
     ]);
+  });
+
+  it("maps owner_changed_at through for the Persistence Index re-engagement exclusion", async () => {
+    orderMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: "deal-4",
+          company_name: "Reassigned Co",
+          contact_name: "R",
+          contact_phone: "+12025550003",
+          contact_email: "r@c.co",
+          value_cents: 300_000,
+          stage: "qualified",
+          probability: 40,
+          last_activity_at: "2026-05-18T12:00:00Z",
+          next_followup_at: null,
+          employee_count_range: "1-10",
+          lead_source: "Referral",
+          updated_at: "2026-05-19T08:00:00Z",
+          owner_id: "u1",
+          owner_changed_at: "2026-05-15T00:00:00Z",
+        },
+      ],
+      error: null,
+    });
+    const { result } = renderHook(() => useDeals(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0].owner_changed_at).toBe("2026-05-15T00:00:00Z");
   });
 
   it("loads the notes column so stage changes append instead of wiping (data-loss regression)", async () => {

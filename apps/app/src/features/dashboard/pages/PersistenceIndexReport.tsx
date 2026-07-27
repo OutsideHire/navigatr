@@ -274,6 +274,31 @@ export function PersistenceIndexReport() {
     : isManager
       ? false
       : own?.caveats.followUpBelowFloor ?? false;
+  // Eligible/recovered counts for the re-engagement row (addendum). Mirrors
+  // the same selectedRep -> team -> own resolution as the points above. Only
+  // renders once both counts resolve to real numbers (guards older/mocked
+  // result shapes that predate these fields from leaking "undefined" text).
+  const rawReEngagementCounts = selectedRep
+    ? selectedRow
+      ? { silentCount: selectedRow.reEngagementSilentCount, reEngagedCount: selectedRow.reEngagementReEngagedCount }
+      : null
+    : isManager
+      ? { silentCount: team.reEngagement.silentCount, reEngagedCount: team.reEngagement.reEngagedCount }
+      : own?.reEngagement.hasSample
+        ? { silentCount: own.reEngagement.silentCount, reEngagedCount: own.reEngagement.reEngagedCount }
+        : null;
+  const subReEngagementCounts =
+    rawReEngagementCounts &&
+    typeof rawReEngagementCounts.silentCount === "number" &&
+    typeof rawReEngagementCounts.reEngagedCount === "number"
+      ? { silentCount: rawReEngagementCounts.silentCount, reEngagedCount: rawReEngagementCounts.reEngagedCount }
+      : null;
+  // Below the follow-up volume floor, the composite is null (addendum 4.3):
+  // show the partial cadence+re-engagement score out of 60 instead of
+  // rescaling to 100. Never true for the team-aggregate branch above.
+  const showBelowFloorScore = followUpBelowFloor;
+  const belowFloorTotal = (subCadence ?? 0) + (subReEngagement ?? 0);
+  const belowFloorMax = CADENCE_MAX + REENGAGEMENT_MAX;
   const showBenchmarks = bench.strategy !== "solo";
   const topLabel = bench.strategy === "top-performer" ? "Top performer" : "Top 10%";
   const topValue = bench.topDecile ?? bench.topPerformer;
@@ -347,24 +372,33 @@ export function PersistenceIndexReport() {
 
         <Card padding="lg" shadow="sm">
           <div className="flex flex-col gap-4">
-            {current == null ? (
+            {current == null && !showBelowFloorScore ? (
               <p className="text-body-sm text-text-muted">Not enough data yet to chart a trend.</p>
             ) : (
               <>
                 <div className="flex items-end gap-3">
-                  <span className="text-kpi-lg tabular-nums leading-none text-text-default">{current}</span>
-                  <span className="pb-1 text-caption text-text-muted">/ 100 · target {TARGET_SCORE}</span>
-                  {delta != null && delta !== 0 && (
-                    <span
-                      className={`inline-flex items-center pb-1 text-caption ${delta > 0 ? "text-status-success" : "text-status-danger"}`}
-                    >
-                      {delta > 0 ? (
-                        <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
-                      ) : (
-                        <ArrowDownRight className="h-3.5 w-3.5" aria-hidden />
+                  {showBelowFloorScore ? (
+                    <>
+                      <span className="text-kpi-lg tabular-nums leading-none text-text-default">{belowFloorTotal}</span>
+                      <span className="pb-1 text-caption text-text-muted">/ {belowFloorMax} · cadence + re-engagement only</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-kpi-lg tabular-nums leading-none text-text-default">{current}</span>
+                      <span className="pb-1 text-caption text-text-muted">/ 100 · target {TARGET_SCORE}</span>
+                      {delta != null && delta !== 0 && (
+                        <span
+                          className={`inline-flex items-center pb-1 text-caption ${delta > 0 ? "text-status-success" : "text-status-danger"}`}
+                        >
+                          {delta > 0 ? (
+                            <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+                          ) : (
+                            <ArrowDownRight className="h-3.5 w-3.5" aria-hidden />
+                          )}
+                          {Math.abs(delta)} this period
+                        </span>
                       )}
-                      {Math.abs(delta)} this period
-                    </span>
+                    </>
                   )}
                 </div>
 
@@ -388,7 +422,7 @@ export function PersistenceIndexReport() {
                 <div className="text-brand-primary">
                   <TrendChart points={points} referenceLines={referenceLines} dailyReferenceLines={dailyReferenceLines} />
                 </div>
-                {showBenchmarks && (
+                {showBenchmarks && !showBelowFloorScore && (
                   <div className="flex flex-wrap items-center gap-3 text-caption text-text-muted">
                     <span className="inline-flex items-center gap-1.5">
                       <span className="h-1.5 w-1.5 rounded-full bg-brand-primary" aria-hidden /> You {current}
@@ -414,13 +448,13 @@ export function PersistenceIndexReport() {
           </div>
         </Card>
 
-        {current != null && (
+        {(current != null || showBelowFloorScore) && (
           <>
             <PersistenceSubComponents
               rows={[
                 { key: "followUp", label: "Follow-up discipline", points: subFollowUp, max: FOLLOWUP_MAX, peerPct: showBenchmarks ? bench.followUpAvgPct : null },
                 { key: "cadence", label: "Touch cadence", points: subCadence, max: CADENCE_MAX, peerPct: showBenchmarks ? bench.cadenceAvgPct : null },
-                { key: "reEngagement", label: "Re-engagement after silence", points: subReEngagement, max: REENGAGEMENT_MAX, peerPct: showBenchmarks ? bench.reEngagementAvgPct : null },
+                { key: "reEngagement", label: "Re-engagement after silence", points: subReEngagement, max: REENGAGEMENT_MAX, peerPct: showBenchmarks ? bench.reEngagementAvgPct : null, counts: subReEngagementCounts },
               ]}
               footnote={followUpBelowFloor ? "Follow-up volume too low to score discipline; showing cadence and re-engagement only." : undefined}
             />

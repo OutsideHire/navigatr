@@ -34,7 +34,7 @@ const indFull: PersistenceIndexResult = {
 const teamFull: TeamPersistenceIndexResult = {
   composite: 71,
   followUp: { points: 30, max: 40 }, cadence: { points: 22, max: 30 },
-  reEngagement: { points: 20, max: 30 },
+  reEngagement: { points: 20, max: 30, silentCount: 3, reEngagedCount: 2 },
   components: [
     { key: "followUp", label: "Follow-up discipline", points: 30, max: 40, hasSample: true },
     { key: "cadence", label: "Touch cadence", points: 22, max: 30, hasSample: true },
@@ -48,22 +48,28 @@ beforeEach(() => { navigateMock.mockReset(); individual = indFull; team = teamFu
 
 describe("PersistenceIndexWidget", () => {
   it("opens the detail page when clicked", () => {
-    role = "rep";
+    role = "manager";
     render(<PersistenceIndexWidget />);
     fireEvent.click(screen.getByRole("button", { name: /persistence index/i }));
     expect(navigateMock).toHaveBeenCalledWith("/dashboard/persistence-index");
   });
 
-  it("rep sees the individual score", () => {
+  it("renders null for a rep role (manager-only for beta)", () => {
     role = "rep";
-    render(<PersistenceIndexWidget />);
-    expect(screen.getByText("82")).toBeInTheDocument();
+    const { container } = render(<PersistenceIndexWidget />);
+    expect(container).toBeEmptyDOMElement();
   });
 
-  it("rep empty state when composite is null", () => {
-    role = "rep"; individual = { ...indFull, composite: null };
+  it("renders for a manager role", () => {
+    role = "manager";
     render(<PersistenceIndexWidget />);
-    expect(screen.getByText(/not enough data/i)).toBeInTheDocument();
+    expect(screen.getByText(/persistence index/i)).toBeInTheDocument();
+  });
+
+  it("renders for an admin role", () => {
+    role = "admin";
+    render(<PersistenceIndexWidget />);
+    expect(screen.getByText(/persistence index/i)).toBeInTheDocument();
   });
 
   it("manager sees the team aggregate with rep count and range", () => {
@@ -93,30 +99,31 @@ describe("PersistenceIndexWidget", () => {
     expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
   });
 
-  it("rep sees a re-engagement after silence row when scored", () => {
-    role = "rep";
-    render(<PersistenceIndexWidget />);
-    expect(screen.getByText("Re-engagement after silence")).toBeInTheDocument();
-  });
-
   it("manager sees a re-engagement after silence row when scored", () => {
     role = "manager";
     render(<PersistenceIndexWidget />);
     expect(screen.getByText("Re-engagement after silence")).toBeInTheDocument();
   });
 
-  it("shows a follow-up-below-floor caveat when the rep's follow-up volume is too low to score", () => {
-    role = "rep";
-    individual = {
-      ...indFull,
-      caveats: { followUpBelowFloor: true },
-      components: [
-        { key: "followUp", label: "Follow-up discipline", points: 34, max: 40, hasSample: false, belowFloor: true },
-        { key: "cadence", label: "Touch cadence", points: 24, max: 30, hasSample: true },
-        { key: "reEngagement", label: "Re-engagement after silence", points: 24, max: 30, hasSample: true },
-      ],
-    };
+  it("admin sees a re-engagement after silence row when scored", () => {
+    role = "admin";
     render(<PersistenceIndexWidget />);
-    expect(screen.getByText(/Follow-up volume too low to score discipline/i)).toBeInTheDocument();
+    expect(screen.getByText("Re-engagement after silence")).toBeInTheDocument();
+  });
+
+  it("shows the email-capture disclosure line for a manager", () => {
+    role = "manager";
+    render(<PersistenceIndexWidget />);
+    expect(
+      screen.getByText("Reflects calls, drop-ins, and appointments. Email is not yet captured automatically."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the email-capture disclosure line for an admin", () => {
+    role = "admin";
+    render(<PersistenceIndexWidget />);
+    expect(
+      screen.getByText("Reflects calls, drop-ins, and appointments. Email is not yet captured automatically."),
+    ).toBeInTheDocument();
   });
 });

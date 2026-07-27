@@ -43,4 +43,20 @@ describe("PersistenceSubComponents", () => {
     render(<PersistenceSubComponents rows={rows} />);
     expect(screen.queryByText("Some footnote text.")).not.toBeInTheDocument();
   });
+
+  it("renders the eligible/recovered counts near the re-engagement row when provided", () => {
+    render(
+      <PersistenceSubComponents
+        rows={rows.map((r) =>
+          r.key === "reEngagement" ? { ...r, counts: { silentCount: 5, reEngagedCount: 3 } } : r,
+        )}
+      />,
+    );
+    expect(screen.getByText("5 went quiet, 3 brought back")).toBeInTheDocument();
+  });
+
+  it("renders no counts line when a row's counts are omitted", () => {
+    render(<PersistenceSubComponents rows={rows} />);
+    expect(screen.queryByText(/went quiet/i)).not.toBeInTheDocument();
+  });
 });
