@@ -46,6 +46,7 @@ import { calendarDayDelta } from "@/lib/calendarDate";
 import { LogActivitySheet } from "../components/LogActivitySheet";
 import { EditActivitySheet } from "../components/EditActivitySheet";
 import { UnloggedCallsSection } from "../components/UnloggedCallsSection";
+import { AppointmentsAwaitingOutcome } from "@/features/appointments/components/AppointmentsAwaitingOutcome";
 import { useActivitiesForOrg } from "../hooks/useActivities";
 import { useUpdateActivity } from "../hooks/useUpdateActivity";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
@@ -455,6 +456,8 @@ export function ActivitiesPage() {
         </header>
 
         <UnloggedCallsSection />
+
+        <AppointmentsAwaitingOutcome />
 
         {/* Shared type filter — applies across all three tabs and persists
             across tab switches. No per-type counts here (a single number
