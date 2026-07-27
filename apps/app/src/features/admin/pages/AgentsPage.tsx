@@ -22,6 +22,7 @@ import { InviteAgentModal } from "../components/InviteAgentModal";
 import { RevokeAgentDialog } from "../components/RevokeAgentDialog";
 import { OrgChartTree } from "../components/OrgChartTree";
 import { TeamCoverageCard } from "@/features/coverage/components/TeamCoverageCard";
+import { AppointmentsAwaitingCard } from "@/features/appointments/components/AppointmentsAwaitingCard";
 
 type SortKey =
   | keyof Pick<
@@ -343,6 +344,9 @@ export function AgentsPage() {
 
       {/* Secondary insight: team logging coverage, below the roster */}
       <TeamCoverageCard />
+
+      {/* Secondary insight: appointments awaiting an outcome, below coverage */}
+      <AppointmentsAwaitingCard />
 
       <InviteAgentModal open={inviteOpen} onOpenChange={setInviteOpen} />
 
