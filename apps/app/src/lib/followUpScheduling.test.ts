@@ -4,6 +4,7 @@ import {
   DISPOSITIONS,
   formatFollowUpDate,
   schedulesFollowUp,
+  APPOINTMENT_STAGE_EFFECT,
   type Disposition,
 } from "./followUpScheduling";
 
@@ -90,5 +91,65 @@ describe("disposition catalog (drop-in redesign)", () => {
     const no: Disposition[] = ["wrong_number","not_interested","closed_lost"];
     for (const d of yes) expect(schedulesFollowUp(d)).toBe(true);
     for (const d of no) expect(schedulesFollowUp(d)).toBe(false);
+  });
+});
+
+describe("appointment outcomes (W2a-2)", () => {
+  const EXPECTED: Record<string, { label: string; businessDays: number | null }> = {
+    appt_presented_awaiting: { label: "Presented, awaiting decision", businessDays: 3 },
+    appt_statements_collected: { label: "Statements collected", businessDays: 1 },
+    appt_verbal_commitment: { label: "Verbal commitment", businessDays: 1 },
+    appt_no_show: { label: "No show", businessDays: 2 },
+    appt_rescheduled: { label: "Rescheduled on the spot", businessDays: 2 },
+    appt_application_signed: { label: "Application signed", businessDays: 2 },
+    appt_dm_unavailable: { label: "Decision maker not available", businessDays: 2 },
+    appt_cancelled_by_merchant: { label: "Cancelled by merchant", businessDays: 3 },
+    appt_not_interested: { label: "Not interested", businessDays: null },
+  };
+
+  it("registers each of the nine outcomes with its label and businessDays", () => {
+    for (const [key, expected] of Object.entries(EXPECTED)) {
+      const spec = DISPOSITIONS[key as Disposition];
+      expect(spec).toBeDefined();
+      expect(spec.label).toBe(expected.label);
+      expect(spec.businessDays).toBe(expected.businessDays);
+    }
+  });
+
+  it("schedulesFollowUp is true for the eight scheduling outcomes, false for appt_not_interested", () => {
+    const yes: Disposition[] = [
+      "appt_presented_awaiting",
+      "appt_statements_collected",
+      "appt_verbal_commitment",
+      "appt_no_show",
+      "appt_rescheduled",
+      "appt_application_signed",
+      "appt_dm_unavailable",
+      "appt_cancelled_by_merchant",
+    ];
+    for (const d of yes) expect(schedulesFollowUp(d)).toBe(true);
+    expect(schedulesFollowUp("appt_not_interested")).toBe(false);
+  });
+
+  it("calculateFollowUpDate works unchanged for the new outcomes", () => {
+    const from = new Date("2026-06-01T12:00:00Z"); // a Monday
+    for (const d of Object.keys(EXPECTED) as Disposition[]) {
+      const iso = calculateFollowUpDate(d, from);
+      if (EXPECTED[d].businessDays === null) {
+        expect(iso).toBeNull();
+      } else {
+        expect(iso).not.toBeNull();
+      }
+    }
+  });
+});
+
+describe("APPOINTMENT_STAGE_EFFECT", () => {
+  it("maps only the two forward-advancing outcomes, and nothing else", () => {
+    expect(APPOINTMENT_STAGE_EFFECT.appt_verbal_commitment).toBe("proposal");
+    expect(APPOINTMENT_STAGE_EFFECT.appt_application_signed).toBe("submitted");
+    expect(Object.keys(APPOINTMENT_STAGE_EFFECT).sort()).toEqual(
+      ["appt_application_signed", "appt_verbal_commitment"].sort(),
+    );
   });
 });

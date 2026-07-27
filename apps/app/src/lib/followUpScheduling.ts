@@ -15,6 +15,7 @@
 
 import { addBusinessDays } from "date-fns";
 import { dateOnlyToNoonUtcIso, toDateOnly } from "./calendarDate";
+import type { DealStage } from "@/features/pipeline/mockData";
 
 export type Disposition =
   | "statement_secured"
@@ -36,7 +37,18 @@ export type Disposition =
   | "closed_locked"
   | "do_not_contact"
   | "out_of_business"
-  | "other";
+  | "other"
+  // Appointment outcomes (W2a-2). Prefixed appt_ so they never collide with
+  // the call/drop-in dispositions above.
+  | "appt_presented_awaiting"
+  | "appt_statements_collected"
+  | "appt_verbal_commitment"
+  | "appt_no_show"
+  | "appt_rescheduled"
+  | "appt_application_signed"
+  | "appt_dm_unavailable"
+  | "appt_cancelled_by_merchant"
+  | "appt_not_interested";
 
 export interface DispositionSpec {
   /** Canonical disposition slug — used as the schema enum value. */
@@ -190,6 +202,72 @@ export const DISPOSITIONS: Record<Disposition, DispositionSpec> = {
     tier: "neutral",
     businessDays: null,
   },
+  appt_presented_awaiting: {
+    key: "appt_presented_awaiting",
+    label: "Presented, awaiting decision",
+    rationale: "Pitch made, decision pending · 3 day follow-up",
+    tier: "positive",
+    businessDays: 3,
+  },
+  appt_statements_collected: {
+    key: "appt_statements_collected",
+    label: "Statements collected",
+    rationale: "Documents in hand · 1 day follow-up",
+    tier: "positive",
+    businessDays: 1,
+  },
+  appt_verbal_commitment: {
+    key: "appt_verbal_commitment",
+    label: "Verbal commitment",
+    rationale: "Verbal yes · 1 day follow-up",
+    tier: "positive",
+    businessDays: 1,
+  },
+  appt_no_show: {
+    key: "appt_no_show",
+    label: "No show",
+    rationale: "Merchant missed the appointment · 2 day follow-up",
+    tier: "neutral",
+    businessDays: 2,
+  },
+  // Static default: 2 business days. The capture path (W2b-2) overrides this
+  // to no follow-up when a future appointment already exists on the deal, so
+  // the rep isn't double-scheduled.
+  appt_rescheduled: {
+    key: "appt_rescheduled",
+    label: "Rescheduled on the spot",
+    rationale: "New appointment set · 2 day follow-up",
+    tier: "neutral",
+    businessDays: 2,
+  },
+  appt_application_signed: {
+    key: "appt_application_signed",
+    label: "Application signed",
+    rationale: "Paperwork signed · 2 day follow-up",
+    tier: "positive",
+    businessDays: 2,
+  },
+  appt_dm_unavailable: {
+    key: "appt_dm_unavailable",
+    label: "Decision maker not available",
+    rationale: "Retry · 2 day follow-up",
+    tier: "neutral",
+    businessDays: 2,
+  },
+  appt_cancelled_by_merchant: {
+    key: "appt_cancelled_by_merchant",
+    label: "Cancelled by merchant",
+    rationale: "Merchant cancelled · 3 day follow-up",
+    tier: "negative",
+    businessDays: 3,
+  },
+  appt_not_interested: {
+    key: "appt_not_interested",
+    label: "Not interested",
+    rationale: "No follow-up",
+    tier: "negative",
+    businessDays: null,
+  },
 };
 
 /**
@@ -249,3 +327,10 @@ export function formatFollowUpDate(iso: string): string {
     timeZone: "UTC",
   });
 }
+
+/** Appointment outcomes that advance the deal stage (addendum 3.3.B.12 2.8).
+ *  Only forward advancement; never sets won (closed-won stays merchant boarding). */
+export const APPOINTMENT_STAGE_EFFECT: Partial<Record<Disposition, DealStage>> = {
+  appt_verbal_commitment: "proposal",
+  appt_application_signed: "submitted",
+};

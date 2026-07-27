@@ -35,4 +35,25 @@ describe("dispositionSets", () => {
   it("every value has a spec in DISPOSITIONS", () => {
     for (const v of DISPOSITION_VALUES) expect(DISPOSITIONS[v]).toBeTruthy();
   });
+
+  it("appointment has its own outcome set, distinct from Call (W2a-2)", () => {
+    expect(DISPOSITIONS_BY_TYPE.appointment.top).toEqual([
+      "appt_presented_awaiting",
+      "appt_statements_collected",
+      "appt_verbal_commitment",
+      "appt_no_show",
+      "appt_rescheduled",
+    ]);
+    expect(DISPOSITIONS_BY_TYPE.appointment.all).toEqual([
+      "appt_presented_awaiting",
+      "appt_statements_collected",
+      "appt_verbal_commitment",
+      "appt_no_show",
+      "appt_rescheduled",
+      "appt_application_signed",
+      "appt_dm_unavailable",
+      "appt_cancelled_by_merchant",
+      "appt_not_interested",
+    ]);
+  });
 });

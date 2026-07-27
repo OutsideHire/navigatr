@@ -146,14 +146,17 @@ describe("LogActivitySheet — submission payload by type", () => {
     openSheet();
     fireEvent.click(screen.getByText("Appointment"));
 
+    // Appointment has its own outcome set, not the call dispositions.
+    expect(screen.queryByText(/positive engagement/i)).not.toBeInTheDocument();
     fireEvent.input(screen.getByLabelText(/length/i), { target: { value: "30" } });
-    fireEvent.click(screen.getByText(/positive engagement/i));
+    fireEvent.click(screen.getByText(/verbal commitment/i));
     fireEvent.click(screen.getByRole("button", { name: /log activity/i }));
 
     await waitFor(() => expect(mutateAsyncMock).toHaveBeenCalled());
     expect(mutateAsyncMock.mock.calls[0][0]).toMatchObject({
       type: "appointment",
       durationMinutes: 30,
+      disposition: "appt_verbal_commitment",
     });
   });
 });
