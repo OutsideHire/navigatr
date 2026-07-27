@@ -1,4 +1,4 @@
-// Kanban grouping + redesigned card. 5 active columns (no Lost), each card shows
+// Kanban grouping + redesigned card. 6 active columns (no Lost), each card shows
 // company + value + a probability bar, and a "+ Add to {stage}" footer button.
 //
 // Real pointer-drag is verified manually in-browser: jsdom can't simulate
@@ -24,9 +24,9 @@ function renderBoard(deals: Deal[], onAddToStage?: (s: Deal["stage"]) => void) {
 }
 
 describe("KanbanBoard", () => {
-  it("renders the 5 active stage columns and NOT a Lost column", () => {
+  it("renders the 6 active stage columns and NOT a Lost column", () => {
     renderBoard([deal("a", "new", 100_00)]);
-    for (const label of ["New", "Contacted", "Qualified", "Proposal", "Won"]) {
+    for (const label of ["New", "Contacted", "Qualified", "Proposal", "Submitted", "Won"]) {
       expect(screen.getByLabelText(`${label} stage`)).toBeInTheDocument();
     }
     expect(screen.queryByLabelText("Lost stage")).toBeNull();

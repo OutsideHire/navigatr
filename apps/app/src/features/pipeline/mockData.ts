@@ -12,7 +12,7 @@
  * is mostly a name-mapping exercise.
  */
 
-export type DealStage = "new" | "contacted" | "qualified" | "proposal" | "won" | "lost";
+export type DealStage = "new" | "contacted" | "qualified" | "proposal" | "submitted" | "won" | "lost";
 
 export type LostReasonCategory =
   | "price"
@@ -136,6 +136,7 @@ export const STAGE_DEFAULT_PROBABILITY: Record<DealStage, number> = {
   contacted: 35,
   qualified: 55,
   proposal: 75,
+  submitted: 85,
   won: 100,
   lost: 0,
 };
@@ -276,6 +277,7 @@ export const STAGE_BADGE_KIND: Record<DealStage, BadgeKind> = {
   contacted: "stage-contacted",
   qualified: "stage-qualified",
   proposal: "stage-proposal",
+  submitted: "stage-submitted",
   won: "stage-won",
   lost: "priority-low",
 };
@@ -285,6 +287,7 @@ export const STAGE_BAND_COLOR: Record<DealStage, BandColor> = {
   contacted: "warning",
   qualified: "teal",
   proposal: "violet",
+  submitted: "blue",
   won: "success",
   lost: "danger",
 };
@@ -303,6 +306,7 @@ export const STAGE_TONE: Record<DealStage, StageTone> = {
   contacted: { band: "warning", barFill: "bg-status-warning", pillBg: "bg-status-warning-bg", pillText: "text-status-warning" },
   qualified: { band: "teal",    barFill: "bg-accent-teal",    pillBg: "bg-accent-teal-20",    pillText: "text-accent-teal" },
   proposal:  { band: "violet",  barFill: "bg-accent-violet",  pillBg: "bg-accent-violet-20",  pillText: "text-accent-violet" },
+  submitted: { band: "blue",    barFill: "bg-accent-blue",    pillBg: "bg-accent-blue-20",    pillText: "text-accent-blue" },
   won:       { band: "success", barFill: "bg-status-success", pillBg: "bg-status-success-bg", pillText: "text-status-success" },
   lost:      { band: "danger",  barFill: "bg-status-danger",  pillBg: "bg-status-danger-bg",  pillText: "text-status-danger" },
 };
@@ -312,6 +316,7 @@ export const STAGE_LABEL: Record<DealStage, string> = {
   contacted: "Contacted",
   qualified: "Qualified",
   proposal: "Proposal",
+  submitted: "Submitted",
   won: "Won",
   lost: "Lost",
 };
@@ -329,19 +334,21 @@ export const STAGE_NEXT_VERB: Record<DealStage, string> = {
   contacted: "Call back",
   qualified: "Send proposal",
   proposal: "Follow up",
+  submitted: "Follow up",
   won: "Onboard",
   lost: "Re-engage",
 };
 
-// Chip counts authored to match the dashboard story (47 total active across
+// Chip counts authored to match the dashboard story (51 total active across
 // the rep's whole book). Slightly larger than what's in MOCK_DEALS because
 // MOCK_DEALS is a curated 35-card sample for the visible list.
 export const STAGE_CHIP_COUNTS: Record<"all" | DealStage, number> = {
-  all: 47,
+  all: 51,
   new: 12,
   contacted: 15,
   qualified: 10,
   proposal: 7,
+  submitted: 4,
   won: 3,
   lost: 0,
 };

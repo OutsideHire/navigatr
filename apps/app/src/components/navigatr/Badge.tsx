@@ -2,6 +2,8 @@
  * navigatr Badge — canonical small status/category indicator.
  *
  * Source: Figma `navigatr v1` COMPONENT_SET 24:26 (12 variants, axis `kind`).
+ * `stage-submitted` is code-only (added for the 'submitted' deal stage,
+ * addendum 3.3.B.12), not yet in the Figma component set.
  *
  *   All variants: 22 px tall · padding 3 / 8 · radius/full · caption text
  *
@@ -10,6 +12,7 @@
  *   stage-contacted     status/warning-bg     status/warning
  *   stage-qualified     accent/teal-20        accent/teal
  *   stage-proposal      accent/violet-20      accent/violet
+ *   stage-submitted     accent/blue-20        accent/blue
  *   stage-won           status/success-bg     status/success
  *   status-overdue      status/danger-bg      status/danger
  *   status-due-soon     status/warning-bg     status/warning
@@ -36,6 +39,7 @@ export type BadgeKind =
   | "stage-contacted"
   | "stage-qualified"
   | "stage-proposal"
+  | "stage-submitted"
   | "stage-won"
   | "status-overdue"
   | "status-due-soon"
@@ -50,6 +54,7 @@ const kindClasses: Record<BadgeKind, string> = {
   "stage-contacted":  "bg-status-warning-bg text-status-warning",
   "stage-qualified":  "bg-accent-teal-20 text-accent-teal",
   "stage-proposal":   "bg-accent-violet-20 text-accent-violet",
+  "stage-submitted":  "bg-accent-blue-20 text-accent-blue",
   "stage-won":        "bg-status-success-bg text-status-success",
   "status-overdue":   "bg-status-danger-bg text-status-danger",
   "status-due-soon":  "bg-status-warning-bg text-status-warning",

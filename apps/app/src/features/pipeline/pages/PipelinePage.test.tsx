@@ -161,10 +161,10 @@ describe("buildWonAtMap", () => {
 describe("countByStage", () => {
   it("returns all-zero counts for no deals (fresh org shows no fabricated totals)", () => {
     expect(countByStage([])).toEqual({
-      all: 0, new: 0, contacted: 0, qualified: 0, proposal: 0, won: 0, lost: 0,
+      all: 0, new: 0, contacted: 0, qualified: 0, proposal: 0, submitted: 0, won: 0, lost: 0,
     });
     expect(countByStage(undefined)).toEqual({
-      all: 0, new: 0, contacted: 0, qualified: 0, proposal: 0, won: 0, lost: 0,
+      all: 0, new: 0, contacted: 0, qualified: 0, proposal: 0, submitted: 0, won: 0, lost: 0,
     });
   });
 

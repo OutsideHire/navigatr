@@ -122,7 +122,7 @@ export interface DashboardData {
   conversionFunnel: ConversionFunnelRow[];
 }
 
-const STAGES: DealStage[] = ["new", "contacted", "qualified", "proposal", "won"];
+const STAGES: DealStage[] = ["new", "contacted", "qualified", "proposal", "submitted", "won"];
 
 /** The stages the by-stage breakdown renders (everything except "lost").
  *  The %-of-pipeline denominator is summed over exactly this set so the bars
@@ -193,6 +193,7 @@ export function useDashboardData(range: DateRange): DashboardData {
       contacted: { count: 0, valueCents: 0 },
       qualified: { count: 0, valueCents: 0 },
       proposal: { count: 0, valueCents: 0 },
+      submitted: { count: 0, valueCents: 0 },
       won: { count: 0, valueCents: 0 },
       lost: { count: 0, valueCents: 0 },
     };
@@ -354,6 +355,7 @@ export function useDashboardData(range: DateRange): DashboardData {
       contacted: new Set(),
       qualified: new Set(),
       proposal: new Set(),
+      submitted: new Set(),
       won: new Set(),
       lost: new Set(),
     };

@@ -181,11 +181,11 @@ describe("useDashboardData / KPIs", () => {
 });
 
 describe("useDashboardData / by-stage", () => {
-  it("always returns all 5 stages, even when some are empty", () => {
+  it("always returns all 6 stages, even when some are empty", () => {
     dealsData = [deal("a", "new", 100_000)];
     const { result } = renderHook(() => useDashboardData(ALL), { wrapper });
     const stages = result.current.byStage.map((s) => s.stage);
-    expect(stages).toEqual(["new", "contacted", "qualified", "proposal", "won"]);
+    expect(stages).toEqual(["new", "contacted", "qualified", "proposal", "submitted", "won"]);
     expect(result.current.byStage.find((s) => s.stage === "won")?.count).toBe(0);
   });
 

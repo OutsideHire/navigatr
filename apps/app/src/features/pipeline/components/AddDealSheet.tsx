@@ -82,6 +82,7 @@ const STAGE_OPTIONS: SelectOption[] = [
   { value: "contacted", label: "Contacted" },
   { value: "qualified", label: "Qualified" },
   { value: "proposal", label: "Proposal" },
+  { value: "submitted", label: "Submitted" },
   { value: "won", label: "Won" },
 ];
 
@@ -184,7 +185,7 @@ const baseShape = {
     emptyToUndefined,
     z.coerce.number().int().positive("Enter a deal value"),
   ),
-  stage: z.enum(["new", "contacted", "qualified", "proposal", "won", "lost"]),
+  stage: z.enum(["new", "contacted", "qualified", "proposal", "submitted", "won", "lost"]),
   probability: z.preprocess(
     emptyToUndefined,
     z.coerce.number().int().min(0).max(100),
@@ -245,6 +246,7 @@ const STAGE_DEFAULT_PROBABILITY: Record<DealStage, number> = {
   contacted: 35,
   qualified: 55,
   proposal: 75,
+  submitted: 85,
   won: 100,
   lost: 0,
 };

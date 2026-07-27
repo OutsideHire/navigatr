@@ -143,7 +143,7 @@ function fmtMoneyShort(cents: number): string {
 // ───────────────────────────────────────────────────────────────────────
 
 type StageFilter = "all" | DealStage;
-const STAGE_FILTERS: StageFilter[] = ["all", "new", "contacted", "qualified", "proposal", "won"];
+const STAGE_FILTERS: StageFilter[] = ["all", "new", "contacted", "qualified", "proposal", "submitted", "won"];
 
 /** Validate a ?stage= URL param against the real chip stages. Unknown or
  *  missing → "all" so a deep-link never produces a hidden, unclearable
@@ -165,7 +165,7 @@ export function countByStage(
   ownerFilter?: string | null,
 ): Record<StageFilter, number> {
   const counts: Record<StageFilter, number> = {
-    all: 0, new: 0, contacted: 0, qualified: 0, proposal: 0, won: 0, lost: 0,
+    all: 0, new: 0, contacted: 0, qualified: 0, proposal: 0, submitted: 0, won: 0, lost: 0,
   };
   if (!deals) return counts;
   for (const d of deals) {

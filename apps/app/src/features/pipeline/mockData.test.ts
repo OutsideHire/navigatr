@@ -6,6 +6,10 @@ import {
   STAGE_BAND_COLOR,
   STAGE_BADGE_KIND,
   STAGE_NEXT_VERB,
+  STAGE_LABEL,
+  STAGE_DEFAULT_PROBABILITY,
+  STAGE_TONE,
+  STAGE_CHIP_COUNTS,
 } from "./mockData";
 
 describe("formatMoney", () => {
@@ -67,9 +71,33 @@ describe("formatRelative", () => {
 
 describe("STAGE_NEXT_VERB", () => {
   it("has a default verb for every stage so DealCard never shows blank action text", () => {
-    const stages = ["new", "contacted", "qualified", "proposal", "won"] as const;
+    const stages = ["new", "contacted", "qualified", "proposal", "submitted", "won"] as const;
     for (const s of stages) {
       expect(STAGE_NEXT_VERB[s]).toMatch(/\w+/);
     }
+  });
+});
+
+// Regression: the 'submitted' stage (merchant "application submitted",
+// addendum 3.3.B.12) was added between proposal and won. Every stage-aware
+// map in mockData.ts must carry a 'submitted' entry or the app isn't
+// exhaustive for the new stage.
+describe("'submitted' stage", () => {
+  it("has a label", () => {
+    expect(STAGE_LABEL.submitted).toBe("Submitted");
+  });
+
+  it("has a default probability between proposal's and won's", () => {
+    expect(STAGE_DEFAULT_PROBABILITY.submitted).toBe(85);
+    expect(STAGE_DEFAULT_PROBABILITY.submitted).toBeGreaterThan(STAGE_DEFAULT_PROBABILITY.proposal);
+    expect(STAGE_DEFAULT_PROBABILITY.submitted).toBeLessThan(STAGE_DEFAULT_PROBABILITY.won);
+  });
+
+  it("is present in every stage-aware map", () => {
+    expect(STAGE_BADGE_KIND.submitted).toBe("stage-submitted");
+    expect(STAGE_BAND_COLOR.submitted).toBeDefined();
+    expect(STAGE_TONE.submitted).toBeDefined();
+    expect(STAGE_NEXT_VERB.submitted).toMatch(/\w+/);
+    expect(STAGE_CHIP_COUNTS.submitted).toBeDefined();
   });
 });

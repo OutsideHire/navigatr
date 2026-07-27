@@ -20,7 +20,7 @@ import {
   formatMoney, STAGE_LABEL, STAGE_TONE, type Deal, type DealStage,
 } from "../mockData";
 
-const STAGES: DealStage[] = ["new", "contacted", "qualified", "proposal", "won"];
+const STAGES: DealStage[] = ["new", "contacted", "qualified", "proposal", "submitted", "won"];
 
 /** Visual contents of a card — shared by the live card and the drag overlay. */
 function CardBody({ deal }: { deal: Deal }) {
@@ -112,7 +112,7 @@ export function KanbanBoard({
     useSensor(KeyboardSensor),
   );
   const byStage: Record<DealStage, Deal[]> = {
-    new: [], contacted: [], qualified: [], proposal: [], won: [], lost: [],
+    new: [], contacted: [], qualified: [], proposal: [], submitted: [], won: [], lost: [],
   };
   for (const d of deals) byStage[d.stage]?.push(d);
 
@@ -130,7 +130,7 @@ export function KanbanBoard({
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div role="list" className="grid grid-cols-5 gap-3">
+      <div role="list" className="grid grid-cols-6 gap-3">
         {STAGES.map((s) => (
           <div key={s}>
             <Column stage={s} deals={byStage[s]} onAddToStage={onAddToStage} />

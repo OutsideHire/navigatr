@@ -37,7 +37,7 @@ const NEXT_THEME: Record<Theme, Theme> = { light: "dark", dark: "system", system
 const THEME_LABEL: Record<Theme, string> = { light: "Light", dark: "Dark", system: "System" };
 
 const BADGE_KINDS: BadgeKind[] = [
-  "stage-new", "stage-contacted", "stage-qualified", "stage-proposal", "stage-won",
+  "stage-new", "stage-contacted", "stage-qualified", "stage-proposal", "stage-submitted", "stage-won",
   "status-overdue", "status-due-soon", "status-on-track", "status-upcoming",
   "priority-high", "priority-medium", "priority-low",
 ];

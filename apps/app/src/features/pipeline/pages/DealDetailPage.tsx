@@ -439,7 +439,7 @@ function SourceCard({ deal }: { deal: Deal }) {
   );
 }
 
-const STAGE_ORDER: DealStage[] = ["new", "contacted", "qualified", "proposal", "won"];
+const STAGE_ORDER: DealStage[] = ["new", "contacted", "qualified", "proposal", "submitted", "won"];
 
 function PipelineProgressionCard({ deal }: { deal: Deal }) {
   // Lost deals: treat as if the deal never made it past the start — show all
