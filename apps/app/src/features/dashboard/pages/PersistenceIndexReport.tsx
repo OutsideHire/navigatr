@@ -342,6 +342,30 @@ export function PersistenceIndexReport() {
   const chartTopLabel = useDailyLines ? "Top decile" : topLabel;
   const chartTopValue = useDailyLines ? companyP90Latest : topValue;
 
+  // Manager-only for beta (addendum 4.2): the widget is hidden for reps, and
+  // the detail page is guarded here too so a rep cannot reach their own score
+  // by opening the URL directly. Revisit before the rep-facing view is enabled.
+  if (!isManager) {
+    return (
+      <div className="mx-auto w-full max-w-3xl px-4 py-4 sm:px-6 sm:py-6">
+        <div className="flex flex-col gap-4">
+          <button
+            type="button"
+            onClick={() => navigate("/dashboard")}
+            className="inline-flex w-fit items-center gap-1 text-body-sm text-text-muted hover:text-text-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden /> Dashboard
+          </button>
+          <Card padding="lg" shadow="sm">
+            <p className="text-body-sm text-text-muted">
+              The Persistence Index is available to managers during the beta.
+            </p>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-4 sm:px-6 sm:py-6">
       <div className="flex flex-col gap-4">
