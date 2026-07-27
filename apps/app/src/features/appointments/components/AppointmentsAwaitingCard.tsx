@@ -1,5 +1,5 @@
 /**
- * AppointmentsAwaitingCard — manager/admin rollup of per-rep counts of
+ * AppointmentsAwaitingCard: manager/admin rollup of per-rep counts of
  * scheduled appointments awaiting an outcome (W2d). Mirrors TeamCoverageCard's
  * shape: a small card, manager/admin only, one row per rep with a nonzero
  * awaiting count plus a running total. Renders nothing for a non-manager

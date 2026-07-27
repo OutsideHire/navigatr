@@ -1,5 +1,5 @@
 /**
- * useAppointmentsAwaitingRollup — manager/admin per-rep count of scheduled
+ * useAppointmentsAwaitingRollup: manager/admin per-rep count of scheduled
  * appointments awaiting an outcome (W2d). Calls the appointments_awaiting_
  * rollup RPC (hierarchy + role scoped server-side, mirrors coverage_rollup)
  * and maps to camelCase. An RPC error (incl. a non-manager hitting it) is

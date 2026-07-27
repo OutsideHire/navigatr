@@ -21,7 +21,7 @@ begin
   if auth.uid() is null then
     raise exception 'not_authenticated';
   end if;
-  -- coalesce so a NULL role (deactivated / profile-less caller — user_role()
+  -- coalesce so a NULL role (deactivated / profile-less caller, user_role()
   -- returns NULL) raises 'forbidden' rather than silently passing the IN check
   -- (NULL not in (...) is NULL, not TRUE). Matches coverage_rollup / team_leaderboard.
   if coalesce(public.user_role()::text, '') not in ('manager', 'admin') then
