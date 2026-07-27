@@ -14,6 +14,9 @@ export interface RepSnapshotRow {
   user_id: string;
   snapshot_date: string;
   composite: number | null;
+  /** True when composite is null because follow-up discipline is below the
+   *  volume floor (mirrors RepScore.insufficientData; see score.ts). */
+  insufficient_data: boolean;
   followup_points: number;
   followup_below_floor: boolean;
   followup_due_count: number;
@@ -106,6 +109,7 @@ export async function runSnapshots(deps: SnapshotDeps, now: Date): Promise<RunSu
           user_id: repId,
           snapshot_date: snapshotDate,
           composite: s.composite,
+          insufficient_data: s.insufficientData,
           followup_points: s.followupPoints,
           followup_below_floor: s.followupBelowFloor,
           followup_due_count: s.followupDueCount,

@@ -23,6 +23,7 @@ describe("resolvePersistenceConfig", () => {
     expect(merged.reengagementMax).toBe(DEFAULT_PERSISTENCE_CONFIG.reengagementMax);
     expect(merged.coverageCaveatPct).toBe(DEFAULT_PERSISTENCE_CONFIG.coverageCaveatPct);
     expect(merged.coverageSuppressPct).toBe(DEFAULT_PERSISTENCE_CONFIG.coverageSuppressPct);
+    expect(merged.emailInScoring).toBe(DEFAULT_PERSISTENCE_CONFIG.emailInScoring);
   });
 
   it("maps every snake_case key to its camelCase field", () => {
@@ -38,6 +39,7 @@ describe("resolvePersistenceConfig", () => {
       reengagement_max: 25,
       coverage_caveat_pct: 0.8,
       coverage_suppress_pct: 0.6,
+      email_in_scoring: true,
     });
     expect(merged).toEqual({
       silenceThresholdDays: 25,
@@ -51,6 +53,7 @@ describe("resolvePersistenceConfig", () => {
       reengagementMax: 25,
       coverageCaveatPct: 0.8,
       coverageSuppressPct: 0.6,
+      emailInScoring: true,
     });
   });
 
@@ -67,5 +70,22 @@ describe("resolvePersistenceConfig", () => {
 
   it("ignores unknown keys rather than throwing", () => {
     expect(resolvePersistenceConfig({ some_unknown_key: 42 })).toEqual(DEFAULT_PERSISTENCE_CONFIG);
+  });
+
+  describe("emailInScoring", () => {
+    it("defaults to false when absent", () => {
+      expect(resolvePersistenceConfig({}).emailInScoring).toBe(false);
+      expect(DEFAULT_PERSISTENCE_CONFIG.emailInScoring).toBe(false);
+    });
+
+    it("resolves true when the override is true", () => {
+      expect(resolvePersistenceConfig({ email_in_scoring: true }).emailInScoring).toBe(true);
+    });
+
+    it("falls back to false for a non-boolean value", () => {
+      expect(resolvePersistenceConfig({ email_in_scoring: "true" }).emailInScoring).toBe(false);
+      expect(resolvePersistenceConfig({ email_in_scoring: 1 }).emailInScoring).toBe(false);
+      expect(resolvePersistenceConfig({ email_in_scoring: null }).emailInScoring).toBe(false);
+    });
   });
 });

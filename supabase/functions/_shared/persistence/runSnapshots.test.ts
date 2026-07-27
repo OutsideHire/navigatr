@@ -9,6 +9,10 @@ function iso(daysAgo: number): string {
   return new Date(NOW.getTime() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
 }
 
+function isoDate(daysAgo: number): string {
+  return iso(daysAgo).slice(0, 10);
+}
+
 // Rep-1: one open deal, two recent touches -> zero silence -> full
 // re-engagement points (30/30) plus a partial cadence sample (17/30, below
 // the 3.5/wk target) -> composite 78 ((17+30)/60 rounded).
@@ -144,5 +148,46 @@ describe("runSnapshots", () => {
     await runSnapshots(d, NOW);
     expect(d.fetchOrgDeals).toHaveBeenCalledTimes(1);
     expect(d.fetchOrgActivities).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks a below-floor rep insufficient_data with a null composite, and excludes them from the company median", async () => {
+    // rep-4 has exactly one due follow-up in-window (< followupFloor of 8),
+    // so followUp.belowFloor is true and the composite is forced null
+    // (score.ts addendum 4.3), independent of cadence/re-engagement sampling.
+    const belowFloorDeal: ScoreDeal = {
+      id: "d4",
+      owner_id: "rep-4",
+      stage: "open",
+      owner_changed_at: null,
+      has_future_appointment: false,
+    };
+    const belowFloorActivity: ScoreActivity = {
+      dealId: "d4",
+      occurredAt: iso(6),
+      followUpDate: isoDate(5),
+    };
+    const d = deps({
+      listRepIds: vi.fn(async () => ["rep-1", "rep-4"]),
+      fetchOrgDeals: vi.fn(async () => [...deals, belowFloorDeal]),
+      fetchOrgActivities: vi.fn(async () => [...activities, belowFloorActivity]),
+    });
+    const summary = await runSnapshots(d, NOW);
+
+    const rows = (d.upsertRepSnapshot as any).mock.calls.map((c: any[]) => c[0] as RepSnapshotRow);
+    const rep4 = rows.find((r: RepSnapshotRow) => r.user_id === "rep-4")!;
+    expect(rep4.composite).toBeNull();
+    expect(rep4.insufficient_data).toBe(true);
+    expect(rep4.followup_below_floor).toBe(true);
+    expect(rep4.followup_due_count).toBe(1);
+
+    const rep1 = rows.find((r: RepSnapshotRow) => r.user_id === "rep-1")!;
+    expect(rep1.composite).toBe(78);
+    expect(rep1.insufficient_data).toBe(false);
+
+    const companyRow = (d.upsertCompanySnapshot as any).mock.calls[0][0] as CompanySnapshotRow;
+    expect(companyRow.rep_count).toBe(1); // rep-4's null composite is excluded
+    expect(companyRow.composite_median).toBe(78);
+    expect(companyRow.composite_p90).toBe(78);
+    expect(summary).toEqual({ orgs: 1, reps: 2, repSnapshots: 2, companySnapshots: 1, failures: 0 });
   });
 });

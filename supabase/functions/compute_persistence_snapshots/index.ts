@@ -9,6 +9,11 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolvePersistenceConfig } from "../_shared/persistence/config.ts";
 import { runSnapshots, type SnapshotDeps } from "../_shared/persistence/runSnapshots.ts";
+import { chunk } from "../_shared/chunk.ts";
+
+/** Max deal ids per `.in(...)` filter when looking up future appointments,
+ *  mirroring the batching used for Google searchNearby type lists. */
+const DEAL_ID_BATCH_SIZE = 200;
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -35,12 +40,39 @@ function makeDeps(db: SupabaseClient): SnapshotDeps {
       ];
     },
     async fetchOrgDeals(orgId) {
-      const { data, error } = await db.from("deals").select("id, owner_id, stage").eq("org_id", orgId);
+      const { data, error } = await db
+        .from("deals")
+        .select("id, owner_id, stage, owner_changed_at")
+        .eq("org_id", orgId);
       if (error) throw error;
-      return (data ?? []).map((r) => ({
+      const dealRows = data ?? [];
+      const dealIds = dealRows.map((r) => r.id as string);
+
+      // Re-engagement addendum 3.5: a deal with a scheduled (not yet occurred)
+      // appointment is excluded from the silence denominator. Look up future
+      // scheduled_appointments for this org's deals, batching the `.in(...)`
+      // filter to stay under Postgres/PostgREST URL-length limits for large
+      // orgs (mirrors the includedTypes batching in discover_prospects).
+      const nowIso = new Date().toISOString();
+      const futureApptDealIds = new Set<string>();
+      for (const idBatch of chunk(dealIds, DEAL_ID_BATCH_SIZE)) {
+        if (idBatch.length === 0) continue;
+        const { data: apptRows, error: apptError } = await db
+          .from("scheduled_appointments")
+          .select("deal_id")
+          .in("deal_id", idBatch)
+          .eq("status", "scheduled")
+          .gt("start_at", nowIso);
+        if (apptError) throw apptError;
+        for (const r of apptRows ?? []) futureApptDealIds.add(r.deal_id as string);
+      }
+
+      return dealRows.map((r) => ({
         id: r.id as string,
         owner_id: r.owner_id as string | null,
         stage: r.stage as string,
+        owner_changed_at: r.owner_changed_at as string | null,
+        has_future_appointment: futureApptDealIds.has(r.id as string),
       }));
     },
     async fetchOrgActivities(orgId) {

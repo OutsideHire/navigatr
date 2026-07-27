@@ -8,12 +8,16 @@ import { DEFAULT_SCORE_PARAMS, type ScoreParams } from "./score.ts";
 export interface PersistenceConfig extends ScoreParams {
   coverageCaveatPct: number; // SP-D consumes; stored now
   coverageSuppressPct: number;
+  /** Whether email activity counts toward scoring. Defaults to false (Wave 1
+   *  ships without email in scoring); an org can opt in via jsonb override. */
+  emailInScoring: boolean;
 }
 
 export const DEFAULT_PERSISTENCE_CONFIG: PersistenceConfig = {
   ...DEFAULT_SCORE_PARAMS,
   coverageCaveatPct: 0.75,
   coverageSuppressPct: 0.5,
+  emailInScoring: false,
 };
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -28,6 +32,7 @@ export function resolvePersistenceConfig(raw: unknown): PersistenceConfig {
   // default. Range/monotonicity of thresholds is the consuming step's concern.
   const num = (v: unknown, fallback: number) =>
     typeof v === "number" && Number.isFinite(v) ? v : fallback;
+  const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
   return {
     silenceThresholdDays: num(raw.silence_threshold_days, d.silenceThresholdDays),
     fairnessWindowDays: num(raw.fairness_window_days, d.fairnessWindowDays),
@@ -40,5 +45,6 @@ export function resolvePersistenceConfig(raw: unknown): PersistenceConfig {
     reengagementMax: num(raw.reengagement_max, d.reengagementMax),
     coverageCaveatPct: num(raw.coverage_caveat_pct, d.coverageCaveatPct),
     coverageSuppressPct: num(raw.coverage_suppress_pct, d.coverageSuppressPct),
+    emailInScoring: bool(raw.email_in_scoring, d.emailInScoring),
   };
 }
