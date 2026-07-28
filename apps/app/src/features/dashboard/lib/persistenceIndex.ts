@@ -613,3 +613,31 @@ export function persistenceStats(points: PersistencePoint[], peerAvg: number | n
 export function benchmarkAvgLabel(role: string | undefined): string {
   return role === "admin" ? "Company average" : "Team average";
 }
+
+// ── Logging Coverage gate (per-rep drill-down) ───────────────────────────
+//
+// Beta default (flagged for Robert): the server persistence_index_config
+// table already stores coverageCaveatPct/coverageSuppressPct for later, but
+// the client does not read that config yet, so the thresholds are hardcoded
+// here as named constants, forward-compatible with reading them from config.
+
+/** Below this composite coverage (0..1), suppress the selected rep's score entirely. */
+export const COVERAGE_SUPPRESS_PCT = 0.5;
+/** Below this composite coverage (0..1) (and at/above the suppress floor), show a caveat. */
+export const COVERAGE_CAVEAT_PCT = 0.75;
+
+export type CoverageGateState = "suppress" | "caveat" | "none";
+
+/**
+ * Decides whether the selected rep's drill-down should be suppressed, shown
+ * with a caveat, or shown as-is, based on their latest logging coverage
+ * (0..1 from the coverage rollup). Absent coverage data (null, e.g. no
+ * rollup entry for the rep) is NOT treated as low coverage: it resolves to
+ * "none" so the score renders ungated.
+ */
+export function coverageGateState(coverage: number | null): CoverageGateState {
+  if (coverage == null) return "none";
+  if (coverage < COVERAGE_SUPPRESS_PCT) return "suppress";
+  if (coverage < COVERAGE_CAVEAT_PCT) return "caveat";
+  return "none";
+}

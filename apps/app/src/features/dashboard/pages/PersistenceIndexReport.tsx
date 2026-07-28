@@ -20,6 +20,7 @@ import { usePersistenceBenchmarks } from "../hooks/usePersistenceBenchmarks";
 import { usePersistenceCompanySeries } from "../hooks/usePersistenceCompanySeries";
 import { usePersistenceIndex } from "../hooks/usePersistenceIndex";
 import { useTeamPersistenceIndex } from "../hooks/useTeamPersistenceIndex";
+import { useCoverageRollup } from "@/features/coverage/hooks/useCoverageRollup";
 import {
   RANGE_PRESETS,
   TARGET_SCORE,
@@ -28,6 +29,7 @@ import {
   REENGAGEMENT_MAX,
   historyDelta,
   persistenceStats,
+  coverageGateState,
   type RangeKey,
   type PerRepScore,
 } from "../lib/persistenceIndex";
@@ -244,6 +246,19 @@ export function PersistenceIndexReport() {
   // Reps never render peer benchmarks (strategy "solo"), so skip the RPC for them.
   const companySeriesQuery = usePersistenceCompanySeries(rangeDays, bench.strategy !== "solo");
   const companySeries = companySeriesQuery.data ?? [];
+  // Logging Coverage gate (beta default, flagged for Robert): applied only to
+  // the selected-rep drill-down, never the team aggregate. The hook is
+  // manager/admin only, matching this manager-only page; an RPC error (or a
+  // rep hitting it) returns an empty rollup, so the gate resolves to "none"
+  // rather than blocking the page.
+  const coverageRollup = useCoverageRollup();
+  const coverageByUser = React.useMemo(
+    () => new Map(coverageRollup.rows.map((r) => [r.userId, r.compositeCoverage] as const)),
+    [coverageRollup.rows],
+  );
+  const selectedCoverage = selectedRep ? coverageByUser.get(selectedRep) ?? null : null;
+  const coverageGate = selectedRep ? coverageGateState(selectedCoverage) : "none";
+  const coverageSuppressed = coverageGate === "suppress";
 
   const scored = points.filter((p) => p.composite != null);
   const current = scored.length ? (scored[scored.length - 1].composite as number) : null;
@@ -395,7 +410,9 @@ export function PersistenceIndexReport() {
 
         <Card padding="lg" shadow="sm">
           <div className="flex flex-col gap-4">
-            {current == null && !showBelowFloorScore ? (
+            {coverageSuppressed ? (
+              <p className="text-body-sm text-text-muted">Not enough logging to score yet.</p>
+            ) : current == null && !showBelowFloorScore ? (
               <p className="text-body-sm text-text-muted">Not enough data yet to chart a trend.</p>
             ) : (
               <>
@@ -424,6 +441,12 @@ export function PersistenceIndexReport() {
                     </>
                   )}
                 </div>
+
+                {coverageGate === "caveat" && (
+                  <p className="text-caption text-status-warning">
+                    Logging coverage is low ({Math.round((selectedCoverage as number) * 100)}%); this score may be incomplete.
+                  </p>
+                )}
 
                 <div className="flex flex-wrap gap-2">
                   {RANGE_PRESETS.map((r) => (
@@ -471,7 +494,7 @@ export function PersistenceIndexReport() {
           </div>
         </Card>
 
-        {(current != null || showBelowFloorScore) && (
+        {(current != null || showBelowFloorScore) && !coverageSuppressed && (
           <>
             <PersistenceSubComponents
               rows={[

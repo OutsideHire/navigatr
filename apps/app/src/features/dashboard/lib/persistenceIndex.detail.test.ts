@@ -4,6 +4,9 @@ import {
   subComponentPeerAverages,
   persistenceStats,
   benchmarkAvgLabel,
+  coverageGateState,
+  COVERAGE_CAVEAT_PCT,
+  COVERAGE_SUPPRESS_PCT,
   type PersistenceStats,
 } from "./persistenceIndex";
 import type { PerRepScore, PersistencePoint } from "./persistenceIndex";
@@ -81,5 +84,26 @@ describe("benchmarkAvgLabel", () => {
   it("labels by scope", () => {
     expect(benchmarkAvgLabel("admin")).toBe("Company average");
     expect(benchmarkAvgLabel("manager")).toBe("Team average");
+  });
+});
+
+describe("coverageGateState", () => {
+  it("no gate when coverage is absent (null)", () => {
+    expect(coverageGateState(null)).toBe("none");
+  });
+  it("suppresses below the suppress floor", () => {
+    expect(coverageGateState(0.4)).toBe("suppress");
+  });
+  it("caveats between the suppress floor and the caveat ceiling", () => {
+    expect(coverageGateState(0.6)).toBe("caveat");
+  });
+  it("no gate at or above the caveat ceiling", () => {
+    expect(coverageGateState(0.8)).toBe("none");
+  });
+  it("exact suppress boundary (0.5) caveats, does not suppress", () => {
+    expect(coverageGateState(COVERAGE_SUPPRESS_PCT)).toBe("caveat");
+  });
+  it("exact caveat boundary (0.75) is ungated", () => {
+    expect(coverageGateState(COVERAGE_CAVEAT_PCT)).toBe("none");
   });
 });

@@ -56,6 +56,12 @@ vi.mock("../hooks/usePersistenceCompanySeries", () => ({
   usePersistenceCompanySeries: () => ({ data: companySeriesData }),
 }));
 
+// Logging Coverage gate: default empty rows so existing tests are ungated.
+let coverageRows: { userId: string; compositeCoverage: number | null }[] = [];
+vi.mock("@/features/coverage/hooks/useCoverageRollup", () => ({
+  useCoverageRollup: () => ({ rows: coverageRows, isLoading: false }),
+}));
+
 function mkSeries(n: number, base = 60): PersistencePoint[] {
   return Array.from({ length: n }, (_, i) => ({
     date: `2026-06-${String((i % 28) + 1).padStart(2, "0")}`,
@@ -84,6 +90,7 @@ beforeEach(() => {
   ];
   lastTargetOwner = undefined;
   companySeriesData = [];
+  coverageRows = [];
 });
 
 describe("PersistenceIndexReport", () => {
@@ -282,5 +289,51 @@ describe("PersistenceIndexReport", () => {
     expect(() => renderReport()).not.toThrow();
     expect(screen.getByText(/company average/i)).toBeInTheDocument();
     expect(screen.getByText(/top decile/i)).toBeInTheDocument();
+  });
+
+  describe("Logging Coverage gate (selected-rep drill-down)", () => {
+    it("suppresses the score and hides the breakdown when the selected rep's coverage is below 50%", () => {
+      role = "manager";
+      coverageRows = [{ userId: "u1", compositeCoverage: 0.4 }];
+      renderReport();
+      fireEvent.click(screen.getByText("Sarah Lim"));
+      expect(screen.getByText(/not enough logging to score yet/i)).toBeInTheDocument();
+      expect(screen.queryByText(/where your score comes from/i)).toBeNull();
+      expect(screen.queryByText("This period")).toBeNull();
+      // Back-to-team + rep header stay so the manager can navigate back.
+      expect(screen.getByRole("button", { name: /back to team/i })).toBeInTheDocument();
+      expect(screen.getByText(/Sarah Lim/)).toBeInTheDocument();
+    });
+
+    it("shows a caveat line but still renders the score when coverage is between 50% and 75%", () => {
+      role = "manager";
+      coverageRows = [{ userId: "u1", compositeCoverage: 0.6 }];
+      renderReport();
+      fireEvent.click(screen.getByText("Sarah Lim"));
+      expect(screen.getByText(/logging coverage is low \(60%\); this score may be incomplete/i)).toBeInTheDocument();
+      // Score + trend still render (not suppressed): the "/ 100" target line
+      // and the sub-component breakdown both come from the un-gated branch.
+      expect(screen.getByText(/\/ 100/)).toBeInTheDocument();
+      expect(screen.getByText(/where your score comes from/i)).toBeInTheDocument();
+    });
+
+    it("does not gate when the selected rep has no coverage entry (absent data is not low coverage)", () => {
+      role = "manager";
+      coverageRows = []; // no entry for u1
+      renderReport();
+      fireEvent.click(screen.getByText("Sarah Lim"));
+      expect(screen.queryByText(/not enough logging to score yet/i)).toBeNull();
+      expect(screen.queryByText(/logging coverage is low/i)).toBeNull();
+      expect(screen.getByText(/\/ 100/)).toBeInTheDocument();
+    });
+
+    it("never gates the team-aggregate view, even if the manager's own coverage is low", () => {
+      role = "manager";
+      coverageRows = [{ userId: "mgr", compositeCoverage: 0.1 }];
+      renderReport();
+      expect(screen.queryByText(/not enough logging to score yet/i)).toBeNull();
+      expect(screen.queryByText(/logging coverage is low/i)).toBeNull();
+      expect(screen.getByText(/where your score comes from/i)).toBeInTheDocument();
+    });
   });
 });
