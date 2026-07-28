@@ -106,6 +106,38 @@ describe("PersistenceIndexReport", () => {
     expect(container.querySelector("svg")).toBeTruthy();
   });
 
+  it("renders the composite trend line in the addendum blue (#2E5FE2), not the old brand-teal token", () => {
+    const { container } = renderReport();
+    const svg = container.querySelector('svg[aria-label="Persistence index trend"]')!;
+    // Line path: no fill, drawn with the literal blue stroke.
+    const linePath = svg.querySelector('path[fill="none"][stroke="#2E5FE2"]');
+    expect(linePath).toBeTruthy();
+    expect(linePath?.getAttribute("class") ?? "").not.toContain("text-brand-primary");
+    // Area path: same blue, translucent fill.
+    const areaPath = svg.querySelector('path[fill="#2E5FE2"]');
+    expect(areaPath).toBeTruthy();
+  });
+
+  it("locks the trend chart y-axis to a fixed 0-100 scale regardless of the data's own min/max", () => {
+    // A composite of 50 is the exact vertical midpoint of the 180-tall
+    // viewBox under a fixed 0-100 scale (y = H - (v/100)*H = 90), whether the
+    // rest of the series clusters near the top or the bottom. If the axis
+    // ever started auto-fitting to data min/max instead, this same value
+    // would land at a different height depending on the other points.
+    role = "manager";
+    series = [
+      { date: "2026-06-01", composite: 50, activityCount: 1 },
+      { date: "2026-06-02", composite: 90, activityCount: 1 },
+      { date: "2026-06-03", composite: 95, activityCount: 1 },
+    ];
+    const { container } = renderReport();
+    const svg = container.querySelector('svg[aria-label="Persistence index trend"]')!;
+    const linePath = svg.querySelector('path[fill="none"][stroke="#2E5FE2"]');
+    const d = linePath!.getAttribute("d")!;
+    const firstPoint = d.match(/M([\d.]+),([\d.]+)/)!;
+    expect(Number(firstPoint[2])).toBeCloseTo(90, 1); // H(180) - (50/100)*180 = 90
+  });
+
   it("renders the sub-component breakdown and stats grid for a populated view", () => {
     renderReport();
     expect(screen.getByText(/where your score comes from/i)).toBeInTheDocument();

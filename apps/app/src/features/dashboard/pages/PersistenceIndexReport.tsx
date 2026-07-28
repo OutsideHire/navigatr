@@ -154,15 +154,14 @@ function TrendChart({
             />
           ))}
       {areas.map((d, i) => (
-        <path key={`area-${i}`} d={d} stroke="none" fill="currentColor" fillOpacity={0.08} className="text-brand-primary" />
+        <path key={`area-${i}`} d={d} stroke="none" fill="#2E5FE2" fillOpacity={0.08} />
       ))}
       {lines.map((d, i) => (
         <path
           key={i}
           d={d}
           fill="none"
-          stroke="currentColor"
-          className="text-brand-primary"
+          stroke="#2E5FE2"
           strokeWidth={2}
           vectorEffect="non-scaling-stroke"
         />
@@ -449,7 +448,7 @@ export function PersistenceIndexReport() {
                 {showBenchmarks && !showBelowFloorScore && (
                   <div className="flex flex-wrap items-center gap-3 text-caption text-text-muted">
                     <span className="inline-flex items-center gap-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-brand-primary" aria-hidden /> You {current}
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "#2E5FE2" }} aria-hidden /> You {current}
                     </span>
                     {chartAvgValue != null && (
                       <span className="inline-flex items-center gap-1.5">
