@@ -15,6 +15,7 @@ import { computeUnloggedDials } from "../lib/unloggedDials";
 interface DialRow {
   deal_id: string;
   detected_at: string;
+  matched_activity_id: string | null;
 }
 
 interface CallRow {
@@ -46,7 +47,7 @@ export function useUnloggedDials() {
       // Own dials (RLS restricts to user_id = auth.uid()), oldest first.
       const { data: dialRows, error: dialErr } = await supabase
         .from("coverage_signal")
-        .select("deal_id, detected_at")
+        .select("deal_id, detected_at, matched_activity_id")
         .eq("channel", "phone")
         .eq("signal_type", "dial")
         .order("detected_at", { ascending: true });
@@ -54,6 +55,7 @@ export function useUnloggedDials() {
       const dials = ((dialRows ?? []) as unknown as DialRow[]).map((r) => ({
         dealId: r.deal_id,
         detectedAt: r.detected_at,
+        matchedActivityId: r.matched_activity_id,
       }));
       if (dials.length === 0) return [];
 

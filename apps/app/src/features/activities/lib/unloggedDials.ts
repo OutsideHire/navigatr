@@ -12,6 +12,13 @@ export interface DialSignal {
   dealId: string;
   /** ISO timestamp of the tap. */
   detectedAt: string;
+  /**
+   * Explicit link stamped by the match_unlogged_dials RPC when the rep logs
+   * an outcome from the nudge, however long after the dial. Non-null means
+   * logged, independent of the 4h auto-match window below (that window only
+   * covers same-session logs).
+   */
+  matchedActivityId?: string | null;
 }
 
 export interface CallActivity {
@@ -39,7 +46,11 @@ export function computeUnloggedDials(
     const detectedMs = new Date(d.detectedAt).getTime();
     // Still within the grace window — the rep may yet log it.
     if (nowMs - detectedMs < CALL_GRACE_MS) return false;
-    // Logged when a Call activity exists for the deal within [dial, dial+4h].
+    // Logged when the RPC has stamped an explicit match (any lag, e.g. a
+    // next-day log), OR (fast path) a Call activity exists for the deal
+    // within [dial, dial+4h] (same-session logs auto-clear without needing
+    // the explicit stamp).
+    if (d.matchedActivityId != null) return false;
     const matched = callActivities.some((a) => {
       if (a.dealId !== d.dealId) return false;
       const occurredMs = new Date(a.occurredAt).getTime();

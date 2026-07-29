@@ -7,7 +7,9 @@ import { useUnloggedDials } from "./useUnloggedDials";
 const HOUR = 60 * 60 * 1000;
 const oldDial = new Date(Date.now() - 6 * HOUR).toISOString();
 
-const dialRows = [{ deal_id: "d1", detected_at: oldDial }];
+const dialRows: Array<{ deal_id: string; detected_at: string; matched_activity_id: string | null }> = [
+  { deal_id: "d1", detected_at: oldDial, matched_activity_id: null },
+];
 const callRows: Array<{ deal_id: string; occurred_at: string }> = [];
 function builder(rows: unknown[]) {
   const b: Record<string, unknown> = {};
@@ -49,7 +51,17 @@ describe("useUnloggedDials", () => {
     const { result } = renderHook(() => useUnloggedDials(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([]);
-    dialRows.push({ deal_id: "d1", detected_at: oldDial }); // restore for other tests
+    dialRows.push({ deal_id: "d1", detected_at: oldDial, matched_activity_id: null }); // restore for other tests
+  });
+
+  it("excludes a dial that has an explicit matched_activity_id, even with no matching call fetched (the day-later-log case)", async () => {
+    dialRows.length = 0;
+    dialRows.push({ deal_id: "d1", detected_at: oldDial, matched_activity_id: "act-99" });
+    const { result } = renderHook(() => useUnloggedDials(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual([]);
+    dialRows.length = 0;
+    dialRows.push({ deal_id: "d1", detected_at: oldDial, matched_activity_id: null }); // restore for other tests
   });
 
   it("suppresses a dial that the fetched Call activities match (calls are wired in)", async () => {

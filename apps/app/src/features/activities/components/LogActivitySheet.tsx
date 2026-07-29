@@ -237,7 +237,7 @@ function ActivityForm({
 }: {
   type: ActivityType;
   dealId: string;
-  onLogged: () => void;
+  onLogged: (activityId: string) => void;
   onBack: () => void;
   onClose: () => void;
 }) {
@@ -267,7 +267,7 @@ function ActivityForm({
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
     const followUpIso = calculateFollowUpDate(values.disposition);
     try {
-      await logActivity.mutateAsync({
+      const { id } = await logActivity.mutateAsync({
         dealId,
         type,
         disposition: values.disposition,
@@ -286,7 +286,7 @@ function ActivityForm({
       } else {
         toast.success("Activity logged. No follow-up scheduled.");
       }
-      onLogged();
+      onLogged(id);
       onClose();
     } catch (err) {
       // RLS denial / network failure / org mismatch — surface raw message.
@@ -429,8 +429,13 @@ export interface LogActivitySheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   dealId: string;
-  /** Called after a successful log so the parent can refresh activities. */
-  onLogged?: () => void;
+  /**
+   * Called after a successful log so the parent can refresh activities.
+   * Receives the new activity's id (e.g. so the caller can stamp an
+   * explicit coverage-signal match). Callers that don't need it may pass a
+   * `() => void` (a wider callback slot always accepts a narrower one).
+   */
+  onLogged?: (activityId: string) => void;
   /** Open straight onto this type's form, skipping the picker. */
   defaultType?: ActivityType;
 }

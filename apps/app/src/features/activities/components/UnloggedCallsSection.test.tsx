@@ -9,14 +9,27 @@ vi.mock("../hooks/useUnloggedDials", () => ({
   useUnloggedDials: () => ({ data: dials }),
   UNLOGGED_DIALS_QUERY_KEY: (userId: string | undefined) => ["coverage", "unlogged-dials", userId ?? "anon"],
 }));
-vi.mock("@/stores/auth", () => ({
-  useAuth: (selector: (s: { user: { id: string } | null }) => unknown) =>
-    selector({ user: { id: "user-1" } }),
+const matchMutate = vi.fn();
+vi.mock("../hooks/useMatchUnloggedDials", () => ({
+  useMatchUnloggedDials: () => ({ mutate: matchMutate }),
 }));
-// Stub the heavy sheet so the section test stays focused.
+// Stub the heavy sheet so the section test stays focused. Exposes an
+// onLogged trigger button so tests can simulate a completed log.
 vi.mock("./LogActivitySheet", () => ({
-  LogActivitySheet: (p: { open: boolean; dealId: string; defaultType?: string }) =>
-    p.open ? <div data-testid="log-sheet">{`${p.dealId}:${p.defaultType}`}</div> : null,
+  LogActivitySheet: (p: {
+    open: boolean;
+    dealId: string;
+    defaultType?: string;
+    onLogged?: (activityId: string) => void;
+  }) =>
+    p.open ? (
+      <div data-testid="log-sheet">
+        {`${p.dealId}:${p.defaultType}`}
+        <button type="button" onClick={() => p.onLogged?.("act-1")}>
+          simulate-logged
+        </button>
+      </div>
+    ) : null,
 }));
 
 function wrap(ui: ReactNode) {
@@ -27,6 +40,7 @@ beforeEach(() => {
   dials = [
     { dealId: "d1", companyName: "Acme Co", lastDetectedAt: new Date().toISOString(), dialCount: 2 },
   ];
+  matchMutate.mockReset();
 });
 
 describe("UnloggedCallsSection", () => {
@@ -47,6 +61,15 @@ describe("UnloggedCallsSection", () => {
     dials = [];
     const { container } = wrap(<UnloggedCallsSection />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("stamps the explicit match for the tapped deal when the sheet reports a logged activity", () => {
+    wrap(<UnloggedCallsSection />);
+    fireEvent.click(screen.getByRole("button", { name: /log outcome/i }));
+    fireEvent.click(screen.getByRole("button", { name: /simulate-logged/i }));
+    expect(matchMutate).toHaveBeenCalledWith({ dealId: "d1", activityId: "act-1" });
+    // Sheet closes after logging.
+    expect(screen.queryByTestId("log-sheet")).not.toBeInTheDocument();
   });
 });
 

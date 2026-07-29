@@ -86,4 +86,30 @@ describe("computeUnloggedDials", () => {
   it("returns empty for no dials", () => {
     expect(computeUnloggedDials([], [], now)).toEqual([]);
   });
+
+  // ── Explicit match link (the day-later-log bug this fix addresses) ──
+
+  it("excludes a dial with a matchedActivityId even though it is past the grace window with no call in the 4h window", () => {
+    const dials = [{ dealId: "d1", detectedAt: ago(30 * HOUR), matchedActivityId: "act-1" }];
+    expect(computeUnloggedDials(dials, [], now)).toEqual([]);
+  });
+
+  it("still includes a dial with matchedActivityId == null (default, unmatched behavior unchanged)", () => {
+    const dials = [{ dealId: "d1", detectedAt: ago(6 * HOUR), matchedActivityId: null }];
+    expect(computeUnloggedDials(dials, [], now)).toEqual([
+      { dealId: "d1", lastDetectedAt: ago(6 * HOUR), dialCount: 1 },
+    ]);
+  });
+
+  it("still includes a dial when matchedActivityId is undefined (existing callers unaffected)", () => {
+    const dials = [{ dealId: "d1", detectedAt: ago(6 * HOUR) }];
+    expect(computeUnloggedDials(dials, [], now)).toEqual([
+      { dealId: "d1", lastDetectedAt: ago(6 * HOUR), dialCount: 1 },
+    ]);
+  });
+
+  it("a matched dial still within the grace window is excluded via the grace gate (not yet nudge-eligible either way)", () => {
+    const dials = [{ dealId: "d1", detectedAt: ago(1 * HOUR), matchedActivityId: "act-1" }];
+    expect(computeUnloggedDials(dials, [], now)).toEqual([]);
+  });
 });

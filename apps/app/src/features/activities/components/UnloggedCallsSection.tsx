@@ -7,11 +7,10 @@
  */
 
 import * as React from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { Phone } from "lucide-react";
 import { Button, Card } from "@/components/navigatr";
-import { useAuth } from "@/stores/auth";
-import { useUnloggedDials, UNLOGGED_DIALS_QUERY_KEY } from "../hooks/useUnloggedDials";
+import { useUnloggedDials } from "../hooks/useUnloggedDials";
+import { useMatchUnloggedDials } from "../hooks/useMatchUnloggedDials";
 import { LogActivitySheet } from "./LogActivitySheet";
 
 /**
@@ -32,8 +31,7 @@ export function relativeTime(iso: string, now: Date = new Date()): string {
 export function UnloggedCallsSection() {
   const { data: dials = [] } = useUnloggedDials();
   const [logDealId, setLogDealId] = React.useState<string | null>(null);
-  const userId = useAuth((s) => s.user?.id);
-  const queryClient = useQueryClient();
+  const matchDials = useMatchUnloggedDials();
 
   if (dials.length === 0) return null;
 
@@ -72,9 +70,13 @@ export function UnloggedCallsSection() {
           onOpenChange={(o) => { if (!o) setLogDealId(null); }}
           dealId={logDealId}
           defaultType="call"
-          onLogged={() => {
+          onLogged={(activityId) => {
+            // Capture before clearing: stamps the explicit match so the
+            // nudge clears even for a next-day (or later) log, then the
+            // mutation's own onSuccess invalidates the unlogged-dials query
+            // so the list refreshes once the stamp lands.
+            matchDials.mutate({ dealId: logDealId, activityId });
             setLogDealId(null);
-            void queryClient.invalidateQueries({ queryKey: UNLOGGED_DIALS_QUERY_KEY(userId) });
           }}
         />
       )}
