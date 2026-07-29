@@ -10,8 +10,16 @@
  */
 
 import { historyDelta, type PersistencePoint } from "./persistenceIndex";
+import { escapeCsvCell } from "./repCompanyCsv";
 
 export type DirectReportStatus = "trending_up" | "holding" | "needs_attention";
+
+/** Human labels for the status badge + CSV. */
+export const DIRECT_REPORT_STATUS_LABEL: Record<DirectReportStatus, string> = {
+  trending_up: "Trending up",
+  holding: "Holding",
+  needs_attention: "Needs attention",
+};
 
 export interface DirectReportInput {
   ownerId: string;
@@ -139,4 +147,25 @@ export function assembleDirectReportInputs(params: AssembleDirectReportsParams):
       spark,
     };
   });
+}
+
+/** CSV of the (already sorted/filtered) rows, injection-safe. One row per rep. */
+export function directReportsCsv(rows: DirectReportRow[]): string {
+  const header = ["Rep", "Role", "Index", "30-Day Change", "Activities", "Status"];
+  const lines = [header.join(",")];
+  for (const r of rows) {
+    lines.push(
+      [
+        escapeCsvCell(r.name),
+        escapeCsvCell(r.role ?? ""),
+        r.composite ?? "",
+        r.delta30 == null ? "" : r.delta30,
+        r.activityCount,
+        escapeCsvCell(DIRECT_REPORT_STATUS_LABEL[r.status]),
+      ]
+        .map(String)
+        .join(","),
+    );
+  }
+  return lines.join("\n");
 }

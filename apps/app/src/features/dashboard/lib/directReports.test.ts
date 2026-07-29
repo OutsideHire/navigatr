@@ -4,6 +4,7 @@ import {
   buildDirectReportRows,
   filterDirectReports,
   assembleDirectReportInputs,
+  directReportsCsv,
   type DirectReportInput,
 } from "./directReports";
 import type { PersistencePoint } from "./persistenceIndex";
@@ -138,5 +139,26 @@ describe("assembleDirectReportInputs", () => {
     });
     expect(rows[0].name).toBe("Unknown rep");
     expect(rows[0].role).toBeNull();
+  });
+});
+
+describe("directReportsCsv", () => {
+  const rows = buildDirectReportRows([
+    input({ ownerId: "a", name: "Alpha", role: "Sales Professional", composite: 84, delta30: -0.2, activityCount: 318 }),
+    input({ ownerId: "b", name: "Beta", role: null, composite: null, delta30: null, activityCount: 0 }),
+  ]);
+
+  it("writes a header and one row per rep, blanks for null values", () => {
+    const csv = directReportsCsv(rows);
+    const lines = csv.split("\n");
+    expect(lines[0]).toBe("Rep,Role,Index,30-Day Change,Activities,Status");
+    expect(lines[1]).toBe("Alpha,Sales Professional,84,-0.2,318,Holding");
+    expect(lines[2]).toBe("Beta,,,,0,Holding");
+  });
+
+  it("escapes a name that could be read as a formula (injection safety)", () => {
+    const csv = directReportsCsv(buildDirectReportRows([input({ name: "=cmd()", composite: 50 })]));
+    // escapeCsvCell prefixes/ quotes dangerous leading characters.
+    expect(csv.split("\n")[1].startsWith("=cmd()")).toBe(false);
   });
 });
