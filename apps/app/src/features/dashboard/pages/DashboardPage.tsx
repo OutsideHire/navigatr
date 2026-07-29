@@ -859,7 +859,7 @@ export function AdditionalReports() {
               <Users className="h-4 w-4" />
             </span>
           }
-          title="Activity performance"
+          title="Activity-To-Win"
           subtitle="Activity by outcome, rep, and company"
           trailing={<ChevronRight className="h-5 w-5 text-text-subtle" />}
         />

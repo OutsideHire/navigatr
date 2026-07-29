@@ -32,7 +32,7 @@ describe("AdditionalReports", () => {
 
   it("shows the Activity performance entry for managers and navigates to it", () => {
     render(<MemoryRouter><AdditionalReports /></MemoryRouter>);
-    fireEvent.click(screen.getByText("Activity performance"));
+    fireEvent.click(screen.getByText("Activity-To-Win"));
     expect(navigateMock).toHaveBeenCalledWith("/dashboard/activity-to-win?scope=all");
   });
 

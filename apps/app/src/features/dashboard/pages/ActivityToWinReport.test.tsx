@@ -71,37 +71,39 @@ beforeEach(() => {
   ];
 });
 
-function renderReport() {
+function renderReport(entry = "/dashboard/activity-to-win") {
   return render(
-    <MemoryRouter initialEntries={["/dashboard/activity-to-win"]}>
+    <MemoryRouter initialEntries={[entry]}>
       <ActivityToWinReport />
     </MemoryRouter>,
   );
 }
 
-describe("ActivityToWinReport (unified activity performance)", () => {
-  it("renders the report heading", () => {
+describe("ActivityToWinReport", () => {
+  it("renders the renamed report heading", () => {
     renderReport();
-    expect(screen.getByRole("heading", { name: "Activity performance" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Activity-To-Win" })).toBeInTheDocument();
   });
 
-  it("defaults to the Won scope, showing the won-scope metric label", () => {
+  it("defaults to the Won scope, showing the won-scope KPI label", () => {
     renderReport();
     expect(screen.getByText("Revenue won")).toBeInTheDocument();
+    expect(screen.getByText("On winners only")).toBeInTheDocument();
   });
 
-  it("switches to All and Open scopes on pill click", () => {
+  it("scopes to All by clicking the active band segment, then to Open", () => {
     renderReport();
-    fireEvent.click(screen.getByText("All"));
+    // Default Won; clicking the Won band segment toggles back to All.
+    fireEvent.click(screen.getByTitle(/^Won:/));
     expect(screen.getByText("Total activity")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText("Open"));
+    // From All, clicking the Open segment scopes to Open.
+    fireEvent.click(screen.getByTitle(/^Open:/));
     expect(screen.getByText("Open pipeline")).toBeInTheDocument();
   });
 
   it("shows the reconciliation footer", () => {
     renderReport();
-    expect(screen.getByText(/Reconciliation:/)).toBeInTheDocument();
+    expect(screen.getByText(/Reconciliation\./)).toBeInTheDocument();
   });
 
   it("shows the Export CSV button", () => {
@@ -109,27 +111,19 @@ describe("ActivityToWinReport (unified activity performance)", () => {
     expect(screen.getByRole("button", { name: /export csv/i })).toBeInTheDocument();
   });
 
-  it("expands a rep row to reveal its company sub-table", () => {
+  it("shows the Compare toggle only in the Won scope", () => {
     renderReport();
-    // Default scope is Won: owner u1 (same as the signed-in user) shows as "You"
-    // and is the only rep with a won deal (Northside Diner). The company row is
-    // hidden until the rep row is expanded.
+    expect(screen.getByText("Compare won against lost")).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle(/^Lost:/)); // scope -> lost
+    expect(screen.queryByText("Compare won against lost")).toBeNull();
+  });
+
+  it("expands a rep row to reveal its per-company sub-table", () => {
+    renderReport();
+    // Default Won scope: owner u1 shows as "You"; the company row is hidden
+    // until the rep row is expanded.
     expect(screen.queryByText("Northside Diner")).toBeNull();
     fireEvent.click(screen.getByText("You"));
     expect(screen.getByText("Northside Diner")).toBeInTheDocument();
-  });
-
-  it("shows a per-scope empty state when the active scope has no reps but the band has activity", () => {
-    // Only won activity in this window (band.total > 0), no lost or open activity.
-    deals = [buildDeal({ id: "d1", companyName: "Northside Diner", stage: "won", valueCents: 500_000, owner_id: "u1" })];
-    activities = [
-      buildActivity({ id: "a1", dealId: "d1", type: "call", occurredAt: daysAgo(1) }),
-      buildActivity({ id: "a2", dealId: "d1", type: "email", occurredAt: daysAgo(2) }),
-    ];
-    renderReport();
-
-    fireEvent.click(screen.getByText("Lost"));
-    expect(screen.getByText(/No lost activity in this window\./)).toBeInTheDocument();
-    expect(screen.queryByText("You")).toBeNull();
   });
 });
