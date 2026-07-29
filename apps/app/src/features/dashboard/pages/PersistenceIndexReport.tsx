@@ -470,7 +470,7 @@ export function PersistenceIndexReport() {
   // by opening the URL directly. Revisit before the rep-facing view is enabled.
   if (!isManager) {
     return (
-      <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 sm:py-6">
+      <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-6">
         <div className="flex flex-col gap-4">
           <button
             type="button"
@@ -490,7 +490,7 @@ export function PersistenceIndexReport() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 sm:py-6">
+    <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-6">
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-1">
           <button
