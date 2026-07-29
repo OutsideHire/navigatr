@@ -79,10 +79,17 @@ vi.mock("../components/RunningPath", () => ({
 }));
 
 // No prospects unless origin is set; keep the discovery hook quiet.
+type UseMerchantsFull = ReturnType<typeof import("../hooks/useMerchants")["useMerchants"]>;
+// The fill/transparency fields (hidden, effectiveRadiusM, requestedRadiusM,
+// requestedLimit) are optional in the mock so the existing terse literals stay
+// valid; PathPage reads them defensively (undefined -> no shortfall hint).
+type UseMerchantsMock = Omit<
+  UseMerchantsFull,
+  "hidden" | "effectiveRadiusM" | "requestedRadiusM" | "requestedLimit"
+> &
+  Partial<Pick<UseMerchantsFull, "hidden" | "effectiveRadiusM" | "requestedRadiusM" | "requestedLimit">>;
 const merchantsState = {
-  current: { merchants: [], isLoading: false, isError: false, refetch: vi.fn() } as ReturnType<
-    typeof import("../hooks/useMerchants")["useMerchants"]
-  >,
+  current: { merchants: [], isLoading: false, isError: false, refetch: vi.fn() } as UseMerchantsMock,
 };
 // Records every useMerchants(origin, opts) call so tests can assert PathPage
 // requests both a chains-included browse fetch AND a chain-free Create fetch.

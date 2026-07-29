@@ -32,6 +32,7 @@
   "include": [
     "src",
     "../../supabase/functions/_shared/industryTaxonomy.ts",
+    "../../supabase/functions/_shared/discoveryFill.ts",
     "../../supabase/functions/_shared/calendarQualify.ts",
     "../../supabase/functions/_shared/mergeCalendarEvents.ts",
     "../../supabase/functions/_shared/googleEvent.ts",
