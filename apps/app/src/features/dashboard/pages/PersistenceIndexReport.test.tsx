@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { PersistenceIndexReport } from "./PersistenceIndexReport";
 import type { PersistencePoint, PerRepScore } from "../lib/persistenceIndex";
+import type { DirectReportInput } from "../lib/directReports";
 
 const navigateMock = vi.fn();
 vi.mock("react-router-dom", async (orig) => {
@@ -62,6 +63,16 @@ vi.mock("@/features/coverage/hooks/useCoverageRollup", () => ({
   useCoverageRollup: () => ({ rows: coverageRows, isLoading: false }),
 }));
 
+// Direct-reports table data + all-reps overlay (SP-1). Mocked so the page test
+// stays free of a QueryClient, like the other data hooks.
+let directReportsData: DirectReportInput[] = [];
+vi.mock("../hooks/useDirectReports", () => ({ useDirectReports: () => directReportsData }));
+let allRepsHistory: { ownerId: string; values: (number | null)[] }[] = [];
+vi.mock("../hooks/useAllRepsHistory", () => ({
+  // Mirror the real hook: returns [] unless the "All reps" toggle enabled it.
+  useAllRepsHistory: (_range: number, enabled: boolean) => (enabled ? allRepsHistory : []),
+}));
+
 function mkSeries(n: number, base = 60): PersistencePoint[] {
   return Array.from({ length: n }, (_, i) => ({
     date: `2026-06-${String((i % 28) + 1).padStart(2, "0")}`,
@@ -91,6 +102,11 @@ beforeEach(() => {
   lastTargetOwner = undefined;
   companySeriesData = [];
   coverageRows = [];
+  directReportsData = [
+    { ownerId: "u1", name: "Sarah Lim", role: "Sales Professional", composite: 82, delta30: 3, activityCount: 120, spark: [78, 80, 82] },
+    { ownerId: "u2", name: "Marcus Tan", role: "Sales Professional", composite: 60, delta30: -4, activityCount: 90, spark: [66, 63, 60] },
+  ];
+  allRepsHistory = [];
 });
 
 describe("PersistenceIndexReport", () => {
@@ -145,8 +161,11 @@ describe("PersistenceIndexReport", () => {
     expect(Number(firstPoint[2])).toBeCloseTo(90, 1); // H(180) - (50/100)*180 = 90
   });
 
-  it("renders the sub-component breakdown and stats grid for a populated view", () => {
+  it("renders the sub-component breakdown and stats grid in the per-rep drill-down", () => {
     renderReport();
+    // Team view no longer shows the breakdown; it lives in the rep drill-down.
+    expect(screen.queryByText(/where your score comes from/i)).toBeNull();
+    fireEvent.click(screen.getByText("Sarah Lim"));
     expect(screen.getByText(/where your score comes from/i)).toBeInTheDocument();
     expect(screen.getByText("This period")).toBeInTheDocument();
   });
@@ -163,10 +182,10 @@ describe("PersistenceIndexReport", () => {
     expect(navigateMock).toHaveBeenCalledWith("/dashboard");
   });
 
-  it("shows the By-rep roster for a manager", () => {
+  it("shows the direct-reports table for a manager", () => {
     role = "manager";
     renderReport();
-    expect(screen.getByText(/by rep/i)).toBeInTheDocument();
+    expect(screen.getByText("Direct reports")).toBeInTheDocument();
     expect(screen.getByText("Sarah Lim")).toBeInTheDocument();
     expect(screen.getByText("Marcus Tan")).toBeInTheDocument();
   });
@@ -211,7 +230,28 @@ describe("PersistenceIndexReport", () => {
     const back = screen.getByRole("button", { name: /back to team/i });
     expect(back).toBeInTheDocument();
     fireEvent.click(back);
-    expect(screen.getByText(/by rep/i)).toBeInTheDocument(); // roster returns
+    expect(screen.getByText("Direct reports")).toBeInTheDocument(); // team table returns
+  });
+
+  it("shows the All reps overlay toggle on the team view but not in the drill-down", () => {
+    role = "manager";
+    renderReport();
+    expect(screen.getByRole("button", { name: /all reps/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Sarah Lim"));
+    expect(screen.queryByRole("button", { name: /all reps/i })).toBeNull();
+  });
+
+  it("overlays each rep's line on the chart when All reps is toggled on", () => {
+    role = "manager";
+    allRepsHistory = [
+      { ownerId: "u1", values: series.map((_, i) => 70 + (i % 5)) },
+      { ownerId: "u2", values: series.map((_, i) => 60 + (i % 5)) },
+    ];
+    renderReport();
+    // Off by default: no overlay lines.
+    expect(screen.queryAllByTestId("rep-overlay-line")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: /all reps/i }));
+    expect(screen.getAllByTestId("rep-overlay-line").length).toBeGreaterThan(0);
   });
 
   it("uses the daily company-average + top-decile lines once the snapshot series has accrued", () => {
@@ -333,7 +373,8 @@ describe("PersistenceIndexReport", () => {
       renderReport();
       expect(screen.queryByText(/not enough logging to score yet/i)).toBeNull();
       expect(screen.queryByText(/logging coverage is low/i)).toBeNull();
-      expect(screen.getByText(/where your score comes from/i)).toBeInTheDocument();
+      // Team content still renders (the reps table), not a suppressed message.
+      expect(screen.getByText("Direct reports")).toBeInTheDocument();
     });
   });
 });

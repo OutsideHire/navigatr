@@ -12,6 +12,7 @@ import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { Card } from "@/components/navigatr";
+import { cn } from "@/lib/utils";
 import { useProfile } from "@/features/auth/useProfile";
 import { usePersistenceHistory } from "../hooks/usePersistenceHistory";
 import { usePerRepPersistence } from "../hooks/usePerRepPersistence";
@@ -31,10 +32,12 @@ import {
   persistenceStats,
   coverageGateState,
   type RangeKey,
-  type PerRepScore,
 } from "../lib/persistenceIndex";
 import { PersistenceSubComponents } from "../components/PersistenceSubComponents";
 import { PersistenceStatsGrid } from "../components/PersistenceStatsGrid";
+import { DirectReportsTable } from "../components/DirectReportsTable";
+import { useDirectReports } from "../hooks/useDirectReports";
+import { useAllRepsHistory } from "../hooks/useAllRepsHistory";
 
 /** Point path (no fill), broken into `M`/`L` commands. */
 function buildLine(pts: { x: number; y: number }[]): string {
@@ -74,6 +77,7 @@ function TrendChart({
   points,
   referenceLines,
   dailyReferenceLines,
+  overlaySeries,
 }: {
   points: { composite: number | null }[];
   referenceLines: { value: number; label: string }[];
@@ -84,6 +88,9 @@ function TrendChart({
    * accrual-period fallback, passed via `referenceLines` instead).
    */
   dailyReferenceLines?: { label: string; values: (number | null)[] }[];
+  /** Faint per-rep overlay lines ("All reps" toggle), aligned to `points` by
+   *  index. Each entry is a rep's daily composite values. */
+  overlaySeries?: (number | null)[][];
 }) {
   const W = 640;
   const H = 180;
@@ -117,6 +124,8 @@ function TrendChart({
     label: dl.label,
     segments: buildDailyLineSegments(dl.values, x, y),
   }));
+
+  const overlaySegments = (overlaySeries ?? []).map((values) => buildDailyLineSegments(values, x, y));
 
   return (
     <svg
@@ -155,6 +164,22 @@ function TrendChart({
               strokeWidth={1}
             />
           ))}
+      {/* Faint per-rep overlay lines, behind the composite + areas. */}
+      {overlaySegments.map((segs, ri) =>
+        segs.map((d, si) => (
+          <path
+            key={`overlay-${ri}-${si}`}
+            d={d}
+            data-testid="rep-overlay-line"
+            fill="none"
+            stroke="currentColor"
+            className="text-border-strong"
+            strokeWidth={1}
+            strokeOpacity={0.5}
+            vectorEffect="non-scaling-stroke"
+          />
+        )),
+      )}
       {areas.map((d, i) => (
         <path key={`area-${i}`} d={d} stroke="none" fill="#2E5FE2" fillOpacity={0.08} />
       ))}
@@ -187,46 +212,21 @@ function VolumeChart({ points }: { points: { activityCount: number }[] }) {
   );
 }
 
-function RepRoster({
-  rows,
-  names,
-  onSelect,
-}: {
-  rows: PerRepScore[];
-  names: Map<string, string>;
-  onSelect: (id: string) => void;
-}) {
-  if (rows.length === 0) return null;
+/** A legend pill that toggles a chart series on/off. */
+function LegendToggle({ label, on, onToggle }: { label: string; on: boolean; onToggle: () => void }) {
   return (
-    <Card padding="lg" shadow="sm">
-      <div className="flex flex-col gap-3">
-        <span className="text-body-sm font-medium text-text-default">By rep</span>
-        <div className="flex flex-col divide-y divide-border-subtle">
-          {rows.map((r) => (
-            <button
-              key={r.ownerId}
-              type="button"
-              onClick={() => onSelect(r.ownerId)}
-              className="flex items-center gap-3 py-2 text-left transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
-            >
-              <span className="flex-1 truncate text-body-sm text-text-default">
-                {names.get(r.ownerId) ?? "Unknown rep"}
-              </span>
-              {r.composite == null ? (
-                <span className="text-caption text-text-subtle">no data yet</span>
-              ) : (
-                <>
-                  <div className="h-1.5 w-24 overflow-hidden rounded-radius-full bg-surface-sunken">
-                    <div className="h-full rounded-radius-full bg-brand-primary" style={{ width: `${r.composite}%` }} />
-                  </div>
-                  <span className="w-8 text-right text-body-sm tabular-nums text-text-default">{r.composite}</span>
-                </>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-    </Card>
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onToggle}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-radius-full border px-2.5 py-1 text-caption transition-colors",
+        on ? "border-brand-primary text-text-default" : "border-border-subtle text-text-subtle",
+      )}
+    >
+      <span className={cn("h-1.5 w-1.5 rounded-full", on ? "bg-text-muted" : "bg-border-strong")} aria-hidden />
+      {label}
+    </button>
   );
 }
 
@@ -236,6 +236,11 @@ export function PersistenceIndexReport() {
   const isManager = role === "manager" || role === "admin";
   const [rangeKey, setRangeKey] = React.useState<RangeKey>("1M");
   const [selectedRep, setSelectedRep] = React.useState<string | null>(null);
+  // Chart legend toggles (prototype): benchmark lines default on, all-reps
+  // overlay default off.
+  const [showAvg, setShowAvg] = React.useState(true);
+  const [showTop, setShowTop] = React.useState(true);
+  const [showAllReps, setShowAllReps] = React.useState(false);
   const rangeDays = RANGE_PRESETS.find((r) => r.key === rangeKey)!.days;
   const points = usePersistenceHistory(rangeDays, selectedRep ?? undefined);
   const roster = usePerRepPersistence();
@@ -243,6 +248,8 @@ export function PersistenceIndexReport() {
   const own = usePersistenceIndex();
   const team = useTeamPersistenceIndex();
   const bench = usePersistenceBenchmarks();
+  const directReports = useDirectReports(isManager);
+  const overlaySeries = useAllRepsHistory(rangeDays, isManager && !selectedRep && showAllReps);
   // Reps never render peer benchmarks (strategy "solo"), so skip the RPC for them.
   const companySeriesQuery = usePersistenceCompanySeries(rangeDays, bench.strategy !== "solo");
   const companySeries = companySeriesQuery.data ?? [];
@@ -349,12 +356,23 @@ export function PersistenceIndexReport() {
         { label: "Top decile", values: dailyP90Values },
       ]
     : undefined;
-  const companyMedianLatest = [...companySeries].reverse().find((p) => p.median != null)?.median ?? null;
-  const companyP90Latest = [...companySeries].reverse().find((p) => p.p90 != null)?.p90 ?? null;
-  const chartAvgLabel = useDailyLines ? "Company average" : bench.avgLabel;
-  const chartAvgValue = useDailyLines ? companyMedianLatest : bench.peerAvg;
-  const chartTopLabel = useDailyLines ? "Top decile" : topLabel;
-  const chartTopValue = useDailyLines ? companyP90Latest : topValue;
+  // Apply the legend toggles: hide the average / top-decile lines when their
+  // toggle is off. "Company average" gates on showAvg; top decile/performer on
+  // showTop; anything else (e.g. the solo "Target" line) always shows.
+  const isAvgLabel = (label: string) => label === "Company average" || label === bench.avgLabel;
+  const isTopLabel = (label: string) =>
+    label === "Top decile" || label === "Top performer" || label === "Top 10%";
+  const gatedDailyReferenceLines = dailyReferenceLines?.filter((dl) =>
+    isAvgLabel(dl.label) ? showAvg : isTopLabel(dl.label) ? showTop : true,
+  );
+  const gatedReferenceLines = referenceLines.filter((r) =>
+    isAvgLabel(r.label) ? showAvg : isTopLabel(r.label) ? showTop : true,
+  );
+  // Toggle labels reflect the actual benchmark: the SP-B daily lines are
+  // company-wide ("Company average" / "Top decile"); the SP-A fallback uses the
+  // tenant strategy's labels (e.g. "Team average" / "Top 10%").
+  const avgLegendLabel = useDailyLines ? "Company average" : bench.avgLabel;
+  const topLegendLabel = useDailyLines ? "Top decile" : topLabel;
 
   // Manager-only for beta (addendum 4.2): the widget is hidden for reps, and
   // the detail page is guarded here too so a rep cannot reach their own score
@@ -391,6 +409,15 @@ export function PersistenceIndexReport() {
           >
             <ArrowLeft className="h-4 w-4" aria-hidden /> Dashboard
           </button>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <span className="text-caption uppercase tracking-wide text-text-subtle">
+              navigatr · Persistence Index
+            </span>
+            <span className="text-caption uppercase tracking-wide text-text-subtle">
+              As of{" "}
+              {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+            </span>
+          </div>
           <h1 className="text-heading-md text-text-default">Persistence index</h1>
           {selectedRep ? (
             <div className="flex flex-wrap items-center gap-2">
@@ -466,22 +493,28 @@ export function PersistenceIndexReport() {
                 </div>
 
                 <div className="text-brand-primary">
-                  <TrendChart points={points} referenceLines={referenceLines} dailyReferenceLines={dailyReferenceLines} />
+                  <TrendChart
+                    points={points}
+                    referenceLines={gatedReferenceLines}
+                    dailyReferenceLines={gatedDailyReferenceLines}
+                    overlaySeries={overlaySeries.map((s) => s.values)}
+                  />
                 </div>
-                {showBenchmarks && !showBelowFloorScore && (
-                  <div className="flex flex-wrap items-center gap-3 text-caption text-text-muted">
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "#2E5FE2" }} aria-hidden /> You {current}
+                {!showBelowFloorScore && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-caption text-text-muted">
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "#2E5FE2" }} aria-hidden />
+                      {selectedRep ? "Rep" : "Team"}
+                      {current != null ? ` ${current}` : ""}
                     </span>
-                    {chartAvgValue != null && (
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="h-1.5 w-1.5 rounded-full bg-text-muted" aria-hidden /> {chartAvgLabel} {chartAvgValue}
-                      </span>
+                    {showBenchmarks && (
+                      <>
+                        <LegendToggle label={avgLegendLabel} on={showAvg} onToggle={() => setShowAvg((v) => !v)} />
+                        <LegendToggle label={topLegendLabel} on={showTop} onToggle={() => setShowTop((v) => !v)} />
+                      </>
                     )}
-                    {chartTopValue != null && (
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="h-1.5 w-1.5 rounded-full bg-text-muted" aria-hidden /> {chartTopLabel} {chartTopValue}
-                      </span>
+                    {!selectedRep && (
+                      <LegendToggle label="All reps" on={showAllReps} onToggle={() => setShowAllReps((v) => !v)} />
                     )}
                   </div>
                 )}
@@ -494,7 +527,10 @@ export function PersistenceIndexReport() {
           </div>
         </Card>
 
-        {(current != null || showBelowFloorScore) && !coverageSuppressed && (
+        {/* Sub-component breakdown + this-period stats live in the per-rep
+            drill-down only (the team view is the rollup chart + reps table,
+            matching the prototype). */}
+        {selectedRep && (current != null || showBelowFloorScore) && !coverageSuppressed && (
           <>
             <PersistenceSubComponents
               rows={[
@@ -514,7 +550,7 @@ export function PersistenceIndexReport() {
           </>
         )}
 
-        {isManager && !selectedRep && <RepRoster rows={roster} names={names} onSelect={setSelectedRep} />}
+        {!selectedRep && <DirectReportsTable rows={directReports} onSelect={setSelectedRep} />}
       </div>
     </div>
   );
