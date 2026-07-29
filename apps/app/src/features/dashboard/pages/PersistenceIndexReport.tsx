@@ -79,7 +79,7 @@ function TrendChart({
   dailyReferenceLines,
   overlaySeries,
 }: {
-  points: { composite: number | null }[];
+  points: { composite: number | null; date?: string }[];
   referenceLines: { value: number; label: string }[];
   /**
    * Daily company-wide reference lines (SP-B), one polyline per series
@@ -97,6 +97,25 @@ function TrendChart({
   const n = points.length;
   const x = (i: number) => (n <= 1 ? 0 : (i / (n - 1)) * W);
   const y = (v: number) => H - (Math.max(0, Math.min(100, v)) / 100) * H;
+
+  // Hover crosshair + tooltip: map the pointer's x within the chart to the
+  // nearest data index. The SVG stretches (preserveAspectRatio none), so we
+  // map from the container's pixel width, not the viewBox.
+  const wrapRef = React.useRef<HTMLDivElement>(null);
+  const [hover, setHover] = React.useState<number | null>(null);
+  const onMove = (e: React.MouseEvent) => {
+    const el = wrapRef.current;
+    if (!el || n <= 1) return;
+    const rect = el.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    setHover(Math.round(frac * (n - 1)));
+  };
+  const hoverPoint = hover != null ? points[hover] : null;
+  const hoverFrac = hover != null && n > 1 ? hover / (n - 1) : 0;
+  const hoverDate =
+    hoverPoint?.date != null
+      ? new Date(hoverPoint.date).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+      : null;
 
   // Build line + area segments, breaking on null gaps.
   const lines: string[] = [];
@@ -128,13 +147,14 @@ function TrendChart({
   const overlaySegments = (overlaySeries ?? []).map((values) => buildDailyLineSegments(values, x, y));
 
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      className="h-44 w-full"
-      preserveAspectRatio="none"
-      role="img"
-      aria-label="Persistence index trend"
-    >
+    <div ref={wrapRef} onMouseMove={onMove} onMouseLeave={() => setHover(null)} className="relative">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="h-44 w-full"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label="Persistence index trend"
+      >
       {dailyReferenceLines && dailyReferenceLines.length > 0
         ? dailySegments.map((dl, di) =>
             dl.segments.map((d, si) => (
@@ -193,21 +213,66 @@ function TrendChart({
           vectorEffect="non-scaling-stroke"
         />
       ))}
-    </svg>
+      {hoverPoint && hoverPoint.composite != null && (
+        <line
+          x1={x(hover ?? 0)}
+          y1={0}
+          x2={x(hover ?? 0)}
+          y2={H}
+          stroke="#2E5FE2"
+          strokeOpacity={0.4}
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+        />
+      )}
+      </svg>
+      {hoverPoint && hoverPoint.composite != null && (
+        <div
+          data-testid="trend-tooltip"
+          className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-radius-sm border border-border-subtle bg-surface-default px-2 py-1 text-caption shadow-card-hover"
+          style={{ left: `${hoverFrac * 100}%` }}
+        >
+          <span className="tabular-nums text-text-default">{hoverPoint.composite}</span>
+          {hoverDate && <span className="text-text-subtle"> · {hoverDate}</span>}
+        </div>
+      )}
+    </div>
   );
 }
 
+/** Mean activity across the days that had any activity (the "typical" day). */
+export function busyDayThreshold(counts: number[]): number {
+  const active = counts.filter((c) => c > 0);
+  if (active.length === 0) return 0;
+  return active.reduce((a, b) => a + b, 0) / active.length;
+}
+
 function VolumeChart({ points }: { points: { activityCount: number }[] }) {
-  const max = Math.max(1, ...points.map((p) => p.activityCount));
+  const counts = points.map((p) => p.activityCount);
+  const max = Math.max(1, ...counts);
+  const threshold = busyDayThreshold(counts);
   return (
-    <div className="flex h-12 items-end gap-px" aria-hidden>
-      {points.map((p, i) => (
-        <div
-          key={i}
-          className="flex-1 rounded-t-radius-sm bg-surface-sunken"
-          style={{ height: `${(p.activityCount / max) * 100}%` }}
-        />
-      ))}
+    <div className="flex flex-col gap-1.5">
+      <div className="flex h-12 items-end gap-px" aria-hidden>
+        {points.map((p, i) => (
+          <div
+            key={i}
+            className={cn(
+              "flex-1 rounded-t-radius-sm",
+              p.activityCount > 0 && p.activityCount >= threshold ? "bg-accent-teal" : "bg-accent-orange",
+            )}
+            style={{ height: `${(p.activityCount / max) * 100}%` }}
+          />
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-3 text-caption text-text-subtle">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-accent-teal" aria-hidden /> Busier day
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-accent-orange" aria-hidden /> Lighter day
+        </span>
+      </div>
     </div>
   );
 }
@@ -475,17 +540,19 @@ export function PersistenceIndexReport() {
                   </p>
                 )}
 
-                <div className="flex flex-wrap gap-2">
+                <div className="inline-flex w-fit rounded-radius-md border border-border-subtle p-0.5 text-caption">
                   {RANGE_PRESETS.map((r) => (
                     <button
                       key={r.key}
                       type="button"
                       onClick={() => setRangeKey(r.key)}
-                      className={`rounded-radius-full px-3 py-1 text-caption ${
+                      aria-pressed={rangeKey === r.key}
+                      className={cn(
+                        "rounded-radius-sm px-3 py-1 transition-colors",
                         rangeKey === r.key
                           ? "bg-brand-primary text-brand-primary-foreground"
-                          : "bg-surface-sunken text-text-muted hover:text-text-default"
-                      }`}
+                          : "text-text-muted hover:text-text-default",
+                      )}
                     >
                       {r.key}
                     </button>

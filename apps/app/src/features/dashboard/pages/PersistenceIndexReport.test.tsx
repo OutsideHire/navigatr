@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { PersistenceIndexReport } from "./PersistenceIndexReport";
+import { PersistenceIndexReport, busyDayThreshold } from "./PersistenceIndexReport";
 import type { PersistencePoint, PerRepScore } from "../lib/persistenceIndex";
 import type { DirectReportInput } from "../lib/directReports";
 
@@ -107,6 +107,15 @@ beforeEach(() => {
     { ownerId: "u2", name: "Marcus Tan", role: "Sales Professional", composite: 60, delta30: -4, activityCount: 90, spark: [66, 63, 60] },
   ];
   allRepsHistory = [];
+});
+
+describe("busyDayThreshold", () => {
+  it("averages only the days that had activity", () => {
+    expect(busyDayThreshold([0, 0, 4, 8])).toBe(6); // (4+8)/2, zeros excluded
+  });
+  it("is 0 when there was no activity", () => {
+    expect(busyDayThreshold([0, 0, 0])).toBe(0);
+  });
 });
 
 describe("PersistenceIndexReport", () => {
@@ -239,6 +248,13 @@ describe("PersistenceIndexReport", () => {
     expect(screen.getByRole("button", { name: /all reps/i })).toBeInTheDocument();
     fireEvent.click(screen.getByText("Sarah Lim"));
     expect(screen.queryByRole("button", { name: /all reps/i })).toBeNull();
+  });
+
+  it("labels the activity-volume bars busier vs lighter days", () => {
+    role = "manager";
+    renderReport();
+    expect(screen.getByText("Busier day")).toBeInTheDocument();
+    expect(screen.getByText("Lighter day")).toBeInTheDocument();
   });
 
   it("overlays each rep's line on the chart when All reps is toggled on", () => {
