@@ -10,7 +10,7 @@
  */
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { Card } from "@/components/navigatr";
 import { cn } from "@/lib/utils";
 import { useProfile } from "@/features/auth/useProfile";
@@ -33,6 +33,7 @@ import {
   coverageGateState,
   type RangeKey,
 } from "../lib/persistenceIndex";
+import { initialsCode, rangeReadout, formatReadoutDelta, formatRangeLabel } from "../lib/persistencePresentation";
 import { PersistenceSubComponents } from "../components/PersistenceSubComponents";
 import { PersistenceStatsGrid } from "../components/PersistenceStatsGrid";
 import { DirectReportsTable } from "../components/DirectReportsTable";
@@ -174,9 +175,47 @@ function TrendChart({
 
   const overlaySegments = (overlaySeries ?? []).map((values) => buildDailyLineSegments(values, x, y));
 
+  // Weekend day flags (UTC) for the faint shading behind the plot.
+  const weekend = points.map((p) => {
+    if (!p.date) return false;
+    const g = new Date(p.date).getUTCDay();
+    return g === 0 || g === 6;
+  });
+  const stepW = n > 1 ? W / (n - 1) : W;
+
+  // Right-edge benchmark markers ("AVG"/"DEC") positioned in HTML (the SVG is
+  // x-stretched, so in-SVG text would distort). Placed at each reference line's
+  // rightmost value as a top-% within the plot.
+  const yPct = (v: number) => (1 - (Math.max(yLo, Math.min(yHi, v)) - yLo) / (yHi - yLo)) * 100;
+  const isTop = (label: string) => /decile|top/i.test(label);
+  const benchLabels: { text: string; top: number }[] = [];
+  if (dailyReferenceLines && dailyReferenceLines.length > 0) {
+    dailyReferenceLines.forEach((dl) => {
+      const last = [...dl.values].reverse().find((v): v is number => v != null);
+      if (last != null) benchLabels.push({ text: isTop(dl.label) ? "DEC" : "AVG", top: yPct(last) });
+    });
+  } else {
+    referenceLines.forEach((r) => benchLabels.push({ text: isTop(r.label) ? "DEC" : "AVG", top: yPct(r.value) }));
+  }
+
+  // ~6 evenly spaced date labels along the x-axis.
+  const labelCount = Math.min(6, n);
+  const xLabels = Array.from({ length: labelCount }, (_, m) => {
+    const i = labelCount <= 1 ? 0 : Math.round((m * (n - 1)) / (labelCount - 1));
+    const iso = points[i]?.date;
+    return {
+      frac: n > 1 ? i / (n - 1) : 0,
+      anchor: m === 0 ? "left" : m === labelCount - 1 ? "right" : "center",
+      text: iso
+        ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+        : "",
+    };
+  });
+
   return (
     <div className="flex gap-1">
-      <div ref={wrapRef} onMouseMove={onMove} onMouseLeave={() => setHover(null)} className="relative flex-1">
+      <div ref={wrapRef} onMouseMove={onMove} onMouseLeave={() => setHover(null)} className="flex-1">
+        <div className="relative">
         <svg
           viewBox={`0 0 ${W} ${H}`}
           className="h-44 w-full"
@@ -184,6 +223,36 @@ function TrendChart({
           role="img"
           aria-label="Persistence index trend"
         >
+      {/* Weekend shading — faint bands behind the plot. */}
+      {weekend.map((w, i) =>
+        w ? (
+          <rect
+            key={`wk-${i}`}
+            x={Math.max(0, x(i) - stepW / 2)}
+            y={0}
+            width={stepW}
+            height={H}
+            className="text-text-subtle"
+            fill="currentColor"
+            opacity={0.07}
+          />
+        ) : null,
+      )}
+      {/* Horizontal gridlines at the y ticks. */}
+      {yTicks.map((t, i) => (
+        <line
+          key={`grid-${i}`}
+          x1={0}
+          y1={y(t)}
+          x2={W}
+          y2={y(t)}
+          className="text-border-strong"
+          stroke="currentColor"
+          strokeOpacity={0.25}
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+        />
+      ))}
       {dailyReferenceLines && dailyReferenceLines.length > 0
         ? dailySegments.map((dl, di) =>
             dl.segments.map((d, si) => (
@@ -255,6 +324,17 @@ function TrendChart({
         />
       )}
         </svg>
+        {/* Benchmark end markers (AVG / DEC), HTML to avoid SVG x-stretch distortion. */}
+        {benchLabels.map((b, i) => (
+          <span
+            key={`bench-${i}`}
+            className="pointer-events-none absolute right-0 z-10 -translate-y-1/2 rounded-radius-sm px-1 text-[9px] font-medium uppercase tracking-wide text-text-subtle"
+            style={{ top: `${b.top}%` }}
+            aria-hidden
+          >
+            {b.text}
+          </span>
+        ))}
         {hoverPoint && hoverPoint.composite != null && (
           <div
             data-testid="trend-tooltip"
@@ -273,6 +353,12 @@ function TrendChart({
             )}
           </div>
         )}
+        </div>
+        <div className="mt-1 flex justify-between text-caption text-text-subtle" aria-hidden>
+          {xLabels.map((l, i) => (
+            <span key={i} className="tabular-nums">{l.text}</span>
+          ))}
+        </div>
       </div>
       <div className="relative w-7 shrink-0" aria-hidden>
         {yTicks.map((t, i) => (
@@ -326,19 +412,28 @@ function VolumeChart({ points }: { points: { activityCount: number }[] }) {
   );
 }
 
-/** A legend pill that toggles a chart series on/off. */
-function LegendToggle({ label, on, onToggle }: { label: string; on: boolean; onToggle: () => void }) {
+/** A legend pill that toggles a chart series on/off. Benchmark toggles show a
+ *  dashed key (matching the chart's dashed reference lines); the reps-overlay
+ *  toggle uses a solid key. */
+function LegendToggle({ label, on, onToggle, solid }: { label: string; on: boolean; onToggle: () => void; solid?: boolean }) {
   return (
     <button
       type="button"
       aria-pressed={on}
       onClick={onToggle}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-radius-full border px-2.5 py-1 text-caption transition-colors",
-        on ? "border-brand-primary text-text-default" : "border-border-subtle text-text-subtle",
+        "inline-flex items-center gap-2 rounded-radius-full border px-2.5 py-1 text-caption transition-[color,opacity,border-color]",
+        on ? "border-border-strong text-text-default" : "border-border-subtle text-text-subtle opacity-60",
       )}
     >
-      <span className={cn("h-1.5 w-1.5 rounded-full", on ? "bg-text-muted" : "bg-border-strong")} aria-hidden />
+      <span
+        className={cn(
+          "inline-block h-0 w-3.5 border-t-2",
+          solid ? "border-solid" : "border-dashed",
+          on ? "border-text-muted" : "border-border-strong",
+        )}
+        aria-hidden
+      />
       {label}
     </button>
   );
@@ -346,7 +441,8 @@ function LegendToggle({ label, on, onToggle }: { label: string; on: boolean; onT
 
 export function PersistenceIndexReport() {
   const navigate = useNavigate();
-  const role = useProfile().data?.role;
+  const profile = useProfile().data;
+  const role = profile?.role;
   const isManager = role === "manager" || role === "admin";
   const [rangeKey, setRangeKey] = React.useState<RangeKey>("1M");
   const [selectedRep, setSelectedRep] = React.useState<string | null>(null);
@@ -490,6 +586,25 @@ export function PersistenceIndexReport() {
   const avgLegendLabel = useDailyLines ? "Company average" : bench.avgLabel;
   const topLegendLabel = useDailyLines ? "Top decile" : topLabel;
 
+  // ── Identity + boxed readout (prototype re-style) ────────────────────────
+  const managerName = profile?.full_name ?? null;
+  const teamName = managerName ? `${managerName} team` : "Your team";
+  const teamCode = initialsCode(managerName ?? "Team", "TEAM");
+  const managerRoleLabel = role === "admin" ? "Administrator" : "Sales Manager";
+  const reportCount = directReports.length;
+  const selectedReport = selectedRep ? directReports.find((r) => r.ownerId === selectedRep) ?? null : null;
+  const selectedName = selectedRep ? selectedReport?.name ?? names.get(selectedRep) ?? "Rep" : null;
+  const selectedRoleLabel = selectedReport?.role ?? null;
+  const repCode = selectedName ? initialsCode(selectedName, "PIX") : "PIX";
+  const readout = rangeReadout(points);
+  const eyebrow = selectedRep ? "Individual index · Composite" : "Team rollup";
+  const ticker = selectedRep ? repCode : teamCode;
+  const identitySubject = selectedRep
+    ? [selectedName, selectedRoleLabel, managerName ? `reports to ${managerName}` : null].filter(Boolean).join(" · ")
+    : [managerName, managerName ? managerRoleLabel : null, `${reportCount} direct ${reportCount === 1 ? "report" : "reports"}`]
+        .filter(Boolean)
+        .join(" · ");
+
   // Manager-only for beta (addendum 4.2): the widget is hidden for reps, and
   // the detail page is guarded here too so a rep cannot reach their own score
   // by opening the URL directly. Revisit before the rep-facing view is enabled.
@@ -517,7 +632,7 @@ export function PersistenceIndexReport() {
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-6">
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-3">
           <button
             type="button"
             onClick={() => navigate("/dashboard")}
@@ -526,28 +641,61 @@ export function PersistenceIndexReport() {
             <ArrowLeft className="h-4 w-4" aria-hidden /> Dashboard
           </button>
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-            <span className="text-caption uppercase tracking-wide text-text-subtle">
-              navigatr · Persistence Index
-            </span>
+            <h1 className="text-body-strong text-brand-primary">
+              navigatr{" "}
+              <span className="text-caption font-normal uppercase tracking-wide text-text-subtle">Persistence Index</span>
+            </h1>
             <span className="text-caption uppercase tracking-wide text-text-subtle">
               As of{" "}
               {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
             </span>
           </div>
-          <h1 className="text-heading-md text-text-default">Persistence index</h1>
-          {selectedRep ? (
+          {/* Breadcrumb */}
+          <div className="flex flex-wrap items-center gap-2 text-caption text-text-muted">
+            {selectedRep ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRep(null)}
+                  className="text-text-muted underline underline-offset-2 hover:text-brand-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+                >
+                  {teamName}
+                </button>
+                <span className="text-border-strong" aria-hidden>/</span>
+                <span className="font-medium text-text-default">{selectedName}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRep(null)}
+                  className="ml-1 text-brand-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+                >
+                  Back to team
+                </button>
+              </>
+            ) : (
+              <span className="font-medium text-text-default">{teamName}</span>
+            )}
+          </div>
+          {/* Rep switcher (drill-down only) */}
+          {selectedRep && directReports.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-body-sm text-text-muted">{names.get(selectedRep) ?? "Rep"} · trailing 30-day score</p>
-              <button
-                type="button"
-                onClick={() => setSelectedRep(null)}
-                className="text-body-sm text-brand-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
-              >
-                Back to team
-              </button>
+              <span className="text-caption uppercase tracking-wide text-text-subtle">Team</span>
+              {directReports.map((r) => (
+                <button
+                  key={r.ownerId}
+                  type="button"
+                  onClick={() => setSelectedRep(r.ownerId)}
+                  aria-current={r.ownerId === selectedRep}
+                  className={cn(
+                    "rounded-radius-full border px-2.5 py-1 text-caption transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary",
+                    r.ownerId === selectedRep
+                      ? "border-brand-primary bg-brand-primary text-brand-primary-foreground"
+                      : "border-border-subtle text-text-muted hover:text-text-default",
+                  )}
+                >
+                  {r.name}
+                </button>
+              ))}
             </div>
-          ) : (
-            <p className="text-body-sm text-text-muted">{isManager ? "Your team" : "You"} · trailing 30-day score</p>
           )}
         </div>
 
@@ -559,30 +707,35 @@ export function PersistenceIndexReport() {
               <p className="text-body-sm text-text-muted">Not enough data yet to chart a trend.</p>
             ) : (
               <>
-                <div className="flex items-end gap-3">
-                  {showBelowFloorScore ? (
-                    <>
-                      <span className="text-kpi-lg tabular-nums leading-none text-text-default">{belowFloorTotal}</span>
-                      <span className="pb-1 text-caption text-text-muted">/ {belowFloorMax} · cadence + re-engagement only</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-kpi-lg tabular-nums leading-none text-text-default">{current}</span>
-                      <span className="pb-1 text-caption text-text-muted">/ 100 · target {TARGET_SCORE}</span>
-                      {delta != null && delta !== 0 && (
-                        <span
-                          className={`inline-flex items-center pb-1 text-caption ${delta > 0 ? "text-status-success" : "text-status-danger"}`}
-                        >
-                          {delta > 0 ? (
-                            <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
-                          ) : (
-                            <ArrowDownRight className="h-3.5 w-3.5" aria-hidden />
-                          )}
-                          {Math.abs(delta)} this period
-                        </span>
-                      )}
-                    </>
-                  )}
+                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border-subtle pb-4">
+                  <div className="min-w-0">
+                    <p className="text-caption uppercase tracking-wide text-text-subtle">{eyebrow}</p>
+                    <p className="text-heading-md font-semibold tabular-nums text-text-default">{ticker}</p>
+                    {identitySubject && <p className="mt-0.5 text-body-sm text-text-muted">{identitySubject}</p>}
+                  </div>
+                  <div className="text-right">
+                    {showBelowFloorScore ? (
+                      <>
+                        <div className="text-kpi-lg tabular-nums leading-none text-text-default">{belowFloorTotal}</div>
+                        <div className="mt-1 text-caption text-text-muted">/ {belowFloorMax} · cadence + re-engagement only</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-kpi-lg tabular-nums leading-none text-text-default">{current}</div>
+                        {delta != null && delta !== 0 && (
+                          <div
+                            className={cn(
+                              "mt-1 text-body-sm font-medium tabular-nums",
+                              delta > 0 ? "text-status-success" : "text-status-danger",
+                            )}
+                          >
+                            {formatReadoutDelta(readout)}
+                          </div>
+                        )}
+                        <div className="mt-0.5 text-caption text-text-subtle">{formatRangeLabel(rangeKey, readout)}</div>
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 {coverageGate === "caveat" && (
@@ -621,10 +774,9 @@ export function PersistenceIndexReport() {
                 </div>
                 {!showBelowFloorScore && (
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 text-caption text-text-muted">
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "#2E5FE2" }} aria-hidden />
-                      {selectedRep ? "Rep" : "Team"}
-                      {current != null ? ` ${current}` : ""}
+                    <span className="inline-flex items-center gap-2 text-caption text-text-muted">
+                      <span className="inline-block h-0 w-3.5 border-t-2 border-solid" style={{ borderColor: "#2E5FE2" }} aria-hidden />
+                      {selectedRep ? "Composite index" : "Team median"}
                     </span>
                     {showBenchmarks && (
                       <>
@@ -633,7 +785,7 @@ export function PersistenceIndexReport() {
                       </>
                     )}
                     {!selectedRep && (
-                      <LegendToggle label="All reps" on={showAllReps} onToggle={() => setShowAllReps((v) => !v)} />
+                      <LegendToggle label={`All ${reportCount} reps`} solid on={showAllReps} onToggle={() => setShowAllReps((v) => !v)} />
                     )}
                   </div>
                 )}

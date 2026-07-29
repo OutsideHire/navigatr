@@ -234,7 +234,8 @@ describe("PersistenceIndexReport", () => {
     renderReport();
     fireEvent.click(screen.getByText("Sarah Lim"));
     expect(lastTargetOwner).toBe("u1");
-    expect(screen.getByText(/Sarah Lim/)).toBeInTheDocument();
+    // The rep name now appears in the breadcrumb, rep-switcher, and card subject.
+    expect(screen.getAllByText(/Sarah Lim/).length).toBeGreaterThan(0);
     const back = screen.getByRole("button", { name: /back to team/i });
     expect(back).toBeInTheDocument();
     fireEvent.click(back);
@@ -244,9 +245,9 @@ describe("PersistenceIndexReport", () => {
   it("shows the All reps overlay toggle on the team view but not in the drill-down", () => {
     role = "manager";
     renderReport();
-    expect(screen.getByRole("button", { name: /all reps/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /all.*reps/i })).toBeInTheDocument();
     fireEvent.click(screen.getByText("Sarah Lim"));
-    expect(screen.queryByRole("button", { name: /all reps/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /all.*reps/i })).toBeNull();
   });
 
   it("labels the activity-volume bars busier vs lighter days", () => {
@@ -265,7 +266,7 @@ describe("PersistenceIndexReport", () => {
     renderReport();
     // Off by default: no overlay lines.
     expect(screen.queryAllByTestId("rep-overlay-line")).toHaveLength(0);
-    fireEvent.click(screen.getByRole("button", { name: /all reps/i }));
+    fireEvent.click(screen.getByRole("button", { name: /all.*reps/i }));
     expect(screen.getAllByTestId("rep-overlay-line").length).toBeGreaterThan(0);
   });
 
@@ -357,7 +358,7 @@ describe("PersistenceIndexReport", () => {
       expect(screen.queryByText("This period")).toBeNull();
       // Back-to-team + rep header stay so the manager can navigate back.
       expect(screen.getByRole("button", { name: /back to team/i })).toBeInTheDocument();
-      expect(screen.getByText(/Sarah Lim/)).toBeInTheDocument();
+      expect(screen.getAllByText(/Sarah Lim/).length).toBeGreaterThan(0);
     });
 
     it("shows a caveat line but still renders the score when coverage is between 50% and 75%", () => {
@@ -366,9 +367,8 @@ describe("PersistenceIndexReport", () => {
       renderReport();
       fireEvent.click(screen.getByText("Sarah Lim"));
       expect(screen.getByText(/logging coverage is low \(60%\); this score may be incomplete/i)).toBeInTheDocument();
-      // Score + trend still render (not suppressed): the "/ 100" target line
-      // and the sub-component breakdown both come from the un-gated branch.
-      expect(screen.getByText(/\/ 100/)).toBeInTheDocument();
+      // Score + trend still render (not suppressed): the sub-component breakdown
+      // comes from the un-gated branch.
       expect(screen.getByText(/where your score comes from/i)).toBeInTheDocument();
     });
 
@@ -379,7 +379,8 @@ describe("PersistenceIndexReport", () => {
       fireEvent.click(screen.getByText("Sarah Lim"));
       expect(screen.queryByText(/not enough logging to score yet/i)).toBeNull();
       expect(screen.queryByText(/logging coverage is low/i)).toBeNull();
-      expect(screen.getByText(/\/ 100/)).toBeInTheDocument();
+      // Un-gated: the drill-down breakdown renders.
+      expect(screen.getByText(/where your score comes from/i)).toBeInTheDocument();
     });
 
     it("never gates the team-aggregate view, even if the manager's own coverage is low", () => {
