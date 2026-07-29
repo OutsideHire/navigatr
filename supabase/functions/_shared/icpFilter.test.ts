@@ -37,12 +37,19 @@ describe("normalizeCategory", () => {
 });
 
 describe("isConsumerOnly", () => {
-  it("false for a hotel (lodging is now a valid prospect)", () => {
-    // Hotels process card volume + run payroll → in profile (PATH_DESIGN §6.1).
-    expect(isConsumerOnly(["lodging", "establishment"])).toBe(false);
+  it("true for lodging (excluded per the Feb 2026 column-B taxonomy)", () => {
+    // The Feb 2026 taxonomy excludes `lodging`, which also removes hotels/motels
+    // (they carry this type), reversing the earlier §6.1 keep-hotels decision.
+    expect(isConsumerOnly(["lodging", "establishment"])).toBe(true);
   });
   it("true for a large venue (arena)", () => {
     expect(isConsumerOnly(["arena", "establishment"])).toBe(true);
+  });
+  it("true for Feb 2026 column-B additions (accounting, real_estate_agency, casino, airport)", () => {
+    expect(isConsumerOnly(["accounting"])).toBe(true);
+    expect(isConsumerOnly(["real_estate_agency"])).toBe(true);
+    expect(isConsumerOnly(["casino", "establishment"])).toBe(true);
+    expect(isConsumerOnly(["airport", "establishment"])).toBe(true);
   });
   it("true for a parking garage", () => {
     expect(isConsumerOnly(["parking_garage"])).toBe(true);
@@ -70,7 +77,7 @@ describe("isConsumerOnly", () => {
     expect(isConsumerOnly(["primary_school"])).toBe(true);
   });
   it("false for a normal B2B office", () => {
-    expect(isConsumerOnly(["accounting", "establishment"])).toBe(false);
+    expect(isConsumerOnly(["insurance_agency", "establishment"])).toBe(false);
   });
 });
 
@@ -150,9 +157,9 @@ describe("classifyProspect — gate ordering and outcomes", () => {
     expect(v.chainReason).toBeNull();
   });
 
-  it("a hotel is servable (lodging is in profile after the §6.1 decision)", () => {
+  it("a hotel is excluded now (lodging is a column-B exclusion, reversing §6.1)", () => {
     const v = classifyProspect(candidate({ name: "Downtown Boutique Hotel", types: ["lodging"] }), SEED, 0);
-    expect(v).toEqual({ category: "lodging", inProfile: true, isChain: false, chainReason: null, chainConfidence: null, chainBrandId: null, chainBrandName: null });
+    expect(v.inProfile).toBe(false);
   });
 
   it("institutional gate flags gov before seed/density", () => {
@@ -167,18 +174,21 @@ describe("classifyProspect — gate ordering and outcomes", () => {
   });
 
   it("a national enterprise is flagged with reason enterprise", () => {
-    // The Deloitte case from the smoke test: tagged accounting/consultant (in
-    // profile, passes every other gate) but floated up by POPULARITY. Name match
-    // pulls it out so reps see independent SMBs, not Big-4 offices.
-    const v = classifyProspect(candidate({ name: "Deloitte Austin", types: ["accounting", "consultant"] }), SEED, 0);
+    // The Deloitte case from the smoke test: a kept office type (in profile,
+    // passes every other gate) but floated up by POPULARITY. Name match pulls it
+    // out so reps see independent SMBs, not Big-4 offices. (Uses a kept type
+    // since accounting is now a column-B exclusion.)
+    const v = classifyProspect(candidate({ name: "Deloitte Austin", types: ["consultant"] }), SEED, 0);
     expect(v.isChain).toBe(true);
     expect(v.chainReason).toBe("enterprise");
   });
 
-  it("a locally-owned franchise office survives (not flagged enterprise)", () => {
-    // Keller Williams office: real-estate franchise, runs its own books = ICP.
-    const v = classifyProspect(candidate({ name: "Keller Williams Realty Lake Travis", types: ["real_estate_agency"] }), SEED, 0);
-    expect(v).toEqual({ category: "real_estate_agency", inProfile: true, isChain: false, chainReason: null, chainConfidence: null, chainBrandId: null, chainBrandName: null });
+  it("a locally-owned office survives (not flagged enterprise)", () => {
+    // A local SMB office (kept type) with no enterprise-brand name match = ICP.
+    const v = classifyProspect(candidate({ name: "Smith Family Insurance", types: ["insurance_agency"] }), SEED, 0);
+    expect(v.inProfile).toBe(true);
+    expect(v.isChain).toBe(false);
+    expect(v.chainReason).toBeNull();
   });
 
   it("seed list wins over the enterprise gate when a name matches both", () => {
@@ -191,7 +201,7 @@ describe("classifyProspect — gate ordering and outcomes", () => {
   it("enterprise gate wins over same-name density", () => {
     // Deloitte with 50 same-name nearby still reports 'enterprise', not density,
     // because the enterprise check runs first.
-    const v = classifyProspect(candidate({ name: "Deloitte", types: ["accounting"] }), SEED, 50);
+    const v = classifyProspect(candidate({ name: "Deloitte", types: ["consultant"] }), SEED, 50);
     expect(v.chainReason).toBe("enterprise");
   });
 
