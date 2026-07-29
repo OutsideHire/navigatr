@@ -150,12 +150,11 @@ describe("PersistenceIndexReport", () => {
     expect(areaPath).toBeTruthy();
   });
 
-  it("locks the trend chart y-axis to a fixed 0-100 scale regardless of the data's own min/max", () => {
-    // A composite of 50 is the exact vertical midpoint of the 180-tall
-    // viewBox under a fixed 0-100 scale (y = H - (v/100)*H = 90), whether the
-    // rest of the series clusters near the top or the bottom. If the axis
-    // ever started auto-fitting to data min/max instead, this same value
-    // would land at a different height depending on the other points.
+  it("zooms the trend chart y-axis to the data range (not a fixed 0-100 scale)", () => {
+    // The axis now auto-fits to the plotted values (matching the prototype) so
+    // the line fills the chart. With the series clustered high (50-95), a
+    // composite of 50 is pushed well below y=90 (where it would sit on a fixed
+    // 0-100 scale, H - 50/100*180), confirming the zoom.
     role = "manager";
     series = [
       { date: "2026-06-01", composite: 50, activityCount: 1 },
@@ -167,7 +166,7 @@ describe("PersistenceIndexReport", () => {
     const linePath = svg.querySelector('path[fill="none"][stroke="#2E5FE2"]');
     const d = linePath!.getAttribute("d")!;
     const firstPoint = d.match(/M([\d.]+),([\d.]+)/)!;
-    expect(Number(firstPoint[2])).toBeCloseTo(90, 1); // H(180) - (50/100)*180 = 90
+    expect(Number(firstPoint[2])).toBeGreaterThan(110); // zoomed: 50 sits well below the fixed-scale y=90
   });
 
   it("renders the sub-component breakdown and stats grid in the per-rep drill-down", () => {

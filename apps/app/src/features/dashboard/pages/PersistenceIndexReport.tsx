@@ -78,6 +78,7 @@ function TrendChart({
   referenceLines,
   dailyReferenceLines,
   overlaySeries,
+  showOverlay,
 }: {
   points: { composite: number | null; date?: string; activityCount?: number }[];
   referenceLines: { value: number; label: string }[];
@@ -88,23 +89,34 @@ function TrendChart({
    * accrual-period fallback, passed via `referenceLines` instead).
    */
   dailyReferenceLines?: { label: string; values: (number | null)[] }[];
-  /** Faint per-rep overlay lines ("All reps" toggle), aligned to `points` by
-   *  index. Each entry is a rep's daily composite values. */
+  /** Per-rep daily composite values, aligned to `points` by index. Always
+   *  provided for a team view (drives the hover "spread"); the faint overlay
+   *  lines only render when `showOverlay` is on. */
   overlaySeries?: (number | null)[][];
+  /** Whether to draw the faint per-rep overlay lines ("All reps" toggle). */
+  showOverlay?: boolean;
 }) {
   const W = 640;
   const H = 180;
   const n = points.length;
   const x = (i: number) => (n <= 1 ? 0 : (i / (n - 1)) * W);
 
-  // Y-axis is locked to a fixed 0-100 scale (deliberate: a score of 50 always
-  // sits at the same height, never auto-fit to the data's own min/max, so small
-  // differences are not visually exaggerated). We only add reference tick labels
-  // for that fixed scale.
-  const yLo = 0;
-  const yHi = 100;
-  const y = (v: number) => H - (Math.max(0, Math.min(100, v)) / 100) * H;
-  const yTicks = [100, 75, 50, 25, 0];
+  // Zoom the y-axis to the plotted values (team line, benchmark lines, rep
+  // overlays) with padding, so the trend fills the chart and its rise is
+  // visible, instead of a flat line on a fixed 0-100 scale. Rounded to tidy
+  // even bounds and clamped to [0, 100].
+  const plotted: number[] = [];
+  points.forEach((p) => p.composite != null && plotted.push(p.composite));
+  referenceLines.forEach((r) => plotted.push(r.value));
+  (dailyReferenceLines ?? []).forEach((dl) => dl.values.forEach((v) => v != null && plotted.push(v)));
+  (overlaySeries ?? []).forEach((s) => s.forEach((v) => v != null && plotted.push(v)));
+  const rawMin = plotted.length ? Math.min(...plotted) : 0;
+  const rawMax = plotted.length ? Math.max(...plotted) : 100;
+  const span = Math.max(1, rawMax - rawMin);
+  const yLo = Math.max(0, Math.floor((rawMin - span * 0.15) / 2) * 2);
+  const yHi = Math.min(100, Math.max(yLo + 4, Math.ceil((rawMax + span * 0.15) / 2) * 2));
+  const y = (v: number) => H - ((Math.max(yLo, Math.min(yHi, v)) - yLo) / (yHi - yLo)) * H;
+  const yTicks = [0, 1, 2, 3, 4].map((k) => Math.round(yHi - ((yHi - yLo) * k) / 4));
 
   // Hover crosshair + tooltip: map the pointer's x within the chart to the
   // nearest data index. The SVG stretches (preserveAspectRatio none), so we
@@ -123,6 +135,14 @@ function TrendChart({
   const hoverDate =
     hoverPoint?.date != null
       ? new Date(hoverPoint.date).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+      : null;
+  // Spread = gap between the highest and lowest rep on the hovered day.
+  const hoverSpread =
+    hover != null && overlaySeries && overlaySeries.length > 0
+      ? (() => {
+          const vals = overlaySeries.map((s) => s[hover]).filter((v): v is number => v != null);
+          return vals.length >= 2 ? Math.max(...vals) - Math.min(...vals) : null;
+        })()
       : null;
 
   // Build line + area segments, breaking on null gaps.
@@ -193,8 +213,8 @@ function TrendChart({
               strokeWidth={1}
             />
           ))}
-      {/* Faint per-rep overlay lines, behind the composite + areas. */}
-      {overlaySegments.map((segs, ri) =>
+      {/* Faint per-rep overlay lines ("All reps"), behind the composite + areas. */}
+      {showOverlay && overlaySegments.map((segs, ri) =>
         segs.map((d, si) => (
           <path
             key={`overlay-${ri}-${si}`}
@@ -243,9 +263,12 @@ function TrendChart({
           >
             {hoverDate && <div className="uppercase tracking-wide text-text-subtle">{hoverDate}</div>}
             <div className="text-body-sm font-medium tabular-nums text-text-default">{hoverPoint.composite}</div>
-            {typeof hoverPoint.activityCount === "number" && (
+            {(typeof hoverPoint.activityCount === "number" || hoverSpread != null) && (
               <div className="text-text-subtle">
-                {hoverPoint.activityCount} {hoverPoint.activityCount === 1 ? "activity" : "activities"}
+                {typeof hoverPoint.activityCount === "number" &&
+                  `${hoverPoint.activityCount} ${hoverPoint.activityCount === 1 ? "activity" : "activities"}`}
+                {typeof hoverPoint.activityCount === "number" && hoverSpread != null && " · "}
+                {hoverSpread != null && `spread ${Math.round(hoverSpread)} pts`}
               </div>
             )}
           </div>
@@ -340,7 +363,9 @@ export function PersistenceIndexReport() {
   const team = useTeamPersistenceIndex();
   const bench = usePersistenceBenchmarks();
   const directReports = useDirectReports(isManager);
-  const overlaySeries = useAllRepsHistory(rangeDays, isManager && !selectedRep && showAllReps);
+  // Always compute per-rep series for a team view (drives the hover "spread");
+  // the faint overlay lines only render when the "All reps" toggle is on.
+  const overlaySeries = useAllRepsHistory(rangeDays, isManager && !selectedRep);
   // Reps never render peer benchmarks (strategy "solo"), so skip the RPC for them.
   const companySeriesQuery = usePersistenceCompanySeries(rangeDays, bench.strategy !== "solo");
   const companySeries = companySeriesQuery.data ?? [];
@@ -591,6 +616,7 @@ export function PersistenceIndexReport() {
                     referenceLines={gatedReferenceLines}
                     dailyReferenceLines={gatedDailyReferenceLines}
                     overlaySeries={overlaySeries.map((s) => s.values)}
+                    showOverlay={showAllReps}
                   />
                 </div>
                 {!showBelowFloorScore && (
