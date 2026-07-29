@@ -21,13 +21,36 @@ declare
   v_days   int := 180;                 -- covers 1W/1M/3M/6M fully; 1Y partial
   v_reps   int;
 begin
+  -- ── 0. Make sure every rep has an active deal to score on ──────────────
+  -- A rep whose deals are all won/lost has no active follow-ups, so their score
+  -- is null ("no data yet"). Re-activate one closed deal for any such owner so
+  -- every rep shows on the team roster.
+  with need as (
+    select owner_id
+    from deals
+    where org_id = p_org and owner_id is not null
+    group by owner_id
+    having count(*) filter (where stage not in ('won', 'lost')) = 0
+  ),
+  pick as (
+    select distinct on (d.owner_id) d.id
+    from deals d
+    join need n on n.owner_id = d.owner_id
+    where d.org_id = p_org
+    order by d.owner_id, d.id
+  )
+  update deals set stage = 'contacted' where id in (select id from pick);
+
   -- ── 1. Activity backfill on active demo deals ──────────────────────────
-  -- One touch per active deal on days where the cadence gate fires. The gate
-  -- widens with age (recent = every 2 days, oldest = every ~6), so activity
-  -- volume + the recomputed composite both rise toward today. Dispositions all
-  -- schedule a follow-up, and the dense recent touches "keep" earlier
-  -- follow-ups, lifting follow-up discipline. Rotates type/disposition by day so
-  -- the volume bars and mix look natural. g = 0 is today, g = v_days-1 oldest.
+  -- One touch per active deal on days where the cadence gate fires (widening
+  -- with age: recent ~every 2 days, oldest ~every 6). g = 0 is today.
+  --
+  -- Follow-up discipline is what makes the trend RISE and VARY: each touch's
+  -- follow-up is either "kept" (long +10d window, always satisfied by the next
+  -- touch) or "lapses" (+1d window, missed). The lapse rate is high in the past
+  -- and low recently, and offset per rep, so older windows score lower and reps
+  -- differ, instead of everyone pinned at 100. `lapses` fires more often as g
+  -- (age) grows; the per-owner hash spreads reps apart.
   insert into activities (
     org_id, deal_id, logged_by, type, disposition,
     duration_minutes, outcome_notes, occurred_at, follow_up_date
@@ -41,7 +64,12 @@ begin
     case when (g % 3) = 0 then 8 + (g % 12) else null end,   -- duration for calls only
     'Demo activity',
     (((current_date - g) + time '15:00'))::timestamptz,       -- date + time = timestamp
-    (current_date - g + 4)                                    -- follow-up 4 days out
+    (current_date - g
+      + case
+          when ((g + (abs(hashtext(d.owner_id::text)) % 5)) % 10) < (2 + (g / 30))
+          then 1    -- lapses: 1-day window the next touch cannot satisfy
+          else 10   -- kept: wide window the next touch satisfies
+        end)::date
   from deals d
   cross join generate_series(0, v_days - 1) as g
   where d.org_id = p_org
