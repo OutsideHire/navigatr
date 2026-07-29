@@ -22,7 +22,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Mic, X } from "lucide-react";
 import { toast } from "sonner";
 
-import { Button, Input, NotesFieldWithMic, DispositionTile } from "@/components/navigatr";
+import { Button, Input, DispositionTile } from "@/components/navigatr";
 import { dateOnlyToNoonUtcIso } from "@/lib/calendarDate";
 import {
   DISPOSITIONS,
@@ -69,7 +69,6 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
   const { syncFollowup } = useFollowupSync();
 
   const [selected, setSelected] = React.useState<Disposition | null>(null);
-  const [notes, setNotes] = React.useState("");
   const [customDate, setCustomDate] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   // Synchronous guard against double-submit: `saving` state is a stale closure
@@ -81,7 +80,6 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
   React.useEffect(() => {
     if (open) {
       setSelected(null);
-      setNotes("");
       setCustomDate(plusDaysISODate(7));
       setSaving(false);
       savingRef.current = false;
@@ -120,14 +118,13 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
           stage: "new",
           probability: 20,
           leadSource: "path_dropin",
-          notes: notes.trim() || undefined,
           placeId: merchant.placeId,
         });
         await logActivity.mutateAsync({
           dealId,
           type: "drop_in",
           disposition,
-          outcomeNotes: notes.trim(),
+          outcomeNotes: "",
           followUpDate,
           voiceNoteUrl: null,
         });
@@ -145,10 +142,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
         if (err instanceof DuplicateDealError) {
           // Already in the team's pipeline (org-wide active-deal guard). The
           // visit above is still recorded; we skip creating a duplicate deal.
-          // The drop_in activity did not run, so any typed note was not saved,
-          // tell the rep so it is not silently lost (v1 has no open-existing jump).
-          const base = `${merchant.name} is already in your team's pipeline.`;
-          toast.info(notes.trim() ? `${base} Your note was not added to it.` : base);
+          toast.info(`${merchant.name} is already in your team's pipeline.`);
         } else {
           toast.error("Couldn't finish logging — the visit was saved but the deal/follow-up may not have been.");
         }
@@ -187,7 +181,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
               </Dialog.Close>
             </div>
             <p className="mt-1 text-caption text-text-muted">
-              Pick an outcome, add a note, then log the stop.
+              Pick an outcome, then log the stop.
             </p>
           </div>
 
@@ -234,12 +228,6 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
                 />
               </label>
             )}
-
-            <NotesFieldWithMic
-              value={notes}
-              onChange={setNotes}
-              placeholder="What happened on this visit?"
-            />
           </div>
 
           <div className="flex gap-2 pt-4">

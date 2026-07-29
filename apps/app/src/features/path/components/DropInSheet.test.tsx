@@ -241,17 +241,23 @@ describe("DropInSheet", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("on a duplicate with notes entered: info toast warns the note was not added", async () => {
-    createDealMutateAsync.mockRejectedValueOnce(new DuplicateDealError());
+  // The in-sheet "What happened on this visit?" note was removed: notes are
+  // captured on the deal record, so a per-drop-in note box duplicated them.
+  it("does not render an in-sheet note field", () => {
     renderSheet();
-    fireEvent.change(
-      screen.getByPlaceholderText(/what happened on this visit/i),
-      { target: { value: "Talked to the owner, very interested." } },
-    );
+    expect(screen.queryByPlaceholderText(/what happened on this visit/i)).not.toBeInTheDocument();
+  });
+
+  it("logs the drop-in activity with empty outcome notes (no in-sheet note)", async () => {
+    renderSheet();
     fireEvent.click(screen.getByText("Statement Secured"));
     await act(async () => { fireEvent.click(logStopBtn()); });
-    expect(toast.info).toHaveBeenCalledWith(
-      expect.stringContaining("Your note was not added"),
+    expect(logActivityMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "drop_in", outcomeNotes: "" }),
+    );
+    // The note is no longer forwarded to the created deal either.
+    expect(createDealMutateAsync).toHaveBeenCalledWith(
+      expect.not.objectContaining({ notes: expect.anything() }),
     );
   });
 });
