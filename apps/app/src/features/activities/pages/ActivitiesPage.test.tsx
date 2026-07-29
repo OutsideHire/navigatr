@@ -268,3 +268,20 @@ describe("ActivitiesPage / task row type indicator", () => {
     expect(badgeOf(/Edit Email activity/i)?.className).toContain("bg-status-danger");
   });
 });
+
+describe("ActivitiesPage / follow-up superseded by a later activity", () => {
+  it("drops a task once a newer activity is logged on the same deal", () => {
+    // Bug fix: logging an outcome should clear the deal's overdue follow-up.
+    // Older activity carries a due-today follow-up; the newer touch (no
+    // follow-up of its own) supersedes it, so no task row should render.
+    renderWithSeed({
+      activities: [
+        { ...task("a-old", "d-1", todayFollowUp()), occurredAt: "2026-05-10T12:00:00Z" },
+        { ...task("a-new", "d-1", null), occurredAt: "2026-05-20T12:00:00Z" },
+      ],
+      deals: [deal("d-1", "Acme")],
+    });
+    expect(screen.queryByText("Acme")).not.toBeInTheDocument();
+    expect(screen.queryAllByTestId("task-row")).toHaveLength(0);
+  });
+});

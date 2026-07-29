@@ -174,4 +174,48 @@ describe("useFollowUpReminders", () => {
     );
     expect(result.current.today[0].daysOverdue).toBe(0);
   });
+
+  it("clears an overdue follow-up once a later activity is logged on the deal", () => {
+    // The reported bug: logging an outcome did not clear the overdue reminder.
+    dealsData = [makeDeal()];
+    activitiesData = [
+      makeActivity({
+        id: "old-overdue",
+        occurredAt: "2026-05-10T15:00:00Z",
+        followUpDate: "2026-05-19T00:00:00Z", // overdue as of the ref date
+      }),
+      makeActivity({
+        id: "just-logged",
+        occurredAt: "2026-05-22T09:00:00Z", // newer touch, no new follow-up
+        followUpDate: null,
+      }),
+    ];
+    const { result } = renderHook(
+      () => useFollowUpReminders(new Date("2026-05-22T12:00:00Z")),
+      { wrapper },
+    );
+    // The old overdue follow-up is superseded by the newer touch and drops out.
+    expect(result.current.count).toBe(0);
+  });
+
+  it("shows only the most recent activity's follow-up when several exist on a deal", () => {
+    dealsData = [makeDeal()];
+    activitiesData = [
+      makeActivity({
+        id: "earlier",
+        occurredAt: "2026-05-10T15:00:00Z",
+        followUpDate: "2026-05-18T00:00:00Z",
+      }),
+      makeActivity({
+        id: "latest",
+        occurredAt: "2026-05-15T15:00:00Z",
+        followUpDate: "2026-05-19T00:00:00Z",
+      }),
+    ];
+    const { result } = renderHook(
+      () => useFollowUpReminders(new Date("2026-05-22T12:00:00Z")),
+      { wrapper },
+    );
+    expect(result.current.overdue.map((r) => r.id)).toEqual(["latest"]);
+  });
 });

@@ -51,6 +51,7 @@ import { useActivitiesForOrg } from "../hooks/useActivities";
 import { useUpdateActivity } from "../hooks/useUpdateActivity";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { snoozeDate, SNOOZE_OPTIONS, type SnoozeOption } from "../lib/snoozeDate";
+import { latestOccurredAtByDeal, isFollowUpSuperseded } from "../lib/followUpSupersession";
 import {
   ACTIVITY_TYPE_ICON as TYPE_ICON,
   ACTIVITY_TYPE_ACCENT as TYPE_ACCENT,
@@ -118,15 +119,20 @@ interface DerivedTask {
 }
 
 /** Derive next-touches from live activity + deal data. Each activity
- *  with a `followUpDate` produces one task; tasks are sorted by due
- *  date asc so the page's overdue/today/upcoming bucketing is stable. */
+ *  with a `followUpDate` produces one task, UNLESS a later activity has
+ *  since been logged on the same deal (that newer touch owns the deal's
+ *  follow-up, so the older one is done). This is what clears an overdue
+ *  follow-up once the rep logs an outcome. Tasks are sorted by due date
+ *  asc so the page's overdue/today/upcoming bucketing is stable. */
 function deriveTasks(activities: Activity[], deals: Deal[]): DerivedTask[] {
   const dealById = new Map(deals.map((d) => [d.id, d]));
+  const latestByDeal = latestOccurredAtByDeal(activities);
   const tasks: DerivedTask[] = [];
   for (const a of activities) {
     if (!a.followUpDate) continue;
     const deal = dealById.get(a.dealId);
     if (!deal) continue; // Activity orphaned by a deleted deal — skip.
+    if (isFollowUpSuperseded(a, latestByDeal)) continue; // handled by a newer touch
     tasks.push({ fromActivity: a, deal, dueAt: a.followUpDate });
   }
   return tasks.sort((a, b) => a.dueAt.localeCompare(b.dueAt));

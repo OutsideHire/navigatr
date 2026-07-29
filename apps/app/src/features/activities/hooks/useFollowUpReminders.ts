@@ -7,14 +7,16 @@
  * follow_up_date is today-or-earlier and whose parent deal is still
  * open (stage !== 'won').
  *
- * Why not just read `deals.next_followup_at`?
- *  - `deals.next_followup_at` is the *most recent* scheduled follow-up
- *    only. If a rep had two open follow-ups on the same deal (rare but
- *    possible), the older one would vanish. Pulling straight from
- *    activities is the source of truth.
- *  - `next_followup_at` is also overwritten by `expectedClose` edits in
+ * A follow-up is dropped once a *later* activity is logged on the same
+ * deal (see followUpSupersession): the most recent touch owns the deal's
+ * next follow-up, so logging an outcome clears the overdue reminder.
+ *
+ * Why derive from activities instead of reading `deals.next_followup_at`?
+ *  - `next_followup_at` is overwritten by `expectedClose` edits in
  *    AddDealSheet, which conflates "expected close date" with "next
  *    scheduled touch." Activities are unambiguous.
+ *  - Deriving here keeps the bell and the Activities list on the exact
+ *    same supersession rule, so their counts never disagree.
  *
  * "Today" is the rep's LOCAL calendar day, so the bell flips at the rep's
  * wall clock; a follow-up's day is read from its stored value's UTC calendar
@@ -26,6 +28,7 @@ import * as React from "react";
 import { useActivitiesForOrg } from "./useActivities";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { calendarDayDelta } from "@/lib/calendarDate";
+import { latestOccurredAtByDeal, isFollowUpSuperseded } from "../lib/followUpSupersession";
 import type { Activity } from "../mockData";
 import type { Deal } from "@/features/pipeline/mockData";
 
@@ -71,6 +74,7 @@ export function useFollowUpReminders(now: Date = new Date()): UseFollowUpReminde
 
   return React.useMemo(() => {
     const dealById = new Map(deals.map((d) => [d.id, d]));
+    const latestByDeal = latestOccurredAtByDeal(activities);
 
     const overdue: FollowUpReminder[] = [];
     const today: FollowUpReminder[] = [];
@@ -80,6 +84,7 @@ export function useFollowUpReminders(now: Date = new Date()): UseFollowUpReminde
       const deal = dealById.get(a.dealId);
       if (!deal) continue; // orphan — parent deleted
       if (deal.stage === "won") continue; // closed-won; no follow-up needed
+      if (isFollowUpSuperseded(a, latestByDeal)) continue; // newer touch handled it
 
       const delta = dayDelta(now, new Date(a.followUpDate));
       if (delta > 0) continue; // future — not a reminder yet
