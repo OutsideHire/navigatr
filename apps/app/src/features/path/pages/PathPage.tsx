@@ -125,15 +125,11 @@ export function PathPage() {
     isLoading: merchantsLoading,
     isError: merchantsError,
     refetch: refetchMerchants,
-  } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, allIndustries: ingestAllIndustries, includeChains: true, limit: discoverLimit });
-  // Create a Path pulls its OWN chain-free discovery: the wizard's candidatePool
-  // excludes chains, so if Create read the chains-included browse fetch above, the
-  // usable pool would be `limit` minus however many chains happened to rank in —
-  // the rep would ask for 25 and get fewer stops. Fetching chain-free here means
-  // `limit` non-chain results, so the results count = usable stops. The browse
-  // fetch above keeps chains (it badges them in the discover map/list).
-  // fillToLimit only while the Create wizard is open, so the auto-widen fetch
-  // (up to a few edge calls on a sparse area) is paid on demand, not on every
+  } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, allIndustries: ingestAllIndustries, includeChains: false, limit: discoverLimit });
+  // Chains are excluded from ALL Path discovery (this browse fetch, Create
+  // below, and Plan), org-wide, with no toggle: chain locations can't make local
+  // buying decisions, so they are never surfaced. Create keeps its own fetch so
+  // its fillToLimit auto-widen runs only while the wizard is open, not on every
   // Path page load.
   const [createOpen, setCreateOpen] = React.useState(false);
   const {
@@ -145,7 +141,6 @@ export function PathPage() {
   } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, allIndustries: ingestAllIndustries, includeChains: false, limit: discoverLimit, fillToLimit: createOpen });
   const [categoryFilter, setCategoryFilter] = React.useState<CategoryFilter>("all");
   const [sortMode, setSortMode] = React.useState<PathSortMode>(DEFAULT_SORT_MODE);
-  const [hideChains, setHideChains] = React.useState(false);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [view, setView] = React.useState<ViewMode>("list"); // default to list until merchants are geocoded
@@ -443,9 +438,10 @@ export function PathPage() {
   // Final display order: category-filtered set ordered by the chosen sort mode.
   // merchantsWithDistance is already distance-sorted, so it's the stable tiebreak.
   const sorted = React.useMemo(() => {
-    const base = hideChains ? filtered.filter((m) => !m.isChain) : filtered;
-    return sortMerchants(base, sortMode);
-  }, [filtered, sortMode, hideChains]);
+    // Chains are already excluded at the discovery fetch (includeChains: false),
+    // so no client-side chain filter is needed here.
+    return sortMerchants(filtered, sortMode);
+  }, [filtered, sortMode]);
 
   // Per-category counts over the radius-filtered set. Only categories actually
   // present within the chosen radius get a chip — no empty "Healthcare (0)"
@@ -683,7 +679,7 @@ export function PathPage() {
              - "path":     the active path — two-tab Run | Stops surface when
                            started (started_at set), else the Stops overview
              - "discover": filter controls + map+list discovery ladder
-          Filter chips, radius/sort/hideChains controls are discovery-only and live
+          Filter chips, radius/sort controls are discovery-only and live
           exclusively inside the "discover" branch. Header + location bar are always above. */}
 
       {!origin && geoStatus === "loading" ? (
@@ -909,19 +905,7 @@ export function PathPage() {
             </div>
           )}
 
-          {anyGeocoded && (
-            <label className="mt-2 flex items-center gap-2 self-start text-caption text-text-muted">
-              <input
-                type="checkbox"
-                checked={hideChains}
-                onChange={(e) => setHideChains(e.target.checked)}
-                className="h-4 w-4 rounded border-border-default"
-              />
-              Hide chains
-            </label>
-          )}
-
-          {/* Mobile view toggle — only shown when the map has something to render */}
+          {/* Mobile view toggle: only shown when the map has something to render */}
           {anyGeocoded && (
           <div className="mt-3 flex gap-1 self-start rounded-radius-md bg-surface-sunken p-0.5 md:hidden">
             <button

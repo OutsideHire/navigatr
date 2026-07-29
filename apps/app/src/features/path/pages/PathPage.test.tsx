@@ -390,21 +390,20 @@ describe("PathPage route memos — discover-only", () => {
   });
 });
 
-describe("PathPage discovery fetches — chain-free Create pool", () => {
+describe("PathPage discovery fetches — chain-free everywhere", () => {
   const readyOrigin: PathOrigin = {
     ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
   };
 
-  it("fetches a chains-included browse pool AND a chain-free pool for Create", () => {
+  it("never requests chains: every discovery fetch is chain-free", () => {
     originState.current = readyOrigin;
     render(<PathPage />, { wrapper });
     const includeChainsFlags = useMerchantsSpy.mock.calls.map(
       (call) => (call[1] as { includeChains?: boolean } | undefined)?.includeChains,
     );
-    // Two discovery fetches: browse keeps chains (badged in discover), Create
-    // excludes them so the results count = usable (non-chain) stops.
-    expect(includeChainsFlags).toContain(true);
-    expect(includeChainsFlags).toContain(false);
+    // Chains are excluded from all Path discovery (browse + Create), org-wide.
+    expect(includeChainsFlags.length).toBeGreaterThan(0);
+    expect(includeChainsFlags.every((f) => f === false)).toBe(true);
     // Both honor the same results-count limit.
     const limits = useMerchantsSpy.mock.calls.map((call) => (call[1] as { limit?: number } | undefined)?.limit);
     expect(limits.filter((l) => l === 25).length).toBeGreaterThanOrEqual(2);
