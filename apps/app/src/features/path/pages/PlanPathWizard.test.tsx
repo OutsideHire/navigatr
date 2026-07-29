@@ -19,9 +19,25 @@ vi.mock("../hooks/usePathOrigin", () => ({
 const merchantsState = {
   current: { merchants: [] as Merchant[], isLoading: false, isError: false, refetch: vi.fn() },
 };
+// Records the opts each useMerchants call received (for asserting includeChains).
+const merchantsOpts: Array<Record<string, unknown>> = [];
 vi.mock("../hooks/useMerchants", async (orig) => {
   const actual = await orig<typeof import("../hooks/useMerchants")>();
-  return { ...actual, useMerchants: () => merchantsState.current };
+  return {
+    ...actual,
+    useMerchants: (_origin: unknown, opts: Record<string, unknown> = {}) => {
+      merchantsOpts.push(opts);
+      // Supply the fill/transparency fields the wizard destructures, with safe
+      // defaults so a test can override just `merchants` via merchantsState.
+      return {
+        hidden: { chains: 0, inPipeline: 0 },
+        effectiveRadiusM: 8047,
+        requestedRadiusM: 8047,
+        requestedLimit: 25,
+        ...merchantsState.current,
+      };
+    },
+  };
 });
 
 // --- Mutations ------------------------------------------------------------
@@ -96,6 +112,7 @@ beforeEach(() => {
   syncPathMock.mockClear();
   originState.current = NO_ORIGIN;
   merchantsState.current = { merchants: [], isLoading: false, isError: false, refetch: vi.fn() };
+  merchantsOpts.length = 0;
 });
 
 describe("PlanPathWizard", () => {
@@ -103,6 +120,16 @@ describe("PlanPathWizard", () => {
     renderWizard();
     expect(screen.getByText(/step 1 of 5/i)).toBeInTheDocument();
     expect(screen.getByText("Where do you want to prospect?")).toBeInTheDocument();
+  });
+
+  it("always requests discovery without chains (chains never shown in Plan)", () => {
+    originState.current = WITH_ORIGIN;
+    renderWizard();
+    expect(merchantsOpts.length).toBeGreaterThan(0);
+    // Every discovery call the wizard makes excludes chains.
+    for (const opts of merchantsOpts) {
+      expect(opts.includeChains).toBe(false);
+    }
   });
 
   it("X closes the slide-out", () => {

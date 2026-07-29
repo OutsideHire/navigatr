@@ -158,9 +158,12 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
     effectiveRadiusM: merchantsEffectiveRadiusM,
     requestedRadiusM: merchantsRequestedRadiusM,
     requestedLimit: merchantsRequestedLimit,
+    // includeChains: false so Plan never surfaces chains (McDonald's, Taco Bell,
+    // etc.), matching Create. Excluding server-side lets auto-widen fill the
+    // requested count with non-chain businesses.
     // Only auto-widen on the results step, so the extra edge calls fire when the
     // rep is actually looking at results, not while they tune filters.
-  } = useMerchants(origin, { radiusM, industries, allIndustries, includeChains: true, limit: resultsCount, fillToLimit: stepKey === "results" });
+  } = useMerchants(origin, { radiusM, industries, allIndustries, includeChains: false, limit: resultsCount, fillToLimit: stepKey === "results" });
 
   // Distance-annotate + sort nearest-first for the results list.
   const resultMerchants: MerchantWithDistance[] = React.useMemo(() => {
