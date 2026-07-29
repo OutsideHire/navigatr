@@ -31,6 +31,7 @@ import { haversineMeters } from "@/lib/distance";
 import { type Merchant, type MerchantCategory } from "../mockData";
 import { usePathOrigin } from "../hooks/usePathOrigin";
 import { useMerchants } from "../hooks/useMerchants";
+import { discoveryShortfallHint } from "../lib/discoveryHint";
 import { usePathMutations, type StopSnapshot } from "../hooks/usePathMutations";
 import { usePathCalendarSync } from "../hooks/usePathCalendarSync";
 import { todayISO, addDaysISO } from "../lib/today";
@@ -153,7 +154,13 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
     isLoading: merchantsLoading,
     isError: merchantsError,
     refetch: refetchMerchants,
-  } = useMerchants(origin, { radiusM, industries, allIndustries, includeChains: true, limit: resultsCount });
+    hidden: merchantsHidden,
+    effectiveRadiusM: merchantsEffectiveRadiusM,
+    requestedRadiusM: merchantsRequestedRadiusM,
+    requestedLimit: merchantsRequestedLimit,
+    // Only auto-widen on the results step, so the extra edge calls fire when the
+    // rep is actually looking at results, not while they tune filters.
+  } = useMerchants(origin, { radiusM, industries, allIndustries, includeChains: true, limit: resultsCount, fillToLimit: stepKey === "results" });
 
   // Distance-annotate + sort nearest-first for the results list.
   const resultMerchants: MerchantWithDistance[] = React.useMemo(() => {
@@ -168,6 +175,25 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
       }))
       .sort((a, b) => a.distanceMeters - b.distanceMeters);
   }, [liveMerchants, origin]);
+
+  // Shortfall/widen explanation for the results step.
+  const discoveryHint = React.useMemo(
+    () =>
+      discoveryShortfallHint({
+        shown: resultMerchants.length,
+        requested: merchantsRequestedLimit,
+        requestedRadiusM: merchantsRequestedRadiusM,
+        effectiveRadiusM: merchantsEffectiveRadiusM,
+        hidden: merchantsHidden,
+      }),
+    [
+      resultMerchants.length,
+      merchantsRequestedLimit,
+      merchantsRequestedRadiusM,
+      merchantsEffectiveRadiusM,
+      merchantsHidden,
+    ],
+  );
 
   // --- Stop set mutations ---------------------------------------------------
   const toggleStop = React.useCallback((m: Merchant) => {
@@ -448,6 +474,7 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
             onLogDropIn={openDropIn}
             onAddAll={() => addAll(resultMerchants)}
             onRemoveAll={() => removeAll(resultMerchants)}
+            discoveryHint={discoveryHint}
           />
         )}
 

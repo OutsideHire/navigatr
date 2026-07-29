@@ -273,3 +273,85 @@ describe("useMerchants", () => {
     expect(invokeMock.mock.calls[0]![1].body).toMatchObject({ limit: 25 });
   });
 });
+
+// ── Auto-widen-to-fill (fillToLimit) ───────────────────────────────
+// The query function walks an escalating radius ladder, calling discovery at
+// each rung until it fills `limit`, widening stops helping, or it hits the cap.
+describe("useMerchants auto-widen (fillToLimit)", () => {
+  const origin = { lat: 30.2672, lng: -97.7431 };
+  const rows = (n: number) =>
+    Array.from({ length: n }, (_, i) => makeRow({ id: `p-${i}`, place_id: `ChIJ_${i}` }));
+
+  it("does a single call and does not widen when fillToLimit is off, even if short", async () => {
+    invokeMock.mockResolvedValue({ data: { prospects: rows(20) }, error: null });
+    const { result } = renderHook(
+      () => useMerchants(origin, { limit: 25 }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.merchants).toHaveLength(20));
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("widens the radius until it fills the requested count", async () => {
+    invokeMock
+      .mockResolvedValueOnce({ data: { prospects: rows(20) }, error: null }) // rung 0: short
+      .mockResolvedValueOnce({ data: { prospects: rows(25) }, error: null }); // rung 1: filled
+    const { result } = renderHook(
+      () => useMerchants(origin, { limit: 25, fillToLimit: true }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.merchants).toHaveLength(25));
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+    // Second call used a larger radius than the first.
+    const r0 = invokeMock.mock.calls[0]![1].body.radius_m as number;
+    const r1 = invokeMock.mock.calls[1]![1].body.radius_m as number;
+    expect(r1).toBeGreaterThan(r0);
+    expect(result.current.effectiveRadiusM).toBe(r1);
+  });
+
+  it("stops widening when a wider radius adds no new results", async () => {
+    invokeMock.mockResolvedValue({ data: { prospects: rows(20) }, error: null }); // always 20
+    const { result } = renderHook(
+      () => useMerchants(origin, { limit: 25, fillToLimit: true }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.merchants).toHaveLength(20));
+    // rung 0 (20) -> rung 1 (still 20 = diminishing) -> stop. Not the full ladder.
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not widen when the first rung already fills", async () => {
+    invokeMock.mockResolvedValue({ data: { prospects: rows(25) }, error: null });
+    const { result } = renderHook(
+      () => useMerchants(origin, { limit: 25, fillToLimit: true }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.merchants).toHaveLength(25));
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes the hidden counts through from the last response", async () => {
+    invokeMock.mockResolvedValue({
+      data: { prospects: rows(25), hidden: { chains: 3, in_pipeline: 2 } },
+      error: null,
+    });
+    const { result } = renderHook(
+      () => useMerchants(origin, { limit: 25, fillToLimit: true }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.merchants).toHaveLength(25));
+    expect(result.current.hidden).toEqual({ chains: 3, inPipeline: 2 });
+  });
+
+  it("keeps the previous rung's results when a widen step errors", async () => {
+    invokeMock
+      .mockResolvedValueOnce({ data: { prospects: rows(20) }, error: null })
+      .mockResolvedValueOnce({ data: null, error: new Error("widen boom") });
+    const { result } = renderHook(
+      () => useMerchants(origin, { limit: 25, fillToLimit: true }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.merchants).toHaveLength(20));
+    expect(result.current.isError).toBe(false); // not a hard failure
+  });
+});

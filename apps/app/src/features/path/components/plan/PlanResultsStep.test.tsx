@@ -41,6 +41,18 @@ describe("PlanResultsStep", () => {
     expect(screen.getByText("Beta Bakery")).toBeInTheDocument();
   });
 
+  it("renders the discovery hint when provided", () => {
+    renderStep({ discoveryHint: "Showing 20 of 25 requested · 4 chains were hidden nearby" });
+    expect(screen.getByTestId("discovery-hint")).toHaveTextContent(
+      "Showing 20 of 25 requested · 4 chains were hidden nearby",
+    );
+  });
+
+  it("omits the discovery hint when null", () => {
+    renderStep({ discoveryHint: null });
+    expect(screen.queryByTestId("discovery-hint")).not.toBeInTheDocument();
+  });
+
   it("shows status, phone, and last-activity details on each card", () => {
     renderStep({
       merchants: [

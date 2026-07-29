@@ -33,6 +33,11 @@ import {
   INDUSTRY_KEYS,
   type IndustryKey,
 } from "../../../../../../supabase/functions/_shared/industryTaxonomy";
+import {
+  buildRadiusLadder,
+  hasFilled,
+  isDiminishing,
+} from "../../../../../../supabase/functions/_shared/discoveryFill";
 
 /** INGEST radius (meters) used when the caller doesn't pass one. The Path radius
  *  chip (5/10/15mi) passes an explicit radiusM, so the selected radius drives the
@@ -68,6 +73,28 @@ export interface ProspectRow {
 
 interface DiscoverResponse {
   prospects?: ProspectRow[];
+  /** How many in-radius businesses were hidden, so the UI can explain a short
+   *  result set. `chains` is nonzero only when chains are excluded (Create). */
+  hidden?: { chains?: number; in_pipeline?: number };
+}
+
+/** What the discovery query resolves to: the mapped merchants plus the fill
+ *  metadata (effective radius after any auto-widen + the hidden breakdown). */
+interface DiscoverResult {
+  merchants: Merchant[];
+  hidden: HiddenCounts;
+  /** The radius that produced the returned set. Equals the requested radius
+   *  unless auto-widen (fillToLimit) grew it to reach the requested count. */
+  effectiveRadiusM: number;
+  requestedRadiusM: number;
+  requestedLimit: number;
+}
+
+export interface HiddenCounts {
+  /** Chains hidden from Create (0 when chains are included). */
+  chains: number;
+  /** Businesses already tied to an active deal in the org (pipeline de-dup). */
+  inPipeline: number;
 }
 
 /**
@@ -150,6 +177,16 @@ export interface UseMerchantsResult {
   isError: boolean;
   /** Re-pull (used after a manual re-center). */
   refetch: () => void;
+  /** Nearby businesses hidden from this result (chains + already-in-pipeline),
+   *  for the shortfall hint. Zeros when nothing was hidden. */
+  hidden: HiddenCounts;
+  /** The radius the returned set actually came from. Larger than the requested
+   *  radius when auto-widen (fillToLimit) had to grow it to fill the count. */
+  effectiveRadiusM: number;
+  /** The radius originally requested, for "widened from X to Y" messaging. */
+  requestedRadiusM: number;
+  /** The results count requested, for "showing N of M" messaging. */
+  requestedLimit: number;
 }
 
 export interface UseMerchantsOptions {
@@ -165,12 +202,23 @@ export interface UseMerchantsOptions {
   /** Results count — how many nearest businesses to fetch/show. Default 25,
    *  clamped client-side to [1, MAX_RESULTS_LIMIT] (the Edge clamps again). */
   limit?: number;
+  /** Auto-widen the radius to try to fill `limit` when fewer qualify nearby.
+   *  Used by path-building (Create + Plan); the map browse leaves this off so
+   *  its pins stay inside the rep's chosen radius. Default false. */
+  fillToLimit?: boolean;
 }
 
 /** Default + max for the rep-configurable results count. Mirrors the Edge
  *  function's DEFAULT_LIMIT / MAX_LIMIT. */
 export const DEFAULT_RESULTS_LIMIT = 25;
 export const MAX_RESULTS_LIMIT = 50;
+
+/** Auto-widen guardrails. The ladder grows the search radius by FILL_FACTOR per
+ *  rung up to FILL_MAX_STEPS rungs, never past FILL_MAX_RADIUS_M (kept under
+ *  Google's 50 km circle cap). Only used when fillToLimit is set. */
+export const FILL_MAX_RADIUS_M = 40_000;
+export const FILL_FACTOR = 1.5;
+export const FILL_MAX_STEPS = 4;
 
 /** Round to ~110m so GPS jitter doesn't refire the query (and Google) on
  *  every sub-meter drift. The geohash cell is ~4.9km, so this is plenty
@@ -195,6 +243,7 @@ export function useMerchants(
   // as-is; the Edge treats an empty/all request as "fetch everything".
   const industries = allIndustries ? [] : (opts.industries ?? []);
   const includeChains = opts.includeChains ?? false;
+  const fillToLimit = opts.fillToLimit === true;
   // Results count: default 25, clamped to [1, 50] before it hits the query key
   // + invoke body (the Edge clamps again as a backstop).
   const limit = Math.min(
@@ -208,29 +257,76 @@ export function useMerchants(
   const lng = origin ? roundCoord(origin.lng) : null;
 
   const query = useQuery({
-    queryKey: ["path", "prospects", lat, lng, radiusM, profession, industries, allIndustries, includeChains, limit],
+    queryKey: ["path", "prospects", lat, lng, radiusM, profession, industries, allIndustries, includeChains, limit, fillToLimit],
     enabled: origin != null,
     staleTime: 5 * 60_000, // 5 min — the server-side cache is the real TTL
-    queryFn: async (): Promise<Merchant[]> => {
-      const { data, error } = await supabase.functions.invoke<DiscoverResponse>(
-        "discover_prospects",
-        { body: { lat: origin!.lat, lng: origin!.lng, radius_m: radiusM, profession, industries, all_industries: allIndustries, include_chains: includeChains, limit } },
-      );
-      if (error) throw error;
-      // Returns the server's nearest-first order. Ordering for display lives in
-      // the page via sortMerchants() (distance / opportunity / popularity), so
-      // the hook stays a pure data source.
-      return (data?.prospects ?? []).map(prospectToMerchant);
+    queryFn: async (): Promise<DiscoverResult> => {
+      // Auto-widen-to-fill: walk an escalating radius ladder, calling discovery
+      // at each rung until we have `limit` servable prospects, widening stops
+      // adding results, or we hit the max radius. When fillToLimit is off the
+      // ladder is just [radiusM] (a single call, today's behavior). The Edge
+      // caches per cell, so wider rungs only pay for newly-covered area.
+      const ladder = fillToLimit
+        ? buildRadiusLadder(radiusM, {
+            maxRadiusM: FILL_MAX_RADIUS_M,
+            factor: FILL_FACTOR,
+            maxSteps: FILL_MAX_STEPS,
+          })
+        : [radiusM];
+
+      let prospects: ProspectRow[] = [];
+      let hidden: HiddenCounts = { chains: 0, inPipeline: 0 };
+      let effectiveRadiusM = radiusM;
+      let prevCount = -1;
+
+      for (let i = 0; i < ladder.length; i++) {
+        const r = ladder[i];
+        const { data, error } = await supabase.functions.invoke<DiscoverResponse>(
+          "discover_prospects",
+          { body: { lat: origin!.lat, lng: origin!.lng, radius_m: r, profession, industries, all_industries: allIndustries, include_chains: includeChains, limit } },
+        );
+        // The first rung failing is a real error; a later (widen) rung failing
+        // keeps whatever the previous rung already returned.
+        if (error) {
+          if (i === 0) throw error;
+          break;
+        }
+        prospects = data?.prospects ?? [];
+        hidden = {
+          chains: data?.hidden?.chains ?? 0,
+          inPipeline: data?.hidden?.in_pipeline ?? 0,
+        };
+        effectiveRadiusM = r;
+
+        const count = prospects.length;
+        if (hasFilled(count, limit)) break;
+        if (i > 0 && isDiminishing(prevCount, count)) break; // widening added nothing
+        prevCount = count;
+      }
+
+      // Server returns nearest-first order. Display ordering lives in the page
+      // via sortMerchants(), so the hook stays a pure data source.
+      return {
+        merchants: prospects.map(prospectToMerchant),
+        hidden,
+        effectiveRadiusM,
+        requestedRadiusM: radiusM,
+        requestedLimit: limit,
+      };
     },
   });
 
   return {
-    merchants: query.data ?? [],
+    merchants: query.data?.merchants ?? [],
     isLoading: query.isLoading && query.fetchStatus !== "idle",
     isError: query.isError,
     refetch: () => {
       void query.refetch();
     },
+    hidden: query.data?.hidden ?? { chains: 0, inPipeline: 0 },
+    effectiveRadiusM: query.data?.effectiveRadiusM ?? radiusM,
+    requestedRadiusM: radiusM,
+    requestedLimit: limit,
   };
 }
 

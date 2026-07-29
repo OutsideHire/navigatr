@@ -40,6 +40,9 @@ export interface PlanResultsStepProps {
   onAddAll: () => void;
   /** Remove every shown result from the path. */
   onRemoveAll: () => void;
+  /** OPTIONAL — one-line explanation shown under the results count when the
+   *  pool is short of the requested count or the search auto-widened. */
+  discoveryHint?: string | null;
 }
 
 export function PlanResultsStep({
@@ -52,6 +55,7 @@ export function PlanResultsStep({
   onLogDropIn,
   onAddAll,
   onRemoveAll,
+  discoveryHint,
 }: PlanResultsStepProps) {
   if (isLoading) {
     return (
@@ -116,6 +120,11 @@ export function PlanResultsStep({
           {allAdded ? "Remove all" : `Add all (${merchants.length})`}
         </Button>
       </div>
+      {discoveryHint && (
+        <p className="text-caption text-text-muted" data-testid="discovery-hint">
+          {discoveryHint}
+        </p>
+      )}
       {merchants.map((m) => {
         const added = addedIds.has(m.id);
         return (

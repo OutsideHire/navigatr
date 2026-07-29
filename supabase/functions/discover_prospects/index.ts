@@ -587,6 +587,20 @@ Deno.serve(async (req) => {
     return json({ error: "nearby_query_failed", detail: rpcErr.message }, 500);
   }
 
+  // Transparency: how many in-radius businesses were hidden, split into chains
+  // (only when include_chains is false) and already-in-pipeline (the de-dup).
+  // The client shows this when the result set is short of the requested count.
+  // Non-fatal: a failure here defaults to zeros rather than failing discovery.
+  const { data: hiddenRows } = await userClient.rpc("prospects_nearby_hidden_counts", {
+    p_lat: lat,
+    p_lng: lng,
+    p_radius_m: radiusM,
+    p_profession: profession,
+    p_include_chains: includeChains,
+    p_categories: readCategories,
+  });
+  const hiddenRow = Array.isArray(hiddenRows) ? hiddenRows[0] : null;
+
   return json({
     cell: originCell,
     cells_searched: cells.length,
@@ -597,5 +611,9 @@ Deno.serve(async (req) => {
     filtered_count: filteredCount,
     kept_count: keptCount,
     prospects: nearby ?? [],
+    hidden: {
+      chains: hiddenRow?.chains_hidden ?? 0,
+      in_pipeline: hiddenRow?.in_pipeline_hidden ?? 0,
+    },
   });
 });

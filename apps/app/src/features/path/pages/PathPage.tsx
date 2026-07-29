@@ -64,6 +64,7 @@ import { pathLanding } from "../lib/pathTypes";
 import { toast } from "sonner";
 import { planQueueMigration } from "../lib/migrateLocalQueue";
 import { useMerchants } from "../hooks/useMerchants";
+import { discoveryShortfallHint } from "../lib/discoveryHint";
 import { sortMerchants, type PathSortMode } from "../lib/sortMerchants";
 import { useCalendarEvents } from "../hooks/useCalendarEvents";
 import { useGeolocation } from "../hooks/useGeolocation";
@@ -131,14 +132,23 @@ export function PathPage() {
   // the rep would ask for 25 and get fewer stops. Fetching chain-free here means
   // `limit` non-chain results, so the results count = usable stops. The browse
   // fetch above keeps chains (it badges them in the discover map/list).
-  const { merchants: createMerchants } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, allIndustries: ingestAllIndustries, includeChains: false, limit: discoverLimit });
+  // fillToLimit only while the Create wizard is open, so the auto-widen fetch
+  // (up to a few edge calls on a sparse area) is paid on demand, not on every
+  // Path page load.
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const {
+    merchants: createMerchants,
+    hidden: createHidden,
+    effectiveRadiusM: createEffectiveRadiusM,
+    requestedRadiusM: createRequestedRadiusM,
+    requestedLimit: createRequestedLimit,
+  } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, allIndustries: ingestAllIndustries, includeChains: false, limit: discoverLimit, fillToLimit: createOpen });
   const [categoryFilter, setCategoryFilter] = React.useState<CategoryFilter>("all");
   const [sortMode, setSortMode] = React.useState<PathSortMode>(DEFAULT_SORT_MODE);
   const [hideChains, setHideChains] = React.useState(false);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [view, setView] = React.useState<ViewMode>("list"); // default to list until merchants are geocoded
-  const [createOpen, setCreateOpen] = React.useState(false);
 
   // Calendar-Aware Path (Slice 1): ephemeral planning overlay. The wizard emits
   // its day time-window; we read the rep's calendar for that window and derive
@@ -397,8 +407,30 @@ export function PathPage() {
           : Number.POSITIVE_INFINITY,
     }));
     const sorted = enriched.sort((a, b) => a.distanceMeters - b.distanceMeters);
-    return anyGeo ? sorted.filter((m) => m.distanceMeters <= displayRadiusM) : sorted;
-  }, [createMerchants, origin, displayRadiusM]);
+    // Gate to the EFFECTIVE radius, which equals displayRadiusM unless auto-widen
+    // grew the search to fill the requested count. Using displayRadiusM here would
+    // throw the widened stops away before they reach the wizard.
+    return anyGeo ? sorted.filter((m) => m.distanceMeters <= createEffectiveRadiusM) : sorted;
+  }, [createMerchants, origin, createEffectiveRadiusM]);
+
+  // Shortfall/widen explanation for the Create wizard: "Showing N of M ...".
+  const createHint = React.useMemo(
+    () =>
+      discoveryShortfallHint({
+        shown: createWithinRadius.length,
+        requested: createRequestedLimit,
+        requestedRadiusM: createRequestedRadiusM,
+        effectiveRadiusM: createEffectiveRadiusM,
+        hidden: createHidden,
+      }),
+    [
+      createWithinRadius.length,
+      createRequestedLimit,
+      createRequestedRadiusM,
+      createEffectiveRadiusM,
+      createHidden,
+    ],
+  );
 
   const filtered = React.useMemo(
     () =>
@@ -1029,6 +1061,7 @@ export function PathPage() {
         onRadiusChange={setDisplayRadiusM}
         resultsCount={discoverLimit}
         onResultsCountChange={setDiscoverLimit}
+        discoveryHint={createHint}
         onIndustriesChange={setIngestIndustries}
         onAllIndustriesChange={setIngestAllIndustries}
         onStart={handleStartPath}

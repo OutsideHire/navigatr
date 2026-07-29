@@ -54,6 +54,10 @@ export interface CreatePathWizardProps {
    *  SEPARATE from the Max-stops cap). Drives PathPage's useMerchants limit. */
   resultsCount: number;
   onResultsCountChange: (count: number) => void;
+  /** OPTIONAL — one-line explanation shown under the results count when the
+   *  pool is short of the requested count or the search auto-widened. Null hides
+   *  it. */
+  discoveryHint?: string | null;
   /** Push the rep's industry scope up so PathPage re-ingests (like radius). */
   onIndustriesChange: (industries: MerchantCategory[]) => void;
   /** Push the "All industries" toggle up so PathPage ingests every bucket. */
@@ -137,6 +141,7 @@ export function CreatePathWizard({
   onRadiusChange,
   resultsCount,
   onResultsCountChange,
+  discoveryHint,
   onIndustriesChange,
   onAllIndustriesChange,
   onStart,
@@ -457,6 +462,12 @@ export function CreatePathWizard({
                       pool the rep curates from, up to 50. */}
                   <ResultsCountField value={resultsCount} onChange={onResultsCountChange} />
                 </div>
+
+                {discoveryHint && (
+                  <p className="text-caption text-text-muted" data-testid="discovery-hint">
+                    {discoveryHint}
+                  </p>
+                )}
 
                 {/* When — the rep's day time-window. Feeds the calendar read
                     (later task) so we can surface free windows in the day. */}
