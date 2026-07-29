@@ -79,7 +79,7 @@ function TrendChart({
   dailyReferenceLines,
   overlaySeries,
 }: {
-  points: { composite: number | null; date?: string }[];
+  points: { composite: number | null; date?: string; activityCount?: number }[];
   referenceLines: { value: number; label: string }[];
   /**
    * Daily company-wide reference lines (SP-B), one polyline per series
@@ -96,7 +96,15 @@ function TrendChart({
   const H = 180;
   const n = points.length;
   const x = (i: number) => (n <= 1 ? 0 : (i / (n - 1)) * W);
+
+  // Y-axis is locked to a fixed 0-100 scale (deliberate: a score of 50 always
+  // sits at the same height, never auto-fit to the data's own min/max, so small
+  // differences are not visually exaggerated). We only add reference tick labels
+  // for that fixed scale.
+  const yLo = 0;
+  const yHi = 100;
   const y = (v: number) => H - (Math.max(0, Math.min(100, v)) / 100) * H;
+  const yTicks = [100, 75, 50, 25, 0];
 
   // Hover crosshair + tooltip: map the pointer's x within the chart to the
   // nearest data index. The SVG stretches (preserveAspectRatio none), so we
@@ -147,14 +155,15 @@ function TrendChart({
   const overlaySegments = (overlaySeries ?? []).map((values) => buildDailyLineSegments(values, x, y));
 
   return (
-    <div ref={wrapRef} onMouseMove={onMove} onMouseLeave={() => setHover(null)} className="relative">
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        className="h-44 w-full"
-        preserveAspectRatio="none"
-        role="img"
-        aria-label="Persistence index trend"
-      >
+    <div className="flex gap-1">
+      <div ref={wrapRef} onMouseMove={onMove} onMouseLeave={() => setHover(null)} className="relative flex-1">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className="h-44 w-full"
+          preserveAspectRatio="none"
+          role="img"
+          aria-label="Persistence index trend"
+        >
       {dailyReferenceLines && dailyReferenceLines.length > 0
         ? dailySegments.map((dl, di) =>
             dl.segments.map((d, si) => (
@@ -225,17 +234,34 @@ function TrendChart({
           vectorEffect="non-scaling-stroke"
         />
       )}
-      </svg>
-      {hoverPoint && hoverPoint.composite != null && (
-        <div
-          data-testid="trend-tooltip"
-          className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-radius-sm border border-border-subtle bg-surface-default px-2 py-1 text-caption shadow-card-hover"
-          style={{ left: `${hoverFrac * 100}%` }}
-        >
-          <span className="tabular-nums text-text-default">{hoverPoint.composite}</span>
-          {hoverDate && <span className="text-text-subtle"> · {hoverDate}</span>}
-        </div>
-      )}
+        </svg>
+        {hoverPoint && hoverPoint.composite != null && (
+          <div
+            data-testid="trend-tooltip"
+            className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 whitespace-nowrap rounded-radius-sm border border-border-subtle bg-surface-default px-2 py-1 text-caption shadow-card-hover"
+            style={{ left: `${hoverFrac * 100}%` }}
+          >
+            {hoverDate && <div className="uppercase tracking-wide text-text-subtle">{hoverDate}</div>}
+            <div className="text-body-sm font-medium tabular-nums text-text-default">{hoverPoint.composite}</div>
+            {typeof hoverPoint.activityCount === "number" && (
+              <div className="text-text-subtle">
+                {hoverPoint.activityCount} {hoverPoint.activityCount === 1 ? "activity" : "activities"}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="relative w-7 shrink-0" aria-hidden>
+        {yTicks.map((t, i) => (
+          <span
+            key={i}
+            className="absolute right-0 -translate-y-1/2 text-caption tabular-nums text-text-subtle"
+            style={{ top: `${(1 - (t - yLo) / (yHi - yLo)) * 100}%` }}
+          >
+            {t}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -444,7 +470,7 @@ export function PersistenceIndexReport() {
   // by opening the URL directly. Revisit before the rep-facing view is enabled.
   if (!isManager) {
     return (
-      <div className="mx-auto w-full max-w-3xl px-4 py-4 sm:px-6 sm:py-6">
+      <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 sm:py-6">
         <div className="flex flex-col gap-4">
           <button
             type="button"
@@ -464,7 +490,7 @@ export function PersistenceIndexReport() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-4 sm:px-6 sm:py-6">
+    <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 sm:py-6">
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-1">
           <button
