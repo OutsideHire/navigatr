@@ -59,6 +59,10 @@ export interface CreateDealInput {
   probability: number;
   expectedClose?: string | null;     // ISO date
   leadSource?: string;
+  /** Required free-text note when leadSource is "other" (LS-1). */
+  leadSourceNote?: string | null;
+  /** Originating Path id for Path-stamped deals (LS-1). */
+  sourcePathId?: string | null;
   notes?: string;
   nextFollowupAt?: string | null;    // ISO timestamp
   professionData?: Record<string, unknown>;
@@ -95,7 +99,9 @@ export function useCreateDeal() {
           stage:               input.stage,
           probability:         input.probability,
           expected_close:      input.expectedClose ?? null,
-          lead_source:         input.leadSource ?? null,
+          lead_source:         input.leadSource ?? "unknown",
+          lead_source_note:    input.leadSourceNote ?? null,
+          source_path_id:      input.sourcePathId ?? null,
           notes:               input.notes ?? null,
           next_followup_at:    input.nextFollowupAt ?? null,
           profession_data:     input.professionData ?? {},

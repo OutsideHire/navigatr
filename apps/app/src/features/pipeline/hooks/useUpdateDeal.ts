@@ -40,6 +40,7 @@ export interface UpdateDealInput {
     valueCents?: number;
     expectedClose?: string | null;
     leadSource?: string;
+    leadSourceNote?: string | null;
     notes?: string;
     nextFollowupAt?: string | null;
     lostReasonCategory?: LostReasonCategory | null;
@@ -65,6 +66,8 @@ function toSnakeCase(patch: UpdateDealInput["patch"]): Record<string, unknown> {
   if (patch.valueCents !== undefined)         out.value_cents = patch.valueCents;
   if (patch.expectedClose !== undefined)      out.expected_close = patch.expectedClose;
   if (patch.leadSource !== undefined)         out.lead_source = patch.leadSource;
+  // Send even when null so clearing the note (e.g. moving off "Other") persists.
+  if ("leadSourceNote" in patch)              out.lead_source_note = patch.leadSourceNote;
   if (patch.notes !== undefined)              out.notes = patch.notes;
   if (patch.nextFollowupAt !== undefined)     out.next_followup_at = patch.nextFollowupAt;
   // Send even when value is null so we can clear the columns.

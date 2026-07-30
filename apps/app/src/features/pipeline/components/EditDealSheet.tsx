@@ -20,6 +20,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as RadioGroup from "@radix-ui/react-radio-group";
 import { useForm, Controller, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { REP_SOURCE_OPTIONS, isLeadSourceEditable, leadSourceLabel, leadSourceSetBy } from "../lib/leadSources";
 import { z } from "zod";
 import { AsYouType } from "libphonenumber-js";
 import { X, Trash2 } from "lucide-react";
@@ -80,15 +81,6 @@ const EMPLOYEE_COUNT_OPTIONS: SelectOption[] = [
   { value: "250+", label: "250+" },
 ];
 
-const LEAD_SOURCE_OPTIONS: SelectOption[] = [
-  { value: "partner_referral", label: "Partner Referral" },
-  { value: "cold_outreach", label: "Cold Outreach" },
-  { value: "inbound", label: "Inbound" },
-  { value: "path_discovery", label: "Path Discovery" },
-  { value: "existing_client", label: "Existing Client" },
-  { value: "other", label: "Other" },
-];
-
 const editSchema = z.object({
   companyName: z.string().min(1, "Company name is required"),
   contactName: z.string().min(1, "Contact name is required"),
@@ -108,6 +100,7 @@ const editSchema = z.object({
   ),
   expectedClose: z.string().optional(),
   leadSource: z.string().optional(),
+  leadSourceNote: z.string().max(500).optional(),
   employeeCountRange: z.string().optional(),
   lostReasonCategory: z
     .enum(["price", "competitor", "timing", "no_decision", "incumbent", "unqualified", "other"])
@@ -121,6 +114,9 @@ const editSchema = z.object({
       message: "Pick a reason for the loss.",
       path: ["lostReasonCategory"],
     });
+  }
+  if (data.leadSource === "other" && !data.leadSourceNote?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Add a note for Other", path: ["leadSourceNote"] });
   }
 });
 
@@ -167,6 +163,7 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
       probability: deal.probability,
       expectedClose: toDateInput(deal.nextFollowup),
       leadSource: deal.leadSource || undefined,
+      leadSourceNote: deal.leadSourceNote ?? undefined,
       employeeCountRange: deal.employeeCountRange || undefined,
       lostReasonCategory: deal.lostReasonCategory ?? null,
       lostReasonNotes: deal.lostReasonNotes ?? null,
@@ -222,7 +219,13 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
         ? dateOnlyToNoonUtcIso(values.expectedClose)
         : null;
     }
-    if (dirtyFields.leadSource) patch.leadSource = values.leadSource;
+    // Set-once-lock (LS-1): source is only editable while Other/Unknown.
+    if (isLeadSourceEditable(deal.leadSource)) {
+      if (dirtyFields.leadSource) patch.leadSource = values.leadSource;
+      if (dirtyFields.leadSource || dirtyFields.leadSourceNote) {
+        patch.leadSourceNote = values.leadSource === "other" ? values.leadSourceNote?.trim() || null : null;
+      }
+    }
     if (dirtyFields.employeeCountRange) {
       patch.employeeCountRange = values.employeeCountRange;
     }
@@ -476,21 +479,51 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
                 <FormField htmlFor="expectedClose" label="Expected close">
                   <Input id="expectedClose" type="date" {...register("expectedClose")} />
                 </FormField>
-                <Controller
-                  control={control}
-                  name="leadSource"
-                  render={({ field }) => (
-                    <FormField htmlFor="leadSource" label="Lead source">
-                      <Select
-                        id="leadSource"
-                        value={field.value ?? ""}
-                        onValueChange={field.onChange}
-                        options={LEAD_SOURCE_OPTIONS}
-                        placeholder="Select source"
+                {isLeadSourceEditable(deal.leadSource) ? (
+                  <>
+                    <Controller
+                      control={control}
+                      name="leadSource"
+                      render={({ field }) => (
+                        <FormField htmlFor="leadSource" label="Lead source" error={errors.leadSource?.message}>
+                          <Select
+                            id="leadSource"
+                            value={field.value ?? ""}
+                            onValueChange={field.onChange}
+                            options={REP_SOURCE_OPTIONS}
+                            placeholder="Select source"
+                          />
+                        </FormField>
+                      )}
+                    />
+                    {watch("leadSource") === "other" && (
+                      <Controller
+                        control={control}
+                        name="leadSourceNote"
+                        render={({ field }) => (
+                          <FormField htmlFor="leadSourceNote" label="Source note" error={errors.leadSourceNote?.message}>
+                            <Input
+                              id="leadSourceNote"
+                              value={field.value ?? ""}
+                              onChange={field.onChange}
+                              placeholder="Where did this lead come from?"
+                            />
+                          </FormField>
+                        )}
                       />
-                    </FormField>
-                  )}
-                />
+                    )}
+                  </>
+                ) : (
+                  // Set once at creation and locked (LS-1): show it read-only.
+                  <FormField htmlFor="leadSource" label="Lead source">
+                    <div className="flex items-center gap-2 rounded-radius-md border border-border-subtle bg-surface-sunken px-3 py-2 text-body-md text-text-default">
+                      <span>{leadSourceLabel(deal.leadSource)}</span>
+                      <span className="rounded-radius-sm bg-surface-default px-1.5 py-0.5 text-caption uppercase tracking-wide text-text-subtle">
+                        {leadSourceSetBy(deal.leadSource) === "system" ? "System set" : "Set at creation"}
+                      </span>
+                    </div>
+                  </FormField>
+                )}
               </section>
             </div>
           </form>

@@ -142,7 +142,7 @@ describe("DropInSheet", () => {
     expect(createDealMutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({
         contactName: "Bluewater",
-        leadSource: "path_dropin",
+        leadSource: "path",
         placeId: "gp-blue-1",
       }),
     );

@@ -64,6 +64,7 @@ import {
 import { LostReasonModal } from "../components/LostReasonModal";
 import { StageUpdateModal } from "../components/StageUpdateModal";
 import { appendStageNote } from "../lib/stageNote";
+import { leadSourceLabel, leadSourceSetBy } from "../lib/leadSources";
 import { VoiceNotePlayer } from "../components/VoiceNotePlayer";
 import { useDeal } from "../hooks/useDeal";
 import { useTerm, useTermCapitalized } from "@/features/profession/useTerm";
@@ -399,15 +400,20 @@ function ContactInfoCard({ deal }: { deal: Deal }) {
 }
 
 function SourceCard({ deal }: { deal: Deal }) {
-  // Sprint 1: lead source isn't on the Deal interface yet (Add Deal stores
-  // it but the mock dataset's seed deals don't carry it). Showing inferred
-  // values from the dataset stage so the section reads.
+  // Real lead-source metadata (LS-1): source + who set it + when created.
+  const setBy = leadSourceSetBy(deal.leadSource);
+  const setByLabel = setBy === "system" ? "System set" : setBy === "rep" ? "Rep set" : "Not set";
+  const createdLabel = deal.createdAt
+    ? new Date(deal.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : "—";
   const items: Array<{ eyebrow: string; value: string }> = [
-    { eyebrow: "LEAD SOURCE",     value: "Partner Referral" },
-    { eyebrow: "SOURCE PARTNER",  value: "Sarah Johnson" },
-    { eyebrow: "CREATED",         value: "Apr 12, 2026" },
-    { eyebrow: "LAST ACTIVITY",   value: formatRelative(deal.lastActivity) },
+    { eyebrow: "LEAD SOURCE",   value: leadSourceLabel(deal.leadSource) },
+    { eyebrow: "SET BY",        value: setByLabel },
+    { eyebrow: "CREATED",       value: createdLabel },
+    { eyebrow: "LAST ACTIVITY", value: formatRelative(deal.lastActivity) },
   ];
+  const showSourceNote = deal.leadSource === "other" && Boolean(deal.leadSourceNote);
+  const showPathOrigin = Boolean(deal.sourcePathId);
   const showLostReason = deal.stage === "lost" && deal.lostReasonCategory !== null;
   return (
     <Card padding="md">
@@ -420,6 +426,17 @@ function SourceCard({ deal }: { deal: Deal }) {
           </div>
         ))}
       </div>
+      {showPathOrigin && (
+        <p className="mt-3 text-caption text-text-subtle">Created from a Path drop-in.</p>
+      )}
+      {showSourceNote && (
+        <div className="mt-4 border-t border-border-subtle pt-4">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-eyebrow text-text-subtle">SOURCE NOTE</span>
+            <p className="max-w-prose text-body-md text-text-muted">{deal.leadSourceNote}</p>
+          </div>
+        </div>
+      )}
       {showLostReason && (
         <div className="mt-4 border-t border-border-subtle pt-4">
           <div className="flex flex-col gap-0.5">

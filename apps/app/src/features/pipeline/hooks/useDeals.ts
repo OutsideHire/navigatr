@@ -34,6 +34,9 @@ interface DealRow {
   address: string | null;
   employee_count_range: string | null;
   lead_source: string | null;
+  lead_source_note?: string | null;
+  source_path_id?: string | null;
+  created_at?: string | null;
   updated_at: string;
   owner_id: string | null;
   lost_reason_category: LostReasonCategory | null;
@@ -87,6 +90,9 @@ export function toDeal(row: DealRow): Deal {
     address: row.address,
     employeeCountRange: row.employee_count_range ?? "",
     leadSource: row.lead_source ?? "",
+    leadSourceNote: row.lead_source_note ?? null,
+    sourcePathId: row.source_path_id ?? null,
+    createdAt: row.created_at ?? null,
     updatedAt: row.updated_at,
     owner_id: row.owner_id,
     lostReasonCategory: row.lost_reason_category,
@@ -130,6 +136,7 @@ export function useDeals() {
           "id, company_name, contact_name, contact_phone, contact_email, " +
             "value_cents, stage, probability, last_activity_at, " +
             "next_followup_at, address, employee_count_range, lead_source, " +
+            "lead_source_note, source_path_id, created_at, " +
             "updated_at, owner_id, lost_reason_category, lost_reason_notes, " +
             "notes, profession_data, followup_calendar_sync_status, " +
             "closed_won_at, first_activity_at, activity_count_total, " +

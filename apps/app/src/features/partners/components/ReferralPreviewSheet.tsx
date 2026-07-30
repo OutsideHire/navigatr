@@ -24,14 +24,7 @@ import {
 } from "@/features/pipeline/mockData";
 
 /** Prettify the free-text lead source; fall back to the raw value. */
-const LEAD_SOURCE_LABEL: Record<string, string> = {
-  partner_referral: "Partner referral",
-  cold_outreach: "Cold outreach",
-  inbound: "Inbound",
-  path_discovery: "Path discovery",
-  existing_client: "Existing client",
-  other: "Other",
-};
+import { leadSourceLabel } from "@/features/pipeline/lib/leadSources";
 
 export interface ReferralPreviewSheetProps {
   deal: Deal | null;
@@ -116,7 +109,7 @@ export function ReferralPreviewSheet({ deal, open, onOpenChange }: ReferralPrevi
                 <Field label="VALUE">{formatMoney(deal.valueCents)}</Field>
                 <Field label="WIN PROBABILITY">{deal.probability}%</Field>
                 <Field label="LEAD SOURCE">
-                  {deal.leadSource ? (LEAD_SOURCE_LABEL[deal.leadSource] ?? deal.leadSource) : "—"}
+                  {deal.leadSource ? leadSourceLabel(deal.leadSource) : "—"}
                 </Field>
                 <Field label="NEXT FOLLOW-UP">
                   {deal.nextFollowup ? formatShortDate(deal.nextFollowup) : "—"}

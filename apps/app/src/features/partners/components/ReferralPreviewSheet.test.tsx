@@ -59,7 +59,7 @@ describe("ReferralPreviewSheet", () => {
     expect(screen.getByText("Jane Doe")).toBeInTheDocument();
     expect(screen.getByText(formatMoney(4_200_000))).toBeInTheDocument();
     expect(screen.getByText("60%")).toBeInTheDocument();
-    expect(screen.getByText("Partner referral")).toBeInTheDocument();
+    expect(screen.getByText("Partner Referral")).toBeInTheDocument();
     expect(screen.getByText(formatShortDate("2026-07-20T12:00:00.000Z"))).toBeInTheDocument();
   });
 

@@ -106,6 +106,10 @@ describe("useDeals", () => {
         industry: null,
         // Persistence Index Wave 1 addendum column, absent on this row, so null.
         owner_changed_at: null,
+        // LS-1 lead-source metadata — absent on this row → null.
+        leadSourceNote: null,
+        sourcePathId: null,
+        createdAt: null,
       },
     ]);
   });

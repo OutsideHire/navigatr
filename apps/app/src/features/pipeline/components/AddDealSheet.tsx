@@ -31,6 +31,7 @@ import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useForm, Controller, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { REP_SOURCE_OPTIONS } from "../lib/leadSources";
 import { z } from "zod";
 import { AsYouType } from "libphonenumber-js";
 import { useCreateDeal } from "../hooks/useCreateDeal";
@@ -101,15 +102,6 @@ const EMPLOYEE_COUNT_OPTIONS: SelectOption[] = [
   { value: "10-49", label: "10-49" },
   { value: "50-249", label: "50-249" },
   { value: "250+", label: "250+" },
-];
-
-const LEAD_SOURCE_OPTIONS: SelectOption[] = [
-  { value: "partner_referral", label: "Partner Referral" },
-  { value: "cold_outreach", label: "Cold Outreach" },
-  { value: "inbound", label: "Inbound" },
-  { value: "path_discovery", label: "Path Discovery" },
-  { value: "existing_client", label: "Existing Client" },
-  { value: "other", label: "Other" },
 ];
 
 const PAY_FREQUENCY_OPTIONS: SelectOption[] = [
@@ -191,7 +183,8 @@ const baseShape = {
     z.coerce.number().int().min(0).max(100),
   ),
   expectedClose: z.string().optional(),
-  leadSource: z.string().optional(),
+  leadSource: z.string().min(1, "Pick a lead source"),
+  leadSourceNote: z.string().optional(),
 
   // Notes
   notes: z.string().optional(),
@@ -230,11 +223,14 @@ const treasurySchema = z.object({
   decisionTimeline: z.string().optional(),
 });
 
-const dealSchema = z.discriminatedUnion("profession", [
-  merchantSchema,
-  payrollSchema,
-  treasurySchema,
-]);
+const dealSchema = z
+  .discriminatedUnion("profession", [merchantSchema, payrollSchema, treasurySchema])
+  .superRefine((val, ctx) => {
+    // "Other" lead source requires a free-text note (LS-1).
+    if (val.leadSource === "other" && !val.leadSourceNote?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["leadSourceNote"], message: "Add a note for Other" });
+    }
+  });
 
 export type DealFormValues = z.infer<typeof dealSchema>;
 
@@ -486,7 +482,8 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
       stage: (defaultStage ?? "new") as DealStage,
       probability: "" as unknown as number,
       expectedClose: "",
-      leadSource: undefined,
+      leadSource: "",
+      leadSourceNote: "",
       notes: "",
     };
     if (profession === "payroll") {
@@ -536,7 +533,7 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
     const {
       companyName, address, industry, employeeCountRange,
       contactName, contactTitle, contactEmail, contactPhone,
-      dealValue, stage, probability, expectedClose, leadSource, notes,
+      dealValue, stage, probability, expectedClose, leadSource, leadSourceNote, notes,
       profession: _profession,
       ...professionFields
     } = values;
@@ -559,6 +556,7 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
         probability,
         expectedClose: expectedClose || null,
         leadSource,
+        leadSourceNote: leadSource === "other" ? leadSourceNote?.trim() || null : null,
         notes,
         // expectedClose is a YYYY-MM-DD calendar date; store the mirrored
         // timestamp at noon UTC so cards/hero render the same day the rep
@@ -751,17 +749,37 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
                   control={control}
                   name="leadSource"
                   render={({ field }) => (
-                    <FormField htmlFor="leadSource" label="Lead source">
+                    <FormField htmlFor="leadSource" label="Lead source" error={errors.leadSource?.message as string | undefined}>
                       <Select
                         id="leadSource"
                         value={field.value ?? ""}
                         onValueChange={field.onChange}
-                        options={LEAD_SOURCE_OPTIONS}
+                        options={REP_SOURCE_OPTIONS}
                         placeholder="Select source"
                       />
                     </FormField>
                   )}
                 />
+                {watch("leadSource") === "other" && (
+                  <Controller
+                    control={control}
+                    name="leadSourceNote"
+                    render={({ field }) => (
+                      <FormField
+                        htmlFor="leadSourceNote"
+                        label="Source note"
+                        error={(errors as Record<string, { message?: string } | undefined>).leadSourceNote?.message}
+                      >
+                        <Input
+                          id="leadSourceNote"
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          placeholder="Where did this lead come from?"
+                        />
+                      </FormField>
+                    )}
+                  />
+                )}
               </section>
 
               <Divider />

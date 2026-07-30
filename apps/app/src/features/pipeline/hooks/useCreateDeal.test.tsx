@@ -88,7 +88,7 @@ describe("useCreateDeal", () => {
       employee_count_range: null,
       contact_title: null,
       expected_close: null,
-      lead_source: null,
+      lead_source: "unknown",
       notes: null,
       next_followup_at: null,
       profession_data: {},

@@ -117,7 +117,11 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
           contactPhone: merchant.phone ?? "",
           stage: "new",
           probability: 20,
-          leadSource: "path_dropin",
+          // System-set source: a Path drop-in. Stamp the canonical value + the
+          // originating path so the Lead Source report can trace which route
+          // (and its industry mix) actually converts (LS-1).
+          leadSource: "path",
+          sourcePathId: todayPath.pathId,
           placeId: merchant.placeId,
         });
         await logActivity.mutateAsync({

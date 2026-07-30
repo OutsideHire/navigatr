@@ -57,6 +57,11 @@ export interface Deal {
    *  sources this quarter" breakdown. Nullable in the DB; empty string
    *  here when the rep didn't specify (collapses to the "Other" bucket). */
   leadSource: string;
+  /** LS-1 lead-source metadata: required note when leadSource is "other";
+   *  the originating Path for Path-stamped deals; deal creation timestamp. */
+  leadSourceNote?: string | null;
+  sourcePathId?: string | null;
+  createdAt?: string | null;
   /** ISO timestamp of the last UPDATE on the row. Imperfect proxy for
    *  "when did this deal close" on the monthly-performance dashboard
    *  widget — a rep editing notes on an old won deal will re-bump this
