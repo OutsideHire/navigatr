@@ -24,6 +24,26 @@ import { DEALS_QUERY_KEY } from "./useDeals";
 import { STAGE_HISTORY_QUERY_KEY } from "./useStageHistory";
 import type { DealStage, LostReasonCategory } from "../mockData";
 
+/** Thrown when the database's set-once lead-source lock rejects an attempt to
+ *  change an already-committed source. The Edit sheet hides the field once
+ *  locked, so this is a backstop for direct/stale writes — surfaced with a
+ *  human message instead of a raw trigger error. */
+export class LeadSourceLockedError extends Error {
+  constructor() {
+    super("This deal's lead source was set when it was created and can't be changed.");
+    this.name = "LeadSourceLockedError";
+  }
+}
+
+/** True only when a Postgres error is the enforce_lead_source_lock trigger
+ *  firing, keyed on its specific message (23514 alone is ambiguous — the
+ *  canonical-value CHECK constraint raises the same SQLSTATE). */
+export function isLeadSourceLockedError(
+  error: { code?: string; message?: string } | null | undefined,
+): boolean {
+  return (error?.message ?? "").includes("lead_source is locked");
+}
+
 export interface UpdateDealInput {
   id: string;
   patch: {
@@ -99,6 +119,9 @@ export function useUpdateDeal() {
         // same friendly error instead of a raw database message.
         if (isDuplicatePlaceDealError(error)) {
           throw new DuplicateDealError();
+        }
+        if (isLeadSourceLockedError(error)) {
+          throw new LeadSourceLockedError();
         }
         throw error;
       }

@@ -8,7 +8,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
-import { useUpdateDeal } from "./useUpdateDeal";
+import { useUpdateDeal, LeadSourceLockedError } from "./useUpdateDeal";
 import { DuplicateDealError } from "./useCreateDeal";
 
 const eqMock = vi.fn();
@@ -239,6 +239,23 @@ describe("useUpdateDeal", () => {
     await expect(
       result.current.mutateAsync({ id: "deal-1", patch: { stage: "qualified" } }),
     ).rejects.toBeInstanceOf(DuplicateDealError);
+  });
+
+  it("throws LeadSourceLockedError when the set-once lead-source lock trigger fires", async () => {
+    eqMock.mockResolvedValueOnce({
+      error: {
+        code: "23514",
+        message: "lead_source is locked once set (deal deal-1: cannot change path to inbound)",
+      },
+    });
+    const { result } = renderHook(() => useUpdateDeal(), {
+      wrapper: makeWrapper(new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })),
+    });
+    await expect(
+      result.current.mutateAsync({ id: "deal-1", patch: { leadSource: "inbound" } }),
+    ).rejects.toBeInstanceOf(LeadSourceLockedError);
   });
 
   it("rethrows a different error unchanged (not DuplicateDealError)", async () => {
