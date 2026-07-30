@@ -863,6 +863,17 @@ export function AdditionalReports() {
           subtitle="Activity by outcome, rep, and company"
           trailing={<ChevronRight className="h-5 w-5 text-text-subtle" />}
         />
+        <ListRow
+          onClick={() => navigate("/dashboard/lead-source")}
+          leading={
+            <span className="flex h-9 w-9 items-center justify-center rounded-radius-md bg-accent-violet-20 text-accent-violet">
+              <DollarSign className="h-4 w-4" />
+            </span>
+          }
+          title="Lead source performance"
+          subtitle="Which channels produce closed-won, at what yield"
+          trailing={<ChevronRight className="h-5 w-5 text-text-subtle" />}
+        />
       </div>
     </Card>
   );
