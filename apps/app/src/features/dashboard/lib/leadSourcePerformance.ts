@@ -18,8 +18,8 @@
  * Revenue: MRR = deal value / 12 (fixed 12-month assumed term, per Robert).
  */
 import type { Activity } from "@/features/activities/mockData";
-import type { Deal } from "@/features/pipeline/mockData";
-import { isKnownLeadSource, isRepSourcedSource, leadSourceLabel, type LeadSource } from "@/features/pipeline/lib/leadSources";
+import type { Deal, DealStage } from "@/features/pipeline/mockData";
+import { isKnownLeadSource, isRepSourcedSource, leadSourceLabel, leadSourceSetBy, type LeadSource } from "@/features/pipeline/lib/leadSources";
 
 export type AttributionBasis = "created" | "won";
 export type SourceScope = "rep" | "all";
@@ -258,5 +258,135 @@ export function computeLeadSourcePerformance(
       hasInbound: rows.some((r) => r.source === "inbound"),
       allScope: opts.scope === "all",
     },
+  };
+}
+
+// ── Per-source drill-down (LS-2c) ──────────────────────────────────────────
+
+/** One-line description of what a source is, for the drawer. */
+export const LEAD_SOURCE_BLURB: Record<LeadSource, string> = {
+  path: "GPS-generated stops matching the tenant target profile. Highest volume, lowest yield per lead.",
+  self_sourced_canvass: "A drop-in or call the rep initiated outside a generated Path. The honest control group for Path.",
+  partner_referral: "Submitted through the partner portal or partner form. Attributed to the originating relationship.",
+  customer_referral: "From an existing merchant or a center of influence who is not a portal partner.",
+  event_association: "Trade shows, chambers, association relationships, and referral networking groups.",
+  inbound: "The prospect reached the rep directly. Reps hand out personal cell numbers, so most inbound never reaches the platform.",
+  assigned: "A house lead pushed down by an admin or owner, including anything arriving from an upstream CRM.",
+  import: "Existing book loaded at onboarding, plus any purchased list. Present for coverage, not for comparison.",
+  other: "Rep-selected with a required note. A rising Other count is a signal the picklist is missing a value.",
+  unknown: "Legacy or unset source. No origination channel was recorded at lead creation.",
+};
+
+const STAGE_ORDER: DealStage[] = ["new", "contacted", "qualified", "proposal", "submitted", "won"];
+
+export interface StageFunnelRow { label: string; count: number; pct: number }
+export interface MonthlyCohort { label: string; leads: number; won: number; winRate: number; open: boolean }
+export interface RepBreakdownRow { ownerId: string | null; leads: number; won: number; winRate: number; yieldCents: number }
+
+export interface LeadSourceDetail {
+  source: LeadSource;
+  label: string;
+  setBy: "system" | "rep" | "unknown";
+  blurb: string;
+  leads: number;
+  won: number;
+  winRate: number;
+  touchesToWin: number | null;
+  mrrWonCents: number;
+  yieldCents: number;
+  funnel: StageFunnelRow[];
+  cohorts: MonthlyCohort[];
+  reps: RepBreakdownRow[];
+}
+
+/** Drill-down for a single source: stat trio, stage funnel, trailing-6-month
+ *  cohorts, and rep breakdown. Cohort = deals created in the window. */
+export function leadSourceDetail(
+  deals: Deal[],
+  activities: Activity[],
+  opts: { source: LeadSource; now: Date; windowDays: number },
+): LeadSourceDetail {
+  const endMs = opts.now.getTime();
+  const startMs = endMs - opts.windowDays * DAY_MS;
+  const cohort = cohortInWindow(deals, startMs, endMs).filter((d) => sourceOf(d) === opts.source);
+  const won = cohort.filter((d) => d.stage === "won");
+
+  const activitiesByDeal = new Map<string, Activity[]>();
+  for (const a of activities) {
+    const g = activitiesByDeal.get(a.dealId);
+    if (g) g.push(a);
+    else activitiesByDeal.set(a.dealId, [a]);
+  }
+
+  const mrrWonCents = Math.round(won.reduce((s, d) => s + d.valueCents / MRR_TERM_MONTHS, 0));
+  const leads = cohort.length;
+  const reachedIdx = (d: Deal) => STAGE_ORDER.indexOf(d.stage); // lost -> -1 (created only)
+  const countAtLeast = (idx: number) => cohort.filter((d) => reachedIdx(d) >= idx).length;
+  const funnel: StageFunnelRow[] = [
+    { label: "Created", count: leads },
+    { label: "Contacted", count: countAtLeast(1) },
+    { label: "Qualified", count: countAtLeast(2) },
+    { label: "Proposal", count: countAtLeast(3) },
+    { label: "Closed won", count: won.length },
+  ].map((s) => ({ ...s, pct: leads ? (s.count / leads) * 100 : 0 }));
+
+  // Trailing 6 calendar months of cohorts (by created month).
+  const days = median(won.map((d) => d.timeToWinCalendarDays ?? null).filter((n): n is number => n != null));
+  const cohorts: MonthlyCohort[] = [];
+  const anchor = new Date(Date.UTC(opts.now.getUTCFullYear(), opts.now.getUTCMonth(), 1));
+  for (let i = 5; i >= 0; i--) {
+    const mStart = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() - i, 1)).getTime();
+    const mEnd = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() - i + 1, 1)).getTime();
+    const inMonth = deals.filter((d) => {
+      if (sourceOf(d) !== opts.source) return false;
+      const c = dealCreatedMs(d);
+      return c != null && c >= mStart && c < mEnd;
+    });
+    const mWon = inMonth.filter((d) => d.stage === "won").length;
+    cohorts.push({
+      label: new Date(mStart).toLocaleDateString("en-US", { month: "short", timeZone: "UTC" }),
+      leads: inMonth.length,
+      won: mWon,
+      winRate: inMonth.length ? (mWon / inMonth.length) * 100 : 0,
+      // Still inside the source's median time-to-close → not fully resolved.
+      open: days != null && endMs - mEnd < days * DAY_MS,
+    });
+  }
+
+  // Rep breakdown ranked by yield.
+  const byRep = new Map<string, Deal[]>();
+  for (const d of cohort) {
+    const k = d.owner_id ?? "__unassigned__";
+    const g = byRep.get(k);
+    if (g) g.push(d);
+    else byRep.set(k, [d]);
+  }
+  const reps: RepBreakdownRow[] = [...byRep.values()].map((mine) => {
+    const w = mine.filter((d) => d.stage === "won");
+    const mrr = Math.round(w.reduce((s, d) => s + d.valueCents / MRR_TERM_MONTHS, 0));
+    return {
+      ownerId: mine[0]!.owner_id,
+      leads: mine.length,
+      won: w.length,
+      winRate: mine.length ? (w.length / mine.length) * 100 : 0,
+      yieldCents: mine.length ? Math.round(mrr / mine.length) : 0,
+    };
+  });
+  reps.sort((a, b) => b.yieldCents - a.yieldCents || b.leads - a.leads);
+
+  return {
+    source: opts.source,
+    label: leadSourceLabel(opts.source),
+    setBy: leadSourceSetBy(opts.source),
+    blurb: LEAD_SOURCE_BLURB[opts.source],
+    leads,
+    won: won.length,
+    winRate: leads ? (won.length / leads) * 100 : 0,
+    touchesToWin: median(won.map((d) => touchesBeforeWin(d, activitiesByDeal))),
+    mrrWonCents,
+    yieldCents: leads ? Math.round(mrrWonCents / leads) : 0,
+    funnel,
+    cohorts,
+    reps,
   };
 }

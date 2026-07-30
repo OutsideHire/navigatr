@@ -12,18 +12,23 @@
  */
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/navigatr";
+import { useProfile } from "@/features/auth/useProfile";
+import { useAuth } from "@/stores/auth";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { useActivitiesForOrg } from "@/features/activities/hooks/useActivities";
-import { leadSourceSetBy } from "@/features/pipeline/lib/leadSources";
+import { leadSourceSetBy, type LeadSource } from "@/features/pipeline/lib/leadSources";
+import { useOrgMemberNames } from "../hooks/useOrgMemberNames";
 import { formatBandUsd } from "../lib/activityToWin";
 import {
   computeLeadSourcePerformance,
+  leadSourceDetail,
   type AttributionBasis,
   type SourceScope,
   type LeadSourceRow,
+  type LeadSourceDetail,
 } from "../lib/leadSourcePerformance";
 
 const WINDOWS = [30, 90, 180] as const;
@@ -81,7 +86,7 @@ function Kpi({ label, value, sub, flag }: { label: string; value: string; sub: s
 
 /** Signature ribbon: top band = share of leads, bottom = share of won revenue,
  *  crossing ribbons connect each source's two segments. */
-function Ribbon({ rows, totalLeads, totalMrr }: { rows: LeadSourceRow[]; totalLeads: number; totalMrr: number }) {
+function Ribbon({ rows, totalLeads, totalMrr, onSelect }: { rows: LeadSourceRow[]; totalLeads: number; totalMrr: number; onSelect: (s: LeadSource) => void }) {
   const W = 1000, barH = 30, topY = 26, botY = 168, mid = (topY + barH + botY) / 2, H = 214;
   if (!totalLeads || !totalMrr) {
     return <p className="text-body-sm text-text-muted">Not enough won revenue in this window to chart the split.</p>;
@@ -122,10 +127,15 @@ function Ribbon({ rows, totalLeads, totalMrr }: { rows: LeadSourceRow[]; totalLe
       </svg>
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
         {rows.map((r) => (
-          <span key={`lg-${r.source}`} className="inline-flex items-center gap-1.5 text-caption text-text-muted">
+          <button
+            key={`lg-${r.source}`}
+            type="button"
+            onClick={() => onSelect(r.source)}
+            className="inline-flex items-center gap-1.5 text-caption text-text-muted hover:text-text-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+          >
             <span className="h-2.5 w-2.5 rounded-[2px]" style={{ background: colorOf(r.source) }} aria-hidden />
             {r.label}
-          </span>
+          </button>
         ))}
       </div>
     </div>
@@ -133,7 +143,7 @@ function Ribbon({ rows, totalLeads, totalMrr }: { rows: LeadSourceRow[]; totalLe
 }
 
 /** Win rate (y) against median touches to win (x); bubble area = lead volume. */
-function Scatter({ rows }: { rows: LeadSourceRow[] }) {
+function Scatter({ rows, onSelect }: { rows: LeadSourceRow[]; onSelect: (s: LeadSource) => void }) {
   const plot = rows.filter((r) => r.won > 0 && r.touchesToWin != null);
   if (plot.length === 0) return <p className="text-body-sm text-text-muted">No wins in this window to plot.</p>;
   const W = 560, H = 320, L = 46, R = 18, T = 18, B = 40;
@@ -160,7 +170,7 @@ function Scatter({ rows }: { rows: LeadSourceRow[] }) {
         {plot.map((r) => {
           const rad = 6 + Math.sqrt(r.leads / maxLeads) * 22;
           return (
-            <g key={`bub-${r.source}`}>
+            <g key={`bub-${r.source}`} className="cursor-pointer" onClick={() => onSelect(r.source)}>
               <circle cx={X(r.touchesToWin as number)} cy={Y(r.winRate)} r={rad} fill={colorOf(r.source)} fillOpacity={0.42} stroke={colorOf(r.source)} strokeWidth={1.2} />
               <text x={X(r.touchesToWin as number)} y={Y(r.winRate) - rad - 5} textAnchor="middle" className="fill-text-muted text-[10px] uppercase tracking-wide">
                 {r.label.split(" ")[0]}
@@ -204,6 +214,21 @@ export function LeadSourceReport() {
   const [scope, setScope] = React.useState<SourceScope>("rep");
   const [sortKey, setSortKey] = React.useState<string>("yieldCents");
   const [sortDir, setSortDir] = React.useState<-1 | 1>(-1);
+  const [openSource, setOpenSource] = React.useState<LeadSource | null>(null);
+
+  const role = useProfile().data?.role;
+  const isManagerish = role === "manager" || role === "admin";
+  const memberNames = useOrgMemberNames(isManagerish);
+  const userId = useAuth((s) => s.user?.id);
+  const repName = React.useCallback(
+    (ownerId: string | null) => (!ownerId ? "Unassigned" : ownerId === userId ? "You" : memberNames.get(ownerId) ?? "Rep"),
+    [memberNames, userId],
+  );
+
+  const detail = React.useMemo(
+    () => (openSource ? leadSourceDetail(deals, activities, { source: openSource, now: new Date(), windowDays }) : null),
+    [openSource, deals, activities, windowDays],
+  );
 
   const perf = React.useMemo(
     () => computeLeadSourcePerformance(deals, activities, { now: new Date(), windowDays, basis, scope }),
@@ -299,7 +324,7 @@ export function LeadSourceReport() {
             <h2 className="text-body-strong text-text-default">Share of leads, share of revenue</h2>
             <p className="text-caption text-text-muted">The top band is where lead volume comes from; the bottom band is where won revenue comes from. A crossing ribbon is a source over- or under-weighted relative to what it returns.</p>
           </div>
-          <Ribbon rows={perf.rows} totalLeads={t.leads} totalMrr={t.mrrWonCents} />
+          <Ribbon rows={perf.rows} totalLeads={t.leads} totalMrr={t.mrrWonCents} onSelect={setOpenSource} />
         </Card>
 
         {/* Source table */}
@@ -325,7 +350,16 @@ export function LeadSourceReport() {
               </thead>
               <tbody className="tabular-nums text-text-default">
                 {sorted.map((r) => (
-                  <tr key={r.source} className={cn("border-b border-border-subtle", !r.repSourced && "text-text-muted")}>
+                  <tr
+                    key={r.source}
+                    tabIndex={0}
+                    onClick={() => setOpenSource(r.source)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenSource(r.source); } }}
+                    className={cn(
+                      "cursor-pointer border-b border-border-subtle hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary",
+                      !r.repSourced && "text-text-muted",
+                    )}
+                  >
                     <td className="px-3 py-2.5 text-left">
                       <span className="flex items-center gap-2">
                         <span className="h-3.5 w-2 rounded-[2px]" style={{ background: colorOf(r.source) }} aria-hidden />
@@ -381,7 +415,7 @@ export function LeadSourceReport() {
               <h2 className="text-body-strong text-text-default">Win rate against touches to win</h2>
               <p className="text-caption text-text-muted">Bubble area is lead volume. Up and to the left wins more often with fewer touches.</p>
             </div>
-            <Scatter rows={perf.rows} />
+            <Scatter rows={perf.rows} onSelect={setOpenSource} />
           </Card>
           <Card padding="lg" shadow="sm">
             <h2 className="text-body-strong text-text-default">What this report assumes</h2>
@@ -395,8 +429,101 @@ export function LeadSourceReport() {
             </ul>
           </Card>
         </div>
+
+        {detail && <SourceDrawer detail={detail} onClose={() => setOpenSource(null)} repName={repName} />}
       </div>
     </div>
+  );
+}
+
+function SourceDrawer({ detail, onClose, repName }: { detail: LeadSourceDetail; onClose: () => void; repName: (id: string | null) => string }) {
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const maxCohort = Math.max(1, ...detail.cohorts.map((c) => c.leads));
+  return (
+    <>
+      <button type="button" aria-label="Close panel" onClick={onClose} className="fixed inset-0 z-40 bg-black/40" />
+      <aside role="dialog" aria-modal="true" aria-label={`${detail.label} detail`} className="fixed inset-y-0 right-0 z-50 flex w-[min(480px,94vw)] flex-col border-l border-border-strong bg-surface-default shadow-card-hover">
+        <div className="flex items-start justify-between gap-3 border-b border-border-subtle px-5 py-4">
+          <div>
+            <p className="text-eyebrow uppercase tracking-wide text-text-subtle">{detail.setBy === "system" ? "System set source" : detail.setBy === "rep" ? "Rep set source" : "Source"}</p>
+            <h3 className="text-heading-sm text-text-default">{detail.label}</h3>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-radius-sm p-1 text-text-muted hover:text-text-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary">
+            <X className="h-5 w-5" aria-hidden />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          <p className="mb-4 text-body-sm text-text-muted">{detail.blurb}</p>
+
+          <div className="mb-6 grid grid-cols-3 gap-2">
+            {[
+              { k: "Win rate", v: `${detail.winRate.toFixed(1)}%` },
+              { k: "Touches", v: detail.touchesToWin == null ? "—" : detail.touchesToWin.toFixed(1) },
+              { k: "MRR / lead", v: formatBandUsd(detail.yieldCents) },
+            ].map((s) => (
+              <div key={s.k} className="rounded-radius-md border border-border-subtle p-2.5">
+                <div className="text-eyebrow uppercase tracking-wide text-text-subtle">{s.k}</div>
+                <div className="text-body-strong tabular-nums text-text-default">{s.v}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mb-6">
+            <h4 className="mb-2 text-eyebrow uppercase tracking-wide text-text-subtle">Stage funnel</h4>
+            <div className="flex flex-col gap-1.5">
+              {detail.funnel.map((f) => (
+                <div key={f.label} className="grid grid-cols-[88px_1fr_92px] items-center gap-2 text-caption">
+                  <span className="text-text-muted">{f.label}</span>
+                  <span className="h-4 rounded-radius-sm bg-brand-primary" style={{ width: `${Math.max(2, f.pct)}%` }} aria-hidden />
+                  <span className="text-right tabular-nums text-text-muted">{f.count.toLocaleString()} · {f.pct.toFixed(0)}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mb-6">
+            <h4 className="mb-2 text-eyebrow uppercase tracking-wide text-text-subtle">Monthly cohorts, leads created and win rate</h4>
+            <div className="flex h-28 items-end gap-2">
+              {detail.cohorts.map((c) => (
+                <div key={c.label} className="flex flex-1 flex-col items-center gap-1">
+                  <span className="text-caption tabular-nums text-text-subtle">{c.winRate.toFixed(0)}%</span>
+                  <div className="w-full rounded-t-radius-sm bg-brand-primary" style={{ height: `${Math.max(2, (c.leads / maxCohort) * 72)}px`, opacity: c.open ? 0.4 : 0.85 }} aria-hidden />
+                  <span className="text-caption text-text-subtle">{c.label}</span>
+                  {c.open && <span className="text-[9px] uppercase text-status-warning">open</span>}
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-caption text-text-subtle">Shaded bars are cohorts still inside their median time to close.</p>
+          </div>
+
+          <div>
+            <h4 className="mb-2 text-eyebrow uppercase tracking-wide text-text-subtle">Rep breakdown, ranked by yield</h4>
+            <table className="w-full text-caption">
+              <thead>
+                <tr className="text-right text-eyebrow uppercase tracking-wide text-text-subtle">
+                  <th className="py-1 text-left font-normal">Rep</th>
+                  <th className="font-normal">Leads</th><th className="font-normal">Won</th><th className="font-normal">Win rate</th><th className="font-normal">MRR / lead</th>
+                </tr>
+              </thead>
+              <tbody className="tabular-nums text-text-muted">
+                {detail.reps.length === 0 ? (
+                  <tr><td colSpan={5} className="py-3 text-center text-text-subtle">No reps for this source.</td></tr>
+                ) : detail.reps.map((r) => (
+                  <tr key={r.ownerId ?? "unassigned"} className="border-t border-border-subtle text-right">
+                    <td className="py-2 text-left text-text-default">{repName(r.ownerId)}</td>
+                    <td>{r.leads}</td><td>{r.won}</td><td>{r.winRate.toFixed(1)}%</td><td>{formatBandUsd(r.yieldCents)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </aside>
+    </>
   );
 }
 

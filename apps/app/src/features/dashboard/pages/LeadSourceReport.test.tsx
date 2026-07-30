@@ -31,6 +31,9 @@ const deals: Deal[] = [
 
 vi.mock("@/features/pipeline/hooks/useDeals", () => ({ useDeals: () => ({ data: deals }) }));
 vi.mock("@/features/activities/hooks/useActivities", () => ({ useActivitiesForOrg: () => ({ data: [] }) }));
+vi.mock("@/features/auth/useProfile", () => ({ useProfile: () => ({ data: { role: "manager" } }) }));
+vi.mock("@/stores/auth", () => ({ useAuth: (sel: (s: { user: { id: string } }) => unknown) => sel({ user: { id: "u1" } }) }));
+vi.mock("../hooks/useOrgMemberNames", () => ({ useOrgMemberNames: () => new Map([["u1", "Alex Rep"]]) }));
 
 function renderReport() {
   return render(
@@ -70,5 +73,15 @@ describe("LeadSourceReport", () => {
     renderReport();
     fireEvent.click(screen.getByRole("button", { name: "Won in period" }));
     expect(screen.getByText(/win rate is not a valid ratio/i)).toBeInTheDocument();
+  });
+
+  it("opens the per-source drawer when a table row is clicked", () => {
+    renderReport();
+    const table = screen.getByRole("table");
+    fireEvent.click(within(table).getByText("Path"));
+    const drawer = screen.getByRole("dialog", { name: /Path detail/i });
+    expect(within(drawer).getByText("System set source")).toBeInTheDocument();
+    expect(within(drawer).getByText("Stage funnel")).toBeInTheDocument();
+    expect(within(drawer).getByText(/Rep breakdown/i)).toBeInTheDocument();
   });
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Activity, ActivityType } from "@/features/activities/mockData";
 import type { Deal, DealStage } from "@/features/pipeline/mockData";
-import { computeLeadSourcePerformance } from "./leadSourcePerformance";
+import { computeLeadSourcePerformance, leadSourceDetail } from "./leadSourcePerformance";
 
 const NOW = new Date("2026-07-01T00:00:00Z");
 
@@ -106,5 +106,38 @@ describe("scope + basis controls", () => {
     // u2 owns canvass (d3), inbound (d4), unknown (d6) — no Path.
     expect(perf.rows.map((r) => r.source)).not.toContain("path");
     expect(perf.rows.map((r) => r.source)).toEqual(expect.arrayContaining(["inbound", "self_sourced_canvass"]));
+  });
+});
+
+describe("leadSourceDetail (drawer)", () => {
+  const d = leadSourceDetail(DEALS, ACTS, { source: "path", now: NOW, windowDays: 90 });
+
+  it("carries the source identity + stat trio", () => {
+    expect(d.label).toBe("Path");
+    expect(d.setBy).toBe("system");
+    expect(d.blurb).toMatch(/GPS/i);
+    expect(d.leads).toBe(2);
+    expect(d.won).toBe(1);
+    expect(d.winRate).toBeCloseTo(50, 5);
+    expect(d.touchesToWin).toBe(3);
+    expect(d.yieldCents).toBe(5_000);
+  });
+
+  it("builds the stage funnel from current stage (Created -> ... -> Closed won)", () => {
+    const byLabel = Object.fromEntries(d.funnel.map((f) => [f.label, f.count]));
+    expect(byLabel["Created"]).toBe(2);
+    expect(byLabel["Proposal"]).toBe(1); // only the won deal reached proposal+
+    expect(byLabel["Closed won"]).toBe(1);
+  });
+
+  it("ranks the rep breakdown by yield", () => {
+    expect(d.reps).toHaveLength(1); // both Path cohort deals owned by u1
+    expect(d.reps[0]!.ownerId).toBe("u1");
+    expect(d.reps[0]!.leads).toBe(2);
+    expect(d.reps[0]!.won).toBe(1);
+  });
+
+  it("returns six trailing monthly cohorts", () => {
+    expect(d.cohorts).toHaveLength(6);
   });
 });
