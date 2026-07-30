@@ -70,11 +70,9 @@ export function PersistenceIndexWidget() {
   const team = useTeamPersistenceIndex();
   const openDetail = () => navigate("/dashboard/persistence-index");
 
-  // Persistence Index is manager-only for beta (Wave 1 addendum): the
-  // individual/rep view below is kept in place, dead, for re-enablement
-  // once the metric is trusted enough to surface to reps directly.
-  if (!isManager) return null;
-
+  // Managers/admins see the team-aggregate median; reps see their own score
+  // (the self-view was re-enabled for reps by user request, reversing the
+  // Wave 1 manager-only beta gate).
   if (isManager) {
     const t = team;
     return (

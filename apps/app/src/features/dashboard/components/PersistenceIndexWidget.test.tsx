@@ -54,10 +54,11 @@ describe("PersistenceIndexWidget", () => {
     expect(navigateMock).toHaveBeenCalledWith("/dashboard/persistence-index");
   });
 
-  it("renders null for a rep role (manager-only for beta)", () => {
+  it("renders the rep's own score for a rep role (self-view re-enabled)", () => {
     role = "rep";
-    const { container } = render(<PersistenceIndexWidget />);
-    expect(container).toBeEmptyDOMElement();
+    render(<PersistenceIndexWidget />);
+    expect(screen.getByText(/persistence index/i)).toBeInTheDocument();
+    expect(screen.getByText(/you · last 30 days/i)).toBeInTheDocument();
   });
 
   it("renders for a manager role", () => {

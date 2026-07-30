@@ -198,14 +198,18 @@ describe("PersistenceIndexReport", () => {
     expect(screen.getByText("Marcus Tan")).toBeInTheDocument();
   });
 
-  it("shows a managers-only message for a rep and hides the report content", () => {
+  it("shows a rep their own self-view (own score + breakdown), not the team surfaces", () => {
     role = "rep";
     renderReport();
-    expect(screen.getByText(/available to managers during the beta/i)).toBeInTheDocument();
-    // None of the report surfaces render for a rep.
-    expect(screen.queryByText(/by rep/i)).toBeNull();
-    expect(screen.queryByText(/where your score comes from/i)).toBeNull();
-    expect(screen.queryByRole("button", { name: /^1M$/ })).toBeNull();
+    // No managers-only gate message; the report renders for the rep.
+    expect(screen.queryByText(/available to managers during the beta/i)).toBeNull();
+    // Own score card + range pills + component breakdown render.
+    expect(screen.getByRole("button", { name: /^1M$/ })).toBeInTheDocument();
+    expect(screen.getByText(/where your score comes from/i)).toBeInTheDocument();
+    expect(screen.getByText("Individual index · Composite")).toBeInTheDocument();
+    // But no team-only surfaces: no direct-reports table, no all-reps overlay.
+    expect(screen.queryByText("Direct reports")).toBeNull();
+    expect(screen.queryByRole("button", { name: /all.*reps/i })).toBeNull();
   });
 
   it("shows the below-floor footnote when the SELECTED rep is below floor", () => {

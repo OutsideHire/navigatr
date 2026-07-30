@@ -597,38 +597,23 @@ export function PersistenceIndexReport() {
   const selectedRoleLabel = selectedReport?.role ?? null;
   const repCode = selectedName ? initialsCode(selectedName, "PIX") : "PIX";
   const readout = rangeReadout(points);
-  const eyebrow = selectedRep ? "Individual index · Composite" : "Team rollup";
-  const ticker = selectedRep ? repCode : teamCode;
+  // A rep viewing this page sees their own index (no team roll-up).
+  const isSelfRep = !isManager;
+  const selfName = managerName; // profile.full_name, whoever is viewing
+  const individualView = selectedRep != null || isSelfRep;
+  const eyebrow = individualView ? "Individual index · Composite" : "Team rollup";
+  const ticker = selectedRep ? repCode : isSelfRep ? initialsCode(selfName ?? "You", "PIX") : teamCode;
   const identitySubject = selectedRep
     ? [selectedName, selectedRoleLabel, managerName ? `reports to ${managerName}` : null].filter(Boolean).join(" · ")
-    : [managerName, managerName ? managerRoleLabel : null, `${reportCount} direct ${reportCount === 1 ? "report" : "reports"}`]
-        .filter(Boolean)
-        .join(" · ");
+    : isSelfRep
+      ? selfName ?? "Your persistence index"
+      : [managerName, managerName ? managerRoleLabel : null, `${reportCount} direct ${reportCount === 1 ? "report" : "reports"}`]
+          .filter(Boolean)
+          .join(" · ");
 
-  // Manager-only for beta (addendum 4.2): the widget is hidden for reps, and
-  // the detail page is guarded here too so a rep cannot reach their own score
-  // by opening the URL directly. Revisit before the rep-facing view is enabled.
-  if (!isManager) {
-    return (
-      <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-6">
-        <div className="flex flex-col gap-4">
-          <button
-            type="button"
-            onClick={() => navigate("/dashboard")}
-            className="inline-flex w-fit items-center gap-1 text-body-sm text-text-muted hover:text-text-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden /> Dashboard
-          </button>
-          <Card padding="lg" shadow="sm">
-            <p className="text-body-sm text-text-muted">
-              The Persistence Index is available to managers during the beta.
-            </p>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
+  // Managers/admins get the team roll-up + drill-down; reps get a self-view of
+  // their own index (re-enabled for reps by user request, reversing the Wave 1
+  // manager-only beta gate). Team-only surfaces below are gated on isManager.
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-6">
       <div className="flex flex-col gap-4">
@@ -650,7 +635,8 @@ export function PersistenceIndexReport() {
               {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
             </span>
           </div>
-          {/* Breadcrumb */}
+          {/* Breadcrumb (managers only; a rep's self-view has no team crumb) */}
+          {isManager && (
           <div className="flex flex-wrap items-center gap-2 text-caption text-text-muted">
             {selectedRep ? (
               <>
@@ -675,6 +661,7 @@ export function PersistenceIndexReport() {
               <span className="font-medium text-text-default">{teamName}</span>
             )}
           </div>
+          )}
           {/* Rep switcher (drill-down only) */}
           {selectedRep && directReports.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
@@ -784,7 +771,7 @@ export function PersistenceIndexReport() {
                         <LegendToggle label={topLegendLabel} on={showTop} onToggle={() => setShowTop((v) => !v)} />
                       </>
                     )}
-                    {!selectedRep && (
+                    {isManager && !selectedRep && (
                       <LegendToggle label={`All ${reportCount} reps`} solid on={showAllReps} onToggle={() => setShowAllReps((v) => !v)} />
                     )}
                   </div>
@@ -801,7 +788,7 @@ export function PersistenceIndexReport() {
         {/* Sub-component breakdown + this-period stats live in the per-rep
             drill-down only (the team view is the rollup chart + reps table,
             matching the prototype). */}
-        {selectedRep && (current != null || showBelowFloorScore) && !coverageSuppressed && (
+        {individualView && (current != null || showBelowFloorScore) && !coverageSuppressed && (
           <>
             <PersistenceSubComponents
               rows={[
@@ -821,7 +808,7 @@ export function PersistenceIndexReport() {
           </>
         )}
 
-        {!selectedRep && <DirectReportsTable rows={directReports} onSelect={setSelectedRep} />}
+        {isManager && !selectedRep && <DirectReportsTable rows={directReports} onSelect={setSelectedRep} />}
       </div>
     </div>
   );
