@@ -17,6 +17,20 @@ vi.mock("react-router-dom", async (orig) => {
   return { ...actual, useNavigate: () => navigateMock };
 });
 vi.mock("@/features/profession/useTerm", () => ({ useTerm: (k: string) => k }));
+// LS-3: the LeadSources widget reads its own data (useDeals + activities) and
+// runs the report engine, rather than taking a prop. Two rep-sourced Path
+// leads created inside the window put it in the warming state (< 30 won).
+vi.mock("@/features/pipeline/hooks/useDeals", () => {
+  const created = new Date();
+  created.setDate(created.getDate() - 20);
+  const iso = created.toISOString();
+  const deals = [
+    { id: "d1", leadSource: "path", stage: "won", valueCents: 120000, createdAt: iso, closedWonAt: iso, timeToWinCalendarDays: 15, owner_id: "u1" },
+    { id: "d2", leadSource: "path", stage: "qualified", valueCents: 80000, createdAt: iso, closedWonAt: null, timeToWinCalendarDays: null, owner_id: "u1" },
+  ];
+  return { useDeals: () => ({ data: deals }) };
+});
+vi.mock("@/features/activities/hooks/useActivities", () => ({ useActivitiesForOrg: () => ({ data: [] }) }));
 
 beforeEach(() => { navigateMock.mockReset(); });
 
@@ -59,15 +73,11 @@ describe("MonthlyPerformance drill-down", () => {
   });
 });
 
-describe("LeadSources drill-down", () => {
-  const leadSources: DashboardData["leadSources"] = [
-    { label: "Partner referral", count: 4, percent: 80 },
-    { label: "Cold outreach", count: 1, percent: 20 },
-  ];
-  it("clicking a legend row navigates to the source-filtered pipeline (encoded)", () => {
-    render(<LeadSources leadSources={leadSources} />);
-    fireEvent.click(screen.getByRole("button", { name: /Partner referral/ }));
-    expect(navigateMock).toHaveBeenCalledWith("/pipeline?source=Partner%20referral");
+describe("LeadSources widget (LS-3)", () => {
+  it("the whole card opens the lead source report", () => {
+    render(<LeadSources />);
+    fireEvent.click(screen.getByRole("button", { name: /source/i }));
+    expect(navigateMock).toHaveBeenCalledWith("/dashboard/lead-source");
   });
 });
 

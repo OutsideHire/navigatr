@@ -97,3 +97,26 @@ export function leadSourceRequiresNote(v: string | null | undefined): boolean {
 export function isRepSourcedSource(v: string | null | undefined): boolean {
   return isKnownLeadSource(v) && v !== "assigned" && v !== "import" && v !== "unknown";
 }
+
+/**
+ * Canonical per-source chart color (from Robert's Lead Source prototype). Shared
+ * by the report ribbon/scatter and the dashboard widget's mini bands so a source
+ * reads the same violet/blue everywhere. Unknown strings fall back via colorOf.
+ */
+export const LEAD_SOURCE_COLOR: Record<LeadSource, string> = {
+  path: "#8A72F2",
+  self_sourced_canvass: "#B48CF5",
+  partner_referral: "#2E5FE2",
+  customer_referral: "#5B8CF5",
+  event_association: "#D9A5F0",
+  inbound: "#86AEF8",
+  assigned: "#6B6E8F",
+  import: "#4A4D68",
+  other: "#8E90A8",
+  unknown: "#6E7191",
+};
+
+/** Chart color for any stored source value; unknown/legacy strings fall back to slate. */
+export function leadSourceColor(v: string | null | undefined): string {
+  return isKnownLeadSource(v) ? LEAD_SOURCE_COLOR[v] : "#6E7191";
+}

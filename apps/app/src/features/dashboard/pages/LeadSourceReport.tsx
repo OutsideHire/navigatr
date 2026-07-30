@@ -19,7 +19,7 @@ import { useProfile } from "@/features/auth/useProfile";
 import { useAuth } from "@/stores/auth";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { useActivitiesForOrg } from "@/features/activities/hooks/useActivities";
-import { leadSourceSetBy, type LeadSource } from "@/features/pipeline/lib/leadSources";
+import { leadSourceSetBy, leadSourceColor, type LeadSource } from "@/features/pipeline/lib/leadSources";
 import { useOrgMemberNames } from "../hooks/useOrgMemberNames";
 import { formatBandUsd } from "../lib/activityToWin";
 import {
@@ -32,19 +32,7 @@ import {
 } from "../lib/leadSourcePerformance";
 
 const WINDOWS = [30, 90, 180] as const;
-const SOURCE_COLOR: Record<string, string> = {
-  path: "#8A72F2",
-  self_sourced_canvass: "#B48CF5",
-  partner_referral: "#2E5FE2",
-  customer_referral: "#5B8CF5",
-  event_association: "#D9A5F0",
-  inbound: "#86AEF8",
-  assigned: "#6B6E8F",
-  import: "#4A4D68",
-  other: "#8E90A8",
-  unknown: "#6E7191",
-};
-const colorOf = (s: string) => SOURCE_COLOR[s] ?? "#6E7191";
+const colorOf = (s: string) => leadSourceColor(s);
 
 function Seg<T extends string | number>({
   value, options, onChange, ariaLabel,

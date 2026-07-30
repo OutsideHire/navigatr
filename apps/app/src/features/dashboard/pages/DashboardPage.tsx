@@ -77,7 +77,7 @@ import {
   type DateRange,
 } from "../lib/dateRange";
 import { useActivityToWin } from "../hooks/useActivityToWin";
-import { repComparisonBand, type AwActivityType } from "../lib/activityToWin";
+import { repComparisonBand, formatBandUsd, type AwActivityType } from "../lib/activityToWin";
 import { STAGE_BADGE_KIND } from "@/features/pipeline/mockData";
 import { useTerm } from "@/features/profession/useTerm";
 import { CoverageWidget } from "@/features/coverage/components/CoverageWidget";
@@ -85,6 +85,9 @@ import { useProfile } from "@/features/auth/useProfile";
 import { profileCan } from "@/features/auth/capabilities";
 import { scopeLabel } from "../lib/scopeLabel";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
+import { useActivitiesForOrg } from "@/features/activities/hooks/useActivities";
+import { leadSourceColor } from "@/features/pipeline/lib/leadSources";
+import { computeLeadSourcePerformance } from "../lib/leadSourcePerformance";
 import { useOrgMemberNames } from "../hooks/useOrgMemberNames";
 import { KpiBreakdownPanel } from "../components/KpiBreakdownPanel";
 import { type KpiMetric } from "../lib/kpiBreakdown";
@@ -711,16 +714,81 @@ export function TopPartners({ topPartners }: { topPartners: DashboardData["topPa
   );
 }
 
-// Section 10: Lead Sources (single horizontal stacked bar + legend)
-// Stable color rotation for lead-source labels. Free-text labels mean we
-// can't enum-key colors; we cycle through the design system's accent
-// palette in alphabetical order of label so the same source always gets
-// the same color across renders.
-const LEAD_SOURCE_COLORS = ["bg-accent-teal", "bg-accent-violet", "bg-accent-blue", "bg-accent-orange"];
+// Section 10: Lead Sources widget (LS-3). Restyled from Robert's prototype
+// (artifact 5f2ee069): one card that answers "which source yields the most per
+// lead" at a glance and opens the full Lead Source report when tapped. It runs
+// on the SAME engine as the report so the card and the report open on the same
+// numbers. The window is fixed at a trailing 180 days on purpose — the card does
+// NOT inherit the dashboard date filter, because a shorter window makes cohorts
+// immature and there is no room on a card to caveat a low headline figure.
+//
+// Maturity floors (from the prototype's build notes): rank the highest-yield
+// source only once ≥30 deals have closed tenant-wide AND ≥10 on the named
+// source. Below either floor the card shows the "warming" state (volume only)
+// instead of ranking on noise.
+const LEAD_SOURCE_MIN_WON = 30;
+const LEAD_SOURCE_MIN_SOURCE_WON = 10;
 
-export function LeadSources({ leadSources }: { leadSources: DashboardData["leadSources"] }) {
+type MiniSeg = { source: string; pct: number };
+
+/** The two decorative signature bands (share of leads vs share of won revenue). */
+function MiniBands({ volume, revenue }: { volume: MiniSeg[]; revenue: MiniSeg[] }) {
+  const rows = [
+    { label: "Volume", segs: volume },
+    { label: "Revenue", segs: revenue },
+  ];
+  return (
+    <div className="mt-4 space-y-1.5" aria-hidden>
+      {rows.map((row) => (
+        <div key={row.label} className="grid grid-cols-[52px_1fr] items-center gap-2">
+          <span className="text-right text-caption uppercase text-text-subtle">{row.label}</span>
+          <span className="flex h-1.5 gap-px overflow-hidden rounded-radius-full bg-surface-sunken">
+            {row.segs.map((seg) => (
+              <span
+                key={seg.source}
+                className="h-full"
+                style={{ width: `${seg.pct}%`, background: leadSourceColor(seg.source) }}
+              />
+            ))}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The one-line insight below the bands; `attn` flips the dot to a warning tone. */
+function InsightLine({ children, attn }: { children: React.ReactNode; attn?: boolean }) {
+  return (
+    <div className="mt-3 flex items-start gap-2 border-t border-border-subtle pt-3 text-body-sm text-text-muted [&_b]:font-medium [&_b]:text-text-default">
+      <span
+        className={cn("mt-1.5 h-1.5 w-1.5 shrink-0 rounded-radius-full", attn ? "bg-accent-orange" : "bg-brand-primary")}
+        aria-hidden
+      />
+      <p>{children}</p>
+    </div>
+  );
+}
+
+export function LeadSources() {
   const navigate = useNavigate();
-  if (leadSources.length === 0) {
+  const { data: deals = [] } = useDeals();
+  const { data: activities = [] } = useActivitiesForOrg();
+
+  const perf = React.useMemo(
+    () =>
+      computeLeadSourcePerformance(deals, activities, {
+        now: new Date(),
+        windowDays: 180,
+        basis: "created",
+        scope: "rep",
+      }),
+    [deals, activities],
+  );
+  const totals = perf.totals;
+
+  // Empty: no rep-sourced leads created in the window yet.
+  if (totals.leads === 0) {
     return (
       <Card padding="lg" shadow="sm">
         <SectionHeader title="Lead sources" />
@@ -730,46 +798,114 @@ export function LeadSources({ leadSources }: { leadSources: DashboardData["leadS
       </Card>
     );
   }
-  // Assign a stable color to each label by sorting alphabetically and
-  // taking modulo over the palette. This keeps "Cold outreach" the same
-  // color across renders even if the count ordering changes.
-  const labelColor = new Map<string, string>();
-  [...leadSources]
-    .sort((a, b) => a.label.localeCompare(b.label))
-    .forEach((src, i) => {
-      labelColor.set(src.label, LEAD_SOURCE_COLORS[i % LEAD_SOURCE_COLORS.length]!);
-    });
+
+  // Signature bands: each source's share of leads (volume) and share of won
+  // revenue (revenue), each sorted by the metric it renders so the widest
+  // segment leads. Revenue is empty until something has closed.
+  const totalMrr = perf.rows.reduce((sum, r) => sum + r.mrrWonCents, 0);
+  const volumeSegs: MiniSeg[] = [...perf.rows]
+    .filter((r) => r.leads > 0)
+    .sort((a, b) => b.leads - a.leads)
+    .map((r) => ({ source: r.source, pct: (r.leads / totals.leads) * 100 }));
+  const revenueSegs: MiniSeg[] =
+    totalMrr > 0
+      ? [...perf.rows]
+          .filter((r) => r.mrrWonCents > 0)
+          .sort((a, b) => b.mrrWonCents - a.mrrWonCents)
+          .map((r) => ({ source: r.source, pct: (r.mrrWonCents / totalMrr) * 100 }))
+      : [];
+
+  // Highest-yield source, gated on the maturity floors.
+  const eligible = perf.rows.filter((r) => r.won >= LEAD_SOURCE_MIN_SOURCE_WON);
+  const best = eligible.length
+    ? eligible.reduce((a, b) => (b.yieldCents > a.yieldCents ? b : a))
+    : null;
+  const ranked = totals.won >= LEAD_SOURCE_MIN_WON && best != null;
+
+  // Data-quality signal: an oversized "Other" bucket means the picklist is
+  // probably missing a value reps need.
+  const otherRow = perf.rows.find((r) => r.source === "other");
+  const otherShare = otherRow ? (otherRow.leads / totals.leads) * 100 : 0;
+  const otherAlert = otherShare >= 10;
+
+  const trend =
+    best != null && best.trendPct != null && Number.isFinite(best.trendPct) ? Math.round(best.trendPct) : null;
+  const showTrend = trend != null && trend !== 0;
+  const cta = ranked ? (otherAlert ? "Review source hygiene" : "Open lead source report") : "See volume by source";
 
   return (
-    <Card padding="lg" shadow="sm">
-      <SectionHeader title="Lead sources" />
-      {/* Stacked bar */}
-      <div className="flex h-3 w-full overflow-hidden rounded-radius-full bg-surface-sunken">
-        {leadSources.map((seg) => (
-          <div
-            key={seg.label}
-            className={cn("h-full", labelColor.get(seg.label))}
-            style={{ width: `${seg.percent}%` }}
-            aria-label={`${seg.label}: ${seg.percent}%`}
-          />
-        ))}
-      </div>
-      {/* Legend */}
-      <div className="mt-4 grid gap-2 sm:grid-cols-2">
-        {leadSources.map((seg) => (
-          <button
-            key={seg.label}
-            type="button"
-            onClick={() => navigate(`/pipeline?source=${encodeURIComponent(seg.label)}`)}
-            className="flex w-full items-center gap-2 rounded-radius-md px-1 py-0.5 text-left transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
-          >
-            <span className={cn("h-2.5 w-2.5 shrink-0 rounded-radius-full", labelColor.get(seg.label))} aria-hidden />
-            <span className="text-body-sm text-text-default">{seg.label}</span>
-            <span className="ml-auto text-body-sm tabular-nums text-text-muted">{seg.percent}%</span>
-            <ChevronRight className="h-4 w-4 shrink-0 text-text-subtle" aria-hidden />
-          </button>
-        ))}
-      </div>
+    <Card padding="lg" shadow="sm" className="group relative">
+      {/* The whole card is one click target (prototype: single anchor). A
+          full-cover button carries the click + focus ring so we avoid nesting
+          the heading inside an interactive element. */}
+      <button
+        type="button"
+        onClick={() => navigate("/dashboard/lead-source")}
+        aria-label={cta}
+        className="absolute inset-0 z-10 rounded-radius-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+      />
+      <SectionHeader
+        title="Lead sources"
+        action={<span className="text-caption uppercase text-text-subtle">Trailing 180 days</span>}
+      />
+
+      {ranked ? (
+        <>
+          <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
+            <span className="text-heading-xl tabular-nums text-text-default">
+              {formatBandUsd(best.yieldCents)}
+              <span className="ml-1 text-body-sm text-text-muted">/lead</span>
+            </span>
+            <span className="text-body-sm text-text-muted">
+              <span className="block text-body-strong text-text-default">{best.label}</span>
+              highest yield source
+            </span>
+            {showTrend && (
+              <span
+                className={cn(
+                  "ml-auto rounded-radius-sm px-1.5 py-0.5 text-caption tabular-nums",
+                  trend > 0 ? "bg-accent-teal/15 text-accent-teal" : "bg-accent-orange/15 text-accent-orange",
+                )}
+              >
+                {trend > 0 ? "+" : ""}
+                {trend}%
+              </span>
+            )}
+          </div>
+          <MiniBands volume={volumeSegs} revenue={revenueSegs} />
+          {otherAlert ? (
+            <InsightLine attn>
+              <b>Other is {Math.round(otherShare)}% of rep-set leads.</b> The picklist is probably missing a
+              value your reps need.
+            </InsightLine>
+          ) : (
+            <InsightLine>
+              <b>{best.label}</b> is {Math.round((best.leads / totals.leads) * 100)}% of leads and{" "}
+              {totalMrr > 0 ? Math.round((best.mrrWonCents / totalMrr) * 100) : 0}% of won revenue.
+            </InsightLine>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="text-body-sm text-text-muted">
+            <span className="block text-body-strong text-text-default">
+              Ranking holds until {LEAD_SOURCE_MIN_WON} deals close
+            </span>
+            {totals.won} closed won so far. Yield per lead on this few deals would swing on a single
+            boarding, so the ranking stays hidden.
+          </p>
+          <MiniBands volume={volumeSegs} revenue={revenueSegs} />
+          <InsightLine>
+            Volume is tracking: <b>{totals.leads.toLocaleString()} leads</b> across {perf.rows.length}{" "}
+            {perf.rows.length === 1 ? "source" : "sources"}.
+          </InsightLine>
+        </>
+      )}
+
+      <span className="mt-3 inline-flex items-center gap-1.5 text-caption uppercase text-text-muted group-hover:text-text-default">
+        {cta}
+        <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden />
+      </span>
     </Card>
   );
 }
@@ -925,8 +1061,8 @@ function PopulatedDashboard({ firstName: _firstName }: { firstName: string }) {
           <CoverageWidget />
           {/* LIVE */}
           <TopPartners topPartners={data.topPartners} />
-          {/* LIVE */}
-          <LeadSources leadSources={data.leadSources} />
+          {/* LIVE — LS-3: highest-yield source at a glance, opens the report */}
+          <LeadSources />
           {/* Additional reports card (manager-only; null for others) */}
           <AdditionalReports />
           {/* LIVE — computed from deal_stage_history rolled up to
