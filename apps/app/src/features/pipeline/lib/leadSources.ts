@@ -88,3 +88,12 @@ export function leadSourceLabel(v: string | null | undefined): string {
 export function leadSourceRequiresNote(v: string | null | undefined): boolean {
   return v === "other";
 }
+
+/**
+ * "Rep sourced" = prospecting channels. Excludes the non-prospecting system
+ * sources (Assigned, Import) and the unset Unknown bucket, per the Lead Source
+ * report's default "Rep sourced only" scope.
+ */
+export function isRepSourcedSource(v: string | null | undefined): boolean {
+  return isKnownLeadSource(v) && v !== "assigned" && v !== "import" && v !== "unknown";
+}
