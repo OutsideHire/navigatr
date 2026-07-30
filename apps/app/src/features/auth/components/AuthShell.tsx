@@ -34,15 +34,65 @@ export function AuthShell({
   );
 }
 
+// Fixed brand surface for the hero panel (identical in light + dark, per the
+// design handoff): #08091C base with a blue glow top-right and a violet glow
+// bottom-left, matching getnavigatr.io's hero.
+const HERO_BG =
+  "radial-gradient(115% 85% at 88% 4%, rgba(46,95,226,.60), rgba(8,9,28,0) 58%)," +
+  "radial-gradient(95% 75% at 8% 104%, rgba(168,112,240,.32), rgba(8,9,28,0) 60%)," +
+  "#08091C";
+// Hairline seam that keeps the split visible in dark mode, where both panels
+// are deep navy.
+const HERO_SEAM = "rgba(159,174,232,0.14)";
+
+/** Decorative route motif: a dotted path with three pins. aria-hidden; nods to
+ *  the field GPS story and fills the dead vertical space. */
+function RouteMotif() {
+  const pins: Array<[number, number]> = [
+    [56, 548],
+    [212, 316],
+    [300, 96],
+  ];
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 400 600"
+      preserveAspectRatio="xMidYMid slice"
+      className="pointer-events-none absolute inset-0 h-full w-full opacity-50"
+    >
+      <path
+        d="M56 548 C 150 470, 120 380, 212 316 S 330 210, 300 96"
+        fill="none"
+        stroke="#9FAEE8"
+        strokeWidth={2}
+        strokeDasharray="2 12"
+        strokeLinecap="round"
+      />
+      {pins.map(([cx, cy]) => (
+        <g key={`${cx}-${cy}`}>
+          <circle cx={cx} cy={cy} r={6} fill="none" stroke="#9FAEE8" strokeWidth={2} />
+          <circle cx={cx} cy={cy} r={2.5} fill="#9FAEE8" />
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 /**
- * Two-column shell — form on the left, gradient brand hero on the right.
- * Hero collapses below `md`. Used by Login and InvitationAcceptance.
+ * Two-column shell — form on the left, brand hero on the right. The hero is a
+ * fixed brand surface (same in light + dark); only the form panel themes. Hero
+ * collapses below `md`. Used by Login and InvitationAcceptance.
+ *
+ * `heroTitle` is the plain part of the headline; the optional `heroTitleAccent`
+ * is appended in the blue→violet gradient so the accent lands on the payoff
+ * word (e.g. "every win.").
  */
 export function AuthSplitShell({
   title,
   subtitle,
   heroEyebrow,
   heroTitle,
+  heroTitleAccent,
   heroBody,
   children,
 }: {
@@ -50,6 +100,7 @@ export function AuthSplitShell({
   subtitle?: string;
   heroEyebrow: string;
   heroTitle: string;
+  heroTitleAccent?: string;
   heroBody: string;
   children: ReactNode;
 }) {
@@ -69,24 +120,39 @@ export function AuthSplitShell({
         </div>
       </section>
 
-      {/* Right: gradient hero (md+ only) */}
-      <aside className="relative hidden overflow-hidden md:block">
-        <div className="absolute inset-0 bg-gradient-to-br from-brand-gradient-from via-brand-gradient-via to-brand-gradient-to" />
-        {/* Soft inner glow + grid pattern for depth */}
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.18),transparent_60%)]" />
-        {/* Dark-mode scrim: the dark-mode gradient stops are light enough that
-            white hero text dips under WCAG AA; deepen the surface (dark only). */}
-        <div className="absolute inset-0 hidden bg-black/25 dark:block" aria-hidden />
-        <div className="relative flex h-full flex-col justify-between p-12 text-white">
-          <span className="text-eyebrow tracking-widest text-white/80">{heroEyebrow}</span>
-          <div className="flex flex-col gap-4">
-            <h2 className="text-display-md leading-tight">{heroTitle}</h2>
-            <p className="max-w-md text-body-lg text-white/85">{heroBody}</p>
-          </div>
-          <div className="flex items-center gap-2 text-caption text-white/80">
-            <span className="h-1.5 w-1.5 rounded-radius-full bg-white/80" />
-            <span>The mobile-first sales platform for field reps</span>
-          </div>
+      {/* Right: fixed brand hero (md+ only) */}
+      <aside
+        className="relative hidden overflow-hidden md:block"
+        style={{ background: HERO_BG, borderLeft: `1px solid ${HERO_SEAM}` }}
+      >
+        <RouteMotif />
+        <div className="relative flex h-full flex-col justify-center gap-5 p-12">
+          {/* Sentence-case in markup, uppercased via CSS so screen readers don't
+              read it as an acronym. */}
+          <span className="text-eyebrow uppercase tracking-widest" style={{ color: "#9FAEE8" }}>
+            {heroEyebrow}
+          </span>
+          <h2 className="text-display-md leading-tight text-white">
+            {heroTitle}
+            {heroTitleAccent && (
+              <>
+                {" "}
+                <span
+                  style={{
+                    backgroundImage: "linear-gradient(96deg,#6E9BFF,#C79BFF)",
+                    WebkitBackgroundClip: "text",
+                    backgroundClip: "text",
+                    color: "transparent",
+                  }}
+                >
+                  {heroTitleAccent}
+                </span>
+              </>
+            )}
+          </h2>
+          <p className="max-w-md text-body-lg" style={{ color: "#A3AEDA" }}>
+            {heroBody}
+          </p>
         </div>
       </aside>
     </main>
