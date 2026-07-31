@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Mic, Square, Trash2, MicOff } from "lucide-react";
-import type { RecorderState } from "../hooks/useVoiceRecorder";
+import type { RecorderState } from "@/hooks/useVoiceRecorder";
 
 interface VoiceNoteRecorderProps {
   state: RecorderState;
