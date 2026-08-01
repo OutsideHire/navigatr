@@ -196,6 +196,19 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
           </div>
 
           <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
+            {/* Optional note — dictate or type. Works on any outcome. Placed
+                above the outcomes so a rep can capture what happened first. */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-caption font-medium text-text-muted">Notes (optional)</span>
+              <NotesFieldWithMic
+                value={notes}
+                onChange={setNotes}
+                placeholder="Add a note. Tap Dictate to speak."
+                rows={3}
+                disabled={saving}
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               {PATH_DISPOSITION_KEYS.map((key) => (
                 <DispositionTile
@@ -220,18 +233,6 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
                 />
               </label>
             )}
-
-            {/* Optional note — dictate or type. Works on any outcome. */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-caption font-medium text-text-muted">Notes (optional)</span>
-              <NotesFieldWithMic
-                value={notes}
-                onChange={setNotes}
-                placeholder="Add a note. Tap Dictate to speak."
-                rows={3}
-                disabled={saving}
-              />
-            </div>
           </div>
 
           <div className="flex gap-2 pt-4">
