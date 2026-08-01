@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { Plus, Check, Pencil, StickyNote } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { Button, Card, Textarea } from "@/components/navigatr";
+import { Button, Card, NotesFieldWithMic } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
 import { useProfile } from "@/features/auth/useProfile";
 import { usePartnerNotes } from "../hooks/usePartnerNotes";
@@ -106,13 +106,12 @@ export function PartnerNotesCard({ partnerId }: { partnerId: string }) {
 
       {composing && (
         <div className="mb-4 flex flex-col gap-3 rounded-radius-md border border-border-subtle bg-surface-sunken p-3">
-          <Textarea
+          <NotesFieldWithMic
             id={`partner-note-new-${partnerId}`}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={setDraft}
             rows={3}
-            placeholder="Jot a quick note — a reminder, an observation, something worth remembering."
-            className="w-full"
+            placeholder="Jot a quick note. A reminder, an observation, something worth remembering."
           />
           <div className="flex gap-2">
             <Button
@@ -170,12 +169,11 @@ export function PartnerNotesCard({ partnerId }: { partnerId: string }) {
                 </span>
                 {editing ? (
                   <div className="flex min-w-0 flex-1 flex-col gap-2">
-                    <Textarea
+                    <NotesFieldWithMic
                       id={`partner-note-edit-${n.id}`}
                       value={editDraft}
-                      onChange={(e) => setEditDraft(e.target.value)}
+                      onChange={setEditDraft}
                       rows={3}
-                      className="w-full"
                     />
                     <div className="flex gap-2">
                       <Button

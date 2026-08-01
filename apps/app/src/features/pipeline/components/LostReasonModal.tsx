@@ -14,7 +14,7 @@ import { X } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/navigatr";
+import { Button, NotesFieldWithMic } from "@/components/navigatr";
 import { type LostReasonCategory, LOST_REASON_LABEL } from "../mockData";
 
 export interface LostReasonModalProps {
@@ -161,22 +161,14 @@ export function LostReasonModal({
                 Notes{" "}
                 <span className="text-body-md font-normal text-text-muted">(optional)</span>
               </label>
-              <textarea
+              <NotesFieldWithMic
                 id="lost-reason-notes"
                 value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+                onChange={setNotes}
                 maxLength={500}
                 rows={3}
-                placeholder="Add context for your manager…"
-                className={cn(
-                  "w-full resize-none rounded-radius-md border border-border-default bg-surface-default px-3 py-2",
-                  "text-body-md text-text-default placeholder:text-text-subtle",
-                  "focus:border-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary focus:ring-offset-0",
-                )}
+                placeholder="Add context for your manager."
               />
-              <span className="text-right text-caption text-text-subtle">
-                {notes.length}/500
-              </span>
             </div>
           </div>
 

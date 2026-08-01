@@ -60,7 +60,7 @@ import { usePartnerActivities, type PartnerTouch, type PartnerTouchType } from "
 import { useLogPartnerTouch } from "../hooks/useLogPartnerTouch";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { Loader2, Check, MessageSquare } from "lucide-react";
-import { Select, type SelectOption, Textarea } from "@/components/navigatr";
+import { Select, type SelectOption, NotesFieldWithMic } from "@/components/navigatr";
 import { ReferralSection } from "../components/ReferralSection";
 import { type PartnerStatus } from "../mockData";
 import { useProfile } from "@/features/auth/useProfile";
@@ -340,13 +340,12 @@ function AboutCard({ partner }: { partner: Partner }) {
         <div className="mb-2 flex items-center justify-between gap-2">
           <h2 className="text-body-strong text-text-default">About</h2>
         </div>
-        <Textarea
+        <NotesFieldWithMic
           id={`partner-notes-${partner.id}`}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="Anything worth remembering about this partner — meeting cadence, referral patterns, hot buttons."
+          onChange={setDraft}
+          placeholder="Anything worth remembering about this partner. Meeting cadence, referral patterns, hot buttons."
           rows={5}
-          className="w-full"
         />
         <div className="mt-3 flex gap-2">
           <Button variant="primary" size="sm" leadingIcon={Check} onClick={handleSave} disabled={update.isPending}>
@@ -493,13 +492,12 @@ const TouchTimelineCard = React.forwardRef<
             <label className="mb-1 block text-caption text-text-muted" htmlFor={`touch-notes-${partnerId}`}>
               What happened?
             </label>
-            <Textarea
+            <NotesFieldWithMic
               id={`touch-notes-${partnerId}`}
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              onChange={setNotes}
               rows={3}
               placeholder="Discussed Q4 referral pipeline. They've got two restaurants closing on financing this month."
-              className="w-full"
             />
           </div>
 
