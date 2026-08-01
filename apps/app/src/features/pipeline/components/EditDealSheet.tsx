@@ -70,7 +70,7 @@ const STAGE_OPTIONS: SelectOption[] = [
   { value: "contacted", label: "Contacted" },
   { value: "qualified", label: "Qualified" },
   { value: "proposal", label: "Proposal" },
-  { value: "submitted", label: "Submitted" },
+  { value: "submitted", label: "Negotiation" },
   { value: "won", label: "Won" },
   { value: "lost", label: "Lost" },
 ];

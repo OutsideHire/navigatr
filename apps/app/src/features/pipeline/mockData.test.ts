@@ -84,7 +84,7 @@ describe("STAGE_NEXT_VERB", () => {
 // exhaustive for the new stage.
 describe("'submitted' stage", () => {
   it("has a label", () => {
-    expect(STAGE_LABEL.submitted).toBe("Submitted");
+    expect(STAGE_LABEL.submitted).toBe("Negotiation");
   });
 
   it("has a default probability between proposal's and won's", () => {

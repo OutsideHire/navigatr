@@ -26,7 +26,7 @@ function renderBoard(deals: Deal[], onAddToStage?: (s: Deal["stage"]) => void) {
 describe("KanbanBoard", () => {
   it("renders the 6 active stage columns and NOT a Lost column", () => {
     renderBoard([deal("a", "new", 100_00)]);
-    for (const label of ["New", "Contacted", "Qualified", "Proposal", "Submitted", "Won"]) {
+    for (const label of ["New", "Contacted", "Qualified", "Proposal", "Negotiation", "Won"]) {
       expect(screen.getByLabelText(`${label} stage`)).toBeInTheDocument();
     }
     expect(screen.queryByLabelText("Lost stage")).toBeNull();

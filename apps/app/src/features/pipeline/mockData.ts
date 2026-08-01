@@ -321,7 +321,10 @@ export const STAGE_LABEL: Record<DealStage, string> = {
   contacted: "Contacted",
   qualified: "Qualified",
   proposal: "Proposal",
-  submitted: "Submitted",
+  // Display label only. The stored value stays `submitted` (DB enum, schemas,
+  // all metric/weight keys unchanged). navigatr sits in front of any boarding
+  // platform, so "Submitted" was not meaningful for our use case.
+  submitted: "Negotiation",
   won: "Won",
   lost: "Lost",
 };
