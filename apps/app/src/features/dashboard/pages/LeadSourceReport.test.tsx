@@ -43,6 +43,12 @@ function renderReport() {
   );
 }
 
+// The signature-flow chart also renders a hidden a11y table; the source
+// performance table is the one carrying the "Set by" column.
+function sourceTable() {
+  return screen.getAllByRole("table").find((t) => within(t).queryByText("Set by") !== null)!;
+}
+
 describe("LeadSourceReport", () => {
   it("renders the heading, controls, and KPI cards", () => {
     renderReport();
@@ -55,7 +61,7 @@ describe("LeadSourceReport", () => {
 
   it("lists rep-sourced sources in the table by default (Assigned hidden in rep scope)", () => {
     renderReport();
-    const table = screen.getByRole("table");
+    const table = sourceTable();
     expect(within(table).getByText("Path")).toBeInTheDocument();
     expect(within(table).getByText("Customer Referral")).toBeInTheDocument();
     // Assigned is not rep-sourced → hidden in the default "Rep sourced only" scope.
@@ -65,7 +71,7 @@ describe("LeadSourceReport", () => {
   it("shows Assigned once the scope switches to All sources", () => {
     renderReport();
     fireEvent.click(screen.getByRole("button", { name: "All sources" }));
-    const table = screen.getByRole("table");
+    const table = sourceTable();
     expect(within(table).getByText("Assigned")).toBeInTheDocument();
   });
 
@@ -77,7 +83,7 @@ describe("LeadSourceReport", () => {
 
   it("opens the per-source drawer when a table row is clicked", () => {
     renderReport();
-    const table = screen.getByRole("table");
+    const table = sourceTable();
     fireEvent.click(within(table).getByText("Path"));
     const drawer = screen.getByRole("dialog", { name: /Path detail/i });
     expect(within(drawer).getByText("System set source")).toBeInTheDocument();

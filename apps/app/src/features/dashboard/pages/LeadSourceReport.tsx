@@ -22,6 +22,7 @@ import { useActivitiesForOrg } from "@/features/activities/hooks/useActivities";
 import { leadSourceSetBy, leadSourceColor, type LeadSource } from "@/features/pipeline/lib/leadSources";
 import { useOrgMemberNames } from "../hooks/useOrgMemberNames";
 import { formatBandUsd } from "../lib/activityToWin";
+import { LeadSourceFlow } from "../components/LeadSourceFlow";
 import {
   computeLeadSourcePerformance,
   leadSourceDetail,
@@ -72,63 +73,6 @@ function Kpi({ label, value, sub, flag }: { label: string; value: string; sub: s
   );
 }
 
-/** Signature ribbon: top band = share of leads, bottom = share of won revenue,
- *  crossing ribbons connect each source's two segments. */
-function Ribbon({ rows, totalLeads, totalMrr, onSelect }: { rows: LeadSourceRow[]; totalLeads: number; totalMrr: number; onSelect: (s: LeadSource) => void }) {
-  const W = 1000, barH = 30, topY = 26, botY = 168, mid = (topY + barH + botY) / 2, H = 214;
-  if (!totalLeads || !totalMrr) {
-    return <p className="text-body-sm text-text-muted">Not enough won revenue in this window to chart the split.</p>;
-  }
-  const byLeads = [...rows].sort((a, b) => b.leads - a.leads);
-  const byMrr = [...rows].sort((a, b) => b.mrrWonCents - a.mrrWonCents);
-  const pos = new Map<string, { tx: number; tw: number; bx: number; bw: number }>();
-  let x = 0;
-  for (const r of byLeads) { const w = (r.leads / totalLeads) * W; pos.set(r.source, { tx: x, tw: w, bx: 0, bw: 0 }); x += w; }
-  x = 0;
-  for (const r of byMrr) { const p = pos.get(r.source)!; const w = (r.mrrWonCents / totalMrr) * W; p.bx = x; p.bw = w; x += w; }
-
-  return (
-    <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full min-w-[560px]" role="img" aria-label="Share of leads compared with share of won revenue by source">
-        <text x={0} y={14} className="fill-text-subtle text-[11px] uppercase tracking-wide">Share of leads created</text>
-        <text x={0} y={botY + barH + 16} className="fill-text-subtle text-[11px] uppercase tracking-wide">Share of won revenue</text>
-        {rows.map((r) => {
-          const p = pos.get(r.source)!;
-          const c = colorOf(r.source);
-          const d = `M${p.tx},${topY + barH} L${p.tx + p.tw},${topY + barH} C${p.tx + p.tw},${mid} ${p.bx + p.bw},${mid} ${p.bx + p.bw},${botY} L${p.bx},${botY} C${p.bx},${mid} ${p.tx},${mid} ${p.tx},${topY + barH} Z`;
-          return <path key={`rib-${r.source}`} d={d} fill={c} fillOpacity={0.28} />;
-        })}
-        {rows.map((r) => {
-          const p = pos.get(r.source)!;
-          const c = colorOf(r.source);
-          const leadPct = Math.round((r.leads / totalLeads) * 100);
-          const mrrPct = Math.round((r.mrrWonCents / totalMrr) * 100);
-          return (
-            <g key={`bars-${r.source}`}>
-              <rect x={p.tx} y={topY} width={Math.max(0, p.tw - 1)} height={barH} rx={3} fill={c} />
-              <rect x={p.bx} y={botY} width={Math.max(0, p.bw - 1)} height={barH} rx={3} fill={c} />
-              {p.tw > 52 && <text x={p.tx + 7} y={topY + 20} className="fill-white text-[11px] font-medium">{leadPct}%</text>}
-              {p.bw > 52 && <text x={p.bx + 7} y={botY + 20} className="fill-white text-[11px] font-medium">{mrrPct}%</text>}
-            </g>
-          );
-        })}
-      </svg>
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
-        {rows.map((r) => (
-          <button
-            key={`lg-${r.source}`}
-            type="button"
-            onClick={() => onSelect(r.source)}
-            className="inline-flex items-center gap-1.5 text-caption text-text-muted hover:text-text-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
-          >
-            <span className="h-2.5 w-2.5 rounded-[2px]" style={{ background: colorOf(r.source) }} aria-hidden />
-            {r.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 /** Win rate (y) against median touches to win (x); bubble area = lead volume. */
 function Scatter({ rows, onSelect }: { rows: LeadSourceRow[]; onSelect: (s: LeadSource) => void }) {
@@ -203,6 +147,9 @@ export function LeadSourceReport() {
   const [sortKey, setSortKey] = React.useState<string>("yieldCents");
   const [sortDir, setSortDir] = React.useState<-1 | 1>(-1);
   const [openSource, setOpenSource] = React.useState<LeadSource | null>(null);
+  // Controlled highlight shared by the signature flow (hover-driven); selection
+  // opens the per-source drawer.
+  const [activeSource, setActiveSource] = React.useState<string | null>(null);
 
   const role = useProfile().data?.role;
   const isManagerish = role === "manager" || role === "admin";
@@ -312,7 +259,20 @@ export function LeadSourceReport() {
             <h2 className="text-body-strong text-text-default">Share of leads, share of revenue</h2>
             <p className="text-caption text-text-muted">The top band is where lead volume comes from; the bottom band is where won revenue comes from. A crossing ribbon is a source over- or under-weighted relative to what it returns.</p>
           </div>
-          <Ribbon rows={perf.rows} totalLeads={t.leads} totalMrr={t.mrrWonCents} onSelect={setOpenSource} />
+          <LeadSourceFlow
+            data={perf.rows.map((r) => ({
+              sourceId: r.source,
+              label: r.label,
+              color: colorOf(r.source),
+              leads: r.leads,
+              wonRevenue: r.mrrWonCents,
+            }))}
+            activeSourceId={activeSource}
+            onHoverSource={setActiveSource}
+            onSelectSource={(id) => {
+              if (id !== "other_sources") setOpenSource(id as LeadSource);
+            }}
+          />
         </Card>
 
         {/* Source table */}
