@@ -205,3 +205,16 @@
     transform: scaleY(0.6);
   }
 }
+
+/* LeadSourceFlow (Lead Source report "Signature View"): the only animated
+   property is opacity / fill-opacity, 180ms ease; instant under reduced motion. */
+.lsf-anim {
+  transition:
+    opacity 0.18s ease,
+    fill-opacity 0.18s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lsf-anim {
+    transition: none;
+  }
+}
