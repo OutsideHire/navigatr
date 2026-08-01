@@ -27,9 +27,18 @@ beforeEach(() => {
 });
 
 describe("NotesFieldWithMic", () => {
-  it("tapping the mic toggles self-managed dictation", () => {
+  it("shows a labeled Dictate button at rest and toggles on tap", () => {
     render(<NotesFieldWithMic value="" onChange={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /dictate/i }));
+    expect(toggleMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("recording state shows a labeled Stop button that toggles off", () => {
+    micStateHolder = "recording";
+    render(<NotesFieldWithMic value="" onChange={vi.fn()} />);
+    const stop = screen.getByRole("button", { name: /stop/i });
+    expect(stop).toBeInTheDocument();
+    fireEvent.click(stop);
     expect(toggleMock).toHaveBeenCalledTimes(1);
   });
 
@@ -43,7 +52,7 @@ describe("NotesFieldWithMic", () => {
   it("shows a transcribing status", () => {
     micStateHolder = "transcribing";
     render(<NotesFieldWithMic value="" onChange={vi.fn()} />);
-    expect(screen.getByText(/transcribing/i)).toBeInTheDocument();
+    expect(screen.getByText("Transcribing…")).toBeInTheDocument();
   });
 
   it("shows a retry-able error message when transcription failed", () => {
@@ -60,10 +69,12 @@ describe("NotesFieldWithMic", () => {
 
   it("manual mode calls the passed handler and ignores self-dictation", () => {
     const onMic = vi.fn();
+    // Manual mode paints the passed state (recording → a Stop button) and routes
+    // the tap to onMicClick, never the internal toggle.
     render(
       <NotesFieldWithMic value="" onChange={vi.fn()} onMicClick={onMic} micState="recording" />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /dictate/i }));
+    fireEvent.click(screen.getByRole("button", { name: /stop/i }));
     expect(onMic).toHaveBeenCalledTimes(1);
     expect(toggleMock).not.toHaveBeenCalled();
   });

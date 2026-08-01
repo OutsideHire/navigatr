@@ -183,3 +183,25 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* Voice-dictation "listening" equalizer — animated bars that signal the mic is
+   live while recording a note (NotesFieldWithMic). */
+@keyframes dictation-eq {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+.dictation-eq-bar {
+  transform-origin: bottom;
+  animation: dictation-eq 0.9s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dictation-eq-bar {
+    animation: none;
+    transform: scaleY(0.6);
+  }
+}

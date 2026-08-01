@@ -45,6 +45,9 @@ export interface TextareaProps
   onMicClick?: () => void;
   /** Override the icon used for the mic button (defaults to Lucide `Mic`). */
   micIcon?: LucideIcon;
+  /** Custom content for the footer's left slot, replacing the mic button.
+   *  Used by NotesFieldWithMic to host its dictation control bar. */
+  footerLeft?: React.ReactNode;
   /** Explicit state override; usually picked up from FormField context. */
   state?: TextareaState;
 }
@@ -61,6 +64,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
       rows = 4,
       onMicClick,
       micIcon: MicIcon = Mic,
+      footerLeft,
       state,
       className,
       ...props
@@ -125,14 +129,14 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           {...props}
         />
 
-        {(maxLength || onMicClick) && (
+        {(maxLength || onMicClick || footerLeft) && (
           <div
             className={cn(
               "flex items-center justify-between gap-2 px-3 pb-2 pt-1",
               "border-t border-border-subtle",
             )}
           >
-            {onMicClick ? (
+            {footerLeft ?? (onMicClick ? (
               <button
                 type="button"
                 onClick={onMicClick}
@@ -149,7 +153,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
               </button>
             ) : (
               <span />
-            )}
+            ))}
 
             {maxLength && (
               <span

@@ -1,28 +1,39 @@
 /**
  * navigatr NotesFieldWithMic — Textarea + speech-to-text mic.
  *
- * Source: Figma `navigatr v1` COMPONENT_SET 52:24 (rest | recording |
- * permission-denied), extended with transcribing + error states.
+ * Redesigned dictation UX (2026-07-31 feedback: recording was invisible and
+ * stopping was a guess). The field now flips into an obvious "recording mode":
+ *   rest          → a labeled "Dictate" pill (not a bare icon)
+ *   recording     → red border + pulsing dot + live equalizer + running timer
+ *                   + a labeled red "Stop" button (a clearly different target)
+ *   transcribing  → spinner + "Transcribing…"
+ *   error/denied  → a helper line under the field
+ * Plus: a haptic buzz on start/stop (mobile), a one-time hint, an amber timer
+ * near the 2-minute cap, and a screen-reader live region.
  *
- * Behavior: self-managed dictation by default. Tap the mic to record, tap
- * again to stop; the clip is transcribed by the `transcribe` edge function and
- * the text is appended into the note (fully editable afterward). Because every
- * Notes field across the app renders this one component, dictation lights up
- * everywhere at once. The audio is never stored (see useVoiceDictation).
+ * Self-managed by default: it owns the recorder + transcribe call and appends
+ * the result into the note. Passing `onMicClick` drives the mic manually and
+ * paints the `micState` you pass (used by the Storybook state gallery).
  *
- * Escape hatch: pass `onMicClick` to drive the mic manually (used by the
- * Storybook state gallery). When `onMicClick` is provided, the component paints
- * whatever `micState` you pass and does not record on its own.
- *
- * Wraps the canonical Textarea (Session 7) whose footer hosts the mic button.
+ * Renders its controls in the Textarea footer's left slot (`footerLeft`).
  */
 
-import { Mic, MicOff, Loader2 } from "lucide-react";
+import * as React from "react";
+import { Mic, MicOff, Square, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useVoiceDictation, appendDictated, type DictationState } from "@/hooks/useVoiceDictation";
 import { Textarea } from "./Textarea";
 
 export type MicState = DictationState;
+
+const HINT_KEY = "navigatr:dictation-hint-seen";
+const RECORD_AMBER_AT = 105; // amber over the last 15s before the 120s cap
+
+function fmtTime(totalSec: number): string {
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 export interface NotesFieldWithMicProps {
   value: string;
@@ -53,15 +64,124 @@ export function NotesFieldWithMic({
   className,
 }: NotesFieldWithMicProps) {
   const manual = onMicClick !== undefined;
-  const dictation = useVoiceDictation({
-    onResult: (text) => onChange(appendDictated(value, text)),
+  const [hintSeen, setHintSeen] = React.useState<boolean>(() => {
+    try {
+      return localStorage.getItem(HINT_KEY) === "1";
+    } catch {
+      return false;
+    }
   });
 
-  // Manual mode paints the passed state; self-managed mode uses the hook.
-  const micState: MicState = manual ? (micStateProp ?? "rest") : dictation.micState;
-  const handleMic = manual ? onMicClick : dictation.toggle;
+  const markUsed = React.useCallback(() => {
+    try {
+      localStorage.setItem(HINT_KEY, "1");
+    } catch {
+      /* private mode / unavailable — non-fatal */
+    }
+    setHintSeen(true);
+  }, []);
 
-  const MicIcon = micState === "permission-denied" ? MicOff : Mic;
+  const dictation = useVoiceDictation({
+    onResult: (text) => {
+      onChange(appendDictated(value, text));
+      markUsed();
+    },
+  });
+
+  const micState: MicState = manual ? micStateProp ?? "rest" : dictation.micState;
+
+  // Running timer while recording (resets when not).
+  const [elapsed, setElapsed] = React.useState(0);
+  React.useEffect(() => {
+    if (micState !== "recording") {
+      setElapsed(0);
+      return;
+    }
+    const start = Date.now();
+    setElapsed(0);
+    const timerId = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 500);
+    return () => clearInterval(timerId);
+  }, [micState]);
+
+  const activate = React.useCallback(() => {
+    if (!manual && typeof navigator !== "undefined") {
+      navigator.vibrate?.(20); // quick buzz so a rep feels start/stop without looking
+    }
+    if (manual) onMicClick?.();
+    else dictation.toggle();
+  }, [manual, onMicClick, dictation]);
+
+  const showHint = !manual && micState === "rest" && !hintSeen && value.trim() === "";
+  const liveMsg =
+    micState === "recording" ? "Recording" : micState === "transcribing" ? "Transcribing your note" : "";
+
+  let footerLeft: React.ReactNode;
+  if (micState === "recording") {
+    const amber = elapsed >= RECORD_AMBER_AT;
+    footerLeft = (
+      <div className="flex items-center gap-2.5">
+        <span aria-hidden className="h-2 w-2 shrink-0 animate-pulse rounded-radius-full bg-status-danger" />
+        <span aria-hidden className="flex items-end gap-[2px]" style={{ height: 16 }}>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <span
+              key={i}
+              className="dictation-eq-bar rounded-radius-full bg-status-danger"
+              style={{ width: 3, height: 16, animationDelay: `${i * 0.12}s` }}
+            />
+          ))}
+        </span>
+        <span
+          className={cn(
+            "text-caption tabular-nums",
+            amber ? "text-status-warning" : "text-status-danger",
+          )}
+        >
+          {fmtTime(elapsed)}
+        </span>
+        <button
+          type="button"
+          onClick={activate}
+          disabled={disabled}
+          aria-label="Stop recording"
+          className={cn(
+            "ml-0.5 inline-flex items-center gap-1.5 rounded-radius-full bg-status-danger px-3 py-1.5",
+            "text-caption font-medium text-white",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-danger focus-visible:ring-offset-2",
+            "disabled:opacity-50",
+          )}
+        >
+          <Square className="h-3 w-3" fill="currentColor" aria-hidden />
+          Stop
+        </button>
+      </div>
+    );
+  } else if (micState === "transcribing") {
+    footerLeft = (
+      <span className="inline-flex items-center gap-1.5 text-caption text-text-muted">
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+        Transcribing…
+      </span>
+    );
+  } else {
+    const DictateIcon = micState === "permission-denied" ? MicOff : Mic;
+    footerLeft = (
+      <button
+        type="button"
+        onClick={activate}
+        disabled={disabled}
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-radius-full border border-border-default px-3 py-1",
+          "text-caption text-text-secondary",
+          "hover:bg-surface-sunken hover:text-text-default",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary",
+          "disabled:opacity-50",
+        )}
+      >
+        <DictateIcon className="h-4 w-4" aria-hidden />
+        Dictate
+      </button>
+    );
+  }
 
   return (
     <div className={cn("relative", className)}>
@@ -73,34 +193,16 @@ export function NotesFieldWithMic({
         disabled={disabled}
         maxLength={maxLength}
         rows={rows}
-        onMicClick={handleMic}
-        micIcon={MicIcon}
+        footerLeft={footerLeft}
+        className={micState === "recording" ? "border-status-danger" : undefined}
       />
 
-      {/* State overlay over the mic button (Textarea footer, bottom-left). */}
-      {micState === "recording" && (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute bottom-3 left-3 inline-flex h-7 w-7 items-center justify-center rounded-radius-full bg-status-success-bg"
-        >
-          <span className="absolute inset-0 animate-ping rounded-radius-full bg-status-success/40" />
-          <Mic className="relative h-4 w-4 text-status-success" />
-        </span>
-      )}
+      <span className="sr-only" role="status" aria-live="polite">
+        {liveMsg}
+      </span>
 
-      {micState === "transcribing" && (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute bottom-3 left-3 inline-flex h-7 w-7 items-center justify-center rounded-radius-full bg-surface-sunken"
-        >
-          <Loader2 className="h-4 w-4 animate-spin text-brand-primary" />
-        </span>
-      )}
-
-      {micState === "transcribing" && (
-        <p className="mt-1 text-caption text-text-muted" role="status">
-          Transcribing…
-        </p>
+      {showHint && (
+        <p className="mt-1 text-caption text-text-muted">Tap Dictate, speak, then tap Stop.</p>
       )}
 
       {micState === "permission-denied" && (
