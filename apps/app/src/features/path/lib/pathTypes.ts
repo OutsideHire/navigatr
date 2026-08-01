@@ -51,6 +51,7 @@ export interface PathStop {
   position: number;
   status: StopStatus;
   disposition: string | null;
+  notes: string | null;
   dealCreated: boolean;
   addedAt: string;
 }
@@ -82,6 +83,7 @@ export interface PathStopRow {
   position: number;
   status: StopStatus;
   disposition: string | null;
+  notes: string | null;
   deal_created: boolean;
   added_at: string;
 }
@@ -159,6 +161,7 @@ export function rowToStop(row: PathStopRow): PathStop {
     position: row.position,
     status: row.status,
     disposition: row.disposition,
+    notes: row.notes ?? null,
     dealCreated: row.deal_created,
     addedAt: row.added_at,
   };

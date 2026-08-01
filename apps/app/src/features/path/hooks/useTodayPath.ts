@@ -28,6 +28,7 @@ export interface TodayStop {
   primaryType: string | null;
   status: StopStatus;
   disposition: string | null;
+  notes: string | null;
   dealCreated: boolean;
   addedAt: string;
 }
@@ -44,7 +45,7 @@ export function useTodayPath() {
     () => rawStops.map((s) => ({
       merchantId: s.prospectId, name: s.name, address: s.address, phone: s.phone, lat: s.lat, lng: s.lng,
       category: s.category, primaryType: s.primaryType, status: s.status,
-      disposition: s.disposition, dealCreated: s.dealCreated, addedAt: s.addedAt,
+      disposition: s.disposition, notes: s.notes, dealCreated: s.dealCreated, addedAt: s.addedAt,
     })),
     [rawStops],
   );
@@ -98,10 +99,10 @@ export function useTodayPath() {
     const id = stopIdFor(merchantId);
     if (id) await m.setStopStatus.mutateAsync({ stopId: id, status });
   };
-  const logVisit = async (merchantId: string, disposition: Disposition): Promise<void> => {
+  const logVisit = async (merchantId: string, disposition: Disposition, notes?: string): Promise<void> => {
     const id = stopIdFor(merchantId);
     if (!id) return;
-    await m.setStopDisposition.mutateAsync({ stopId: id, disposition });
+    await m.setStopDisposition.mutateAsync({ stopId: id, disposition, notes });
     await m.setStopStatus.mutateAsync({ stopId: id, status: "visited" });
   };
   const markDealCreated = async (merchantId: string): Promise<void> => {

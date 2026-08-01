@@ -234,6 +234,9 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit, runOverla
         {cur.status !== "pending" && cur.disposition && (
           <span className="text-caption text-text-muted">✓ Logged: {DISPOSITIONS[cur.disposition as Disposition]?.label ?? cur.disposition}</span>
         )}
+        {cur.status !== "pending" && cur.notes && (
+          <p className="text-caption italic text-text-muted">“{cur.notes}”</p>
+        )}
         <Button variant="primary" leadingIcon={ClipboardList} className="w-full" onClick={() => setLogOpen(true)}>Log drop-in</Button>
       </div>
 

@@ -121,8 +121,12 @@ export function usePathMutations() {
   });
 
   const setStopDisposition = useMutation({
-    mutationFn: async (input: { stopId: string; disposition: string }): Promise<void> => {
-      const { error } = await supabase.from("path_stops").update({ disposition: input.disposition }).eq("id", input.stopId);
+    mutationFn: async (input: { stopId: string; disposition: string; notes?: string }): Promise<void> => {
+      // Only touch notes when a value was provided; a trimmed-empty note stores
+      // null so we don't persist blank strings.
+      const patch: { disposition: string; notes?: string | null } = { disposition: input.disposition };
+      if (input.notes !== undefined) patch.notes = input.notes.trim() === "" ? null : input.notes.trim();
+      const { error } = await supabase.from("path_stops").update(patch).eq("id", input.stopId);
       if (error) throw error;
     },
     onSuccess: invalidate,

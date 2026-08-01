@@ -47,14 +47,14 @@ describe("pathTypes mappers", () => {
       id: "s1", path_id: "p1", prospect_id: "pr1", name: "Uratex Showroom",
       address: "123 Rd", phone: "+15551234567", lat: 30.2, lng: -97.7, category: "manufacturing_wholesale",
       primary_type: "manufacturer", position: 0, status: "visited",
-      disposition: "met_dm", deal_created: true, added_at: "2026-06-03T01:00:00Z",
+      disposition: "met_dm", notes: null, deal_created: true, added_at: "2026-06-03T01:00:00Z",
     };
     const s = rowToStop(row);
     expect(s).toEqual({
       id: "s1", pathId: "p1", prospectId: "pr1", name: "Uratex Showroom",
       address: "123 Rd", phone: "+15551234567", lat: 30.2, lng: -97.7, category: "manufacturing_wholesale",
       primaryType: "manufacturer", position: 0, status: "visited",
-      disposition: "met_dm", dealCreated: true, addedAt: "2026-06-03T01:00:00Z",
+      disposition: "met_dm", notes: null, dealCreated: true, addedAt: "2026-06-03T01:00:00Z",
     });
   });
 });

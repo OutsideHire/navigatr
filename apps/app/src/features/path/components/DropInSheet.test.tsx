@@ -41,6 +41,25 @@ vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), info: vi.fn() }),
 }));
 
+// Stub the dictation field to a plain textarea so this test stays focused on the
+// drop-in flow (the mic/recorder internals are covered by NotesFieldWithMic's own tests).
+vi.mock("@/components/navigatr", async (orig) => {
+  const actual = await orig<typeof import("@/components/navigatr")>();
+  return {
+    ...actual,
+    NotesFieldWithMic: ({ value, onChange, placeholder, disabled }: {
+      value: string; onChange: (v: string) => void; placeholder?: string; disabled?: boolean;
+    }) => (
+      <textarea
+        placeholder={placeholder}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    ),
+  };
+});
+
 const logVisit = vi.fn();
 const markDealCreated = vi.fn();
 // Mutable so individual tests can seed the stop snapshot (e.g. dealCreated:true).
@@ -98,10 +117,11 @@ describe("DropInSheet", () => {
     expect(screen.queryByText(/contact name/i)).not.toBeInTheDocument();
   });
 
-  it("renders a disabled 'Coming soon' voice-note placeholder", () => {
+  it("renders an optional dictated note field (replaces the old 'Coming soon' placeholder)", () => {
     renderSheet();
-    expect(screen.getByText(/coming soon/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /record a voice note/i })).toBeDisabled();
+    expect(screen.getByText(/notes \(optional\)/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/add a note/i)).toBeInTheDocument();
+    expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
   });
 
   it("tapping a tile selects it but does NOT commit", () => {
@@ -126,7 +146,7 @@ describe("DropInSheet", () => {
     renderSheet({ onLogged });
     fireEvent.click(screen.getByText("Not Interested"));
     await act(async () => { fireEvent.click(logStopBtn()); });
-    expect(logVisit).toHaveBeenCalledWith("m-1", "not_interested");
+    expect(logVisit).toHaveBeenCalledWith("m-1", "not_interested", "");
     expect(createDealMutateAsync).not.toHaveBeenCalled();
     // Terminal disposition creates no deal, so there's nothing to reconcile.
     expect(syncFollowupMock).not.toHaveBeenCalled();
@@ -138,7 +158,7 @@ describe("DropInSheet", () => {
     renderSheet();
     fireEvent.click(screen.getByText("Statement Secured"));
     await act(async () => { fireEvent.click(logStopBtn()); });
-    expect(logVisit).toHaveBeenCalledWith("m-1", "statement_secured");
+    expect(logVisit).toHaveBeenCalledWith("m-1", "statement_secured", "");
     expect(createDealMutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({
         contactName: "Bluewater",
@@ -166,7 +186,7 @@ describe("DropInSheet", () => {
     const dateInput = screen.getByLabelText(/follow-up date/i);
     fireEvent.change(dateInput, { target: { value: "2026-06-20" } });
     await act(async () => { fireEvent.click(logStopBtn()); });
-    expect(logVisit).toHaveBeenCalledWith("m-1", "followup_requested");
+    expect(logVisit).toHaveBeenCalledWith("m-1", "followup_requested", "");
     expect(logActivityMutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({
         disposition: "followup_requested",
@@ -188,7 +208,7 @@ describe("DropInSheet", () => {
     renderSheet();
     fireEvent.click(screen.getByText("Statement Secured"));
     await act(async () => { fireEvent.click(logStopBtn()); });
-    await waitFor(() => expect(logVisit).toHaveBeenCalledWith("m-1", "statement_secured"));
+    await waitFor(() => expect(logVisit).toHaveBeenCalledWith("m-1", "statement_secured", ""));
     expect(createDealMutateAsync).not.toHaveBeenCalled();
     expect(logActivityMutateAsync).not.toHaveBeenCalled();
     expect(markDealCreated).not.toHaveBeenCalled();
@@ -231,7 +251,7 @@ describe("DropInSheet", () => {
     renderSheet({ onLogged });
     fireEvent.click(screen.getByText("Statement Secured"));
     await act(async () => { fireEvent.click(logStopBtn()); });
-    expect(logVisit).toHaveBeenCalledWith("m-1", "statement_secured");
+    expect(logVisit).toHaveBeenCalledWith("m-1", "statement_secured", "");
     expect(toast.info).toHaveBeenCalledWith(
       expect.stringContaining("already in your team's pipeline"),
     );
@@ -241,23 +261,36 @@ describe("DropInSheet", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  // The in-sheet "What happened on this visit?" note was removed: notes are
-  // captured on the deal record, so a per-drop-in note box duplicated them.
-  it("does not render an in-sheet note field", () => {
-    renderSheet();
-    expect(screen.queryByPlaceholderText(/what happened on this visit/i)).not.toBeInTheDocument();
-  });
-
-  it("logs the drop-in activity with empty outcome notes (no in-sheet note)", async () => {
+  it("with no note typed, logs the drop-in activity with empty outcome notes", async () => {
     renderSheet();
     fireEvent.click(screen.getByText("Statement Secured"));
     await act(async () => { fireEvent.click(logStopBtn()); });
     expect(logActivityMutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({ type: "drop_in", outcomeNotes: "" }),
     );
-    // The note is no longer forwarded to the created deal either.
-    expect(createDealMutateAsync).toHaveBeenCalledWith(
-      expect.not.objectContaining({ notes: expect.anything() }),
+  });
+
+  it("forwards a typed note to the visit and onto the deal activity (follow-up outcome)", async () => {
+    renderSheet();
+    fireEvent.click(screen.getByText("Statement Secured"));
+    fireEvent.change(screen.getByPlaceholderText(/add a note/i), {
+      target: { value: "Uses Square, come back Thursday" },
+    });
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    expect(logVisit).toHaveBeenCalledWith("m-1", "statement_secured", "Uses Square, come back Thursday");
+    expect(logActivityMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "drop_in", outcomeNotes: "Uses Square, come back Thursday" }),
     );
+  });
+
+  it("forwards a typed note on a terminal (no-deal) outcome to the visit", async () => {
+    renderSheet();
+    fireEvent.click(screen.getByText("Not Interested"));
+    fireEvent.change(screen.getByPlaceholderText(/add a note/i), {
+      target: { value: "Owner was hostile, do not return" },
+    });
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    expect(logVisit).toHaveBeenCalledWith("m-1", "not_interested", "Owner was hostile, do not return");
+    expect(createDealMutateAsync).not.toHaveBeenCalled();
   });
 });

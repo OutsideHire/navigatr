@@ -42,7 +42,7 @@ vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), err
 
 function stop(id: string, over: Partial<TodayStop> = {}): TodayStop {
   return { merchantId: id, name: id, address: "1 Main", lat: 35, lng: -97, category: "manufacturing_wholesale",
-    primaryType: null, phone: "+15551230000", status: "pending", disposition: null, dealCreated: false, addedAt: "t", ...over };
+    primaryType: null, phone: "+15551230000", status: "pending", disposition: null, notes: null, dealCreated: false, addedAt: "t", ...over };
 }
 const ORIGIN = { lat: 35, lng: -97 };
 beforeEach(() => {

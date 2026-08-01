@@ -5,7 +5,7 @@ import type { TodayStop } from "../hooks/useTodayPath";
 const STOP: TodayStop = {
   merchantId: "m1", name: "Acme", address: "1 Main St", lat: 35, lng: -97,
   category: "manufacturing_wholesale", primaryType: "metal_supplier", phone: "+15551234567",
-  status: "pending", disposition: null, dealCreated: false, addedAt: "t1",
+  status: "pending", disposition: null, notes: null, dealCreated: false, addedAt: "t1",
 };
 
 describe("merchantFromStop", () => {
