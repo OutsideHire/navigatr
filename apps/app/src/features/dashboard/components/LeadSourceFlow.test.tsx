@@ -1,3 +1,4 @@
+import * as React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import {
@@ -140,6 +141,22 @@ describe("interaction (§7)", () => {
     const { container } = render(<LeadSourceFlow data={leadSourceFlowFixture} onSelectSource={onSelect} />);
     fireEvent.click(container.querySelector('rect[data-lsf-id="partner_referral"]')!);
     expect(onSelect).toHaveBeenCalledWith("partner_referral");
+  });
+
+  it("dims the other sources end-to-end when a parent tracks hover (controlled loop)", () => {
+    function Harness() {
+      const [active, setActive] = React.useState<string | null>(null);
+      return <LeadSourceFlow data={leadSourceFlowFixture} activeSourceId={active} onHoverSource={setActive} />;
+    }
+    const { container } = render(<Harness />);
+    const pathRect = container.querySelector('rect[data-lsf-id="path"]') as HTMLElement;
+    const partnerRect = container.querySelector('rect[data-lsf-id="partner_referral"]') as HTMLElement;
+    expect(partnerRect.style.opacity).toBe("1");
+    fireEvent.pointerOver(pathRect);
+    expect(partnerRect.style.opacity).toBe("0.16"); // others dim
+    expect(pathRect.style.opacity).toBe("1"); // hovered stays lit
+    fireEvent.pointerLeave(container.firstElementChild!);
+    expect(partnerRect.style.opacity).toBe("1"); // cleared on container leave
   });
 
   it("keyboard: legend focus sets active, blur clears, Enter/Space select", () => {
