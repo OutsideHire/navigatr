@@ -8,6 +8,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 // Capture navigation from the menu items.
 const navigateSpy = vi.fn();
@@ -51,10 +52,13 @@ beforeEach(() => {
 const user = { fullName: "Casey Manager", email: "casey@example.com" };
 
 function renderTopBar() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <MemoryRouter>
-      <TopBar user={user} />
-    </MemoryRouter>,
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <TopBar user={user} />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 

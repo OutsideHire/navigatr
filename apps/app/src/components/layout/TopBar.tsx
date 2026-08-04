@@ -18,11 +18,12 @@
  * authenticated app, not just the demo pages.
  */
 
-import { BarChart3, ChevronLeft, LogOut, Moon, Search, Settings as SettingsIcon, Sun, Monitor, User as UserIcon, Users } from "lucide-react";
+import { BarChart3, ChevronLeft, LogOut, Moon, Search, Settings as SettingsIcon, Sun, Monitor, User as UserIcon, Users, X } from "lucide-react";
+import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { Avatar, Input } from "@/components/navigatr";
+import { Avatar } from "@/components/navigatr";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,6 +35,7 @@ import {
 import { useTheme, type Theme } from "@/stores/theme";
 import { useAuth } from "@/stores/auth";
 import { useProfile } from "@/features/auth/useProfile";
+import { GlobalSearch } from "@/features/search/GlobalSearch";
 import { Logo } from "./Logo";
 import { NotificationsBell } from "./NotificationsBell";
 
@@ -87,6 +89,7 @@ export function TopBar({
   const setTheme = useTheme((s) => s.setTheme);
   const signOut = useAuth((s) => s.signOut);
   const navigate = useNavigate();
+  const [mobileSearchOpen, setMobileSearchOpen] = React.useState(false);
 
   const ThemeIcon = theme === "light" ? Sun : theme === "dark" ? Moon : Monitor;
 
@@ -112,34 +115,51 @@ export function TopBar({
     >
       {/* ===== MOBILE (Figma 57:2): 56 px, padding 12/16, gap 12 ===== */}
       <div className="flex h-14 items-center gap-3 px-4 md:hidden">
-        {showBack && (
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Back"
-            className="-ml-2 inline-flex h-9 w-9 items-center justify-center rounded-radius-sm text-text-default hover:bg-surface-sunken"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </button>
+        {mobileSearchOpen && showSearch ? (
+          // Expanded search row — the icon swaps the bar for a full-width input.
+          <>
+            <GlobalSearch autoFocus className="flex-1" onNavigate={() => setMobileSearchOpen(false)} />
+            <button
+              type="button"
+              aria-label="Close search"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-sm text-text-default hover:bg-surface-sunken"
+              onClick={() => setMobileSearchOpen(false)}
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </>
+        ) : (
+          <>
+            {showBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                aria-label="Back"
+                className="-ml-2 inline-flex h-9 w-9 items-center justify-center rounded-radius-sm text-text-default hover:bg-surface-sunken"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+            )}
+
+            <Logo size="sm" wordmark={tenantAppName} logoSrc={tenantLogo} />
+
+            <div className="ml-auto flex items-center gap-1">
+              {showSearch && (
+                <button
+                  type="button"
+                  aria-label="Search"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-radius-sm text-text-default hover:bg-surface-sunken"
+                  onClick={() => setMobileSearchOpen(true)}
+                >
+                  <Search className="h-5 w-5" />
+                </button>
+              )}
+              {user && <SettingsButton onClick={() => navigate("/settings")} />}
+              {user && <NotificationsBell />}
+              {user && <AvatarMenu user={user} theme={theme} resolvedTheme={resolvedTheme} setTheme={setTheme} ThemeIcon={ThemeIcon} handleSignOut={handleSignOut} />}
+            </div>
+          </>
         )}
-
-        <Logo size="sm" wordmark={tenantAppName} logoSrc={tenantLogo} />
-
-        <div className="ml-auto flex items-center gap-1">
-          {/* Mobile search icon — opens a sheet on tap (Session 11+). For now,
-              we just navigate to a future /search route or no-op. */}
-          <button
-            type="button"
-            aria-label="Search"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-radius-sm text-text-default hover:bg-surface-sunken"
-            onClick={() => toast("Search lands in a later session")}
-          >
-            <Search className="h-5 w-5" />
-          </button>
-          {user && <SettingsButton onClick={() => navigate("/settings")} />}
-          {user && <NotificationsBell />}
-          {user && <AvatarMenu user={user} theme={theme} resolvedTheme={resolvedTheme} setTheme={setTheme} ThemeIcon={ThemeIcon} handleSignOut={handleSignOut} />}
-        </div>
       </div>
 
       {/* ===== DESKTOP (Figma 57:11): 64 px, padding 12/24, gap 16 ===== */}
@@ -157,16 +177,7 @@ export function TopBar({
 
         <Logo size="md" wordmark={tenantAppName} logoSrc={tenantLogo} />
 
-        {showSearch && (
-          <div className="ml-6 max-w-[480px] flex-1">
-            <Input
-              size="md"
-              leadingIcon={Search}
-              placeholder="Search deals, partners, activities…"
-              aria-label="Search"
-            />
-          </div>
-        )}
+        {showSearch && <GlobalSearch className="ml-6 max-w-[480px] flex-1" />}
 
         {user && (
           <div className="ml-auto flex items-center gap-3">
