@@ -31,10 +31,12 @@ import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useForm, Controller, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useNavigate } from "react-router-dom";
 import { REP_SOURCE_OPTIONS } from "../lib/leadSources";
 import { z } from "zod";
 import { AsYouType } from "libphonenumber-js";
 import { useCreateDeal } from "../hooks/useCreateDeal";
+import { useDuplicateDealCheck, type DuplicateDealMatch } from "../hooks/useDuplicateDealCheck";
 
 /** Strip everything but digits. Used for phone validation + value extraction. */
 function digitsOnly(s: string): string {
@@ -461,6 +463,13 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
   const user = useAuth((s) => s.user);
   const profession: Profession = getProfession(user) ?? "merchant_services";
   const createDeal = useCreateDeal();
+  const navigate = useNavigate();
+  const { checkDuplicate } = useDuplicateDealCheck();
+
+  // Soft de-dup: the active deal a pre-submit check found for this name+address,
+  // if any. When set, we show a warning and offer "open it" instead of creating
+  // a duplicate. Cleared when the sheet reopens or the company/address changes.
+  const [duplicate, setDuplicate] = React.useState<DuplicateDealMatch | null>(null);
 
   // Tracks whether the user has manually edited probability. Once they
   // type into the field, stage changes no longer overwrite it.
@@ -524,6 +533,18 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
     }
   }, [watchedStage, setValue]);
 
+  // Editing the identity fields invalidates any prior duplicate warning.
+  const watchedCompany = watch("companyName");
+  const watchedAddress = watch("address");
+  React.useEffect(() => {
+    setDuplicate(null);
+  }, [watchedCompany, watchedAddress]);
+
+  // Clear the warning whenever the sheet closes so it doesn't reappear stale.
+  React.useEffect(() => {
+    if (!open) setDuplicate(null);
+  }, [open]);
+
   const onSubmit: SubmitHandler<DealFormValues> = async (values) => {
     // Split the form into typed columns + profession-specific bucket.
     // Base fields map 1:1 onto the deals table columns; the rest of the
@@ -537,6 +558,15 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
       profession: _profession,
       ...professionFields
     } = values;
+
+    // Soft de-dup: if an active deal already matches this name+address, warn and
+    // stop rather than letting the create fail on the database guard. The rep
+    // opens the existing deal, or edits the fields (which clears this) to proceed.
+    const dup = await checkDuplicate(companyName, address);
+    if (dup) {
+      setDuplicate(dup);
+      return;
+    }
 
     try {
       await createDeal.mutateAsync({
@@ -631,6 +661,35 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
             noValidate
           >
             <div className="flex flex-col gap-6">
+              {/* Soft de-dup warning — shown when a pre-submit check found an
+                  active deal for this same business. */}
+              {duplicate && (
+                <div
+                  role="alert"
+                  className="flex flex-col gap-2 rounded-radius-md border border-status-warning/40 bg-status-warning-bg px-4 py-3"
+                >
+                  <p className="text-body-sm font-medium text-status-warning">
+                    {duplicate.companyName} may already be in your pipeline
+                  </p>
+                  <p className="text-caption text-text-muted">
+                    An active deal for this business already exists. Open it instead of adding a
+                    duplicate, or edit the company name or address to add a different business.
+                  </p>
+                  <div className="flex">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        navigate(`/pipeline/${duplicate.id}`);
+                        onOpenChange(false);
+                      }}
+                    >
+                      Open existing deal
+                    </Button>
+                  </div>
+                </div>
+              )}
               {/* Section 1: Company */}
               <section className="flex flex-col gap-3">
                 <SectionHeader>Company</SectionHeader>

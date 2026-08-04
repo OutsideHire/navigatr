@@ -284,6 +284,23 @@ describe("useCreateDeal", () => {
     ).rejects.toBeInstanceOf(DuplicateDealError);
   });
 
+  it("throws DuplicateDealError on the name+address trigger (23505 with the dedupe token)", async () => {
+    singleMock.mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: "23505",
+        message: "This business is already in your team's pipeline (deals_active_dedupe).",
+      },
+    });
+    const { result } = renderHook(() => useCreateDeal(), { wrapper });
+    await expect(
+      result.current.mutateAsync({
+        companyName: "Behn Mouthpieces", address: "123 Main St", contactName: "Al",
+        contactPhone: "+12025550100", stage: "new", probability: 20,
+      }),
+    ).rejects.toBeInstanceOf(DuplicateDealError);
+  });
+
   it("rethrows a 23505 from a DIFFERENT unique constraint as-is (not a DuplicateDealError)", async () => {
     singleMock.mockResolvedValueOnce({
       data: null,

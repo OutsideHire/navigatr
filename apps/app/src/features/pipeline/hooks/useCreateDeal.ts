@@ -37,12 +37,27 @@ export class DuplicateDealError extends Error {
  *  (org_id, place_id). Postgres embeds it in the 23505 error message. */
 const ACTIVE_PLACE_ID_CONSTRAINT = "deals_org_place_active_uidx";
 
+/** Token the enforce_active_deal_dedupe trigger embeds in its 23505 message
+ *  when a name+address key collides with another active deal (the second
+ *  de-dup identity key, migration 20260804000002). */
+const ACTIVE_DEDUPE_TOKEN = "deals_active_dedupe";
+
 /** True only when a Postgres error is the active-deal place_id uniqueness
  *  violation, as opposed to any other 23505 (e.g. a source-system dedupe). */
 export function isDuplicatePlaceDealError(
   error: { code?: string; message?: string } | null | undefined,
 ): boolean {
   return error?.code === "23505" && (error.message ?? "").includes(ACTIVE_PLACE_ID_CONSTRAINT);
+}
+
+/** True for EITHER active-deal de-dup guard: the place_id unique index OR the
+ *  name+address trigger. Both map to the same calm DuplicateDealError. */
+export function isDuplicateActiveDealError(
+  error: { code?: string; message?: string } | null | undefined,
+): boolean {
+  if (error?.code !== "23505") return false;
+  const msg = error.message ?? "";
+  return msg.includes(ACTIVE_PLACE_ID_CONSTRAINT) || msg.includes(ACTIVE_DEDUPE_TOKEN);
 }
 
 export interface CreateDealInput {
@@ -110,10 +125,11 @@ export function useCreateDeal() {
         .select("id")
         .single();
       if (error) {
-        // Only the active-deal place_id uniqueness violation maps to the calm
-        // "already in your team's pipeline" story. Any other unique violation or
-        // error is rethrown unchanged so it is not mislabeled.
-        if (isDuplicatePlaceDealError(error)) {
+        // Either active-deal de-dup guard (place_id index or name+address
+        // trigger) maps to the calm "already in your team's pipeline" story. Any
+        // other unique violation or error is rethrown unchanged so it is not
+        // mislabeled.
+        if (isDuplicateActiveDealError(error)) {
           throw new DuplicateDealError();
         }
         throw error;
