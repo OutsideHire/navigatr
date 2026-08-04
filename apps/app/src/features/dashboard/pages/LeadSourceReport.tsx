@@ -23,6 +23,7 @@ import { leadSourceSetBy, leadSourceColor, type LeadSource } from "@/features/pi
 import { useOrgMemberNames } from "../hooks/useOrgMemberNames";
 import { formatBandUsd } from "../lib/activityToWin";
 import { LeadSourceFlow } from "../components/LeadSourceFlow";
+import { LeadSourceEfficiency } from "../components/LeadSourceEfficiency";
 import {
   computeLeadSourcePerformance,
   leadSourceDetail,
@@ -73,48 +74,6 @@ function Kpi({ label, value, sub, flag }: { label: string; value: string; sub: s
   );
 }
 
-
-/** Win rate (y) against median touches to win (x); bubble area = lead volume. */
-function Scatter({ rows, onSelect }: { rows: LeadSourceRow[]; onSelect: (s: LeadSource) => void }) {
-  const plot = rows.filter((r) => r.won > 0 && r.touchesToWin != null);
-  if (plot.length === 0) return <p className="text-body-sm text-text-muted">No wins in this window to plot.</p>;
-  const W = 560, H = 320, L = 46, R = 18, T = 18, B = 40;
-  const xs = plot.map((r) => r.touchesToWin as number);
-  const ys = plot.map((r) => r.winRate);
-  const xMax = Math.max(...xs) * 1.15 || 1, xMin = Math.max(0, Math.min(...xs) - 1);
-  const yMax = Math.max(...ys) * 1.2 || 1;
-  const maxLeads = Math.max(...plot.map((r) => r.leads), 1);
-  const X = (v: number) => L + ((v - xMin) / (xMax - xMin || 1)) * (W - L - R);
-  const Y = (v: number) => H - B - (v / yMax) * (H - T - B);
-  const ticks = [0, 1, 2, 3, 4];
-  return (
-    <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full min-w-[420px]" role="img" aria-label="Win rate against median touches to win by source">
-        {ticks.map((k) => {
-          const yv = (yMax / 4) * k; const y = Y(yv);
-          return (
-            <g key={k}>
-              <line x1={L} y1={y} x2={W - R} y2={y} className="stroke-border-subtle" strokeWidth={1} />
-              <text x={L - 8} y={y + 3} textAnchor="end" className="fill-text-subtle text-[10px]">{yv.toFixed(0)}%</text>
-            </g>
-          );
-        })}
-        {plot.map((r) => {
-          const rad = 6 + Math.sqrt(r.leads / maxLeads) * 22;
-          return (
-            <g key={`bub-${r.source}`} className="cursor-pointer" onClick={() => onSelect(r.source)}>
-              <circle cx={X(r.touchesToWin as number)} cy={Y(r.winRate)} r={rad} fill={colorOf(r.source)} fillOpacity={0.42} stroke={colorOf(r.source)} strokeWidth={1.2} />
-              <text x={X(r.touchesToWin as number)} y={Y(r.winRate) - rad - 5} textAnchor="middle" className="fill-text-muted text-[10px] uppercase tracking-wide">
-                {r.label.split(" ")[0]}
-              </text>
-            </g>
-          );
-        })}
-        <text x={(W + L) / 2} y={H - 6} textAnchor="middle" className="fill-text-subtle text-[10px] uppercase tracking-wide">Median touches before close won</text>
-      </svg>
-    </div>
-  );
-}
 
 const TABLE_COLS: { key: keyof LeadSourceRow | "setBy"; label: string; sortable: boolean }[] = [
   { key: "label", label: "Source", sortable: false },
@@ -363,7 +322,22 @@ export function LeadSourceReport() {
               <h2 className="text-body-strong text-text-default">Win rate against touches to win</h2>
               <p className="text-caption text-text-muted">Bubble area is lead volume. Up and to the left wins more often with fewer touches.</p>
             </div>
-            <Scatter rows={perf.rows} onSelect={setOpenSource} />
+            <LeadSourceEfficiency
+              data={perf.rows.map((r) => ({
+                sourceId: r.source,
+                label: r.label,
+                shortLabel: r.label.split(" ")[0].toUpperCase(),
+                color: colorOf(r.source),
+                leads: r.leads,
+                wonDeals: r.won,
+                winRate: r.winRate,
+                touchesToWin: r.touchesToWin ?? 0,
+                belowFloor: r.won > 0 && r.won < 5,
+              }))}
+              activeSourceId={activeSource}
+              onHoverSource={setActiveSource}
+              onSelectSource={(id) => setOpenSource(id as LeadSource)}
+            />
           </Card>
           <Card padding="lg" shadow="sm">
             <h2 className="text-body-strong text-text-default">What this report assumes</h2>
