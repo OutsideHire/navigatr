@@ -51,6 +51,15 @@ export function sanitizeSearchTerm(raw: string): string {
   return raw.replace(/[,()*%\\]/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/** If the raw query is a phone-number query (digits + phone punctuation, no
+ *  letters, at least 4 digits), return its digits; otherwise null. Used to
+ *  match the digits-only phone columns without polluting name searches. */
+export function phoneQuery(raw: string): string | null {
+  if (/[a-z]/i.test(raw)) return null;
+  const digits = raw.replace(/\D/g, "");
+  return digits.length >= 4 ? digits : null;
+}
+
 function truncate(s: string, n: number): string {
   const t = s.trim();
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
@@ -71,24 +80,39 @@ export function useGlobalSearch(debouncedQuery: string): {
   isEnabled: boolean;
 } {
   const term = sanitizeSearchTerm(debouncedQuery);
-  const enabled = term.length >= 2;
+  const phone = phoneQuery(debouncedQuery);
+  const enabled = term.length >= 2 || phone !== null;
 
   const query = useQuery({
-    queryKey: ["global-search", term],
+    queryKey: ["global-search", term, phone],
     enabled,
     staleTime: 30_000,
     queryFn: async (): Promise<GlobalSearchResults> => {
       const like = `*${term}*`;
+      // Name/email terms only when the term is long enough to be meaningful;
+      // a pure phone query (no letters) searches by number alone.
+      const textReady = term.length >= 2;
+      const dealOr: string[] = [];
+      if (textReady) {
+        dealOr.push(`company_name.ilike.${like}`, `contact_name.ilike.${like}`, `contact_email.ilike.${like}`);
+      }
+      if (phone) dealOr.push(`contact_phone_digits.ilike.*${phone}*`);
+      const partnerOr: string[] = [];
+      if (textReady) {
+        partnerOr.push(`name.ilike.${like}`, `company.ilike.${like}`, `email.ilike.${like}`);
+      }
+      if (phone) partnerOr.push(`phone_digits.ilike.*${phone}*`);
+
       const [dealsRes, partnersRes, activitiesRes] = await Promise.all([
         supabase
           .from("deals")
           .select("id, company_name, contact_name, stage")
-          .or(`company_name.ilike.${like},contact_name.ilike.${like},contact_email.ilike.${like}`)
+          .or(dealOr.join(","))
           .limit(PER_GROUP),
         supabase
           .from("partners")
           .select("id, name, company")
-          .or(`name.ilike.${like},company.ilike.${like},email.ilike.${like}`)
+          .or(partnerOr.join(","))
           .limit(PER_GROUP),
         supabase
           .from("activities")
