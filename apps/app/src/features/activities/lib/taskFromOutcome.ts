@@ -1,0 +1,45 @@
+/**
+ * taskFromOutcome — pure mapping from a logged activity's outcome to the fields
+ * of the follow-up task it generates, or null when the outcome carries no
+ * interval. Reuses the existing DISPOSITIONS interval map, so SP1 introduces no
+ * new interval decisions. Task type inherits the activity type by default; the
+ * SP2 overrides (drop-in Statement Secured -> To-do, call Verbal-commitment ->
+ * To-do, call Send-info -> Email+Call) plug in via OUTCOME_TYPE_OVERRIDE, which
+ * is intentionally empty in SP1.
+ */
+import { DISPOSITIONS, type Disposition } from "@/lib/followUpScheduling";
+import { deriveBands } from "./taskBands";
+import { type TaskType } from "./isProspectTouch";
+
+/** Empty in SP1. SP2 fills this (e.g. statement_secured -> "todo"). */
+const OUTCOME_TYPE_OVERRIDE: Partial<Record<Disposition, TaskType>> = {};
+
+export interface NewTaskFields {
+  type: TaskType;
+  title: string;
+  date_source: "interval";
+  earliest_at: string;
+  target_at: string;
+  latest_at: string;
+  original_target_at: string;
+  source_outcome: string;
+}
+
+export function taskFromOutcome(
+  activityType: TaskType,
+  disposition: Disposition,
+  occurredAtISO: string,
+  dealName: string,
+): NewTaskFields | null {
+  const spec = DISPOSITIONS[disposition];
+  const bands = deriveBands(occurredAtISO, spec?.businessDays ?? null);
+  if (!bands) return null;
+  return {
+    type: OUTCOME_TYPE_OVERRIDE[disposition] ?? activityType,
+    title: dealName,
+    date_source: "interval",
+    ...bands,
+    original_target_at: bands.target_at,
+    source_outcome: disposition,
+  };
+}
