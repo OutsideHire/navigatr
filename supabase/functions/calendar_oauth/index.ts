@@ -40,7 +40,14 @@ const GOOGLE_CLIENT_SECRET = Deno.env.get("GOOGLE_CALENDAR_CLIENT_SECRET") ?? ""
 // request's referer origin, then to localhost dev — see resolveAppUrl().
 const APP_URL = Deno.env.get("APP_URL") ?? "";
 
-const CALLBACK_URL = `${SUPABASE_URL}/functions/v1/calendar_oauth/callback`;
+// Base origin used to build the OAuth callback the browser is redirected back
+// to. Defaults to the project's Supabase URL (…supabase.co). Set
+// CALENDAR_CALLBACK_BASE to a custom domain (e.g. https://api.getnavigatr.io,
+// no trailing slash) so the Google consent screen shows our own domain. This
+// value MUST also be registered as an Authorized redirect URI on the Google
+// OAuth client (as `<base>/functions/v1/calendar_oauth/callback`).
+const CALLBACK_BASE = (Deno.env.get("CALENDAR_CALLBACK_BASE") ?? SUPABASE_URL).replace(/\/+$/, "");
+const CALLBACK_URL = `${CALLBACK_BASE}/functions/v1/calendar_oauth/callback`;
 
 // Scopes are provider-specific and sourced from getProvider(provider).oauth.scopes.
 // Google's set includes calendar.events (read/WRITE) so navigatr appointments can be
