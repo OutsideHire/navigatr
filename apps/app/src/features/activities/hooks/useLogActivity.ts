@@ -18,6 +18,7 @@ import { useProfile } from "@/features/auth/useProfile";
 import { ACTIVITIES_ORG_QUERY_KEY, ACTIVITIES_QUERY_KEY } from "./useActivities";
 import { DEALS_QUERY_KEY } from "@/features/pipeline/hooks/useDeals";
 import { taskFromOutcome } from "../lib/taskFromOutcome";
+import { bandsFromTarget } from "../lib/taskBands";
 import type { ActivityType } from "../mockData";
 import type { Disposition } from "@/lib/followUpScheduling";
 
@@ -99,7 +100,7 @@ export function useLogActivity() {
             .update({ closed_task_id: openTask.id })
             .eq("id", activityId);
         }
-        // Create the next follow-up task. target_at mirrors the stored
+        // Create the next follow-up task(s). target_at mirrors the stored
         // follow_up_date exactly (score-stability contract).
         if (followUpDateOnly) {
           const { data: deal } = await supabase
@@ -107,28 +108,39 @@ export function useLogActivity() {
             .select("company_name")
             .eq("id", input.dealId)
             .maybeSingle();
-          const fields = taskFromOutcome(
-            input.type,
-            input.disposition,
-            followUpDateOnly,
-            (deal?.company_name as string) ?? "Follow-up",
-          );
-          if (fields) {
-            await supabase.from("task").insert({
-              org_id: profile.data.org_id,
-              owner_id: userId,
-              deal_id: input.dealId,
-              status: "open",
-              type: fields.type,
-              title: fields.title,
-              date_source: fields.date_source,
-              earliest_at: fields.earliest_at,
-              target_at: fields.target_at,
-              latest_at: fields.latest_at,
-              original_target_at: fields.original_target_at,
-              source_activity_id: activityId,
-              source_outcome: fields.source_outcome,
-            });
+          const dealName = (deal?.company_name as string) ?? "Follow-up";
+          const baseRow = {
+            org_id: profile.data.org_id,
+            owner_id: userId,
+            deal_id: input.dealId,
+            status: "open" as const,
+            date_source: "interval" as const,
+            source_activity_id: activityId,
+            source_outcome: input.disposition as string,
+            title: dealName,
+          };
+          if (input.disposition === "send_info") {
+            // The one compound in the platform: get the info out today (Email),
+            // then follow up on it (Call at the 3-day interval). Independent.
+            const today = new Date().toISOString().slice(0, 10);
+            const emailBands = bandsFromTarget(today, 1)!;
+            const callBands = bandsFromTarget(followUpDateOnly, 3)!;
+            await supabase.from("task").insert([
+              { ...baseRow, type: "email", earliest_at: emailBands.earliest_at, target_at: emailBands.target_at, latest_at: emailBands.latest_at, original_target_at: emailBands.target_at },
+              { ...baseRow, type: "call", earliest_at: callBands.earliest_at, target_at: callBands.target_at, latest_at: callBands.latest_at, original_target_at: callBands.target_at },
+            ]);
+          } else {
+            const fields = taskFromOutcome(input.type, input.disposition, followUpDateOnly, dealName);
+            if (fields) {
+              await supabase.from("task").insert({
+                ...baseRow,
+                type: fields.type,
+                earliest_at: fields.earliest_at,
+                target_at: fields.target_at,
+                latest_at: fields.latest_at,
+                original_target_at: fields.original_target_at,
+              });
+            }
           }
         }
       } catch (taskErr) {

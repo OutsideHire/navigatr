@@ -83,6 +83,19 @@ describe("useLogActivity task sync", () => {
     expect(taskInsertPayload).toBeNull();
   });
 
+  it("Send info creates the Email + Call compound (two tasks)", async () => {
+    const { result } = renderHook(() => useLogActivity(), { wrapper });
+    await result.current.mutateAsync({
+      dealId: "deal-1", type: "call", disposition: "send_info",
+      followUpDate: "2026-05-25T00:00:00.000Z",
+    });
+    expect(Array.isArray(taskInsertPayload)).toBe(true);
+    const rows = taskInsertPayload as unknown as Array<Record<string, unknown>>;
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.type)).toEqual(["email", "call"]);
+    expect(rows[1].target_at).toBe("2026-05-25"); // the Call follows at the 3-day date
+  });
+
   it("auto-closes a matching open task and stamps closed_task_id on the activity", async () => {
     openTaskRow = { id: "task-open-1" };
     const { result } = renderHook(() => useLogActivity(), { wrapper });

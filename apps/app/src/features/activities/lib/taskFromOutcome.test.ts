@@ -36,4 +36,11 @@ describe("taskFromOutcome", () => {
     expect(DISPOSITIONS.not_interested.businessDays).toBeNull(); // guard
     expect(taskFromOutcome("call", "not_interested", TARGET, "Acme Co")).toBeNull();
   });
+
+  it("overrides the type to To-do for desk-work outcomes (SP2)", () => {
+    // Statement Secured on a drop-in and Verbal commitment on a call both mean
+    // the next step is desk work, not another visit/dial.
+    expect(taskFromOutcome("drop_in", "statement_secured", TARGET, "Acme Co")?.type).toBe("todo");
+    expect(taskFromOutcome("call", "verbal_commitment", TARGET, "Acme Co")?.type).toBe("todo");
+  });
 });

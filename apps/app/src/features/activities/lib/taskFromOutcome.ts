@@ -11,8 +11,17 @@ import { DISPOSITIONS, type Disposition } from "@/lib/followUpScheduling";
 import { bandsFromTarget } from "./taskBands";
 import { type TaskType } from "./isProspectTouch";
 
-/** Empty in SP1. SP2 fills this (e.g. statement_secured -> "todo"). */
-const OUTCOME_TYPE_OVERRIDE: Partial<Record<Disposition, TaskType>> = {};
+/**
+ * Outcomes whose follow-up changes channel (SP2). Statement Secured (drop-in)
+ * and Verbal commitment (call) both mean the next action is desk work, not a
+ * repeat of the same touch, so they produce a To-do rather than inheriting the
+ * activity type. Send info is a compound (Email + Call) handled at the log site,
+ * not here.
+ */
+const OUTCOME_TYPE_OVERRIDE: Partial<Record<Disposition, TaskType>> = {
+  statement_secured: "todo",
+  verbal_commitment: "todo",
+};
 
 export interface NewTaskFields {
   type: TaskType;
