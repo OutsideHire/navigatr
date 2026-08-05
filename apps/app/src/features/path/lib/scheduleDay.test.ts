@@ -409,3 +409,57 @@ describe("scheduleDay", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// SP3 Class D: urgency-scored placement (additive; defaults preserve behavior)
+// ---------------------------------------------------------------------------
+
+describe("scheduleDay — Class D urgency scoring", () => {
+  const near = (): SchedProspect => ({ id: "near", name: "near", lat: 40, lng: -74.015 }); // ~2 min
+  const far = (): SchedProspect => ({ id: "far", name: "far", lat: 40, lng: -74.2 }); // ~15 min
+
+  const baseInput = (prospects: SchedProspect[]): ScheduleInput => ({
+    windowStart: iso(9),
+    windowEnd: iso(18),
+    origin: ORIGIN,
+    waypoints: [],
+    timeBlocks: [],
+    prospects,
+  });
+
+  it("with no urgency, an all-zero pass is identical to omitting urgency (regression)", () => {
+    const plain = scheduleDay(baseInput([near(), far()]));
+    const zeroed = scheduleDay(
+      baseInput([
+        { ...near(), urgency: 0 },
+        { ...far(), urgency: 0 },
+      ]),
+    );
+    expect(zeroed.timeline).toEqual(plain.timeline);
+    expect(zeroed.unscheduledProspectIds).toEqual(plain.unscheduledProspectIds);
+  });
+
+  it("without urgency the nearer stop is visited first", () => {
+    const result = scheduleDay(baseInput([far(), near()]));
+    expect(prospectEntries(result.timeline)[0].id).toBe("near");
+  });
+
+  it("a due (urgent) far stop outranks a nearer stranger", () => {
+    const result = scheduleDay(
+      baseInput([
+        { ...near(), urgency: 0 },
+        { ...far(), urgency: 3 },
+      ]),
+    );
+    expect(prospectEntries(result.timeline)[0].id).toBe("far");
+  });
+
+  it("honours a per-stop dwellMin override without touching the schedule-wide dwell", () => {
+    const result = scheduleDay({
+      ...baseInput([{ ...near(), dwellMin: 15 }]),
+      dwellMin: 40,
+    });
+    const p = prospectEntries(result.timeline)[0];
+    expect(minutesBetween(p.arrive, p.depart)).toBe(15);
+  });
+});

@@ -39,6 +39,14 @@ export interface SchedProspect {
   name: string;
   lat: number;
   lng: number;
+  /** Class D (SP3): how much this stop is owed today, 0..3. Absent/0 for cold
+   *  discovery + plan-building — with urgency 0 the score reduces to
+   *  −drive×penalty, i.e. today's nearest-that-fits, so existing routes are
+   *  unchanged. A due drop-in outranks a nearer stranger. */
+  urgency?: number;
+  /** Per-stop dwell override (Class D drop-ins dwell less than cold prospects).
+   *  Falls back to the schedule-wide `dwellMin`. */
+  dwellMin?: number;
 }
 
 export interface ScheduleInput {
@@ -50,6 +58,10 @@ export interface ScheduleInput {
   prospects: SchedProspect[];
   dwellMin?: number; // default 20
   bufferMin?: number; // default 10
+  /** Class D (SP3): minutes-of-detour penalty subtracted from a stop's urgency
+   *  when scoring placement. Default 0.05/min. Only bites when stops carry
+   *  urgency; with all-zero urgency the score is a pure distance minimizer. */
+  detourPenalty?: number; // default 0.05
 }
 
 export type TimelineEntry =
@@ -89,6 +101,7 @@ interface FixedSpan {
 export function scheduleDay(input: ScheduleInput): ScheduleResult {
   const dwell = input.dwellMin ?? 20;
   const buffer = input.bufferMin ?? 10;
+  const detourPenalty = input.detourPenalty ?? 0.05;
   const wStart = Date.parse(input.windowStart);
   const wEnd = Date.parse(input.windowEnd);
 
@@ -167,19 +180,23 @@ export function scheduleDay(input: ScheduleInput): ScheduleResult {
     let cursor = gap.start;
     let cursorLoc = entryLoc;
 
-    // Nearest-that-fits, greedily, until nothing more fits this gap.
+    // Highest-score-that-fits, greedily, until nothing more fits this gap.
+    // score = urgency − drive×penalty. With all-zero urgency (cold discovery +
+    // plan-building) the max-score pick reduces exactly to nearest-that-fits,
+    // so today's routes are byte-for-byte unchanged; a due drop-in (urgency > 0)
+    // can outrank a nearer stranger.
     for (;;) {
       let best: {
         p: SchedProspect;
         arrive: string;
         depart: string;
-        drive: number;
+        score: number;
       } | null = null;
 
       for (const p of pool.values()) {
         const drive = driveMinutesBetween(cursorLoc, { lat: p.lat, lng: p.lng });
         const arrive = addMinutes(cursor, drive);
-        const depart = addMinutes(arrive, dwell);
+        const depart = addMinutes(arrive, p.dwellMin ?? dwell);
 
         const fits = exit.loc
           ? Date.parse(
@@ -188,11 +205,12 @@ export function scheduleDay(input: ScheduleInput): ScheduleResult {
           : Date.parse(depart) <= Date.parse(input.windowEnd);
 
         if (!fits) continue;
-        // Nearest-that-fits: smallest drive from the cursor. Ties broken by
-        // the deterministic Map iteration order (insertion order), so the
-        // first-supplied prospect wins.
-        if (best === null || drive < best.drive) {
-          best = { p, arrive, depart, drive };
+        const score = (p.urgency ?? 0) - drive * detourPenalty;
+        // Highest score wins. Ties broken by the deterministic Map iteration
+        // order (insertion order), so the first-supplied prospect wins — same
+        // tiebreak as the prior nearest-that-fits.
+        if (best === null || score > best.score) {
+          best = { p, arrive, depart, score };
         }
       }
 
