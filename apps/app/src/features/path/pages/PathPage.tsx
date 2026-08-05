@@ -364,7 +364,7 @@ export function PathPage() {
   // never appear both as an owed visit and as a cold prospect. Radius-independent
   // (dedup by identity, not proximity).
   const owedPlaceIds = React.useMemo(
-    () => new Set(owedVisits.map((v) => v.placeId)),
+    () => new Set(owedVisits.map((v) => v.placeId).filter((p): p is string => p != null)),
     [owedVisits],
   );
 

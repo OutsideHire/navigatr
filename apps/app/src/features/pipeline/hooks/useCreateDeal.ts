@@ -84,6 +84,10 @@ export interface CreateDealInput {
   /** Google place_id of the source prospect. Present for deals created from Path
    *  discovery; null for manually-entered deals. Anchors org-wide de-duplication. */
   placeId?: string;
+  /** Coordinates, if already known (Path-created deals). When absent on a manual
+   *  deal with an address, we geocode the address at create time (P2.1). */
+  lat?: number | null;
+  lng?: number | null;
 }
 
 export function useCreateDeal() {
@@ -96,6 +100,26 @@ export function useCreateDeal() {
     mutationFn: async (input: CreateDealInput): Promise<{ id: string }> => {
       if (!userId) throw new Error("Not signed in");
       if (!profile.data?.org_id) throw new Error("Profile not loaded — cannot create deal");
+
+      // Geocode a manual deal's address so it can be routed as an owed visit.
+      // Best-effort: a geocode miss or failure never blocks deal creation — the
+      // deal is simply not routable until an address that resolves is saved.
+      let lat = input.lat ?? null;
+      let lng = input.lng ?? null;
+      if (lat == null && lng == null && input.address && !input.placeId) {
+        try {
+          const { data: geo } = await supabase.functions.invoke<{ result?: { lat: number; lng: number } }>(
+            "geocode",
+            { body: { query: input.address } },
+          );
+          if (geo?.result) {
+            lat = geo.result.lat;
+            lng = geo.result.lng;
+          }
+        } catch {
+          // swallow — coordinates are optional
+        }
+      }
 
       const { data, error } = await supabase
         .from("deals")
@@ -121,6 +145,8 @@ export function useCreateDeal() {
           next_followup_at:    input.nextFollowupAt ?? null,
           profession_data:     input.professionData ?? {},
           place_id:            input.placeId ?? null,
+          lat,
+          lng,
         })
         .select("id")
         .single();

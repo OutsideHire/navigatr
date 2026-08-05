@@ -61,7 +61,7 @@ export function useOwedVisits(pathDate: string): { owed: OwedVisit[]; isLoading:
       const dealIds = [...new Set(tasks.map((t) => t.deal_id).filter((id): id is string => id != null))];
       const { data: dealData, error: dealErr } = await supabase
         .from("deals")
-        .select("id, company_name, address, stage, place_id")
+        .select("id, company_name, address, stage, place_id, lat, lng")
         .in("id", dealIds);
       if (dealErr) throw dealErr;
       const deals = (dealData ?? []) as unknown as OwedDealRow[];

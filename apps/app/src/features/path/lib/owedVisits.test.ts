@@ -28,6 +28,8 @@ const deal = (o: Partial<OwedDealRow> = {}): OwedDealRow => ({
   address: "1 Main St",
   stage: "contacted",
   place_id: "gp-blue",
+  lat: null,
+  lng: null,
   ...o,
 });
 
@@ -57,9 +59,16 @@ describe("assembleOwedVisits", () => {
     expect(out[0].urgency).toBeGreaterThan(1); // past_ideal is 1..2
   });
 
-  it("drops a task whose deal has no place_id (manual deal, no coords)", () => {
+  it("drops a task whose deal has no place_id and no direct coords (manual deal, ungeocoded)", () => {
     const out = assembleOwedVisits([task()], [deal({ place_id: null })], [prospect()], PATH_DATE);
     expect(out).toHaveLength(0);
+  });
+
+  it("routes a manual deal off its own geocoded coords when there's no prospect (P2.1)", () => {
+    const manual = deal({ place_id: null, lat: 40.1, lng: -74.2 });
+    const out = assembleOwedVisits([task()], [manual], [], PATH_DATE);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ placeId: null, lat: 40.1, lng: -74.2 });
   });
 
   it("drops a task whose prospect isn't in the coordinate cache", () => {

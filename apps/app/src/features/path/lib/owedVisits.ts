@@ -50,6 +50,10 @@ export interface OwedDealRow {
   address: string | null;
   stage: string;
   place_id: string | null;
+  /** Coordinates stored directly on the deal (geocoded manual deals, P2.1).
+   *  Used when there's no originating prospect to borrow from. */
+  lat: number | null;
+  lng: number | null;
 }
 
 /** A prospect row supplying coordinates for a place_id. */
@@ -65,7 +69,9 @@ export interface OwedVisit {
   dealId: string;
   name: string;
   address: string | null;
-  placeId: string;
+  /** Google place_id when the deal came from a prospect; null for a manual deal
+   *  routed off its own geocoded coordinates. */
+  placeId: string | null;
   lat: number;
   lng: number;
   urgency: number;
@@ -107,7 +113,11 @@ export function assembleOwedVisits(
     if (!deal) continue;
     // A scheduled appointment on this deal today supersedes the drop-in.
     if (superseded?.has(deal.id)) continue;
-    const coords = deal.place_id ? coordsByPlaceId.get(deal.place_id) : undefined;
+    // Coordinates: prefer the originating prospect (place_id join), else the
+    // deal's own geocoded coordinates (manual deal, P2.1).
+    const coords =
+      (deal.place_id ? coordsByPlaceId.get(deal.place_id) : undefined) ??
+      (deal.lat != null && deal.lng != null ? { place_id: deal.place_id ?? "", lat: deal.lat, lng: deal.lng } : undefined);
     const hasCoords = coords != null;
 
     const eligible = isClassDEligible(
@@ -121,7 +131,7 @@ export function assembleOwedVisits(
       },
       pathDate,
     );
-    if (!eligible || !coords || !deal.place_id) continue;
+    if (!eligible || !coords) continue;
 
     const taskLike: ClassDTaskLike = {
       type: t.type,
