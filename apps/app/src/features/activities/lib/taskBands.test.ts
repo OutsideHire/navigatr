@@ -1,8 +1,23 @@
 import { describe, it, expect } from "vitest";
-import { deriveBands } from "./taskBands";
+import { deriveBands, bandsFromTarget } from "./taskBands";
 
 // Anchor on a Monday so business-day math is legible.
 const MON = "2026-08-03";
+
+describe("bandsFromTarget", () => {
+  it("puts the given target at target_at with slack around it", () => {
+    // target Wed 2026-08-05, interval 5 → lead 2 bd, trail 5 bd
+    expect(bandsFromTarget("2026-08-05", 5)).toEqual({
+      earliest_at: "2026-08-03", // Wed - 2 bd = Mon
+      target_at: "2026-08-05",
+      latest_at: "2026-08-12", // Wed + 5 bd = following Wed
+    });
+  });
+  it("returns null when target or interval is missing", () => {
+    expect(bandsFromTarget(null, 5)).toBeNull();
+    expect(bandsFromTarget("2026-08-05", null)).toBeNull();
+  });
+});
 
 describe("deriveBands", () => {
   it("1-day interval: lead slack 0, so earliest=target=day1, latest=day2", () => {

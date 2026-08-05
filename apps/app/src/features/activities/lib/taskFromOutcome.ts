@@ -8,7 +8,7 @@
  * is intentionally empty in SP1.
  */
 import { DISPOSITIONS, type Disposition } from "@/lib/followUpScheduling";
-import { deriveBands } from "./taskBands";
+import { bandsFromTarget } from "./taskBands";
 import { type TaskType } from "./isProspectTouch";
 
 /** Empty in SP1. SP2 fills this (e.g. statement_secured -> "todo"). */
@@ -25,14 +25,20 @@ export interface NewTaskFields {
   source_outcome: string;
 }
 
+/**
+ * @param targetISO the follow-up date already stored on the activity
+ *   (`activities.follow_up_date`). The task's target is built from THIS date so
+ *   it stays byte-equal to the score signal; the disposition interval only
+ *   sizes the surrounding slack band.
+ */
 export function taskFromOutcome(
   activityType: TaskType,
   disposition: Disposition,
-  occurredAtISO: string,
+  targetISO: string | null,
   dealName: string,
 ): NewTaskFields | null {
   const spec = DISPOSITIONS[disposition];
-  const bands = deriveBands(occurredAtISO, spec?.businessDays ?? null);
+  const bands = bandsFromTarget(targetISO, spec?.businessDays ?? null);
   if (!bands) return null;
   return {
     type: OUTCOME_TYPE_OVERRIDE[disposition] ?? activityType,

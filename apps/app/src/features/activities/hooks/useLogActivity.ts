@@ -17,6 +17,7 @@ import { useAuth } from "@/stores/auth";
 import { useProfile } from "@/features/auth/useProfile";
 import { ACTIVITIES_ORG_QUERY_KEY, ACTIVITIES_QUERY_KEY } from "./useActivities";
 import { DEALS_QUERY_KEY } from "@/features/pipeline/hooks/useDeals";
+import { taskFromOutcome } from "../lib/taskFromOutcome";
 import type { ActivityType } from "../mockData";
 import type { Disposition } from "@/lib/followUpScheduling";
 
@@ -70,7 +71,71 @@ export function useLogActivity() {
         .select("id")
         .single();
       if (error) throw error;
-      return { id: data.id as string };
+      const activityId = data.id as string;
+
+      // Task sync (SP1). Best-effort: the activity + follow_up_date remain the
+      // durable signal Follow-Up Discipline reads, so a task hiccup must never
+      // fail the logged activity or move the score. Tasks are a derived
+      // convenience the Activities screen + bell render.
+      try {
+        // Auto-close a matching open task of the same type on this deal
+        // (preserves today's supersession behavior, now explicit).
+        const { data: openTask } = await supabase
+          .from("task")
+          .select("id")
+          .eq("deal_id", input.dealId)
+          .eq("type", input.type)
+          .eq("status", "open")
+          .order("target_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (openTask?.id) {
+          await supabase
+            .from("task")
+            .update({ status: "completed", completed_at: new Date().toISOString() })
+            .eq("id", openTask.id as string);
+          await supabase
+            .from("activities")
+            .update({ closed_task_id: openTask.id })
+            .eq("id", activityId);
+        }
+        // Create the next follow-up task. target_at mirrors the stored
+        // follow_up_date exactly (score-stability contract).
+        if (followUpDateOnly) {
+          const { data: deal } = await supabase
+            .from("deals")
+            .select("company_name")
+            .eq("id", input.dealId)
+            .maybeSingle();
+          const fields = taskFromOutcome(
+            input.type,
+            input.disposition,
+            followUpDateOnly,
+            (deal?.company_name as string) ?? "Follow-up",
+          );
+          if (fields) {
+            await supabase.from("task").insert({
+              org_id: profile.data.org_id,
+              owner_id: userId,
+              deal_id: input.dealId,
+              status: "open",
+              type: fields.type,
+              title: fields.title,
+              date_source: fields.date_source,
+              earliest_at: fields.earliest_at,
+              target_at: fields.target_at,
+              latest_at: fields.latest_at,
+              original_target_at: fields.original_target_at,
+              source_activity_id: activityId,
+              source_outcome: fields.source_outcome,
+            });
+          }
+        }
+      } catch (taskErr) {
+        console.error("[useLogActivity] task sync failed (activity still saved)", taskErr);
+      }
+
+      return { id: activityId };
     },
     onSuccess: (_data, variables) => {
       // 1. Per-deal activity timeline picks up the new row.
@@ -87,6 +152,8 @@ export function useLogActivity() {
       void queryClient.invalidateQueries({
         queryKey: DEALS_QUERY_KEY(userId),
       });
+      // 4. Tasks list (Activities screen + bell) picks up the created/closed tasks.
+      void queryClient.invalidateQueries({ queryKey: ["tasks", userId ?? "anon"] });
     },
   });
 }
