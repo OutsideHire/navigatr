@@ -48,10 +48,12 @@ import { EditActivitySheet } from "../components/EditActivitySheet";
 import { UnloggedCallsSection } from "../components/UnloggedCallsSection";
 import { AppointmentsAwaitingOutcome } from "@/features/appointments/components/AppointmentsAwaitingOutcome";
 import { useActivitiesForOrg } from "../hooks/useActivities";
-import { useUpdateActivity } from "../hooks/useUpdateActivity";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
-import { snoozeDate, SNOOZE_OPTIONS, type SnoozeOption } from "../lib/snoozeDate";
-import { latestOccurredAtByDeal, isFollowUpSuperseded } from "../lib/followUpSupersession";
+import { useTasks } from "../hooks/useTasks";
+import { useTaskMutations } from "../hooks/useTaskMutations";
+import { type Task } from "../tasks/taskTypes";
+import { type TaskType } from "../lib/isProspectTouch";
+import { SNOOZE_OPTIONS } from "../lib/snoozeDate";
 import {
   ACTIVITY_TYPE_ICON as TYPE_ICON,
   ACTIVITY_TYPE_ACCENT as TYPE_ACCENT,
@@ -106,36 +108,28 @@ function dayHeading(iso: string, now: Date): string {
   });
 }
 
-// ── Task derivation ───────────────────────────────────────────────────
+// ── Task view model ───────────────────────────────────────────────────
 
-/** A "task" is a scheduled next-touch derived from a prior activity's
- *  followUpDate. We don't store tasks separately — they're a view of
- *  the activity history. */
-interface DerivedTask {
-  /** The activity whose followUpDate produced this task. */
-  fromActivity: Activity;
-  deal: Deal;
-  dueAt: string; // ISO
+/** The page renders open Task rows (SP1). This is the flattened view a
+ *  TaskRow needs; it maps 1:1 from a Task. */
+interface PageTask {
+  id: string;
+  type: TaskType;
+  companyName: string;
+  dueAt: string; // task.targetAt (YYYY-MM-DD)
+  dealId: string | null;
+  sourceOutcome: string | null;
 }
 
-/** Derive next-touches from live activity + deal data. Each activity
- *  with a `followUpDate` produces one task, UNLESS a later activity has
- *  since been logged on the same deal (that newer touch owns the deal's
- *  follow-up, so the older one is done). This is what clears an overdue
- *  follow-up once the rep logs an outcome. Tasks are sorted by due date
- *  asc so the page's overdue/today/upcoming bucketing is stable. */
-function deriveTasks(activities: Activity[], deals: Deal[]): DerivedTask[] {
-  const dealById = new Map(deals.map((d) => [d.id, d]));
-  const latestByDeal = latestOccurredAtByDeal(activities);
-  const tasks: DerivedTask[] = [];
-  for (const a of activities) {
-    if (!a.followUpDate) continue;
-    const deal = dealById.get(a.dealId);
-    if (!deal) continue; // Activity orphaned by a deleted deal — skip.
-    if (isFollowUpSuperseded(a, latestByDeal)) continue; // handled by a newer touch
-    tasks.push({ fromActivity: a, deal, dueAt: a.followUpDate });
-  }
-  return tasks.sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+function toPageTask(t: Task): PageTask {
+  return {
+    id: t.id,
+    type: t.type,
+    companyName: t.title,
+    dueAt: t.targetAt,
+    dealId: t.dealId,
+    sourceOutcome: t.sourceOutcome,
+  };
 }
 
 // ── Row components ────────────────────────────────────────────────────
@@ -144,46 +138,50 @@ function deriveTasks(activities: Activity[], deals: Deal[]): DerivedTask[] {
 function TaskRow({
   task,
   now,
-  onLog,
+  onLogOutcome,
+  onMarkDone,
+  onOpenDeal,
   onSnooze,
-  onEdit,
+  onCancel,
 }: {
-  task: DerivedTask;
+  task: PageTask;
   now: Date;
-  onLog: (dealId: string) => void;
-  onSnooze: (task: DerivedTask, opt: SnoozeOption) => void;
-  onEdit: (a: Activity) => void;
+  onLogOutcome: (dealId: string) => void;
+  onMarkDone: (taskId: string) => void;
+  onOpenDeal: (dealId: string) => void;
+  onSnooze: (task: PageTask, days: number) => void;
+  onCancel: (taskId: string) => void;
 }) {
   const overdue = daysBetween(now, new Date(task.dueAt)) < 0;
-  const spec = DISPOSITIONS[task.fromActivity.disposition];
-  // Show the source activity's type via its icon. Overdue tasks keep the red
-  // treatment for urgency; otherwise the icon uses its type accent color.
-  const Icon = TYPE_ICON[task.fromActivity.type];
-  const accent = TYPE_ACCENT[task.fromActivity.type];
+  const isTodo = task.type === "todo";
+  const Icon = isTodo ? CheckIcon : TYPE_ICON[task.type as ActivityType];
+  const accent = isTodo
+    ? { bg: "bg-surface-sunken", fg: "text-text-muted" }
+    : TYPE_ACCENT[task.type as ActivityType];
+  const outcomeLabel = task.sourceOutcome
+    ? DISPOSITIONS[task.sourceOutcome as keyof typeof DISPOSITIONS]?.label
+    : undefined;
+
+  // Primary action varies by type: log the outcome (call/email/appointment),
+  // mark done (to-do, internal), or open the deal to log off-route (drop-in).
+  const primary =
+    isTodo
+      ? { label: "Mark done", run: () => onMarkDone(task.id) }
+      : task.type === "drop_in"
+        ? { label: "Open deal", run: () => task.dealId && onOpenDeal(task.dealId) }
+        : { label: "Log activity", run: () => task.dealId && onLogOutcome(task.dealId) };
 
   return (
     <div
       data-testid="task-row"
-      onClick={() => onEdit(task.fromActivity)}
       className={cn(
-        "group flex cursor-pointer flex-col gap-3 rounded-radius-md border p-4 transition-colors sm:flex-row sm:items-center sm:justify-between",
+        "flex flex-col gap-3 rounded-radius-md border p-4 transition-colors sm:flex-row sm:items-center sm:justify-between",
         overdue
-          ? "border-status-danger/30 bg-status-danger-bg/50 hover:bg-status-danger-bg"
-          : "border-border-subtle bg-surface-default hover:bg-surface-sunken",
+          ? "border-status-danger/30 bg-status-danger-bg/50"
+          : "border-border-subtle bg-surface-default",
       )}
     >
-      {/* The whole row is click-to-edit; this inner button keeps a
-          keyboard-focusable edit target. Log/Snooze stop propagation so
-          they remain independent actions. */}
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onEdit(task.fromActivity);
-        }}
-        aria-label={`Edit ${TYPE_LABEL[task.fromActivity.type]} activity`}
-        className="flex min-w-0 items-start gap-3 rounded-radius-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
-      >
+      <div className="flex min-w-0 items-start gap-3">
         <span
           className={cn(
             "flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full",
@@ -194,40 +192,40 @@ function TaskRow({
           <Icon className="h-4 w-4" />
         </span>
         <div className="flex min-w-0 flex-col gap-0.5">
-          <p className="truncate text-body-strong text-text-default group-hover:underline">{task.deal.companyName}</p>
+          <p className="truncate text-body-strong text-text-default">{task.companyName}</p>
           <p className="text-caption text-text-muted">
             <span className={overdue ? "font-medium text-status-danger" : "text-text-default"}>
               {formatRelativeShort(task.dueAt, now)}
             </span>
-            {" · "}from {spec.label}
+            {outcomeLabel ? <>{" · "}from {outcomeLabel}</> : null}
           </p>
         </div>
-      </button>
+      </div>
       <div className="flex shrink-0 gap-2 self-stretch sm:self-auto">
         <Button
           variant="primary"
           size="sm"
-          leadingIcon={PlusCircle}
-          onClick={(e) => {
-            e.stopPropagation();
-            onLog(task.deal.id);
-          }}
+          leadingIcon={isTodo ? CheckIcon : PlusCircle}
+          onClick={primary.run}
           className="flex-1 sm:flex-none"
         >
-          Log activity
+          {primary.label}
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="tertiary" size="sm" onClick={(e) => e.stopPropagation()}>
+            <Button variant="tertiary" size="sm">
               Snooze
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {SNOOZE_OPTIONS.map((opt) => (
-              <DropdownMenuItem key={opt.value} onSelect={() => onSnooze(task, opt.value)}>
+              <DropdownMenuItem key={opt.value} onSelect={() => onSnooze(task, opt.days)}>
                 {opt.label}
               </DropdownMenuItem>
             ))}
+            <DropdownMenuItem onSelect={() => onCancel(task.id)} className="text-status-danger">
+              Cancel follow-up
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -351,15 +349,17 @@ function FilteredEmptyCard({ typeLabel, onClear }: { typeLabel: string; onClear:
 
 // ── Page ──────────────────────────────────────────────────────────────
 
-const TYPE_FILTERS: Array<"all" | ActivityType> = ["all", "call", "email", "drop_in", "appointment"];
+const TYPE_FILTERS: Array<"all" | TaskType> = ["all", "call", "email", "drop_in", "appointment", "todo"];
 
-function typeFilterLabel(f: "all" | ActivityType): string {
-  return f === "all" ? "All" : TYPE_LABEL[f];
+function typeFilterLabel(f: "all" | TaskType): string {
+  if (f === "all") return "All";
+  if (f === "todo") return "To-do";
+  return TYPE_LABEL[f];
 }
 
 export function ActivitiesPage() {
   const [tab, setTab] = React.useState<"today" | "upcoming" | "history">("today");
-  const [typeFilter, setTypeFilter] = React.useState<"all" | ActivityType>("all");
+  const [typeFilter, setTypeFilter] = React.useState<"all" | TaskType>("all");
   const [logSheetDealId, setLogSheetDealId] = React.useState<string | null>(null);
   const [logSheetOpen, setLogSheetOpen] = React.useState(false);
   const [editingActivity, setEditingActivity] = React.useState<Activity | null>(null);
@@ -369,31 +369,36 @@ export function ActivitiesPage() {
   // open overnight gets a fresh "today" on next focus.
   const now = React.useMemo(() => new Date(), []);
 
-  // Live data — useLogActivity invalidates both keys on success, so
-  // newly logged activities surface without a refreshKey hack.
+  // Live data. Tasks drive Today/Upcoming (the follow-up primitive); History
+  // still reads activities. useLogActivity + the task mutations invalidate the
+  // relevant caches on success, so rows surface without a refreshKey hack.
+  const { tasks: openTasks } = useTasks("open");
   const { data: activities = [] } = useActivitiesForOrg();
   const { data: deals = [] } = useDeals();
-  const updateActivity = useUpdateActivity();
+  const { completeTask, cancelTask, snoozeTask } = useTaskMutations();
+  const navigate = useNavigate();
 
   const dealById = React.useMemo(
     () => new Map(deals.map((d) => [d.id, d])),
     [deals],
   );
 
-  const tasks = React.useMemo(
-    () => deriveTasks(activities, deals),
-    [activities, deals],
+  // Keep the full Task objects addressable by id (snooze needs the band dates).
+  const taskById = React.useMemo(
+    () => new Map(openTasks.map((t) => [t.id, t])),
+    [openTasks],
   );
 
-  // The shared type filter applies to Today/Upcoming too. A task's type is
-  // its source activity's type (i.e. "follow-ups from calls").
+  const pageTasks = React.useMemo(() => openTasks.map(toPageTask), [openTasks]);
+
+  // The shared type filter applies to Today/Upcoming too.
   const visibleTasks = React.useMemo(
-    () => (typeFilter === "all" ? tasks : tasks.filter((t) => t.fromActivity.type === typeFilter)),
-    [tasks, typeFilter],
+    () => (typeFilter === "all" ? pageTasks : pageTasks.filter((t) => t.type === typeFilter)),
+    [pageTasks, typeFilter],
   );
 
   const { overdue, today, upcoming } = React.useMemo(() => {
-    const groups = { overdue: [] as DerivedTask[], today: [] as DerivedTask[], upcoming: [] as DerivedTask[] };
+    const groups = { overdue: [] as PageTask[], today: [] as PageTask[], upcoming: [] as PageTask[] };
     for (const t of visibleTasks) {
       const delta = daysBetween(now, new Date(t.dueAt));
       if (delta < 0) groups.overdue.push(t);
@@ -406,14 +411,14 @@ export function ActivitiesPage() {
 
   // Group upcoming by day so the UI renders day-headed buckets.
   const upcomingByDay = React.useMemo(() => {
-    const map = new Map<string, DerivedTask[]>();
+    const map = new Map<string, PageTask[]>();
     for (const t of upcoming) {
       const key = t.dueAt.slice(0, 10); // YYYY-MM-DD
       const arr = map.get(key) ?? [];
       arr.push(t);
       map.set(key, arr);
     }
-    return Array.from(map.entries()); // [[yyyy-mm-dd, tasks], ...] already sorted by tasks[].dueAt
+    return Array.from(map.entries());
   }, [upcoming]);
 
   // History — most recent first, filtered by type. The activities query
@@ -429,16 +434,33 @@ export function ActivitiesPage() {
     setLogSheetOpen(true);
   };
 
-  const handleSnooze = (task: DerivedTask, opt: SnoozeOption) => {
-    const next = snoozeDate(opt, new Date());
-    updateActivity.mutate(
-      { id: task.fromActivity.id, dealId: task.deal.id, patch: { followUpDate: next } },
+  const handleSnooze = (task: PageTask, days: number) => {
+    const full = taskById.get(task.id);
+    if (!full) return;
+    snoozeTask.mutate(
+      { task: full, businessDays: days },
       {
-        onSuccess: () => toast.success(`Snoozed to ${next}`),
+        onSuccess: () => toast.success("Snoozed"),
         onError: (e) => toast.error(e instanceof Error ? e.message : "Could not snooze"),
       },
     );
   };
+
+  const handleMarkDone = (taskId: string) => {
+    completeTask.mutate(taskId, {
+      onSuccess: () => toast.success("Marked done"),
+      onError: (e) => toast.error(e instanceof Error ? e.message : "Could not complete"),
+    });
+  };
+
+  const handleCancel = (taskId: string) => {
+    cancelTask.mutate(taskId, {
+      onSuccess: () => toast.success("Follow-up cancelled"),
+      onError: (e) => toast.error(e instanceof Error ? e.message : "Could not cancel"),
+    });
+  };
+
+  const handleOpenDeal = (dealId: string) => navigate(`/pipeline/${dealId}`);
 
   // Tab counts so the header chips show real numbers.
   const todayCount = overdue.length + today.length;
@@ -533,7 +555,7 @@ export function ActivitiesPage() {
                     <p className="text-eyebrow text-status-danger">Overdue · {overdue.length}</p>
                     <div className="flex flex-col gap-2">
                       {overdue.map((t) => (
-                        <TaskRow key={t.fromActivity.id} task={t} now={now} onLog={openLogSheet} onSnooze={handleSnooze} onEdit={setEditingActivity} />
+                        <TaskRow key={t.id} task={t} now={now} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
                       ))}
                     </div>
                   </section>
@@ -543,7 +565,7 @@ export function ActivitiesPage() {
                     <p className="text-eyebrow text-text-subtle">Due today · {today.length}</p>
                     <div className="flex flex-col gap-2">
                       {today.map((t) => (
-                        <TaskRow key={t.fromActivity.id} task={t} now={now} onLog={openLogSheet} onSnooze={handleSnooze} onEdit={setEditingActivity} />
+                        <TaskRow key={t.id} task={t} now={now} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
                       ))}
                     </div>
                   </section>
@@ -567,7 +589,7 @@ export function ActivitiesPage() {
                     <p className="text-eyebrow text-text-subtle">{dayHeading(items[0]!.dueAt, now)}</p>
                     <div className="flex flex-col gap-2">
                       {items.map((t) => (
-                        <TaskRow key={t.fromActivity.id} task={t} now={now} onLog={openLogSheet} onSnooze={handleSnooze} onEdit={setEditingActivity} />
+                        <TaskRow key={t.id} task={t} now={now} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
                       ))}
                     </div>
                   </section>
