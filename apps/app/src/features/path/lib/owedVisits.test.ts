@@ -17,6 +17,7 @@ const task = (o: Partial<OwedTaskRow> = {}): OwedTaskRow => ({
   date_source: "interval",
   exclude_from_path: false,
   source_outcome: "not_available",
+  snooze_count: 0,
   created_at: "2026-07-01T12:00:00.000Z", // created well before the path date
   ...o,
 });

@@ -25,6 +25,7 @@ export interface OwedTaskRow {
   date_source: string;
   exclude_from_path: boolean;
   source_outcome: string | null;
+  snooze_count: number;
   /** UTC ISO. Used for the same-day exclusion: a follow-up created during today's
    *  path (an outcome logged mid-run) isn't pulled back into today. */
   created_at: string;
@@ -71,6 +72,11 @@ export interface OwedVisit {
   bandPosition: BandPosition;
   dateSource: string;
   targetAt: string;
+  /** Band edges + snooze count, carried so a "Couldn't fit today" snooze can
+   *  shift the band forward without a second fetch. */
+  earliestAt: string;
+  latestAt: string;
+  snoozeCount: number;
   /** The outcome that generated this follow-up (for the "from <outcome>" chip). */
   sourceOutcome: string | null;
 }
@@ -138,6 +144,9 @@ export function assembleOwedVisits(
       bandPosition: bandPosition(taskLike, pathDate),
       dateSource: t.date_source,
       targetAt: t.target_at,
+      earliestAt: t.earliest_at,
+      latestAt: t.latest_at,
+      snoozeCount: t.snooze_count,
       sourceOutcome: t.source_outcome,
     });
   }

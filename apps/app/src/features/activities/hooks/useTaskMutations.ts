@@ -31,6 +31,10 @@ export interface CreateTaskInput {
   sourceOutcome?: string | null;
 }
 
+/** The fields snooze needs — a structural subset of Task, so the Owed-visits
+ *  view can snooze without carrying the whole object. */
+export type SnoozeableTask = Pick<Task, "id" | "earliestAt" | "targetAt" | "latestAt" | "snoozeCount">;
+
 const shift = (iso: string, days: number) =>
   format(addBusinessDays(parseISO(iso.slice(0, 10)), days), "yyyy-MM-dd");
 
@@ -96,7 +100,7 @@ export function useTaskMutations() {
   });
 
   const snoozeTask = useMutation({
-    mutationFn: async ({ task, businessDays }: { task: Task; businessDays: number }): Promise<void> => {
+    mutationFn: async ({ task, businessDays }: { task: SnoozeableTask; businessDays: number }): Promise<void> => {
       const { error } = await supabase
         .from("task")
         .update({

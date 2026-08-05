@@ -14,6 +14,9 @@ const row = (o: Partial<OwedVisitRow> = {}): OwedVisitRow => ({
   bandPosition: "past_ideal",
   dateSource: "interval",
   targetAt: "2026-08-07",
+  earliestAt: "2026-08-05",
+  latestAt: "2026-08-12",
+  snoozeCount: 0,
   sourceOutcome: "not_available",
   distanceMeters: 1200,
   fits: true,
@@ -50,5 +53,31 @@ describe("OwedVisitsList", () => {
     render(<OwedVisitsList visits={[row()]} onSelect={onSelect} />);
     fireEvent.click(screen.getByText("Blue Bottle"));
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ taskId: "t1", dealId: "d1" }));
+  });
+
+  it("puts unfit visits in a 'Couldn't fit today' group with a Snooze button", () => {
+    const onSnooze = vi.fn();
+    render(
+      <OwedVisitsList
+        visits={[row({ taskId: "nofit", name: "NoFit", fits: false })]}
+        unfitLabel="won't fit before 12:00 PM"
+        onSelect={vi.fn()}
+        onSnooze={onSnooze}
+      />,
+    );
+    expect(screen.getByText(/Couldn't fit today/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Snooze/i }));
+    expect(onSnooze).toHaveBeenCalledWith(expect.objectContaining({ taskId: "nofit" }));
+  });
+
+  it("does not fire onSelect when the Snooze button is clicked (click doesn't bubble)", () => {
+    const onSelect = vi.fn();
+    const onSnooze = vi.fn();
+    render(
+      <OwedVisitsList visits={[row({ fits: false })]} onSelect={onSelect} onSnooze={onSnooze} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Snooze/i }));
+    expect(onSnooze).toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

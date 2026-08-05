@@ -26,7 +26,7 @@ export const OWED_VISITS_QUERY_KEY = (userId: string | undefined, pathDate: stri
   ["path", "owed-visits", userId ?? "anon", pathDate] as const;
 
 const TASK_COLS =
-  "id, deal_id, type, status, earliest_at, target_at, latest_at, date_source, exclude_from_path, source_outcome, created_at";
+  "id, deal_id, type, status, earliest_at, target_at, latest_at, date_source, exclude_from_path, source_outcome, snooze_count, created_at";
 
 /** UTC ISO bounds of the local calendar day named by `pathDate` (YYYY-MM-DD).
  *  `new Date("YYYY-MM-DDT00:00:00")` parses in local time, so this brackets the

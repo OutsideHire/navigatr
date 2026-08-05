@@ -72,9 +72,11 @@ import { computeFreeWindows } from "../lib/freeWindows";
 import { annotateRunSchedule } from "../lib/runSchedule";
 import { pickNextMeeting, fitsBeforeMeeting } from "../lib/discoverFit";
 import { DiscoverMeetingBanner } from "../components/DiscoverMeetingBanner";
+import { useQueryClient } from "@tanstack/react-query";
 import { useOwedVisits } from "../hooks/useOwedVisits";
 import { OwedVisitsList, type OwedVisitRow } from "../components/OwedVisitsList";
 import type { OwedVisit } from "../lib/owedVisits";
+import { useTaskMutations } from "@/features/activities/hooks/useTaskMutations";
 
 // Phase 2: discovered prospects are all cold leads, so the old deal-lifecycle
 // status chips (prospect/active/won/cooled) don't apply. Filter by business
@@ -581,6 +583,30 @@ export function PathPage() {
     [navigate],
   );
 
+  // Snooze a spilled owed visit one business day forward. Reuses the Task snooze
+  // (band shifts, original_target_at untouched, so the score is unaffected) and
+  // refreshes the owed list so the row leaves "Couldn't fit today".
+  const { snoozeTask } = useTaskMutations();
+  const queryClient = useQueryClient();
+  const handleOwedSnooze = React.useCallback(
+    (v: OwedVisit) => {
+      snoozeTask.mutate(
+        {
+          task: { id: v.taskId, earliestAt: v.earliestAt, targetAt: v.targetAt, latestAt: v.latestAt, snoozeCount: v.snoozeCount },
+          businessDays: 1,
+        },
+        {
+          onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: ["path", "owed-visits"] });
+            toast.success("Snoozed to tomorrow");
+          },
+          onError: () => toast.error("Couldn't snooze this visit"),
+        },
+      );
+    },
+    [snoozeTask, queryClient],
+  );
+
   const discoverUnfit = React.useMemo(() => {
     if (!discoverNextMeeting || !origin) return { ids: new Set<string>(), label: "" };
     const now = new Date().toISOString();
@@ -885,6 +911,7 @@ export function PathPage() {
             visits={owedRows}
             unfitLabel={discoverUnfit.label}
             onSelect={handleOwedSelect}
+            onSnooze={handleOwedSnooze}
           />
 
           {/* Filter chips */}
