@@ -34,6 +34,12 @@ export interface LogActivityInput {
   followUpDate?: string | null;
   /** Storage path of an uploaded voice note (private bucket); null when none. */
   voiceNoteUrl?: string | null;
+  /** Where the follow-up date came from. "asserted" (a person named the date,
+   *  e.g. a Callback promised time) collapses the task's band to that date and
+   *  keeps Path from moving it. Defaults to "interval". */
+  followUpDateSource?: "interval" | "asserted";
+  /** Overrides the generated task's title (e.g. Verbal commitment's next step). */
+  taskTitle?: string;
 }
 
 export function useLogActivity() {
@@ -114,20 +120,33 @@ export function useLogActivity() {
             owner_id: userId,
             deal_id: input.dealId,
             status: "open" as const,
-            date_source: "interval" as const,
             source_activity_id: activityId,
             source_outcome: input.disposition as string,
-            title: dealName,
+            // Verbal commitment's next-step text (etc.) overrides the title.
+            title: input.taskTitle?.trim() || dealName,
           };
-          if (input.disposition === "send_info") {
+          if (input.followUpDateSource === "asserted") {
+            // A person named the date (Callback promised time). Collapsed band,
+            // pinned — Path (SP3) never moves it. Handles callback, whose
+            // interval is null so taskFromOutcome would otherwise skip it.
+            await supabase.from("task").insert({
+              ...baseRow,
+              type: input.type,
+              date_source: "asserted",
+              earliest_at: followUpDateOnly,
+              target_at: followUpDateOnly,
+              latest_at: followUpDateOnly,
+              original_target_at: followUpDateOnly,
+            });
+          } else if (input.disposition === "send_info") {
             // The one compound in the platform: get the info out today (Email),
             // then follow up on it (Call at the 3-day interval). Independent.
             const today = new Date().toISOString().slice(0, 10);
             const emailBands = bandsFromTarget(today, 1)!;
             const callBands = bandsFromTarget(followUpDateOnly, 3)!;
             await supabase.from("task").insert([
-              { ...baseRow, type: "email", earliest_at: emailBands.earliest_at, target_at: emailBands.target_at, latest_at: emailBands.latest_at, original_target_at: emailBands.target_at },
-              { ...baseRow, type: "call", earliest_at: callBands.earliest_at, target_at: callBands.target_at, latest_at: callBands.latest_at, original_target_at: callBands.target_at },
+              { ...baseRow, type: "email", date_source: "interval", earliest_at: emailBands.earliest_at, target_at: emailBands.target_at, latest_at: emailBands.latest_at, original_target_at: emailBands.target_at },
+              { ...baseRow, type: "call", date_source: "interval", earliest_at: callBands.earliest_at, target_at: callBands.target_at, latest_at: callBands.latest_at, original_target_at: callBands.target_at },
             ]);
           } else {
             const fields = taskFromOutcome(input.type, input.disposition, followUpDateOnly, dealName);
@@ -135,6 +154,7 @@ export function useLogActivity() {
               await supabase.from("task").insert({
                 ...baseRow,
                 type: fields.type,
+                date_source: "interval",
                 earliest_at: fields.earliest_at,
                 target_at: fields.target_at,
                 latest_at: fields.latest_at,

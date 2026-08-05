@@ -96,6 +96,30 @@ describe("useLogActivity task sync", () => {
     expect(rows[1].target_at).toBe("2026-05-25"); // the Call follows at the 3-day date
   });
 
+  it("Callback (asserted) creates a pinned task collapsed to the promised date", async () => {
+    const { result } = renderHook(() => useLogActivity(), { wrapper });
+    await result.current.mutateAsync({
+      dealId: "deal-1", type: "call", disposition: "callback",
+      followUpDate: "2026-08-14T14:30:00", followUpDateSource: "asserted",
+    });
+    expect(taskInsertPayload).toBeTruthy();
+    expect(taskInsertPayload!.date_source).toBe("asserted");
+    expect(taskInsertPayload!.type).toBe("call");
+    expect(taskInsertPayload!.target_at).toBe("2026-08-14");
+    expect(taskInsertPayload!.earliest_at).toBe("2026-08-14");
+    expect(taskInsertPayload!.latest_at).toBe("2026-08-14");
+  });
+
+  it("Verbal commitment uses the next-step text as the To-do title", async () => {
+    const { result } = renderHook(() => useLogActivity(), { wrapper });
+    await result.current.mutateAsync({
+      dealId: "deal-1", type: "call", disposition: "verbal_commitment",
+      followUpDate: "2026-05-19T00:00:00.000Z", taskTitle: "Prepare the application",
+    });
+    expect(taskInsertPayload!.type).toBe("todo");
+    expect(taskInsertPayload!.title).toBe("Prepare the application");
+  });
+
   it("auto-closes a matching open task and stamps closed_task_id on the activity", async () => {
     openTaskRow = { id: "task-open-1" };
     const { result } = renderHook(() => useLogActivity(), { wrapper });

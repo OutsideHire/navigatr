@@ -247,10 +247,18 @@ function ActivityForm({
   const cfg = TYPE_CONFIG[type];
   const dispositionSet = DISPOSITIONS_BY_TYPE[type];
 
+  // SP2 capture steps: a promised callback date/time and a verbal-commitment
+  // next-step. Kept as local state (not RHF) since they're conditional on the
+  // selected outcome and validated inline at submit.
+  const [callbackAt, setCallbackAt] = React.useState("");
+  const [nextStep, setNextStep] = React.useState("");
+  const [captureError, setCaptureError] = React.useState<string | null>(null);
+
   const {
     register,
     handleSubmit,
     control,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(cfg.needsDuration ? schemaWithDuration : schemaNoDuration),
@@ -265,7 +273,15 @@ function ActivityForm({
   });
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
-    const followUpIso = calculateFollowUpDate(values.disposition);
+    setCaptureError(null);
+    // Callback pins the promised date/time (asserted); it has no interval, so
+    // the captured date IS the follow-up.
+    const isCallback = values.disposition === "callback";
+    if (isCallback && !callbackAt) {
+      setCaptureError("Enter the promised callback date and time.");
+      return;
+    }
+    const followUpIso = isCallback ? callbackAt : calculateFollowUpDate(values.disposition);
     try {
       const { id } = await logActivity.mutateAsync({
         dealId,
@@ -277,6 +293,9 @@ function ActivityForm({
         outcomeNotes: values.outcomeNotes ?? "",
         occurredAt: new Date().toISOString(),
         followUpDate: followUpIso,
+        followUpDateSource: isCallback ? "asserted" : "interval",
+        // Verbal commitment's next step becomes the To-do title.
+        taskTitle: values.disposition === "verbal_commitment" ? nextStep.trim() || undefined : undefined,
       });
       // The log's DB trigger has moved the deal's next_followup_at — reconcile
       // its calendar event. Fire-and-forget: never blocks or fails the log.
@@ -383,6 +402,33 @@ function ActivityForm({
               </div>
             )}
           />
+
+          {/* SP2 capture steps — conditional on the selected outcome. */}
+          {watch("disposition") === "callback" && (
+            <FormField
+              htmlFor="callbackAt"
+              label="Promised callback"
+              helper="The date and time you agreed to call back"
+              error={captureError ?? undefined}
+            >
+              <Input
+                id="callbackAt"
+                type="datetime-local"
+                value={callbackAt}
+                onChange={(e) => setCallbackAt(e.target.value)}
+              />
+            </FormField>
+          )}
+          {watch("disposition") === "verbal_commitment" && (
+            <FormField htmlFor="nextStep" label="Next step" helper="Becomes the follow-up task title">
+              <Input
+                id="nextStep"
+                placeholder="e.g. Prepare the application"
+                value={nextStep}
+                onChange={(e) => setNextStep(e.target.value)}
+              />
+            </FormField>
+          )}
 
           {/* Notes */}
           <Controller
