@@ -45,6 +45,7 @@ import { DISPOSITIONS, formatFollowUpDate } from "@/lib/followUpScheduling";
 import { calendarDayDelta } from "@/lib/calendarDate";
 import { LogActivitySheet } from "../components/LogActivitySheet";
 import { EditActivitySheet } from "../components/EditActivitySheet";
+import { CreateTaskSheet } from "../components/CreateTaskSheet";
 import { UnloggedCallsSection } from "../components/UnloggedCallsSection";
 import { AppointmentsAwaitingOutcome } from "@/features/appointments/components/AppointmentsAwaitingOutcome";
 import { useActivitiesForOrg } from "../hooks/useActivities";
@@ -119,6 +120,8 @@ interface PageTask {
   dueAt: string; // task.targetAt (YYYY-MM-DD)
   dealId: string | null;
   sourceOutcome: string | null;
+  priority: string | null;
+  startAt: string | null; // optional time-of-day (ISO)
 }
 
 function toPageTask(t: Task): PageTask {
@@ -129,8 +132,21 @@ function toPageTask(t: Task): PageTask {
     dueAt: t.targetAt,
     dealId: t.dealId,
     sourceOutcome: t.sourceOutcome,
+    priority: t.priority,
+    startAt: t.startAt,
   };
 }
+
+/** Wall-clock time from an ISO instant, e.g. "2:00 PM". */
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+/** A row in the History tab: a logged activity or a completed to-do, unified
+ *  by a sort timestamp. */
+type HistoryItem =
+  | { kind: "activity"; ts: string; activity: Activity }
+  | { kind: "todo"; ts: string; task: Task };
 
 // ── Row components ────────────────────────────────────────────────────
 
@@ -192,11 +208,19 @@ function TaskRow({
           <Icon className="h-4 w-4" />
         </span>
         <div className="flex min-w-0 flex-col gap-0.5">
-          <p className="truncate text-body-strong text-text-default">{task.companyName}</p>
+          <p className="flex items-center gap-1.5 text-body-strong text-text-default">
+            <span className="truncate">{task.companyName}</span>
+            {task.priority === "high" && (
+              <span className="inline-flex shrink-0 items-center rounded-radius-full bg-status-danger-bg px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-danger">
+                High
+              </span>
+            )}
+          </p>
           <p className="text-caption text-text-muted">
             <span className={overdue ? "font-medium text-status-danger" : "text-text-default"}>
               {formatRelativeShort(task.dueAt, now)}
             </span>
+            {task.startAt ? <>{" · "}{formatTime(task.startAt)}</> : null}
             {outcomeLabel ? <>{" · "}from {outcomeLabel}</> : null}
           </p>
         </div>
@@ -278,6 +302,26 @@ function HistoryRow({
         {formatPastRelative(activity.occurredAt, now)}
       </span>
     </button>
+  );
+}
+
+/** A completed to-do in the History list. To-dos aren't activities, so they
+ *  don't come through the activities feed; we render them alongside so a rep
+ *  can see what they finished, not just what vanished. */
+function TodoHistoryRow({ task, now }: { task: Task; now: Date }) {
+  return (
+    <div className="flex w-full items-start gap-3 rounded-radius-md border border-border-subtle bg-surface-default p-4">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-status-success-bg text-status-success" aria-hidden>
+        <CheckIcon className="h-4 w-4" />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <p className="truncate text-body-strong text-text-default">To-do · {task.title}</p>
+        <p className="truncate text-caption text-text-muted">Completed</p>
+      </div>
+      <span className="shrink-0 text-caption tabular-nums text-text-muted">
+        {task.completedAt ? formatPastRelative(task.completedAt, now) : ""}
+      </span>
+    </div>
   );
 }
 
@@ -363,6 +407,7 @@ export function ActivitiesPage() {
   const [logSheetDealId, setLogSheetDealId] = React.useState<string | null>(null);
   const [logSheetOpen, setLogSheetOpen] = React.useState(false);
   const [editingActivity, setEditingActivity] = React.useState<Activity | null>(null);
+  const [createTaskOpen, setCreateTaskOpen] = React.useState(false);
 
   // Pin "now" once per mount so the bucketing doesn't drift mid-session.
   // TODO: re-pin on tab visibility change so a rep who leaves the app
@@ -373,6 +418,7 @@ export function ActivitiesPage() {
   // still reads activities. useLogActivity + the task mutations invalidate the
   // relevant caches on success, so rows surface without a refreshKey hack.
   const { tasks: openTasks } = useTasks("open");
+  const { tasks: completedTasks } = useTasks("completed");
   const { data: activities = [] } = useActivitiesForOrg();
   const { data: deals = [] } = useDeals();
   const { completeTask, cancelTask, snoozeTask } = useTaskMutations();
@@ -421,13 +467,30 @@ export function ActivitiesPage() {
     return Array.from(map.entries());
   }, [upcoming]);
 
-  // History — most recent first, filtered by type. The activities query
-  // already orders by occurred_at desc, so we just filter.
-  const history = React.useMemo(() => {
-    return typeFilter === "all"
-      ? activities
-      : activities.filter((a) => a.type === typeFilter);
-  }, [activities, typeFilter]);
+  // Completed to-dos surface in History alongside activities so finished work
+  // doesn't just vanish. (To-dos aren't activities, so they don't come through
+  // the activities feed.)
+  const completedTodos = React.useMemo(
+    () => completedTasks.filter((t) => t.type === "todo" && t.completedAt),
+    [completedTasks],
+  );
+
+  // History — most recent first, filtered by type. Activities + completed
+  // to-dos merged into one time-ordered list. The activities query already
+  // orders desc; we re-sort the merged set on the shared timestamp.
+  const historyItems = React.useMemo<HistoryItem[]>(() => {
+    const acts: HistoryItem[] =
+      typeFilter === "todo"
+        ? []
+        : activities
+            .filter((a) => typeFilter === "all" || a.type === typeFilter)
+            .map((a) => ({ kind: "activity", ts: a.occurredAt, activity: a }));
+    const todos: HistoryItem[] =
+      typeFilter === "all" || typeFilter === "todo"
+        ? completedTodos.map((t) => ({ kind: "todo", ts: t.completedAt as string, task: t }))
+        : [];
+    return [...acts, ...todos].sort((a, b) => b.ts.localeCompare(a.ts));
+  }, [activities, completedTodos, typeFilter]);
 
   const openLogSheet = (dealId: string) => {
     setLogSheetDealId(dealId);
@@ -465,22 +528,33 @@ export function ActivitiesPage() {
   // Tab counts so the header chips show real numbers.
   const todayCount = overdue.length + today.length;
   const upcomingCount = upcoming.length;
-  const historyCount = history.length;
+  const historyCount = historyItems.length;
 
   return (
     <div className="mx-auto w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
       <div className="flex flex-col gap-4 lg:gap-6">
         {/* Header */}
-        <header className="flex flex-col gap-1">
-          <h1 className="text-heading-lg text-text-default">Activities</h1>
-          <p className="text-body-md text-text-muted">
-            {todayCount === 0
-              ? "No tasks due today"
-              : `${todayCount} ${todayCount === 1 ? "task" : "tasks"} due today`}
-            {overdue.length > 0 && (
-              <> · <span className="font-medium text-status-danger">{overdue.length} overdue</span></>
-            )}
-          </p>
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-heading-lg text-text-default">Activities</h1>
+            <p className="text-body-md text-text-muted">
+              {todayCount === 0
+                ? "No tasks due today"
+                : `${todayCount} ${todayCount === 1 ? "task" : "tasks"} due today`}
+              {overdue.length > 0 && (
+                <> · <span className="font-medium text-status-danger">{overdue.length} overdue</span></>
+              )}
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon={PlusCircle}
+            onClick={() => setCreateTaskOpen(true)}
+            className="self-start"
+          >
+            New task
+          </Button>
         </header>
 
         <UnloggedCallsSection />
@@ -601,23 +675,27 @@ export function ActivitiesPage() {
           {/* History */}
           <Tabs.Content value="history" className="mt-4 focus-visible:outline-none">
             <div className="flex flex-col gap-3">
-              {history.length === 0 ? (
-                activities.length === 0 ? (
+              {historyItems.length === 0 ? (
+                activities.length === 0 && completedTodos.length === 0 ? (
                   <EmptyHistoryCard />
                 ) : (
                   <FilteredEmptyCard typeLabel={typeFilterLabel(typeFilter)} onClear={() => setTypeFilter("all")} />
                 )
               ) : (
                 <div className="flex flex-col gap-2">
-                  {history.map((a) => (
-                    <HistoryRow
-                      key={a.id}
-                      activity={a}
-                      deal={dealById.get(a.dealId)}
-                      now={now}
-                      onEdit={setEditingActivity}
-                    />
-                  ))}
+                  {historyItems.map((item) =>
+                    item.kind === "activity" ? (
+                      <HistoryRow
+                        key={`a-${item.activity.id}`}
+                        activity={item.activity}
+                        deal={dealById.get(item.activity.dealId)}
+                        now={now}
+                        onEdit={setEditingActivity}
+                      />
+                    ) : (
+                      <TodoHistoryRow key={`t-${item.task.id}`} task={item.task} now={now} />
+                    ),
+                  )}
                 </div>
               )}
             </div>
@@ -646,6 +724,12 @@ export function ActivitiesPage() {
           activity={editingActivity}
         />
       )}
+
+      <CreateTaskSheet
+        open={createTaskOpen}
+        onOpenChange={setCreateTaskOpen}
+        deals={deals.map((d) => ({ id: d.id, companyName: d.companyName }))}
+      />
     </div>
   );
 }

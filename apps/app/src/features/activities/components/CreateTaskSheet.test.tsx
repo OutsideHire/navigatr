@@ -47,4 +47,24 @@ describe("CreateTaskSheet", () => {
     expect(createMutate).not.toHaveBeenCalled();
     expect(screen.getByText(/Title is required/i)).toBeInTheDocument();
   });
+
+  it("captures an optional time as start_at and defaults priority to null", () => {
+    render(<CreateTaskSheet open onOpenChange={() => {}} dealId="d-1" dealName="Acme Co" />);
+    fireEvent.change(screen.getByLabelText(/Due date/i), { target: { value: "2026-08-14" } });
+    fireEvent.change(screen.getByLabelText(/Time/i), { target: { value: "14:30" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Create task$/i }));
+    const [input] = createMutate.mock.calls[0];
+    expect(input.priority).toBeNull();
+    expect(input.startAt).toBeTruthy();
+    // Constructed from local wall-clock 14:30, so local minutes read back as 30.
+    expect(new Date(input.startAt).getMinutes()).toBe(30);
+  });
+
+  it("in standalone mode, requires a deal for a non-todo task", () => {
+    render(<CreateTaskSheet open onOpenChange={() => {}} deals={[{ id: "d-1", companyName: "Acme" }]} />);
+    fireEvent.change(screen.getByLabelText(/Title/i), { target: { value: "Follow up" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Create task$/i }));
+    expect(createMutate).not.toHaveBeenCalled();
+    expect(screen.getByText(/Pick a deal/i)).toBeInTheDocument();
+  });
 });

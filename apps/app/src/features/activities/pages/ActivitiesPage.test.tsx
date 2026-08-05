@@ -69,11 +69,12 @@ function historyActivity(id: string, dealId: string, type: Activity["type"] = "c
   };
 }
 
-function renderWithSeed(args: { tasks?: Task[]; activities?: Activity[]; deals: Deal[] }) {
+function renderWithSeed(args: { tasks?: Task[]; completedTasks?: Task[]; activities?: Activity[]; deals: Deal[] }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   // userId is undefined in tests (no auth mock), so useTasks is disabled and
   // reads this seeded cache instead of hitting Supabase.
   client.setQueryData(TASKS_QUERY_KEY(undefined, "open"), args.tasks ?? []);
+  client.setQueryData(TASKS_QUERY_KEY(undefined, "completed"), args.completedTasks ?? []);
   client.setQueryData(ACTIVITIES_ORG_QUERY_KEY(undefined), args.activities ?? []);
   client.setQueryData(DEALS_QUERY_KEY(undefined), args.deals);
   return render(
@@ -123,6 +124,31 @@ describe("ActivitiesPage / task row actions", () => {
     renderWithSeed({ tasks: [makeTask("t-1", "d-1", todayDate(), "todo")], deals: [deal("d-1", "Acme")] });
     await user.click(screen.getByRole("button", { name: /Mark done/i }));
     expect(completeMutate).toHaveBeenCalledWith("t-1", expect.anything());
+  });
+
+  it("a high-priority task shows a High badge", () => {
+    const t = { ...makeTask("t-1", "d-1", todayDate()), priority: "high" };
+    renderWithSeed({ tasks: [t], deals: [deal("d-1", "Acme")] });
+    expect(screen.getByText("High")).toBeInTheDocument();
+  });
+});
+
+describe("ActivitiesPage / History", () => {
+  it("shows completed to-dos alongside logged activities", async () => {
+    const user = userEvent.setup();
+    const doneTodo: Task = {
+      ...makeTask("todo-done", "d-1", todayDate(), "todo"),
+      status: "completed",
+      completedAt: "2026-05-19T12:00:00Z",
+      title: "Send contract",
+    };
+    renderWithSeed({
+      completedTasks: [doneTodo],
+      activities: [historyActivity("a-1", "d-1")],
+      deals: [deal("d-1", "Acme")],
+    });
+    await user.click(screen.getByRole("tab", { name: /History/i }));
+    expect(screen.getByText(/To-do · Send contract/i)).toBeInTheDocument();
   });
 });
 

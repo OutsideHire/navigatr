@@ -1,11 +1,18 @@
 /**
- * CreateTaskSheet — manually create a follow-up Task from the deal record.
+ * CreateTaskSheet — manually create a follow-up Task.
  *
- * SP1 scope: type + title + due date. The due date is the visible target; the
- * band (earliest/latest) is derived around it from the business-day gap to
- * today, and date_source is "interval". Time / repeat / priority fields are
- * deferred (see the SP1 spec); they're optional and rare. A standalone
- * "Add task" with a deal picker on the Activities screen is also deferred.
+ * Two modes:
+ *   - Deal-bound (dealId given): the task is for that deal, no picker shown.
+ *     Used from the deal record's quick actions.
+ *   - Standalone (no dealId, `deals` given): a deal picker is shown. Used from
+ *     the Activities header so a rep can create a task without opening a deal
+ *     first. A "To-do" needs no deal; every other type does (the DB requires it).
+ *
+ * Fields: type + title + due date, plus optional time-of-day and priority. The
+ * due date is the visible target; the band (earliest/latest) is derived around
+ * it from the business-day gap to today, and date_source is "interval". Repeat
+ * is intentionally omitted: nothing honours a recurrence rule yet, so offering
+ * one would be a promise the app can't keep.
  */
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -28,51 +35,94 @@ const TYPE_OPTIONS: SelectOption[] = [
   { value: "todo", label: "To-do" },
 ];
 
+const PRIORITY_OPTIONS: SelectOption[] = [
+  { value: "normal", label: "Normal" },
+  { value: "high", label: "High" },
+  { value: "low", label: "Low" },
+];
+
+export interface CreateTaskDealOption {
+  id: string;
+  companyName: string;
+}
+
 export interface CreateTaskSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  dealId: string;
-  dealName: string;
+  /** Deal-bound mode: the task is for this deal (no picker). */
+  dealId?: string;
+  dealName?: string;
+  /** Standalone mode: deals to choose from (a picker is shown). Ignored when
+   *  `dealId` is set. */
+  deals?: CreateTaskDealOption[];
   /** Preselect a type (e.g. "drop_in" from a Drop-in entry point). */
   defaultType?: TaskType;
 }
 
-export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, defaultType }: CreateTaskSheetProps) {
+export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, deals, defaultType }: CreateTaskSheetProps) {
   const { createTask } = useTaskMutations();
+  const boundMode = dealId != null;
   const [type, setType] = React.useState<TaskType>(defaultType ?? "call");
-  const [title, setTitle] = React.useState(dealName);
+  const [title, setTitle] = React.useState(dealName ?? "");
+  const [pickedDealId, setPickedDealId] = React.useState<string>("");
   const [dueDate, setDueDate] = React.useState(toDateOnly(new Date()));
+  const [time, setTime] = React.useState<string>("");
+  const [priority, setPriority] = React.useState<string>("normal");
   const [error, setError] = React.useState<string | null>(null);
+  const [dealError, setDealError] = React.useState<string | null>(null);
 
   // Reset the form each time it opens for a (possibly different) deal.
   React.useEffect(() => {
     if (open) {
       setType(defaultType ?? "call");
-      setTitle(dealName);
+      setTitle(dealName ?? "");
+      setPickedDealId("");
       setDueDate(toDateOnly(new Date()));
+      setTime("");
+      setPriority("normal");
       setError(null);
+      setDealError(null);
     }
   }, [open, dealName, defaultType]);
 
+  const dealOptions = React.useMemo<SelectOption[]>(
+    () => (deals ?? []).map((d) => ({ value: d.id, label: d.companyName })),
+    [deals],
+  );
+
   const submit = () => {
+    let ok = true;
     if (!title.trim()) {
       setError("Title is required");
-      return;
+      ok = false;
     }
+    // Resolve the deal: bound mode uses the prop; standalone uses the picker.
+    // Every type except "todo" requires a deal (the DB enforces this too).
+    const resolvedDealId = boundMode ? dealId! : pickedDealId || null;
+    if (!boundMode && type !== "todo" && !resolvedDealId) {
+      setDealError("Pick a deal for this task");
+      ok = false;
+    }
+    if (!ok) return;
+
     // Band interval = business-day gap from today to the chosen due date
     // (min 1), treated as the interval per the SP1 spec.
     const interval = Math.max(1, differenceInBusinessDays(parseISO(dueDate), parseISO(toDateOnly(new Date()))));
     const bands = bandsFromTarget(dueDate, interval)!;
+    // Optional time-of-day → start_at (local wall-clock on the due date).
+    const startAt = time ? new Date(`${dueDate}T${time}`).toISOString() : null;
     createTask.mutate(
       {
         type,
         title: title.trim(),
-        dealId,
+        dealId: resolvedDealId,
         targetAt: bands.target_at,
         earliestAt: bands.earliest_at,
         latestAt: bands.latest_at,
         originalTargetAt: bands.target_at,
         dateSource: "interval",
+        startAt,
+        priority: priority === "normal" ? null : priority,
       },
       {
         onSuccess: () => {
@@ -109,7 +159,7 @@ export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, defaultT
             </Dialog.Close>
           </div>
 
-          <div className="flex flex-col gap-4 px-5 pb-5">
+          <div className="flex flex-col gap-4 overflow-y-auto px-5 pb-5">
             <FormField htmlFor="task-type" label="Type">
               <Select
                 id="task-type"
@@ -118,11 +168,48 @@ export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, defaultT
                 options={TYPE_OPTIONS}
               />
             </FormField>
+
+            {/* Deal picker — standalone mode only. Optional for a To-do. */}
+            {!boundMode && (
+              <FormField
+                htmlFor="task-deal"
+                label={type === "todo" ? "Deal (optional)" : "Deal"}
+                required={type !== "todo"}
+                error={dealError ?? undefined}
+              >
+                <Select
+                  id="task-deal"
+                  value={pickedDealId}
+                  onValueChange={(v) => {
+                    setPickedDealId(v);
+                    setDealError(null);
+                  }}
+                  options={dealOptions}
+                  placeholder="Select a deal…"
+                />
+              </FormField>
+            )}
+
             <FormField htmlFor="task-title" label="Title" required error={error ?? undefined}>
               <Input id="task-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What needs doing?" />
             </FormField>
-            <FormField htmlFor="task-due" label="Due date">
-              <Input id="task-due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+
+            <div className="flex gap-3">
+              <FormField htmlFor="task-due" label="Due date" className="flex-1">
+                <Input id="task-due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              </FormField>
+              <FormField htmlFor="task-time" label="Time (optional)" className="flex-1">
+                <Input id="task-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+              </FormField>
+            </div>
+
+            <FormField htmlFor="task-priority" label="Priority">
+              <Select
+                id="task-priority"
+                value={priority}
+                onValueChange={setPriority}
+                options={PRIORITY_OPTIONS}
+              />
             </FormField>
           </div>
 
