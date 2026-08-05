@@ -345,6 +345,27 @@ export function PathPage() {
     })();
   }, [liveMerchants, todayPath]);
 
+  // Owed visits (SP3 Class D): the drop-in follow-ups the rep owes today, routed
+  // as a distinct group above cold discovery. Only queried while discovering
+  // (the hook is disabled on an empty pathDate), so entry/active/finished paths
+  // never touch it. `todayDate` is the rep's LOCAL calendar day — Path plans
+  // "today", and a due task opens by local date, not UTC.
+  const todayDate = React.useMemo(() => {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }, []);
+  const { owed: owedVisits } = useOwedVisits(pathView === "discover" ? todayDate : "");
+
+  // Discovery dedup: an owed visit is an existing active deal, which pipeline
+  // de-dup already hides from discovery — but guard anyway so a due account can
+  // never appear both as an owed visit and as a cold prospect. Radius-independent
+  // (dedup by identity, not proximity).
+  const owedPlaceIds = React.useMemo(
+    () => new Set(owedVisits.map((v) => v.placeId)),
+    [owedVisits],
+  );
+
   // Are any merchants geocoded? If none have coords, the map degrades
   // to a "no map yet" state and we suppress distance math (Infinity
   // distances would dominate the sort).
@@ -388,9 +409,11 @@ export function PathPage() {
   // are Infinity and a radius gate would wipe the whole list, so we pass
   // everything through and let the activity-sorted view stand.
   const withinRadius = React.useMemo<MerchantWithDistance[]>(() => {
-    if (!anyGeocoded) return merchantsWithDistance;
-    return merchantsWithDistance.filter((m) => m.distanceMeters <= displayRadiusM);
-  }, [merchantsWithDistance, anyGeocoded, displayRadiusM]);
+    // Dedup against owed visits first (identity), then apply the distance gate.
+    const deduped = merchantsWithDistance.filter((m) => !(m.placeId && owedPlaceIds.has(m.placeId)));
+    if (!anyGeocoded) return deduped;
+    return deduped.filter((m) => m.distanceMeters <= displayRadiusM);
+  }, [merchantsWithDistance, anyGeocoded, displayRadiusM, owedPlaceIds]);
 
   // Same distance-annotate + radius gate as withinRadius, but over the chain-free
   // createMerchants set — this is what the Create wizard curates from, so the
@@ -533,18 +556,6 @@ export function PathPage() {
     if (pathView !== "discover" || runCalStatus !== "ok" || !origin) return null;
     return pickNextMeeting(new Date().toISOString(), runWaypoints, runTimeBlocks);
   }, [pathView, runCalStatus, origin, runWaypoints, runTimeBlocks]);
-
-  // Owed visits (SP3 Class D): the drop-in follow-ups the rep owes today, routed
-  // as a distinct group above cold discovery. Only queried while discovering
-  // (the hook is disabled on an empty pathDate), so entry/active/finished paths
-  // never touch it. `todayDate` is the rep's LOCAL calendar day — Path plans
-  // "today", and a due task opens by local date, not UTC.
-  const todayDate = React.useMemo(() => {
-    const d = new Date();
-    const p = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-  }, []);
-  const { owed: owedVisits } = useOwedVisits(pathView === "discover" ? todayDate : "");
 
   // Annotate each owed visit with its distance + next-meeting fit, then gate to
   // the same display radius the cold list uses. Filter-EXEMPT of the category
