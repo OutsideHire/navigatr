@@ -46,16 +46,19 @@ function ActionButton({ action }: { action: QuickAction }) {
 export function QuickActionsCard({
   onSendReferral,
   onScheduleAppointment,
+  onCreateTask,
   onMarkLost,
 }: {
   onSendReferral?: () => void;
   onScheduleAppointment?: () => void;
+  onCreateTask?: () => void;
   onMarkLost?: () => void;
 }) {
   const actions: QuickAction[] = [
     { label: "Send to CRM", disabledTitle: "Coming soon" },
     { label: "Send as referral", onClick: onSendReferral, disabledTitle: "Coming soon" },
     { label: "Schedule appointment", onClick: onScheduleAppointment },
+    { label: "Create task", onClick: onCreateTask },
     { label: "Mark as lost", onClick: onMarkLost, danger: true },
   ];
   return (

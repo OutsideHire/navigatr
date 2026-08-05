@@ -89,6 +89,7 @@ import { QualificationTab } from "../components/QualificationTab";
 import { QualificationEditSheet } from "../components/QualificationEditSheet";
 import { SendReferralSheet } from "../components/SendReferralSheet";
 import { ScheduleAppointmentSheet } from "../components/ScheduleAppointmentSheet";
+import { CreateTaskSheet } from "@/features/activities/components/CreateTaskSheet";
 import { UpcomingAppointments } from "@/features/appointments/UpcomingAppointments";
 import { ContactsTab } from "../components/ContactsTab";
 import { NotesAndFilesTab } from "../components/NotesAndFilesTab";
@@ -643,6 +644,7 @@ export function DealDetailPage() {
   const [qualOpen, setQualOpen] = React.useState(false);
   const [referralOpen, setReferralOpen] = React.useState(false);
   const [apptOpen, setApptOpen] = React.useState(false);
+  const [createTaskOpen, setCreateTaskOpen] = React.useState(false);
 
   const handlePageLostSubmit = async (category: LostReasonCategory, notes: string | null) => {
     if (!deal) return;
@@ -721,6 +723,7 @@ export function DealDetailPage() {
             <QuickActionsCard
               onSendReferral={() => setReferralOpen(true)}
               onScheduleAppointment={() => setApptOpen(true)}
+              onCreateTask={() => setCreateTaskOpen(true)}
               onMarkLost={() => setLostOpen(true)}
             />
             <UpcomingAppointments dealId={deal.id} />
@@ -769,6 +772,13 @@ export function DealDetailPage() {
         open={apptOpen}
         onOpenChange={setApptOpen}
         deal={deal}
+      />
+
+      <CreateTaskSheet
+        open={createTaskOpen}
+        onOpenChange={setCreateTaskOpen}
+        dealId={deal.id}
+        dealName={deal.companyName}
       />
 
       {editingActivity && (
