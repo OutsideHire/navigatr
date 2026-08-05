@@ -72,6 +72,9 @@ import { computeFreeWindows } from "../lib/freeWindows";
 import { annotateRunSchedule } from "../lib/runSchedule";
 import { pickNextMeeting, fitsBeforeMeeting } from "../lib/discoverFit";
 import { DiscoverMeetingBanner } from "../components/DiscoverMeetingBanner";
+import { useOwedVisits } from "../hooks/useOwedVisits";
+import { OwedVisitsList, type OwedVisitRow } from "../components/OwedVisitsList";
+import type { OwedVisit } from "../lib/owedVisits";
 
 // Phase 2: discovered prospects are all cold leads, so the old deal-lifecycle
 // status chips (prospect/active/won/cooled) don't apply. Filter by business
@@ -531,6 +534,42 @@ export function PathPage() {
     return pickNextMeeting(new Date().toISOString(), runWaypoints, runTimeBlocks);
   }, [pathView, runCalStatus, origin, runWaypoints, runTimeBlocks]);
 
+  // Owed visits (SP3 Class D): the drop-in follow-ups the rep owes today, routed
+  // as a distinct group above cold discovery. Only queried while discovering
+  // (the hook is disabled on an empty pathDate), so entry/active/finished paths
+  // never touch it. `todayDate` is the rep's LOCAL calendar day — Path plans
+  // "today", and a due task opens by local date, not UTC.
+  const todayDate = React.useMemo(() => {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }, []);
+  const { owed: owedVisits } = useOwedVisits(pathView === "discover" ? todayDate : "");
+
+  // Annotate each owed visit with its distance + next-meeting fit, then gate to
+  // the same display radius the cold list uses. Filter-EXEMPT of the category
+  // chips (work you already owe isn't "a restaurant near me"), but radius-gated
+  // so a due account two counties over doesn't crowd the group. Urgency order
+  // comes from the hook and survives the distance filter.
+  const owedRows = React.useMemo<OwedVisitRow[]>(() => {
+    if (pathView !== "discover" || !origin || owedVisits.length === 0) return [];
+    const now = new Date().toISOString();
+    return owedVisits
+      .map((v) => ({
+        ...v,
+        distanceMeters: haversineMeters(origin, { lat: v.lat, lng: v.lng }),
+        fits: discoverNextMeeting
+          ? fitsBeforeMeeting(now, origin, { lat: v.lat, lng: v.lng }, discoverNextMeeting)
+          : true,
+      }))
+      .filter((v) => v.distanceMeters <= displayRadiusM);
+  }, [pathView, origin, owedVisits, discoverNextMeeting, displayRadiusM]);
+
+  const handleOwedSelect = React.useCallback(
+    (v: OwedVisit) => navigate(`/pipeline/${v.dealId}`),
+    [navigate],
+  );
+
   const discoverUnfit = React.useMemo(() => {
     if (!discoverNextMeeting || !origin) return { ids: new Set<string>(), label: "" };
     const now = new Date().toISOString();
@@ -827,6 +866,15 @@ export function PathPage() {
               <DiscoverMeetingBanner meeting={discoverNextMeeting} now={new Date().toISOString()} />
             </div>
           )}
+
+          {/* Owed visits (SP3 Class D) — the drop-in follow-ups due today, above
+              cold discovery. Filter-exempt, radius-gated, hidden when none in
+              range. Tapping opens the deal to log the visit. */}
+          <OwedVisitsList
+            visits={owedRows}
+            unfitLabel={discoverUnfit.label}
+            onSelect={handleOwedSelect}
+          />
 
           {/* Filter chips */}
           <div
