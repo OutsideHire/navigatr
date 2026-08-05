@@ -39,6 +39,8 @@ export interface Deal {
   contactName: string;
   /** E.164 format — PhoneWithClickToCall will display formatted. */
   phone: string;
+  /** SP2: set by a "Bad number" call outcome; disables click-to-call. */
+  phoneInvalid?: boolean;
   email: string;
   /** Annualized deal value in USD cents (matches dashboard convention). */
   valueCents: number;

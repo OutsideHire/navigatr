@@ -96,7 +96,7 @@ export function ContactsTab({ deal, onEditPrimary }: ContactsTabProps) {
           </div>
           <p className="text-body-md font-medium text-text-default">{deal.contactName}</p>
           {deal.phone && (
-            <DealCallButton dealId={deal.id} phoneNumber={deal.phone} size="sm" />
+            <DealCallButton dealId={deal.id} phoneNumber={deal.phone} size="sm" invalid={deal.phoneInvalid} />
           )}
           {deal.email && (
             <a

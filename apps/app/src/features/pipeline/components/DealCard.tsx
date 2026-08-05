@@ -55,7 +55,7 @@ export function DealCard({ deal }: { deal: Deal }) {
         </div>
 
         <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-          <DealCallButton dealId={deal.id} phoneNumber={deal.phone} size="sm" />
+          <DealCallButton dealId={deal.id} phoneNumber={deal.phone} size="sm" invalid={deal.phoneInvalid} />
           {deal.email && (
             <a
               href={`mailto:${deal.email}`}

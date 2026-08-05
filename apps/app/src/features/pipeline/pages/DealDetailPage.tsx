@@ -375,7 +375,7 @@ function ContactInfoCard({ deal }: { deal: Deal }) {
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-teal-20 text-accent-teal">
             <PhoneIcon className="h-4 w-4" aria-hidden />
           </span>
-          <DealCallButton dealId={deal.id} phoneNumber={deal.phone} size="sm" />
+          <DealCallButton dealId={deal.id} phoneNumber={deal.phone} size="sm" invalid={deal.phoneInvalid} />
         </div>
         <div className="flex items-center gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-blue-20 text-accent-blue">

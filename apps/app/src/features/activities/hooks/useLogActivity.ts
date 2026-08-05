@@ -163,6 +163,30 @@ export function useLogActivity() {
             }
           }
         }
+
+        // Record-state effects (SP2 §7). Flags + suppression + stage advance.
+        // These run regardless of a follow-up (terminal outcomes have none).
+        const nowIso = new Date().toISOString();
+        if (input.disposition === "bad_number") {
+          await supabase.from("deals").update({ contact_phone_invalid: true }).eq("id", input.dealId);
+        } else if (input.disposition === "bad_address") {
+          await supabase.from("deals").update({ contact_email_invalid: true }).eq("id", input.dealId);
+        } else if (input.disposition === "do_not_call") {
+          await supabase.from("deals").update({ do_not_call: true }).eq("id", input.dealId);
+          await supabase.from("task").update({ status: "cancelled", cancelled_at: nowIso })
+            .eq("deal_id", input.dealId).eq("type", "call").eq("status", "open");
+        } else if (input.disposition === "unsubscribed") {
+          await supabase.from("deals").update({ email_opt_out: true }).eq("id", input.dealId);
+          await supabase.from("task").update({ status: "cancelled", cancelled_at: nowIso })
+            .eq("deal_id", input.dealId).eq("type", "email").eq("status", "open");
+        } else if (input.disposition === "verbal_commitment") {
+          // Advance to Proposal, never regress and never set won.
+          const { data: d } = await supabase.from("deals").select("stage").eq("id", input.dealId).maybeSingle();
+          const stage = d?.stage as string | undefined;
+          if (stage === "new" || stage === "contacted" || stage === "qualified") {
+            await supabase.from("deals").update({ stage: "proposal" }).eq("id", input.dealId);
+          }
+        }
       } catch (taskErr) {
         console.error("[useLogActivity] task sync failed (activity still saved)", taskErr);
       }

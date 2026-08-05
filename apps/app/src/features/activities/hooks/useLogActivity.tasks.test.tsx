@@ -11,6 +11,8 @@ let openTaskRow: { id: string } | null;
 let taskInsertPayload: Record<string, unknown> | null;
 let taskUpdatePayload: Record<string, unknown> | null;
 let activityUpdatePayload: Record<string, unknown> | null;
+let dealUpdatePayload: Record<string, unknown> | null;
+let dealStage: string;
 
 vi.mock("@/lib/supabase", () => ({
   supabase: {
@@ -23,6 +25,7 @@ vi.mock("@/lib/supabase", () => ({
       b.update = (p: Record<string, unknown>) => {
         if (table === "task") taskUpdatePayload = p;
         if (table === "activities") activityUpdatePayload = p;
+        if (table === "deals") dealUpdatePayload = p;
         return b;
       };
       b.select = () => b;
@@ -31,7 +34,12 @@ vi.mock("@/lib/supabase", () => ({
       b.limit = () => b;
       b.maybeSingle = () =>
         Promise.resolve({
-          data: table === "task" ? openTaskRow : table === "deals" ? { company_name: "Acme Co" } : null,
+          data:
+            table === "task"
+              ? openTaskRow
+              : table === "deals"
+                ? { company_name: "Acme Co", stage: dealStage }
+                : null,
           error: null,
         });
       b.single = () => Promise.resolve({ data: { id: "act-1" }, error: null });
@@ -57,6 +65,37 @@ beforeEach(() => {
   taskInsertPayload = null;
   taskUpdatePayload = null;
   activityUpdatePayload = null;
+  dealUpdatePayload = null;
+  dealStage = "new";
+});
+
+describe("useLogActivity record-state effects (SP2)", () => {
+  it("Bad number flags the phone as invalid", async () => {
+    const { result } = renderHook(() => useLogActivity(), { wrapper });
+    await result.current.mutateAsync({ dealId: "deal-1", type: "call", disposition: "bad_number", followUpDate: null });
+    expect(dealUpdatePayload).toMatchObject({ contact_phone_invalid: true });
+  });
+
+  it("Do not call sets the flag and cancels open call tasks", async () => {
+    const { result } = renderHook(() => useLogActivity(), { wrapper });
+    await result.current.mutateAsync({ dealId: "deal-1", type: "call", disposition: "do_not_call", followUpDate: null });
+    expect(dealUpdatePayload).toMatchObject({ do_not_call: true });
+    expect(taskUpdatePayload).toMatchObject({ status: "cancelled" });
+  });
+
+  it("Verbal commitment advances an early-stage deal to Proposal", async () => {
+    dealStage = "contacted";
+    const { result } = renderHook(() => useLogActivity(), { wrapper });
+    await result.current.mutateAsync({ dealId: "deal-1", type: "call", disposition: "verbal_commitment", followUpDate: "2026-05-19T00:00:00.000Z" });
+    expect(dealUpdatePayload).toMatchObject({ stage: "proposal" });
+  });
+
+  it("Verbal commitment does NOT regress a later-stage deal", async () => {
+    dealStage = "won";
+    const { result } = renderHook(() => useLogActivity(), { wrapper });
+    await result.current.mutateAsync({ dealId: "deal-1", type: "call", disposition: "verbal_commitment", followUpDate: "2026-05-19T00:00:00.000Z" });
+    expect(dealUpdatePayload).toBeNull(); // no stage change
+  });
 });
 
 describe("useLogActivity task sync", () => {

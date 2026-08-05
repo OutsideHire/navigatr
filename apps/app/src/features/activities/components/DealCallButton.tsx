@@ -14,10 +14,23 @@ export interface DealCallButtonProps {
   dealId: string;
   phoneNumber: string;
   size?: PhoneSize;
+  /** When the number was flagged Bad number (SP2), show it struck-through and
+   *  don't allow a dial. */
+  invalid?: boolean;
 }
 
-export function DealCallButton({ dealId, phoneNumber, size = "sm" }: DealCallButtonProps) {
+export function DealCallButton({ dealId, phoneNumber, size = "sm", invalid = false }: DealCallButtonProps) {
   const { mutate: recordDial } = useRecordDial();
+  if (invalid) {
+    return (
+      <span
+        title="Number flagged as invalid"
+        className="text-caption text-text-subtle line-through"
+      >
+        {phoneNumber}
+      </span>
+    );
+  }
   return (
     <PhoneWithClickToCall
       phoneNumber={phoneNumber}

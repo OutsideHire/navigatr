@@ -75,6 +75,7 @@ describe("useDeals", () => {
         companyName: "Acme",
         contactName: "Jane",
         phone: "+12025550100",
+        phoneInvalid: false,
         email: "j@acme.com",
         valueCents: 1_200_000,
         stage: "qualified",
