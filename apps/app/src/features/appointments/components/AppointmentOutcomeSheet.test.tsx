@@ -116,9 +116,20 @@ describe("AppointmentOutcomeSheet", () => {
       notes: "Owner is ready to move forward",
       hasFutureAppointment: true,
       doNotContact: false,
+      expectedDecisionDate: null,
     });
     expect(toast.success).toHaveBeenCalled();
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("captures an expected decision date for Presented, awaiting (SP2)", async () => {
+    renderSheet();
+    fireEvent.click(screen.getByText("Presented, awaiting decision"));
+    fireEvent.change(screen.getByLabelText(/expected decision date/i), { target: { value: "2026-09-01" } });
+    await act(async () => { fireEvent.click(logOutcomeBtn()); });
+    expect(mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "appt_presented_awaiting", expectedDecisionDate: "2026-09-01" }),
+    );
   });
 
   it("submitting Not interested with the checkbox checked sends doNotContact true", async () => {

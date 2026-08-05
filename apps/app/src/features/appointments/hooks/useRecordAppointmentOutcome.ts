@@ -61,6 +61,10 @@ export interface RecordAppointmentOutcomeInput {
   /** Only meaningful for appt_not_interested: opts the merchant out, moving
    *  the deal to lost instead of leaving the stage untouched. */
   doNotContact?: boolean;
+  /** Only meaningful for appt_presented_awaiting: the merchant's stated
+   *  decision date. When set it fully replaces the 3-day default and pins the
+   *  follow-up to that date (asserted), so nothing chases them early. */
+  expectedDecisionDate?: string | null;
 }
 
 export function useRecordAppointmentOutcome() {
@@ -72,8 +76,13 @@ export function useRecordAppointmentOutcome() {
 
   return useMutation({
     mutationFn: async (input: RecordAppointmentOutcomeInput): Promise<void> => {
-      const followUpDate =
-        input.outcome === "appt_rescheduled" && input.hasFutureAppointment
+      // A stated decision date (Presented, awaiting) pins the follow-up and
+      // replaces the 3-day default.
+      const useDecisionDate =
+        input.outcome === "appt_presented_awaiting" && !!input.expectedDecisionDate;
+      const followUpDate = useDecisionDate
+        ? input.expectedDecisionDate!
+        : input.outcome === "appt_rescheduled" && input.hasFutureAppointment
           ? null
           : calculateFollowUpDate(input.outcome);
 
@@ -109,6 +118,7 @@ export function useRecordAppointmentOutcome() {
         disposition: input.outcome,
         outcomeNotes: input.notes ?? "",
         followUpDate,
+        followUpDateSource: useDecisionDate ? "asserted" : "interval",
         voiceNoteUrl: null,
       });
 

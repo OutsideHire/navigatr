@@ -17,7 +17,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { toast } from "sonner";
 
-import { Button, Checkbox, NotesFieldWithMic, DispositionTile } from "@/components/navigatr";
+import { Button, Checkbox, FormField, Input, NotesFieldWithMic, DispositionTile } from "@/components/navigatr";
 import { DISPOSITIONS, type Disposition } from "@/lib/followUpScheduling";
 import { DISPOSITIONS_BY_TYPE } from "@/features/activities/lib/dispositionSets";
 import { useRecordAppointmentOutcome } from "../hooks/useRecordAppointmentOutcome";
@@ -50,6 +50,7 @@ export function AppointmentOutcomeSheet({
   const [showMore, setShowMore] = React.useState(false);
   const [notes, setNotes] = React.useState("");
   const [doNotContact, setDoNotContact] = React.useState(false);
+  const [decisionDate, setDecisionDate] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
@@ -58,6 +59,7 @@ export function AppointmentOutcomeSheet({
       setShowMore(false);
       setNotes("");
       setDoNotContact(false);
+      setDecisionDate("");
       setSaving(false);
     }
   }, [open]);
@@ -78,6 +80,8 @@ export function AppointmentOutcomeSheet({
         notes: notes.trim() || undefined,
         hasFutureAppointment,
         doNotContact: selected === "appt_not_interested" ? doNotContact : false,
+        expectedDecisionDate:
+          selected === "appt_presented_awaiting" ? decisionDate || null : null,
       });
       toast.success(`Outcome logged: ${DISPOSITIONS[selected].label}`);
       onOpenChange(false);
@@ -158,6 +162,21 @@ export function AppointmentOutcomeSheet({
                 checked={doNotContact}
                 onCheckedChange={setDoNotContact}
               />
+            )}
+
+            {selected === "appt_presented_awaiting" && (
+              <FormField
+                htmlFor="decisionDate"
+                label="Expected decision date"
+                helper="Optional. Replaces the 3-day default and pins the follow-up to this date."
+              >
+                <Input
+                  id="decisionDate"
+                  type="date"
+                  value={decisionDate}
+                  onChange={(e) => setDecisionDate(e.target.value)}
+                />
+              </FormField>
             )}
 
             <NotesFieldWithMic
