@@ -26,7 +26,16 @@ export const OWED_VISITS_QUERY_KEY = (userId: string | undefined, pathDate: stri
   ["path", "owed-visits", userId ?? "anon", pathDate] as const;
 
 const TASK_COLS =
-  "id, deal_id, type, status, earliest_at, target_at, latest_at, date_source, exclude_from_path, source_outcome";
+  "id, deal_id, type, status, earliest_at, target_at, latest_at, date_source, exclude_from_path, source_outcome, created_at";
+
+/** UTC ISO bounds of the local calendar day named by `pathDate` (YYYY-MM-DD).
+ *  `new Date("YYYY-MM-DDT00:00:00")` parses in local time, so this brackets the
+ *  rep's day regardless of timezone. */
+function localDayBounds(pathDate: string): { startIso: string; endIso: string } {
+  const start = new Date(`${pathDate}T00:00:00`);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { startIso: start.toISOString(), endIso: end.toISOString() };
+}
 
 export function useOwedVisits(pathDate: string): { owed: OwedVisit[]; isLoading: boolean } {
   const userId = useAuth((s) => s.user?.id);
@@ -69,7 +78,25 @@ export function useOwedVisits(pathDate: string): { owed: OwedVisit[]; isLoading:
         prospects = (pData ?? []) as unknown as OwedProspectRow[];
       }
 
-      return assembleOwedVisits(tasks, deals, prospects, pathDate);
+      // 4. Deals with a scheduled appointment TODAY — the appointment supersedes
+      //    the drop-in (spec §7), so those owed visits are suppressed.
+      const { startIso, endIso } = localDayBounds(pathDate);
+      const { data: apptData, error: apptErr } = await supabase
+        .from("scheduled_appointments")
+        .select("deal_id")
+        .in("deal_id", dealIds)
+        .eq("status", "scheduled")
+        .gte("start_at", startIso)
+        .lt("start_at", endIso);
+      if (apptErr) throw apptErr;
+      const supersededDealIds = new Set(
+        ((apptData ?? []) as unknown as Array<{ deal_id: string }>).map((r) => r.deal_id),
+      );
+
+      return assembleOwedVisits(tasks, deals, prospects, pathDate, {
+        supersededDealIds,
+        excludeCreatedAtOrAfter: startIso,
+      });
     },
   });
   return { owed: query.data ?? [], isLoading: query.isLoading && query.fetchStatus !== "idle" };

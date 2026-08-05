@@ -25,6 +25,20 @@ export interface OwedTaskRow {
   date_source: string;
   exclude_from_path: boolean;
   source_outcome: string | null;
+  /** UTC ISO. Used for the same-day exclusion: a follow-up created during today's
+   *  path (an outcome logged mid-run) isn't pulled back into today. */
+  created_at: string;
+}
+
+/** Optional guards applied on top of Class D eligibility. */
+export interface OwedVisitOptions {
+  /** Deals with a scheduled appointment on the Path date — the appointment
+   *  supersedes the drop-in (spec §7), so its owed visit is suppressed. */
+  supersededDealIds?: Set<string>;
+  /** UTC ISO of the Path date's local midnight. Tasks created at or after this
+   *  (i.e. created today) are excluded so the owed list doesn't churn as the rep
+   *  logs outcomes during the run. */
+  excludeCreatedAtOrAfter?: string;
 }
 
 /** The deal fields the join needs: stage (won/lost are ineligible) + place_id
@@ -71,15 +85,22 @@ export function assembleOwedVisits(
   deals: OwedDealRow[],
   prospects: OwedProspectRow[],
   pathDate: string,
+  opts: OwedVisitOptions = {},
 ): OwedVisit[] {
   const dealById = new Map(deals.map((d) => [d.id, d]));
   const coordsByPlaceId = new Map(prospects.map((p) => [p.place_id, p]));
+  const superseded = opts.supersededDealIds;
+  const createdCutoff = opts.excludeCreatedAtOrAfter;
 
   const visits: OwedVisit[] = [];
   for (const t of tasks) {
     if (t.deal_id == null) continue;
+    // Created during today's path (an outcome logged mid-run) → not pulled back in.
+    if (createdCutoff && t.created_at >= createdCutoff) continue;
     const deal = dealById.get(t.deal_id);
     if (!deal) continue;
+    // A scheduled appointment on this deal today supersedes the drop-in.
+    if (superseded?.has(deal.id)) continue;
     const coords = deal.place_id ? coordsByPlaceId.get(deal.place_id) : undefined;
     const hasCoords = coords != null;
 

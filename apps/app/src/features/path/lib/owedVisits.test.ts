@@ -17,6 +17,7 @@ const task = (o: Partial<OwedTaskRow> = {}): OwedTaskRow => ({
   date_source: "interval",
   exclude_from_path: false,
   source_outcome: "not_available",
+  created_at: "2026-07-01T12:00:00.000Z", // created well before the path date
   ...o,
 });
 
@@ -83,6 +84,27 @@ describe("assembleOwedVisits", () => {
   it("drops a task with a missing or null deal reference", () => {
     expect(assembleOwedVisits([task({ deal_id: null })], [deal()], [prospect()], PATH_DATE)).toHaveLength(0);
     expect(assembleOwedVisits([task({ deal_id: "ghost" })], [deal()], [prospect()], PATH_DATE)).toHaveLength(0);
+  });
+
+  it("suppresses a visit whose deal has a scheduled appointment today (supersede)", () => {
+    const superseded = assembleOwedVisits([task()], [deal()], [prospect()], PATH_DATE, {
+      supersededDealIds: new Set(["d1"]),
+    });
+    expect(superseded).toHaveLength(0);
+    // A different deal in the set doesn't suppress this one.
+    const kept = assembleOwedVisits([task()], [deal()], [prospect()], PATH_DATE, {
+      supersededDealIds: new Set(["other"]),
+    });
+    expect(kept).toHaveLength(1);
+  });
+
+  it("excludes a task created at/after the cutoff (created during today's path)", () => {
+    const cutoff = "2026-08-08T00:00:00.000Z";
+    const createdToday = task({ created_at: "2026-08-08T09:30:00.000Z" });
+    expect(assembleOwedVisits([createdToday], [deal()], [prospect()], PATH_DATE, { excludeCreatedAtOrAfter: cutoff })).toHaveLength(0);
+    // A task created before the cutoff still appears.
+    const createdYesterday = task({ created_at: "2026-08-07T09:30:00.000Z" });
+    expect(assembleOwedVisits([createdYesterday], [deal()], [prospect()], PATH_DATE, { excludeCreatedAtOrAfter: cutoff })).toHaveLength(1);
   });
 
   it("orders by descending urgency, then earliest target date", () => {
