@@ -6,7 +6,6 @@ import { MemoryRouter } from "react-router-dom";
 import type { FollowUpReminder } from "@/features/activities/hooks/useFollowUpReminders";
 import type { PathReminder } from "@/features/path/hooks/usePathReminders";
 import type { Deal } from "@/features/pipeline/mockData";
-import type { Activity } from "@/features/activities/mockData";
 
 // --- jsdom polyfills for Radix dropdown portals/pointer -------------------
 beforeAll(() => {
@@ -65,24 +64,13 @@ function makeDeal(): Deal {
   } as Deal;
 }
 
-function makeActivity(): Activity {
-  return {
-    id: "act-1",
-    dealId: "deal-1",
-    type: "call",
-    disposition: "positive_engagement",
-    durationMinutes: 5,
-    outcomeNotes: "",
-    occurredAt: "2026-05-19T15:00:00Z",
-    followUpDate: "2026-05-22T00:00:00Z",
-  } as Activity;
-}
-
 function makeFollowUp(): FollowUpReminder {
   return {
     id: "fu-1",
     deal: makeDeal(),
-    activity: makeActivity(),
+    // SP1: reminders carry the task + its type (not the source activity).
+    type: "call",
+    task: {} as FollowUpReminder["task"],
     dueAt: "2026-05-22T00:00:00Z",
     daysOverdue: 0,
   };

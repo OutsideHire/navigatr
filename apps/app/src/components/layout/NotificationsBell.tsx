@@ -51,7 +51,9 @@ function ReminderRow({
   reminder: FollowUpReminder;
   onNavigate: (dealId: string) => void;
 }) {
-  const Icon = TYPE_ICON[reminder.activity.type];
+  // The bell only surfaces merchant-contact task types (To-do is excluded in
+  // useFollowUpReminders), so this key is always one of the four icons.
+  const Icon = TYPE_ICON[reminder.type as keyof typeof TYPE_ICON];
   const overdue = reminder.daysOverdue > 0;
   const label = overdue
     ? `${reminder.daysOverdue}d overdue`
