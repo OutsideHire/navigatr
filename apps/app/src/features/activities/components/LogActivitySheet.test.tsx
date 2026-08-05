@@ -110,9 +110,8 @@ describe("LogActivitySheet — submission payload by type", () => {
     openSheet();
     fireEvent.click(screen.getByText("Email"));
 
-    // Pick a disposition tile. Each DispositionTile renders as a button
-    // with the disposition's label.
-    fireEvent.click(screen.getByText(/positive engagement/i));
+    // Pick an email disposition tile (SP2: email has its own set now).
+    fireEvent.click(screen.getByText(/reply received/i));
 
     fireEvent.click(screen.getByRole("button", { name: /log activity/i }));
 
@@ -120,7 +119,7 @@ describe("LogActivitySheet — submission payload by type", () => {
     expect(mutateAsyncMock.mock.calls[0][0]).toMatchObject({
       type: "email",
       durationMinutes: null,
-      disposition: "positive_engagement",
+      disposition: "reply_received",
     });
     // After the log succeeds, the deal's follow-up calendar event is reconciled.
     await waitFor(() => expect(syncFollowupMock).toHaveBeenCalledWith("deal-1"));

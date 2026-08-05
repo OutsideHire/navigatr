@@ -20,9 +20,24 @@ describe("dispositionSets", () => {
     const call = DISPOSITIONS_BY_TYPE.call.all;
     // Drop-in carries field-visit outcomes; Call carries phone outcomes.
     expect(drop).toContain("met_dm");
-    expect(drop).not.toContain("connected_with_dm");
-    expect(call).toContain("connected_with_dm");
     expect(call).not.toContain("met_dm");
+  });
+
+  it("SP2: the Call set records unconnected dials and drops Closed Lost", () => {
+    const call = DISPOSITIONS_BY_TYPE.call.all;
+    expect(call).toContain("no_answer"); // the 85%-of-dials gap
+    expect(call).toContain("voicemail");
+    expect(call).toContain("callback");
+    expect(call).not.toContain("closed_lost");
+  });
+
+  it("SP2: Email has its own set, no longer reusing Call", () => {
+    const email = DISPOSITIONS_BY_TYPE.email.all;
+    const call = DISPOSITIONS_BY_TYPE.call.all;
+    expect(email).toContain("sent_pricing");
+    expect(email).toContain("unsubscribed");
+    expect(email).not.toContain("no_answer"); // distinct from call
+    expect(email).not.toEqual(call);
   });
 
   it("DISPOSITION_VALUES is a superset of every type's options", () => {

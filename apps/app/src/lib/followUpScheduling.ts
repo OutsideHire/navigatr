@@ -38,6 +38,25 @@ export type Disposition =
   | "do_not_contact"
   | "out_of_business"
   | "other"
+  // Call set (SP2). no_answer/voicemail close the "85% of dials" gap.
+  | "no_answer"
+  | "voicemail"
+  | "callback"
+  | "verbal_commitment"
+  | "send_info"
+  | "pending_decision"
+  | "bad_number"
+  | "do_not_call"
+  // Email set (SP2).
+  | "sent_pricing"
+  | "sent_application"
+  | "reply_received"
+  | "no_reply"
+  | "introduction_sent"
+  | "sent_information"
+  | "declined_by_email"
+  | "bad_address"
+  | "unsubscribed"
   // Appointment outcomes (W2a-2). Prefixed appt_ so they never collide with
   // the call/drop-in dispositions above.
   | "appt_presented_awaiting"
@@ -129,6 +148,127 @@ export const DISPOSITIONS: Record<Disposition, DispositionSpec> = {
     key: "wrong_number",
     label: "Wrong Person",
     rationale: "No follow-up.",
+    tier: "cool",
+    businessDays: null,
+  },
+  // ── Call set (SP2) ──
+  bad_number: {
+    key: "bad_number",
+    label: "Bad number",
+    rationale: "Invalid — flags the number.",
+    tier: "cool",
+    businessDays: null,
+  },
+  no_answer: {
+    key: "no_answer",
+    label: "No answer",
+    rationale: "Rings out or declined · 1 day.",
+    tier: "neutral",
+    businessDays: 1,
+  },
+  voicemail: {
+    key: "voicemail",
+    label: "Voicemail",
+    rationale: "Left a message · 3 days.",
+    tier: "neutral",
+    businessDays: 3,
+  },
+  callback: {
+    key: "callback",
+    label: "Callback",
+    rationale: "Promised time — you set the date.",
+    tier: "positive",
+    businessDays: null, // date is captured (asserted)
+  },
+  verbal_commitment: {
+    key: "verbal_commitment",
+    label: "Verbal commitment",
+    rationale: "Committed to move forward · 1 day.",
+    tier: "positive",
+    businessDays: 1,
+  },
+  send_info: {
+    key: "send_info",
+    label: "Send info",
+    rationale: "Send materials, then follow up · 3 days.",
+    tier: "neutral",
+    businessDays: 3,
+  },
+  pending_decision: {
+    key: "pending_decision",
+    label: "Pending decision",
+    rationale: "Committee or corporate · 5 days.",
+    tier: "neutral",
+    businessDays: 5,
+  },
+  do_not_call: {
+    key: "do_not_call",
+    label: "Do not call",
+    rationale: "No further contact.",
+    tier: "negative",
+    businessDays: null,
+  },
+  // ── Email set (SP2) ──
+  sent_pricing: {
+    key: "sent_pricing",
+    label: "Sent pricing",
+    rationale: "Rate sheet out · 3 days.",
+    tier: "positive",
+    businessDays: 3,
+  },
+  sent_application: {
+    key: "sent_application",
+    label: "Sent application",
+    rationale: "Out for signature · 2 days.",
+    tier: "positive",
+    businessDays: 2,
+  },
+  reply_received: {
+    key: "reply_received",
+    label: "Reply received",
+    rationale: "Merchant responded · 1 day.",
+    tier: "positive",
+    businessDays: 1,
+  },
+  no_reply: {
+    key: "no_reply",
+    label: "No reply",
+    rationale: "Chasing silence · 3 days.",
+    tier: "neutral",
+    businessDays: 3,
+  },
+  introduction_sent: {
+    key: "introduction_sent",
+    label: "Introduction sent",
+    rationale: "First touch · 5 days.",
+    tier: "neutral",
+    businessDays: 5,
+  },
+  sent_information: {
+    key: "sent_information",
+    label: "Sent information",
+    rationale: "Materials out · 5 days.",
+    tier: "neutral",
+    businessDays: 5,
+  },
+  declined_by_email: {
+    key: "declined_by_email",
+    label: "Declined by email",
+    rationale: "Merchant passed.",
+    tier: "negative",
+    businessDays: null,
+  },
+  bad_address: {
+    key: "bad_address",
+    label: "Bad address",
+    rationale: "Bounced — flags the email.",
+    tier: "cool",
+    businessDays: null,
+  },
+  unsubscribed: {
+    key: "unsubscribed",
+    label: "Unsubscribed",
+    rationale: "Opted out of email.",
     tier: "cool",
     businessDays: null,
   },

@@ -11,24 +11,48 @@
 import type { ActivityType } from "../mockData";
 import type { Disposition } from "@/lib/followUpScheduling";
 
+// SP2: dedicated call set. Primary = one-tap; secondary behind "More".
+// wrong_number is the "Bad number" outcome (flags the phone). Closed Lost is
+// gone from the grid (Mark-as-lost lives in deal Quick actions).
 const CALL_TOP: Disposition[] = [
-  "statement_secured",
-  "positive_engagement",
-  "dm_unavailable",
+  "no_answer",
+  "voicemail",
+  "callback",
+  "verbal_commitment",
   "not_interested",
 ];
 
 const CALL_ALL: Disposition[] = [
-  "statement_secured",
-  "positive_engagement",
-  "connected_with_dm",
-  "dm_unavailable",
-  "followup_requested",
-  "future_potential",
-  "low_probability",
+  "no_answer",
+  "voicemail",
+  "callback",
+  "verbal_commitment",
   "not_interested",
-  "wrong_number",
-  "closed_lost",
+  "gatekeeper",
+  "send_info",
+  "pending_decision",
+  "bad_number",
+  "do_not_call",
+];
+
+// SP2: dedicated email set (no longer reuses the call set).
+const EMAIL_TOP: Disposition[] = [
+  "sent_pricing",
+  "sent_application",
+  "reply_received",
+  "no_reply",
+];
+
+const EMAIL_ALL: Disposition[] = [
+  "sent_pricing",
+  "sent_application",
+  "reply_received",
+  "no_reply",
+  "introduction_sent",
+  "sent_information",
+  "declined_by_email",
+  "bad_address",
+  "unsubscribed",
 ];
 
 const DROPIN_TOP: Disposition[] = [
@@ -80,7 +104,7 @@ export interface DispositionSet {
 export const DISPOSITIONS_BY_TYPE: Record<ActivityType, DispositionSet> = {
   call: { top: CALL_TOP, all: CALL_ALL },
   appointment: { top: APPOINTMENT_TOP, all: APPOINTMENT_ALL },
-  email: { top: CALL_TOP, all: CALL_ALL },
+  email: { top: EMAIL_TOP, all: EMAIL_ALL },
   drop_in: { top: DROPIN_TOP, all: DROPIN_ALL },
 };
 
@@ -108,6 +132,23 @@ export const DISPOSITION_VALUES = [
   "do_not_contact",
   "out_of_business",
   "other",
+  "no_answer",
+  "voicemail",
+  "callback",
+  "verbal_commitment",
+  "send_info",
+  "pending_decision",
+  "bad_number",
+  "do_not_call",
+  "sent_pricing",
+  "sent_application",
+  "reply_received",
+  "no_reply",
+  "introduction_sent",
+  "sent_information",
+  "declined_by_email",
+  "bad_address",
+  "unsubscribed",
   "appt_presented_awaiting",
   "appt_statements_collected",
   "appt_verbal_commitment",
