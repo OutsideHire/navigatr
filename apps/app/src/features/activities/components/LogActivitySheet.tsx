@@ -54,6 +54,7 @@ import { type ActivityType } from "../mockData";
 import { useLogActivity } from "../hooks/useLogActivity";
 import { useFollowupSync } from "@/features/appointments/useFollowupSync";
 import { DISPOSITIONS_BY_TYPE, DISPOSITION_VALUES } from "../lib/dispositionSets";
+import { formatLogConfirmation } from "../lib/logConfirmation";
 
 // ───────────────────────────────────────────────────────────────────────
 // Type picker
@@ -283,7 +284,7 @@ function ActivityForm({
     }
     const followUpIso = isCallback ? callbackAt : calculateFollowUpDate(values.disposition);
     try {
-      const { id } = await logActivity.mutateAsync({
+      const { id, confirmation } = await logActivity.mutateAsync({
         dealId,
         type,
         disposition: values.disposition,
@@ -300,11 +301,11 @@ function ActivityForm({
       // The log's DB trigger has moved the deal's next_followup_at — reconcile
       // its calendar event. Fire-and-forget: never blocks or fails the log.
       void syncFollowup(dealId);
-      if (followUpIso) {
-        toast.success(`Activity logged. Follow-up: ${formatFollowUpDate(followUpIso)}`);
-      } else {
-        toast.success("Activity logged. No follow-up scheduled.");
-      }
+      // Post-log confirmation (Screen Content Spec §5): tell the rep what the
+      // platform just did — which task(s) it created (or none), and any
+      // record-state change — not just that "something" happened.
+      const { title, lines } = formatLogConfirmation(confirmation);
+      toast.success(title, { description: lines.join("\n"), duration: 8000 });
       onLogged(id);
       onClose();
     } catch (err) {
