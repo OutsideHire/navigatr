@@ -862,6 +862,7 @@ export function PathPage() {
             <OwedTimedStops
               placed={owedPlacement.placed}
               spilled={owedPlacement.spilled}
+              spillReason="No room in today's schedule"
               onSelect={handleOwedSelect}
               onSnooze={handleOwedSnooze}
             />
@@ -916,6 +917,7 @@ export function PathPage() {
                 <OwedTimedStops
                   placed={owedPlacement.placed}
                   spilled={owedPlacement.spilled}
+              spillReason="No room in today's schedule"
                   onSelect={handleOwedSelect}
                   onSnooze={handleOwedSnooze}
                 />

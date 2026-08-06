@@ -556,6 +556,28 @@ export function ActivitiesPage() {
   const upcomingCount = upcoming.length;
   const historyCount = historyItems.length;
 
+  // Aging count for the header alarm (per spec): tasks whose band is "aging"
+  // (past their latest acceptable date). The one number that should alarm.
+  const agingCount = React.useMemo(
+    () =>
+      visibleTasks.filter(
+        (t) =>
+          bandPosition(
+            {
+              type: t.type,
+              status: "open",
+              earliestAt: t.earliestAt,
+              targetAt: t.dueAt,
+              latestAt: t.latestAt,
+              dateSource: t.dateSource,
+              excludeFromPath: false,
+            },
+            toDateOnly(now),
+          ) === "aging",
+      ).length,
+    [visibleTasks, now],
+  );
+
   return (
     <div className="mx-auto w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
       <div className="flex flex-col gap-4 lg:gap-6">
@@ -567,8 +589,8 @@ export function ActivitiesPage() {
               {todayCount === 0
                 ? "No tasks due today"
                 : `${todayCount} ${todayCount === 1 ? "task" : "tasks"} due today`}
-              {overdue.length > 0 && (
-                <> · <span className="font-medium text-status-danger">{overdue.length} overdue</span></>
+              {agingCount > 0 && (
+                <> · <span className="font-medium text-status-danger">{agingCount} aging</span></>
               )}
             </p>
           </div>
