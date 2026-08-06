@@ -40,6 +40,7 @@
     "../../supabase/functions/_shared/googleToken.ts",
     "../../supabase/functions/_shared/calendarProviders/types.ts",
     "../../supabase/functions/_shared/calendarProviders/index.ts",
+    "../../supabase/functions/_shared/calendarProviders/pickPushProvider.ts",
     "../../supabase/functions/_shared/calendarProviders/google.ts",
     "../../supabase/functions/_shared/calendarProviders/microsoft.ts",
     "../../supabase/functions/_shared/coverage/config.ts",

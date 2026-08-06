@@ -1,30 +1,25 @@
 // Two-way calendar sync, Milestone 3: mirror a planned, not-yet-started path
-// (Plan a Path) to an ALL-DAY block on the rep's PRIMARY Google Calendar. This
-// is the reconcile engine: given a path id, make the calendar match the path's
-// state — create, update, or delete the all-day block — and write the result
-// back onto the path (path_calendar_event_id / path_calendar_sync_status /
-// path_calendar_error).
+// (Plan a Path) to an ALL-DAY block on the rep's PRIMARY calendar (Google OR
+// Outlook). This is the reconcile engine: given a path id, make the calendar
+// match the path's state — create, update, or delete the all-day block — and
+// write the result back onto the path (path_calendar_event_id /
+// path_calendar_provider / path_calendar_sync_status / path_calendar_error).
 //
 // A path block SHOULD exist iff the path is still 'planned' AND has not been
 // started (started_at IS NULL). Once a rep begins running the route, or the path
 // completes, the mirrored block is removed.
 //
-// Token loading mirrors sync_followup / sync_appointment / read_calendar_events:
-// resolve the rep's active google oauth_connection (user client, RLS-scoped),
-// read the Vault token bundle via the service-role RPC oauth_token_get, then
-// getFreshAccessToken (persisting a refreshed bundle). Calendar-column
-// write-backs go through the service-role client because RLS only lets the owner
-// touch core fields. CALENDAR_MOCK=1 short-circuits all Google HTTP but still
-// does the DB writes.
+// Provider is resolved per rep (resolvePushToken): keep an existing mirror's
+// provider, else prefer Google when both are connected. The all-day body + HTTP
+// live behind the provider; Google's JSON is byte-identical to before.
+// CALENDAR_MOCK=1 short-circuits all provider HTTP but still does the DB writes.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { buildPathBlockEvent } from "../_shared/googleEvent.ts";
-import { getFreshAccessToken, type TokenBundle } from "../_shared/googleToken.ts";
+import { getProvider, type CalendarProviderId } from "../_shared/calendarProviders/index.ts";
+import { resolvePushToken } from "../_shared/calendarPush.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const GOOGLE_CLIENT_ID = Deno.env.get("GOOGLE_CALENDAR_CLIENT_ID") ?? "";
-const GOOGLE_CLIENT_SECRET = Deno.env.get("GOOGLE_CALENDAR_CLIENT_SECRET") ?? "";
 const CALENDAR_MOCK = Deno.env.get("CALENDAR_MOCK") === "1";
 
 const CORS_HEADERS: Record<string, string> = {
@@ -36,8 +31,7 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } });
 }
 
-// Google Calendar error/detail messages can be long; keep the persisted column
-// bounded so a giant HTML error page never bloats the row.
+// Provider error/detail messages can be long; keep the persisted column bounded.
 function truncate(msg: string, max = 500): string {
   return msg.length > max ? msg.slice(0, max) : msg;
 }
@@ -49,49 +43,7 @@ interface PathRow {
   status: string;
   started_at: string | null;
   path_calendar_event_id: string | null;
-}
-
-/**
- * Resolve a currently-valid access token for the caller's google connection.
- * Returns null (the "needs_reconnect" signal) when there's no active connection
- * or the refresh fails. Persists a refreshed bundle exactly as
- * sync_followup / sync_appointment / read_calendar_events do.
- */
-async function resolveAccessToken(
-  userClient: ReturnType<typeof createClient>,
-  svc: ReturnType<typeof createClient>,
-  userId: string,
-): Promise<string | null> {
-  const { data: conn } = await userClient
-    .from("oauth_connections")
-    .select("id, status")
-    .eq("provider", "google")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (!conn || (conn as { status?: string }).status !== "active") return null;
-  const connectionId = (conn as { id: string }).id;
-
-  try {
-    const { data: bundleJson } = await svc.rpc("oauth_token_get", { p_connection_id: connectionId });
-    if (!bundleJson) return null;
-    const bundle = bundleJson as TokenBundle;
-
-    const fresh = await getFreshAccessToken(bundle, {
-      clientId: GOOGLE_CLIENT_ID,
-      clientSecret: GOOGLE_CLIENT_SECRET,
-    });
-    if (fresh.refreshed) {
-      await svc.rpc("oauth_token_set", { p_connection_id: connectionId, p_token: fresh.bundle });
-      await svc
-        .from("oauth_connections")
-        .update({ last_refreshed_at: new Date().toISOString() })
-        .eq("id", connectionId);
-    }
-    return fresh.accessToken;
-  } catch {
-    return null;
-  }
+  path_calendar_provider: string | null;
 }
 
 Deno.serve(async (req) => {
@@ -115,21 +67,23 @@ Deno.serve(async (req) => {
   // own it — same signal.
   const { data: pathData } = await userClient
     .from("paths")
-    .select("id, name, path_date, status, started_at, path_calendar_event_id")
+    .select("id, name, path_date, status, started_at, path_calendar_event_id, path_calendar_provider")
     .eq("id", pathId)
     .eq("user_id", userId)
     .maybeSingle();
   if (!pathData) return json({ error: "not_found" }, 404);
   const path = pathData as unknown as PathRow;
+  const existingProvider = (path.path_calendar_provider as CalendarProviderId | null) ?? null;
 
   // Service-role client for all calendar-column write-backs (RLS only lets the
   // owner update core fields) and the Vault token RPCs (service_role-only).
   const svc = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
-  // Fresh token (mock skips Google entirely, so no connection is required).
+  // Resolve push target + fresh token (mock skips this, so no connection needed).
+  let provider: CalendarProviderId = existingProvider ?? "google";
   let accessToken = "";
   if (!CALENDAR_MOCK) {
-    const token = await resolveAccessToken(userClient, svc, userId);
+    const token = await resolvePushToken(userClient, svc, userId, existingProvider);
     if (!token) {
       await svc
         .from("paths")
@@ -137,47 +91,25 @@ Deno.serve(async (req) => {
         .eq("id", pathId);
       return json({ status: "needs_reconnect" });
     }
-    accessToken = token;
+    provider = token.provider;
+    accessToken = token.accessToken;
   }
-
-  const authFetch = (url: string, init: RequestInit = {}) =>
-    fetch(url, {
-      ...init,
-      headers: { ...(init.headers ?? {}), Authorization: `Bearer ${accessToken}` },
-    });
 
   // A path block should exist iff the path is still planned and hasn't been
   // started. Everything else (started, completed) drives delete.
   const shouldExist = path.status === "planned" && path.started_at == null;
 
   if (shouldExist) {
-    const eventBody = buildPathBlockEvent({ id: path.id, name: path.name ?? "", pathDate: path.path_date });
-
     let pathEventId: string;
     if (CALENDAR_MOCK) {
       pathEventId = path.path_calendar_event_id ?? `mock-path-${path.id}`;
     } else {
-      const isInsert = !path.path_calendar_event_id;
-      const url = isInsert
-        ? "https://www.googleapis.com/calendar/v3/calendars/primary/events"
-        : `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(path.path_calendar_event_id!)}`;
       try {
-        const res = await authFetch(url, {
-          method: isInsert ? "POST" : "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(eventBody),
+        const { id } = await getProvider(provider).upsertEvent(accessToken, path.path_calendar_event_id, {
+          kind: "path",
+          path: { id: path.id, name: path.name ?? "", pathDate: path.path_date },
         });
-        if (!res.ok) {
-          const detail = truncate(`events.${isInsert ? "insert" : "patch"} http ${res.status}: ${await res.text().catch(() => "")}`);
-          await svc
-            .from("paths")
-            .update({ path_calendar_sync_status: "error", path_calendar_error: detail })
-            .eq("id", pathId);
-          return json({ status: "error", detail });
-        }
-        const evData = (await res.json()) as { id?: string };
-        // On PATCH Google echoes the same id; fall back to the existing one.
-        pathEventId = evData.id ?? path.path_calendar_event_id ?? "";
+        pathEventId = id || (path.path_calendar_event_id ?? "");
       } catch (err) {
         const detail = truncate(err instanceof Error ? err.message : String(err));
         await svc
@@ -192,6 +124,7 @@ Deno.serve(async (req) => {
       .from("paths")
       .update({
         path_calendar_event_id: pathEventId,
+        path_calendar_provider: provider,
         path_calendar_sync_status: "synced",
         path_calendar_error: null,
       })
@@ -204,19 +137,7 @@ Deno.serve(async (req) => {
   if (path.path_calendar_event_id) {
     if (!CALENDAR_MOCK) {
       try {
-        const res = await authFetch(
-          `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(path.path_calendar_event_id)}`,
-          { method: "DELETE" },
-        );
-        // 404/410 = the event is already gone on Google's side; treat as success.
-        if (!res.ok && res.status !== 404 && res.status !== 410) {
-          const detail = truncate(`events.delete http ${res.status}: ${await res.text().catch(() => "")}`);
-          await svc
-            .from("paths")
-            .update({ path_calendar_sync_status: "error", path_calendar_error: detail })
-            .eq("id", pathId);
-          return json({ status: "error", detail });
-        }
+        await getProvider(provider).deleteEvent(accessToken, path.path_calendar_event_id);
       } catch (err) {
         const detail = truncate(err instanceof Error ? err.message : String(err));
         await svc
@@ -230,6 +151,7 @@ Deno.serve(async (req) => {
       .from("paths")
       .update({
         path_calendar_event_id: null,
+        path_calendar_provider: null,
         path_calendar_sync_status: null,
         path_calendar_error: null,
       })
