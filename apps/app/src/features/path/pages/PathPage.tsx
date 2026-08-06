@@ -75,6 +75,8 @@ import { DiscoverMeetingBanner } from "../components/DiscoverMeetingBanner";
 import { useQueryClient } from "@tanstack/react-query";
 import { useOwedVisits } from "../hooks/useOwedVisits";
 import { OwedVisitsList, type OwedVisitRow } from "../components/OwedVisitsList";
+import { OwedTimedStops, type OwedTimedRow } from "../components/OwedTimedStops";
+import { placeOwedVisits } from "../lib/owedTimedPlacement";
 import type { OwedVisit } from "../lib/owedVisits";
 import { useTaskMutations } from "@/features/activities/hooks/useTaskMutations";
 
@@ -218,7 +220,7 @@ export function PathPage() {
   // so TanStack dedupes them to one cached fetch. `useCalendarEvents(null)` is a
   // no-op (its query is `enabled` only when the window is set), so entry / planned
   // / finished paths that never open discover still never touch the calendar.
-  const calNeeded = pathView === "discover" || (startedAt && hasPending);
+  const calNeeded = pathView === "discover" || pathView === "path" || (startedAt && hasPending);
   const runWindow = calNeeded ? runTodayWindow : null;
   const {
     waypoints: runWaypoints,
@@ -357,7 +359,9 @@ export function PathPage() {
     const p = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
   }, []);
-  const { owed: owedVisits } = useOwedVisits(pathView === "discover" ? todayDate : "");
+  const { owed: owedVisits } = useOwedVisits(
+    pathView === "discover" || pathView === "path" ? todayDate : "",
+  );
 
   // Discovery dedup: an owed visit is an existing active deal, which pipeline
   // de-dup already hides from discovery — but guard anyway so a due account can
@@ -607,6 +611,34 @@ export function PathPage() {
     [snoozeTask, queryClient],
   );
 
+  // Owed visits as TIMED stops on the Path/Stops view (item 2). Runs the owed
+  // visits through the real scheduler alongside today's fixed calendar to get an
+  // approximate arrival per visit + the spill. Only on the "path" view; the
+  // running route rendering is left untouched (owed stops are their own section).
+  const owedPlacement = React.useMemo(() => {
+    if (pathView !== "path" || !origin || owedVisits.length === 0) {
+      return { placed: [] as OwedTimedRow[], spilled: [] as OwedVisit[] };
+    }
+    const byTask = new Map(owedVisits.map((v) => [v.taskId, v]));
+    const result = placeOwedVisits(owedVisits, {
+      windowStart: runTodayWindow.start,
+      windowEnd: runTodayWindow.end,
+      origin,
+      waypoints: runWaypoints.map((w) => ({ id: w.id, title: w.title, start: w.start, end: w.end, lat: w.lat, lng: w.lng })),
+      timeBlocks: runTimeBlocks.map((b) => ({ id: b.id, title: b.title, start: b.start, end: b.end })),
+    });
+    const placed: OwedTimedRow[] = result.placed
+      .map((p) => {
+        const visit = byTask.get(p.taskId);
+        return visit ? { visit, aroundIso: p.aroundIso } : null;
+      })
+      .filter((r): r is OwedTimedRow => r != null);
+    const spilled = result.spilledTaskIds
+      .map((id) => byTask.get(id))
+      .filter((v): v is OwedVisit => v != null);
+    return { placed, spilled };
+  }, [pathView, origin, owedVisits, runTodayWindow, runWaypoints, runTimeBlocks]);
+
   const discoverUnfit = React.useMemo(() => {
     if (!discoverNextMeeting || !origin) return { ids: new Set<string>(), label: "" };
     const now = new Date().toISOString();
@@ -827,6 +859,12 @@ export function PathPage() {
              auto-run. "Start route" stamps started_at and flips to the Run tab
              (same landing as Create's auto-start). */
           <>
+            <OwedTimedStops
+              placed={owedPlacement.placed}
+              spilled={owedPlacement.spilled}
+              onSelect={handleOwedSelect}
+              onSnooze={handleOwedSnooze}
+            />
             <ActivePathView
               origin={origin}
               onAddStops={enterDiscover}
@@ -875,6 +913,12 @@ export function PathPage() {
               />
             ) : (
               <>
+                <OwedTimedStops
+                  placed={owedPlacement.placed}
+                  spilled={owedPlacement.spilled}
+                  onSelect={handleOwedSelect}
+                  onSnooze={handleOwedSnooze}
+                />
                 <ActivePathView origin={origin} onAddStops={enterDiscover} onStartRoute={() => setActiveTab("run")} />
                 <UpcomingPaths onLaunch={() => navigate("/path")} />
               </>
