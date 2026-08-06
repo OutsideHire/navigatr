@@ -42,7 +42,9 @@ import {
 import { type Activity, type ActivityType } from "../mockData";
 import { type Deal } from "@/features/pipeline/mockData";
 import { DISPOSITIONS, formatFollowUpDate } from "@/lib/followUpScheduling";
-import { calendarDayDelta } from "@/lib/calendarDate";
+import { calendarDayDelta, toDateOnly } from "@/lib/calendarDate";
+import { bandPosition } from "@/features/path/lib/classD";
+import { BandBadge } from "@/features/path/lib/bandBadge";
 import { LogActivitySheet } from "../components/LogActivitySheet";
 import { EditActivitySheet } from "../components/EditActivitySheet";
 import { CreateTaskSheet } from "../components/CreateTaskSheet";
@@ -75,8 +77,9 @@ function daysBetween(now: Date, dueAt: Date): number {
 
 function formatRelativeShort(iso: string, now: Date): string {
   const d = daysBetween(now, new Date(iso));
-  if (d < -1) return `${Math.abs(d)}d overdue`;
-  if (d === -1) return "1d overdue";
+  // Lateness is always counted from target_at (one date vocabulary, per spec).
+  if (d < -1) return `${Math.abs(d)}d past target`;
+  if (d === -1) return "1d past target";
   if (d === 0) return "Due today";
   if (d === 1) return "Due tomorrow";
   return `Due ${formatFollowUpDate(iso)}`;
@@ -122,6 +125,11 @@ interface PageTask {
   sourceOutcome: string | null;
   priority: string | null;
   startAt: string | null; // optional time-of-day (ISO)
+  // Band dates + creation, for the band badge and the "from X, Nd ago" provenance.
+  earliestAt: string;
+  latestAt: string;
+  dateSource: string;
+  createdAt: string;
 }
 
 function toPageTask(t: Task): PageTask {
@@ -134,6 +142,10 @@ function toPageTask(t: Task): PageTask {
     sourceOutcome: t.sourceOutcome,
     priority: t.priority,
     startAt: t.startAt,
+    earliestAt: t.earliestAt,
+    latestAt: t.latestAt,
+    dateSource: t.dateSource,
+    createdAt: t.createdAt,
   };
 }
 
@@ -177,6 +189,19 @@ function TaskRow({
   const outcomeLabel = task.sourceOutcome
     ? DISPOSITIONS[task.sourceOutcome as keyof typeof DISPOSITIONS]?.label
     : undefined;
+  // Band position "today" from the task's band dates (one band vocabulary).
+  const band = bandPosition(
+    {
+      type: task.type,
+      status: "open",
+      earliestAt: task.earliestAt,
+      targetAt: task.dueAt,
+      latestAt: task.latestAt,
+      dateSource: task.dateSource,
+      excludeFromPath: false,
+    },
+    toDateOnly(now),
+  );
 
   // Primary action varies by type: log the outcome (call/email/appointment),
   // mark done (to-do, internal), or open the deal to log off-route (drop-in).
@@ -210,6 +235,7 @@ function TaskRow({
         <div className="flex min-w-0 flex-col gap-0.5">
           <p className="flex items-center gap-1.5 text-body-strong text-text-default">
             <span className="truncate">{task.companyName}</span>
+            {!isTodo && <BandBadge band={band} className="shrink-0" />}
             {task.priority === "high" && (
               <span className="inline-flex shrink-0 items-center rounded-radius-full bg-status-danger-bg px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-danger">
                 High
@@ -221,7 +247,7 @@ function TaskRow({
               {formatRelativeShort(task.dueAt, now)}
             </span>
             {task.startAt ? <>{" · "}{formatTime(task.startAt)}</> : null}
-            {outcomeLabel ? <>{" · "}from {outcomeLabel}</> : null}
+            {outcomeLabel ? <>{" · "}from {outcomeLabel}, {formatPastRelative(task.createdAt, now)}</> : null}
           </p>
         </div>
       </div>

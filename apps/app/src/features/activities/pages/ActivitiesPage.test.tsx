@@ -131,6 +131,13 @@ describe("ActivitiesPage / task row actions", () => {
     renderWithSeed({ tasks: [t], deals: [deal("d-1", "Acme")] });
     expect(screen.getByText("High")).toBeInTheDocument();
   });
+
+  it("shows a band badge and 'past target' lateness on an aging task", () => {
+    // A target far in the past → band is Aging, lateness reads 'past target'.
+    renderWithSeed({ tasks: [makeTask("t-1", "d-1", "2026-01-01")], deals: [deal("d-1", "Acme")] });
+    expect(screen.getByText("Aging")).toBeInTheDocument();
+    expect(screen.getByText(/past target/)).toBeInTheDocument();
+  });
 });
 
 describe("ActivitiesPage / History", () => {

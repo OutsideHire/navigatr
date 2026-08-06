@@ -33,7 +33,7 @@ describe("OwedVisitsList", () => {
     render(<OwedVisitsList visits={[row()]} onSelect={vi.fn()} />);
     expect(screen.getByText("Owed visits")).toBeInTheDocument();
     expect(screen.getByText("Blue Bottle")).toBeInTheDocument();
-    expect(screen.getByText("Overdue")).toBeInTheDocument(); // past_ideal
+    expect(screen.getByText("Past ideal")).toBeInTheDocument(); // past_ideal
     expect(screen.getByText(/from not available/)).toBeInTheDocument();
   });
 

@@ -13,10 +13,9 @@
  * fit-flags the rows and decides what a tap / snooze does.
  */
 import { ChevronRight, DoorOpen } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { Button, Card, ListRow } from "@/components/navigatr";
 import { formatDistance } from "@/lib/distance";
-import type { BandPosition } from "../lib/classD";
+import { BandBadge } from "../lib/bandBadge";
 import type { OwedVisit } from "../lib/owedVisits";
 
 /** One owed visit as the list renders it: the assembled candidate + its distance
@@ -36,30 +35,11 @@ export interface OwedVisitsListProps {
   onSnooze?: (v: OwedVisit) => void;
 }
 
-/** Band → short badge label + tone. not_yet_open never reaches this group
- *  (eligibility requires the window to have opened). */
-const BAND_BADGE: Record<BandPosition, { label: string; className: string }> = {
-  pinned: { label: "Promised", className: "bg-accent-violet-20 text-accent-violet" },
-  aging: { label: "Aging", className: "bg-status-danger-bg text-status-danger" },
-  past_ideal: { label: "Overdue", className: "bg-status-warning-bg text-status-warning" },
-  in_window: { label: "Due", className: "bg-status-info-bg text-status-info" },
-  not_yet_open: { label: "Upcoming", className: "bg-surface-sunken text-text-muted" },
-};
-
 /** "not_available" → "No answer" reads oddly; a plain de-snake is honest and
  *  robust across the whole disposition vocabulary. Null → generic label. */
 function fromOutcomeLabel(outcome: string | null): string {
   if (!outcome) return "follow-up";
   return outcome.replace(/^appt_/, "").replace(/_/g, " ");
-}
-
-function BandBadge({ band }: { band: BandPosition }) {
-  const b = BAND_BADGE[band];
-  return (
-    <span className={cn("inline-flex items-center rounded-radius-full px-2 py-0.5 text-caption font-medium", b.className)}>
-      {b.label}
-    </span>
-  );
 }
 
 function OwedRow({
