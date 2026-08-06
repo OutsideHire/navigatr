@@ -1,6 +1,22 @@
 import type { RawCalendarEvent } from "../calendarQualify.ts";
 import { getFreshAccessToken } from "../googleToken.ts";
-import type { CalendarProvider } from "./types.ts";
+import type { CalendarEventInput, CalendarProvider, UpsertResult } from "./types.ts";
+import { buildFollowupEvent, buildGoogleEventPayload, buildPathBlockEvent } from "../googleEvent.ts";
+
+const GCAL_EVENTS = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
+
+// Reuse the existing builders so the Google event JSON is byte-identical to what
+// the sync functions produced before this abstraction — no behavior change.
+function googleBodyFor(input: CalendarEventInput): unknown {
+  switch (input.kind) {
+    case "appointment":
+      return buildGoogleEventPayload(input.appt, input.attendeeEmails, input.timeZone);
+    case "followup":
+      return buildFollowupEvent(input.deal, input.followUpDateISO);
+    case "path":
+      return buildPathBlockEvent(input.path);
+  }
+}
 
 interface GoogleCalendarListItem { id: string }
 interface GoogleEventItem {
@@ -64,5 +80,30 @@ export const googleProvider: CalendarProvider = {
       }),
     );
     return perCal.flat();
+  },
+  async upsertEvent(accessToken, existingEventId, input): Promise<UpsertResult> {
+    const body = googleBodyFor(input);
+    const isInsert = !existingEventId;
+    const url = isInsert ? GCAL_EVENTS : `${GCAL_EVENTS}/${encodeURIComponent(existingEventId!)}`;
+    const res = await fetch(url, {
+      method: isInsert ? "POST" : "PATCH",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      throw new Error(`events.${isInsert ? "insert" : "patch"} http ${res.status}: ${await res.text().catch(() => "")}`);
+    }
+    const data = (await res.json()) as { id?: string };
+    return { id: data.id ?? existingEventId ?? "" };
+  },
+  async deleteEvent(accessToken, eventId): Promise<void> {
+    const res = await fetch(`${GCAL_EVENTS}/${encodeURIComponent(eventId)}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    // 404/410 = already gone on Google's side; treat as success.
+    if (!res.ok && res.status !== 404 && res.status !== 410) {
+      throw new Error(`events.delete http ${res.status}: ${await res.text().catch(() => "")}`);
+    }
   },
 };

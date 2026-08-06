@@ -36,6 +36,7 @@
     "../../supabase/functions/_shared/calendarQualify.ts",
     "../../supabase/functions/_shared/mergeCalendarEvents.ts",
     "../../supabase/functions/_shared/googleEvent.ts",
+    "../../supabase/functions/_shared/graphEvent.ts",
     "../../supabase/functions/_shared/googleToken.ts",
     "../../supabase/functions/_shared/calendarProviders/types.ts",
     "../../supabase/functions/_shared/calendarProviders/index.ts",

@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { microsoftProvider } from "../../../../../../supabase/functions/_shared/calendarProviders/microsoft";
+import { NAVIGATR_APPT_PROP_ID } from "../../../../../../supabase/functions/_shared/graphEvent";
 import type { TokenBundle } from "../../../../../../supabase/functions/_shared/googleToken";
+
+const APPT = {
+  id: "appt-1",
+  title: "Demo",
+  startAt: "2026-07-15T14:00:00.000Z",
+  endAt: "2026-07-15T15:00:00.000Z",
+  locationAddress: "123 Main St",
+  notes: "notes",
+};
 
 const NOW = Date.parse("2026-07-08T12:00:00.000Z");
 
@@ -209,6 +219,85 @@ describe("microsoftProvider.listEvents", () => {
     await expect(
       microsoftProvider.listEvents("t", "a", "b"),
     ).rejects.toThrow(/graph calendarView http 401/);
+  });
+
+  it("maps our expanded navigatr tag onto navigatrAppointmentId (read-dedup)", async () => {
+    const tagged = {
+      value: [
+        {
+          id: "gp",
+          subject: "Pushed appt",
+          isAllDay: false,
+          start: { dateTime: "2026-07-15T14:00:00.0000000", timeZone: "UTC" },
+          end: { dateTime: "2026-07-15T15:00:00.0000000", timeZone: "UTC" },
+          singleValueExtendedProperties: [{ id: NAVIGATR_APPT_PROP_ID, value: "appt-9" }],
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => tagged }) as unknown as Response));
+    const out = await microsoftProvider.listEvents("t", "a", "b");
+    expect(out[0].navigatrAppointmentId).toBe("appt-9");
+  });
+
+  it("requests the navigatr tag via \$expand", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({ ok: true, json: async () => ({ value: [] }) }) as unknown as Response);
+    vi.stubGlobal("fetch", fetchMock);
+    await microsoftProvider.listEvents("t", "2026-07-15T00:00:00Z", "2026-07-17T00:00:00Z");
+    const u = new URL(fetchMock.mock.calls[0][0] as string);
+    expect(u.searchParams.get("$expand")).toContain("singleValueExtendedProperties");
+    expect(u.searchParams.get("$expand")).toContain(NAVIGATR_APPT_PROP_ID);
+  });
+});
+
+describe("microsoftProvider.upsertEvent / deleteEvent", () => {
+  it("POSTs a new tagged event to /me/events and returns the new id", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({ ok: true, json: async () => ({ id: "new-evt" }) }) as unknown as Response);
+    vi.stubGlobal("fetch", fetchMock);
+    const res = await microsoftProvider.upsertEvent("tok", null, {
+      kind: "appointment",
+      appt: APPT,
+      attendeeEmails: [],
+      timeZone: "UTC",
+    });
+    expect(res).toEqual({ id: "new-evt" });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://graph.microsoft.com/v1.0/me/events");
+    expect((init as RequestInit).method).toBe("POST");
+    const body = JSON.parse(String((init as RequestInit).body));
+    expect(body.subject).toBe("Demo");
+    expect(body.singleValueExtendedProperties[0]).toEqual({ id: NAVIGATR_APPT_PROP_ID, value: "appt-1" });
+  });
+
+  it("PATCHes an existing event by id", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({ ok: true, json: async () => ({ id: "e1" }) }) as unknown as Response);
+    vi.stubGlobal("fetch", fetchMock);
+    const res = await microsoftProvider.upsertEvent("tok", "e1", {
+      kind: "appointment",
+      appt: APPT,
+      attendeeEmails: [],
+      timeZone: "UTC",
+    });
+    expect(res.id).toBe("e1");
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://graph.microsoft.com/v1.0/me/events/e1");
+    expect((init as RequestInit).method).toBe("PATCH");
+  });
+
+  it("throws on a non-ok upsert", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 500, text: async () => "boom" }) as unknown as Response));
+    await expect(
+      microsoftProvider.upsertEvent("tok", null, { kind: "path", path: { id: "p1", name: "N", pathDate: "2026-07-22" } }),
+    ).rejects.toThrow(/graph events.insert http 500/);
+  });
+
+  it("treats a 404 delete as success (idempotent)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 404 }) as unknown as Response));
+    await expect(microsoftProvider.deleteEvent("tok", "gone")).resolves.toBeUndefined();
+  });
+
+  it("throws on a real delete failure", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 500, text: async () => "err" }) as unknown as Response));
+    await expect(microsoftProvider.deleteEvent("tok", "e1")).rejects.toThrow(/graph events.delete http 500/);
   });
 });
 

@@ -1,7 +1,27 @@
 import type { RawCalendarEvent } from "../calendarQualify.ts";
 import type { TokenBundle } from "../googleToken.ts";
 import { isExpired } from "../googleToken.ts";
-import type { CalendarProvider, RefreshDeps, RefreshResult } from "./types.ts";
+import type { CalendarEventInput, CalendarProvider, RefreshDeps, RefreshResult, UpsertResult } from "./types.ts";
+import {
+  buildGraphAppointment,
+  buildGraphFollowup,
+  buildGraphPathBlock,
+  NAVIGATR_APPT_PROP_ID,
+  type GraphEventBody,
+} from "../graphEvent.ts";
+
+const GRAPH_EVENTS = "https://graph.microsoft.com/v1.0/me/events";
+
+function graphBodyFor(input: CalendarEventInput): GraphEventBody {
+  switch (input.kind) {
+    case "appointment":
+      return buildGraphAppointment(input.appt, input.attendeeEmails, input.timeZone);
+    case "followup":
+      return buildGraphFollowup(input.deal, input.followUpDateISO);
+    case "path":
+      return buildGraphPathBlock(input.path);
+  }
+}
 
 const AUTHORITY = "https://login.microsoftonline.com/organizations/oauth2/v2.0";
 
@@ -12,6 +32,7 @@ interface GraphEvent {
   end?: { dateTime?: string; timeZone?: string };
   location?: { displayName?: string };
   responseStatus?: { response?: string };  // none|organizer|tentativelyAccepted|accepted|declined|notResponded
+  singleValueExtendedProperties?: Array<{ id?: string; value?: string }>; // our navigatr tag, when expanded
 }
 
 // Graph UTC dateTime like "2026-07-15T10:00:00.0000000" (no Z). Normalize to ISO.
@@ -74,6 +95,12 @@ export const microsoftProvider: CalendarProvider = {
     url.searchParams.set("endDateTime", windowEnd);
     url.searchParams.set("$top", "250");
     url.searchParams.set("$orderby", "start/dateTime");
+    // Expand our navigatr tag so a pushed appointment can be deduped out of the
+    // Path read (classifyEvent excludes any event carrying navigatrAppointmentId).
+    url.searchParams.set(
+      "$expand",
+      `singleValueExtendedProperties($filter=id eq '${NAVIGATR_APPT_PROP_ID}')`,
+    );
     const res = await fetch(url.toString(), {
       headers: { Authorization: `Bearer ${accessToken}`, Prefer: 'outlook.timezone="UTC"' },
     });
@@ -90,7 +117,33 @@ export const microsoftProvider: CalendarProvider = {
       visibility: e.sensitivity ?? null,          // 'private'/'confidential' → excluded by classifyEvent
       responseStatus: e.responseStatus?.response ?? null, // 'declined' → excluded
       location: e.location?.displayName ?? null,
-      navigatrAppointmentId: null,                 // no Outlook push yet (later slice)
+      navigatrAppointmentId:
+        e.singleValueExtendedProperties?.find((p) => p.id === NAVIGATR_APPT_PROP_ID)?.value ?? null,
     }));
+  },
+  async upsertEvent(accessToken, existingEventId, input): Promise<UpsertResult> {
+    const body = graphBodyFor(input);
+    const isInsert = !existingEventId;
+    const url = isInsert ? GRAPH_EVENTS : `${GRAPH_EVENTS}/${encodeURIComponent(existingEventId!)}`;
+    const res = await fetch(url, {
+      method: isInsert ? "POST" : "PATCH",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      throw new Error(`graph events.${isInsert ? "insert" : "patch"} http ${res.status}: ${await res.text().catch(() => "")}`);
+    }
+    const data = (await res.json()) as { id?: string };
+    return { id: data.id ?? existingEventId ?? "" };
+  },
+  async deleteEvent(accessToken, eventId): Promise<void> {
+    const res = await fetch(`${GRAPH_EVENTS}/${encodeURIComponent(eventId)}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    // 404/410 = already gone on Microsoft's side; treat as success.
+    if (!res.ok && res.status !== 404 && res.status !== 410) {
+      throw new Error(`graph events.delete http ${res.status}: ${await res.text().catch(() => "")}`);
+    }
   },
 };
