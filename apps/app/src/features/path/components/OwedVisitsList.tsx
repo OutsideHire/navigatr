@@ -42,6 +42,17 @@ function fromOutcomeLabel(outcome: string | null): string {
   return outcome.replace(/^appt_/, "").replace(/_/g, " ");
 }
 
+/** Staleness of the generating outcome, e.g. "16d ago" — how long the rep has
+ *  owed this visit. */
+function ageLabel(iso: string): string {
+  const days = Math.round((Date.now() - Date.parse(iso)) / 86_400_000);
+  if (days <= 0) return "today";
+  if (days === 1) return "1d ago";
+  if (days < 30) return `${days}d ago`;
+  if (days < 365) return `${Math.round(days / 30)}mo ago`;
+  return "1y+ ago";
+}
+
 function OwedRow({
   v,
   onSelect,
@@ -52,7 +63,8 @@ function OwedRow({
   onSnooze?: (v: OwedVisit) => void;
 }) {
   const distance = Number.isFinite(v.distanceMeters) ? formatDistance(v.distanceMeters) : null;
-  const subtitleParts = [`from ${fromOutcomeLabel(v.sourceOutcome)}`];
+  // Provenance + staleness: "from Connected with DM, 16d ago".
+  const subtitleParts = [`from ${fromOutcomeLabel(v.sourceOutcome)}, ${ageLabel(v.createdAt)}`];
   if (distance) subtitleParts.push(distance);
   const row = (
     <ListRow

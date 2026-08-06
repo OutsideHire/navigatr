@@ -85,6 +85,8 @@ export interface OwedVisit {
   snoozeCount: number;
   /** The outcome that generated this follow-up (for the "from <outcome>" chip). */
   sourceOutcome: string | null;
+  /** When the follow-up was generated (UTC ISO), for the "Nd ago" staleness age. */
+  createdAt: string;
 }
 
 /**
@@ -158,6 +160,7 @@ export function assembleOwedVisits(
       latestAt: t.latest_at,
       snoozeCount: t.snooze_count,
       sourceOutcome: t.source_outcome,
+      createdAt: t.created_at,
     });
   }
 
