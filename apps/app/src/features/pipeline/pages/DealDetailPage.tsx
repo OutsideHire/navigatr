@@ -94,6 +94,7 @@ import { UpcomingAppointments } from "@/features/appointments/UpcomingAppointmen
 import { ContactsTab } from "../components/ContactsTab";
 import { NotesAndFilesTab } from "../components/NotesAndFilesTab";
 import { FollowupSyncIndicator } from "../components/FollowupSyncIndicator";
+import { FollowupChip } from "../components/FollowupChip";
 
 // ───────────────────────────────────────────────────────────────────────
 // Not-found state
@@ -280,6 +281,7 @@ function HeroCard({ deal, onLogActivity, onEdit }: { deal: Deal; onLogActivity: 
               eyebrow="EXPECTED CLOSE"
               value={deal.nextFollowup ? formatCalendarDate(deal.nextFollowup) : "—"}
             />
+            <FollowupChip date={deal.nextFollowup} />
             <FollowupSyncIndicator
               dealId={deal.id}
               status={deal.followupCalendarSyncStatus}
