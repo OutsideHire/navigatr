@@ -712,7 +712,12 @@ export function PathPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {pathView !== "path" && (
+          {/* Start-a-path actions + the location control live in the header ONLY
+              on the browse/discover view. On the entry landing they are redundant
+              with the two big PathEntry cards ("Create a Path" / "Plan a Path"),
+              which own those actions, so we hide them there; on an active run
+              (pathView "path") they stay hidden too. */}
+          {pathView === "discover" && (
             <>
               <Button
                 variant="tertiary"
@@ -733,15 +738,17 @@ export function PathPage() {
               </Button>
             </>
           )}
-          <Button
-            variant="secondary"
-            size="sm"
-            leadingIcon={geoStatus === "loading" ? Loader2 : LocateFixed}
-            onClick={useMyLocation}
-            loading={geoStatus === "loading"}
-          >
-            {originSource === "gps" ? "Re-center" : "Use my location"}
-          </Button>
+          {pathView !== "entry" && (
+            <Button
+              variant="secondary"
+              size="sm"
+              leadingIcon={geoStatus === "loading" ? Loader2 : LocateFixed}
+              onClick={useMyLocation}
+              loading={geoStatus === "loading"}
+            >
+              {originSource === "gps" ? "Re-center" : "Use my location"}
+            </Button>
+          )}
           {/* Path settings — manage default industries. Visible in every
               pathView (entry / active / discover) since it lives in the
               always-rendered header action group. */}

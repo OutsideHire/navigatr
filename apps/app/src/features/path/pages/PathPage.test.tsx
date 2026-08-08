@@ -300,6 +300,47 @@ describe("PathPage path-first view states", () => {
   });
 });
 
+describe("PathPage landing header actions: redundant buttons hidden", () => {
+  const readyOrigin: PathOrigin = {
+    ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
+  };
+
+  it("hides the Plan ahead / Create path / Re-center header buttons on the entry landing (the two cards own those actions)", () => {
+    originState.current = readyOrigin;
+    todayState.current = { ...todayState.current, stops: [] };
+    render(<PathPage />, { wrapper });
+    // The two big cards ARE the way to start a path on the landing.
+    expect(screen.getByRole("button", { name: /create a path/i })).toBeInTheDocument();
+    // The header buttons that duplicate them are hidden here (exact names so
+    // "Create path" does not match the "Create a Path" card).
+    expect(screen.queryByRole("button", { name: /^plan ahead$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^create path$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /re-center|use my location/i })).not.toBeInTheDocument();
+  });
+
+  it("still shows those header buttons on the discover/browse view", () => {
+    originState.current = readyOrigin;
+    // A live geocoded merchant so the discover branch renders, plus an active
+    // path whose "Add stops" button transitions into discover.
+    merchantsState.current = {
+      merchants: [
+        { id: "x", name: "Xray", address: "9 X St", phone: null, lat: 30.04, lng: -97.04, category: "retail", primaryType: null },
+      ] as unknown as typeof merchantsState.current.merchants,
+      isLoading: false, isError: false, refetch: vi.fn(),
+    } as typeof merchantsState.current;
+    todayState.current = {
+      ...todayState.current,
+      stops: [
+        { merchantId: "a", name: "Alpha", address: "1 A St", lat: 30.05, lng: -97.05, category: "retail", status: "pending" },
+      ] as unknown as typeof todayState.current.stops,
+    };
+    render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /add stops/i }));
+    expect(screen.getByRole("button", { name: /^plan ahead$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^create path$/i })).toBeInTheDocument();
+  });
+});
+
 describe("PathPage carryover", () => {
   const ready = { ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready" } as PathOrigin;
 
