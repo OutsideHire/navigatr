@@ -16,6 +16,10 @@ export const LEAD_SOURCE_VALUES = [
   "partner_referral",
   "assigned",
   "import",
+  // Auto-stamped by the Business-Search (Google Places) create flow. Rep-directed
+  // prospecting, so it counts as rep-sourced, but it is NOT a manual picklist
+  // option (the create flow sets it).
+  "places",
   // Rep-set (manual picklist)
   "self_sourced_canvass",
   "customer_referral",
@@ -33,6 +37,7 @@ export const LEAD_SOURCE_LABEL: Record<LeadSource, string> = {
   partner_referral: "Partner Referral",
   assigned: "Assigned",
   import: "Import",
+  places: "Business Search",
   self_sourced_canvass: "Self-Sourced Canvass",
   customer_referral: "Customer Referral",
   event_association: "Event / Association",
@@ -105,6 +110,7 @@ export function isRepSourcedSource(v: string | null | undefined): boolean {
  */
 export const LEAD_SOURCE_COLOR: Record<LeadSource, string> = {
   path: "#8A72F2",
+  places: "#22B8A6",
   self_sourced_canvass: "#B48CF5",
   partner_referral: "#2E5FE2",
   customer_referral: "#5B8CF5",

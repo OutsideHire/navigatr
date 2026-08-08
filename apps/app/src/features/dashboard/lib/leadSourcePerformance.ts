@@ -266,6 +266,7 @@ export function computeLeadSourcePerformance(
 /** One-line description of what a source is, for the drawer. */
 export const LEAD_SOURCE_BLURB: Record<LeadSource, string> = {
   path: "GPS-generated stops matching the tenant target profile. Highest volume, lowest yield per lead.",
+  places: "Rep searched a business by name in the Add-Deal flow and pulled it from Google. Rep-directed prospecting, distinct from Path's GPS discovery.",
   self_sourced_canvass: "A drop-in or call the rep initiated outside a generated Path. The honest control group for Path.",
   partner_referral: "Submitted through the partner portal or partner form. Attributed to the originating relationship.",
   customer_referral: "From an existing merchant or a center of influence who is not a portal partner.",
