@@ -37,6 +37,16 @@ vi.mock("@/stores/auth", () => ({
     selector({ user: { id: "rep-1" } }),
 }));
 
+// Mock the deals cache the hook joins against. A hoisted ref lets each test
+// seed the deal list before rendering (the factory is hoisted above imports,
+// so it must not close over a plain top-level variable).
+const dealsRef = vi.hoisted(() => ({
+  current: [] as Array<{ id: string; companyName: string }>,
+}));
+vi.mock("@/features/pipeline/hooks/useDeals", () => ({
+  useDeals: () => ({ data: dealsRef.current }),
+}));
+
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
@@ -70,7 +80,17 @@ const PATH_DATE = "2026-08-08";
 beforeEach(() => {
   orderMock.mockReset();
   invokeMock.mockReset();
+  dealsRef.current = [];
 });
+
+// A calendar read that returns no external waypoints, so the assembled stops
+// are exactly the appointments under test.
+function noWaypoints() {
+  invokeMock.mockResolvedValue({
+    data: { status: "ok", waypoints: [], timeBlocks: [], skippedCount: 0 },
+    error: null,
+  });
+}
 
 describe("useMeetingStops", () => {
   it("composes appointments + external waypoints into time-ordered stops", async () => {
@@ -138,5 +158,38 @@ describe("useMeetingStops", () => {
     await waitFor(() => expect(result.current.stops).toHaveLength(1));
     expect(result.current.status).toBe("needs_reconnect");
     expect(result.current.stops[0].kind).toBe("appointment");
+  });
+
+  it("joins the deal name onto an appointment when its dealId is in the deals cache", async () => {
+    dealsRef.current = [{ id: "deal-1", companyName: "Acme Payments" }];
+    orderMock.mockResolvedValue({ data: [makeApptRow({ deal_id: "deal-1" })], error: null });
+    noWaypoints();
+
+    const { result } = renderHook(() => useMeetingStops(PATH_DATE, NOW), { wrapper });
+    await waitFor(() => expect(result.current.stops).toHaveLength(1));
+    const stop = result.current.stops[0];
+    expect(stop).toMatchObject({ appointmentId: "appt-1", dealId: "deal-1" });
+    expect(stop.dealName).toBe("Acme Payments");
+  });
+
+  it("leaves dealName null when the appointment's dealId misses the cache or is absent", async () => {
+    // Cache holds a different deal, so neither appointment can resolve a name:
+    // one whose dealId is present-but-absent from the cache, one with a falsy
+    // (empty) dealId that skips the lookup entirely.
+    dealsRef.current = [{ id: "deal-1", companyName: "Acme Payments" }];
+    orderMock.mockResolvedValue({
+      data: [
+        makeApptRow({ id: "appt-miss", deal_id: "deal-404", start_at: "2026-08-08T10:00:00Z" }),
+        makeApptRow({ id: "appt-null", deal_id: "", start_at: "2026-08-08T11:00:00Z" }),
+      ],
+      error: null,
+    });
+    noWaypoints();
+
+    const { result } = renderHook(() => useMeetingStops(PATH_DATE, NOW), { wrapper });
+    await waitFor(() => expect(result.current.stops).toHaveLength(2));
+    const byId = new Map(result.current.stops.map((s) => [s.appointmentId, s]));
+    expect(byId.get("appt-miss")?.dealName).toBeNull();
+    expect(byId.get("appt-null")?.dealName).toBeNull();
   });
 });

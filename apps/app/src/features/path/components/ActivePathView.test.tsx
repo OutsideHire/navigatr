@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { toast } from "sonner";
 import { ActivePathView } from "./ActivePathView";
+import type { MeetingStop } from "../lib/meetingStops";
 
 const setStatus = vi.fn();
 const remove = vi.fn();
@@ -48,7 +49,15 @@ const todayState = {
   },
 };
 
-vi.mock("../hooks/useTodayPath", () => ({ useTodayPath: () => todayState.current }));
+// Meeting stops (Slice 5B). Default: none, so existing tests see only the
+// route stops. Individual tests override meetingState.current.stops.
+const meetingState = { current: { stops: [] as MeetingStop[] } };
+
+vi.mock("../hooks/useTodayPath", () => ({
+  useTodayPath: () => todayState.current,
+  todayISO: () => "2026-08-08",
+}));
+vi.mock("../hooks/useMeetingStops", () => ({ useMeetingStops: () => meetingState.current }));
 vi.mock("./MerchantMap", () => ({ MerchantMap: () => <div data-testid="map" /> }));
 vi.mock("./PathSummary", () => ({ PathSummary: () => <div data-testid="summary" /> }));
 vi.mock("sonner", () => ({
@@ -74,6 +83,7 @@ beforeEach(() => {
   vi.mocked(toast).mockClear();
   vi.mocked(toast.success).mockClear();
   complete = false;
+  meetingState.current = { stops: [] };
 });
 
 describe("ActivePathView", () => {
@@ -146,5 +156,55 @@ describe("ActivePathView", () => {
     renderView();
     expect(screen.getByTestId("summary")).toBeInTheDocument();
     expect(screen.queryByText("Uratex")).not.toBeInTheDocument();
+  });
+
+  it("renders appointment and external meeting stops with time, title, deal name, and ended treatment", () => {
+    meetingState.current = {
+      stops: [
+        {
+          id: "e1",
+          kind: "external",
+          title: "Team standup",
+          dealId: null,
+          dealName: null,
+          startAt: "2026-08-08T09:00:00Z",
+          endAt: "2026-08-08T09:30:00Z",
+          lat: 30.1,
+          lng: -97.6,
+          address: "HQ conference room",
+          appointmentId: null,
+          past: true,
+        },
+        {
+          id: "a1",
+          kind: "appointment",
+          title: "Renewal review",
+          dealId: "d1",
+          dealName: "Acme Payments",
+          startAt: "2026-08-08T13:30:00Z",
+          endAt: null,
+          lat: 30.3,
+          lng: -97.7,
+          address: "100 Congress Ave",
+          appointmentId: "a1",
+          past: false,
+        },
+      ],
+    };
+    renderView();
+
+    // Both meeting stops render with their titles.
+    expect(screen.getByText("Team standup")).toBeInTheDocument();
+    expect(screen.getByText("Renewal review")).toBeInTheDocument();
+
+    // The appointment shows its joined deal name.
+    expect(screen.getByText("Acme Payments")).toBeInTheDocument();
+
+    // A live appointment is labelled; the past meeting shows the ended treatment.
+    expect(screen.getByText("Appointment")).toBeInTheDocument();
+    expect(screen.getByText("Ended")).toBeInTheDocument();
+
+    // Each meeting shows a clock time (locale "h:mm" form).
+    expect(screen.getAllByText(/\d{1,2}:\d{2}/).length).toBeGreaterThanOrEqual(2);
   });
 });

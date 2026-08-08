@@ -13,9 +13,14 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
+import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { useCalendarEvents, type CalendarStatus } from "./useCalendarEvents";
 import { rowToAppointment, type ScheduledAppointmentRow } from "@/features/appointments/types";
-import { assembleMeetingStops, type MeetingStop } from "../lib/meetingStops";
+import {
+  assembleMeetingStops,
+  type MeetingStop,
+  type MeetingStopAppointment,
+} from "../lib/meetingStops";
 
 export const MEETING_STOPS_APPTS_KEY = (userId: string | undefined, pathDate: string) =>
   ["path", "meeting-stops", "appointments", userId ?? "anon", pathDate] as const;
@@ -68,9 +73,35 @@ export function useMeetingStops(
   // External located meetings for the same window, from the calendar read.
   const calendar = useCalendarEvents(pathDate ? { start: startIso, end: endIso } : null);
 
+  // Slice 5A concern #2: appointment rows carry `dealId` but no deal name. Reuse
+  // the deals the app already caches (useDeals, same react-query cache the
+  // pipeline populates) to look the name up rather than adding a join query.
+  const deals = useDeals();
+  const dealNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const d of deals.data ?? []) map.set(d.id, d.companyName);
+    return map;
+  }, [deals.data]);
+
+  // Enrich appointments with their deal name before assembling. External
+  // waypoints keep `dealName: null` (they have no navigatr deal).
+  const appointments = useMemo<MeetingStopAppointment[]>(
+    () =>
+      (appts.data ?? []).map((a) => ({
+        ...a,
+        dealName: a.dealId ? dealNameById.get(a.dealId) ?? null : null,
+      })),
+    [appts.data, dealNameById],
+  );
+
+  // NOTE (Slice 5A concern #1 / de-dup): assembleMeetingStops already drops a
+  // mirrored external waypoint when an appointment carries `calendarEventId`.
+  // An appointment whose calendar sync is still pending has no `calendarEventId`
+  // yet, so its mirror could theoretically appear twice until sync lands.
+  // Slice 5C / monitoring may refine this; we do not add speculative hiding here.
   const stops = useMemo(
-    () => assembleMeetingStops(appts.data ?? [], calendar.waypoints, nowIso),
-    [appts.data, calendar.waypoints, nowIso],
+    () => assembleMeetingStops(appointments, calendar.waypoints, nowIso),
+    [appointments, calendar.waypoints, nowIso],
   );
 
   return {

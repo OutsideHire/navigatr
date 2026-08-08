@@ -10,7 +10,7 @@
  * lives here, rendered straight from useTodayPath stop snapshots.
  */
 import * as React from "react";
-import { ArrowRight, Check, CircleDashed, Navigation, Plus, SkipForward, Trash2 } from "lucide-react";
+import { ArrowRight, CalendarClock, Check, CircleDashed, Navigation, Plus, SkipForward, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -19,8 +19,10 @@ import { Button } from "@/components/navigatr";
 import { formatDistance, haversineMeters } from "@/lib/distance";
 import type { Disposition } from "@/lib/followUpScheduling";
 import { labelForCategory } from "../mockData";
-import { useTodayPath } from "../hooks/useTodayPath";
+import { useTodayPath, todayISO } from "../hooks/useTodayPath";
 import type { TodayStop } from "../hooks/useTodayPath";
+import { useMeetingStops } from "../hooks/useMeetingStops";
+import type { MeetingStop } from "../lib/meetingStops";
 import { routeStats, formatEta } from "../lib/routeStats";
 import { MerchantMap } from "./MerchantMap";
 import { PathSummary } from "./PathSummary";
@@ -36,6 +38,12 @@ interface ActivePathViewProps {
 
 export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathViewProps) {
   const { stops, setStatus, remove, clear, isComplete } = useTodayPath();
+  // The day's meetings (booked appointments + located external calendar events),
+  // time-ordered. RENDER-ONLY this slice: no check-in / skip / navigate wiring
+  // yet (that is Slice 5C). Native route stops carry no scheduled clock time
+  // (only route position), so meetings are shown as their own time-anchored
+  // block rather than woven into the route order.
+  const { stops: meetingStops } = useMeetingStops(todayISO());
   const navigate = useNavigate();
 
   const stats = React.useMemo(
@@ -122,6 +130,18 @@ export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathV
             )}
 
             <div className="flex min-h-0 flex-col gap-1.5 overflow-y-auto">
+              {/* Meeting stops: time-anchored commitments (appointments + located
+                  external calendar meetings), rendered as their own chronological
+                  block above the route-ordered drop-in stops. */}
+              {meetingStops.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-caption font-medium text-text-muted">Meetings</span>
+                  {meetingStops.map((m) => (
+                    <MeetingStopCard key={m.id} stop={m} />
+                  ))}
+                </div>
+              )}
+
               {stops.map((s, i) => (
                 <StopRow
                   key={s.merchantId}
@@ -166,6 +186,54 @@ export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathV
 
       <div className="min-h-[280px]">
         <MerchantMap position={origin} merchants={[]} routePath={routePath} />
+      </div>
+    </div>
+  );
+}
+
+// ─── MeetingStopCard ──────────────────────────────────────────────────
+
+/** Local-tz clock time, e.g. "10:30 AM". */
+function fmtTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+/**
+ * A time-anchored meeting on the rep's day. Read-only this slice (Slice 5B):
+ * no check-in / skip / navigate actions yet. Styling mirrors CalendarOverlay's
+ * WaypointCard (purple accent-violet = calendar-owned) so meetings read as
+ * distinct from the blue route stops. A past meeting dims and reads "Ended".
+ */
+function MeetingStopCard({ stop }: { stop: MeetingStop }) {
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-3 rounded-radius-md border border-accent-violet/40 bg-accent-violet-20 p-3",
+        stop.past && "opacity-60",
+      )}
+    >
+      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-radius-full bg-accent-violet-20 text-accent-violet">
+        <CalendarClock className="h-4 w-4" aria-hidden />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <p
+            className={cn(
+              "truncate text-body-md font-medium text-text-default",
+              stop.past && "line-through",
+            )}
+          >
+            {stop.title}
+          </p>
+          <span className="shrink-0 text-caption tabular-nums text-accent-violet">
+            {fmtTime(stop.startAt)}
+          </span>
+        </div>
+        {stop.dealName && <p className="truncate text-caption text-text-muted">{stop.dealName}</p>}
+        {stop.address && <p className="truncate text-caption text-text-muted">{stop.address}</p>}
+        <span className="mt-1 inline-flex items-center rounded-radius-full bg-accent-violet-20 px-2 py-0.5 text-caption font-medium text-accent-violet">
+          {stop.past ? "Ended" : stop.kind === "appointment" ? "Appointment" : "From calendar"}
+        </span>
       </div>
     </div>
   );
