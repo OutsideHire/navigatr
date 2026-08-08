@@ -88,6 +88,12 @@ export interface CreateDealInput {
    *  deal with an address, we geocode the address at create time (P2.1). */
   lat?: number | null;
   lng?: number | null;
+  /** Sibling link to the first record of a multi-location merchant, set when the
+   *  rep confirms a Business-Search result is a second location (Add-Deal slice D). */
+  parentDealId?: string | null;
+  /** When the cached Google Places fields were resolved (ISO). Stamped only for
+   *  Business-Search creates so the permitted refresh cycle has an anchor. */
+  placeSyncedAt?: string | null;
 }
 
 export function useCreateDeal() {
@@ -145,6 +151,8 @@ export function useCreateDeal() {
           next_followup_at:    input.nextFollowupAt ?? null,
           profession_data:     input.professionData ?? {},
           place_id:            input.placeId ?? null,
+          parent_deal_id:      input.parentDealId ?? null,
+          place_synced_at:     input.placeSyncedAt ?? null,
           lat,
           lng,
         })
