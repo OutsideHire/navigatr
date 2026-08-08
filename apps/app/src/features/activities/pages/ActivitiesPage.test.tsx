@@ -36,10 +36,42 @@ vi.mock("../hooks/useTaskMutations", () => ({
   }),
 }));
 
+// Stub the external-calendar read. Default: connected, no meetings, so the
+// "Today's meetings" section renders nothing and existing tests are unaffected.
+// Individual tests reassign calendarState.current to seed meetings.
+type CalendarState = {
+  waypoints: Array<{ id: string; title: string; start: string; end: string; address: string; lat: number; lng: number; source: "calendar" }>;
+  timeBlocks: Array<{ id: string; title: string; start: string; end: string; reason: "no_location" | "unmappable" }>;
+  status: "ok" | "not_connected" | "needs_reconnect";
+  isLoading: boolean;
+  isError: boolean;
+  refetch: () => void;
+};
+const emptyCalendar = (): CalendarState => ({
+  waypoints: [],
+  timeBlocks: [],
+  status: "ok",
+  isLoading: false,
+  isError: false,
+  refetch: vi.fn(),
+});
+const calendarState: { current: CalendarState } = { current: emptyCalendar() };
+vi.mock("@/features/path/hooks/useCalendarEvents", () => ({
+  useCalendarEvents: () => calendarState.current,
+}));
+
+// A today-local ISO instant at the given local hour (calendar reads are ISO).
+function todayAtHour(hour: number): string {
+  const d = new Date();
+  d.setHours(hour, 0, 0, 0);
+  return d.toISOString();
+}
+
 beforeEach(() => {
   snoozeMutate.mockReset();
   completeMutate.mockReset();
   cancelMutate.mockReset();
+  calendarState.current = emptyCalendar();
 });
 
 function deal(id: string, company: string): Deal {
@@ -260,6 +292,55 @@ describe("ActivitiesPage / appointment traceability", () => {
 
     const row = screen.getByTestId("task-row");
     expect(within(row).getByText("Walk-in meeting")).toBeInTheDocument();
+  });
+});
+
+describe("ActivitiesPage / Today's meetings (external calendar)", () => {
+  it("lists today's external meetings (located + unlocated) in start-time order", () => {
+    // Waypoint at 3pm, time block at 9am. Input order is late-then-early; the
+    // section must sort by start so the 9am meeting renders first.
+    calendarState.current = {
+      ...emptyCalendar(),
+      waypoints: [
+        {
+          id: "w-1",
+          title: "Afternoon Sync",
+          start: todayAtHour(15),
+          end: todayAtHour(16),
+          address: "123 Main St",
+          lat: 1,
+          lng: 2,
+          source: "calendar",
+        },
+      ],
+      timeBlocks: [
+        { id: "b-1", title: "Morning Standup", start: todayAtHour(9), end: todayAtHour(10), reason: "no_location" },
+      ],
+    };
+    renderWithSeed({ tasks: [], deals: [] });
+
+    const section = screen.getByRole("region", { name: /Today's meetings/i });
+    // Both meetings render, and the located one shows its address.
+    expect(within(section).getByText("Morning Standup")).toBeInTheDocument();
+    expect(within(section).getByText("Afternoon Sync")).toBeInTheDocument();
+    expect(within(section).getByText(/123 Main St/)).toBeInTheDocument();
+
+    // Start-time order: 9am standup precedes 3pm sync in the DOM.
+    const titles = within(section).getAllByText(/Morning Standup|Afternoon Sync/);
+    expect(titles.map((el) => el.textContent)).toEqual(["Morning Standup", "Afternoon Sync"]);
+  });
+
+  it("renders no meetings section when there are none", () => {
+    renderWithSeed({ tasks: [], deals: [] });
+    expect(screen.queryByRole("region", { name: /Today's meetings/i })).not.toBeInTheDocument();
+  });
+
+  it("renders no meetings section when the calendar needs reconnect", () => {
+    // A failed/disconnected read degrades to empty arrays; the section is absent
+    // (non-blocking, no scary error).
+    calendarState.current = { ...emptyCalendar(), status: "needs_reconnect" };
+    renderWithSeed({ tasks: [], deals: [] });
+    expect(screen.queryByRole("region", { name: /Today's meetings/i })).not.toBeInTheDocument();
   });
 });
 

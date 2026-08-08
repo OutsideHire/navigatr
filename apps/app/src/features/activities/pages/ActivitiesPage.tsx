@@ -45,6 +45,7 @@ import { DISPOSITIONS, formatFollowUpDate } from "@/lib/followUpScheduling";
 import { calendarDayDelta, toDateOnly } from "@/lib/calendarDate";
 import { bandPosition } from "@/features/path/lib/classD";
 import { BandBadge } from "@/features/path/lib/bandBadge";
+import { useCalendarEvents } from "@/features/path/hooks/useCalendarEvents";
 import { LogActivitySheet } from "../components/LogActivitySheet";
 import { EditActivitySheet } from "../components/EditActivitySheet";
 import { CreateTaskSheet } from "../components/CreateTaskSheet";
@@ -368,6 +369,81 @@ function TodoHistoryRow({ task, now }: { task: Task; now: Date }) {
   );
 }
 
+// ── Today's meetings (external calendar, read-only) ───────────────────
+
+/** Today's external (third-party) calendar meetings, read-only.
+ *
+ *  Read from the rep's connected Outlook/Google calendar via useCalendarEvents
+ *  for today's local window. These are EXTERNAL meetings only: navigatr-booked
+ *  appointments surface as task rows above, and the read layer excludes
+ *  navigatr-pushed/mirrored events, so there is nothing to de-dup here.
+ *
+ *  For a list surface we show ALL of today's meetings, both located waypoints
+ *  and unlocated time blocks (unlike the Path map view, which needs a location).
+ *
+ *  Non-blocking, consistent with Path: a disconnected or failed read degrades to
+ *  empty arrays (status "needs_reconnect"/"not_connected"), so the merged list is
+ *  empty and the section renders nothing. No scary error, no empty-state clutter. */
+function TodaysMeetingsSection({ now }: { now: Date }) {
+  // Today's local window (midnight to end-of-day), pinned to the page's `now`.
+  const todayWindow = React.useMemo(() => {
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+    return { start: start.toISOString(), end: end.toISOString() };
+  }, [now]);
+
+  const { waypoints, timeBlocks } = useCalendarEvents(todayWindow);
+
+  // Merge located waypoints + unlocated time blocks, sorted by start time.
+  const meetings = React.useMemo(() => {
+    const located = waypoints.map((w) => ({
+      id: w.id,
+      title: w.title,
+      start: w.start,
+      location: w.address || null,
+    }));
+    const unlocated = timeBlocks.map((b) => ({
+      id: b.id,
+      title: b.title,
+      start: b.start,
+      location: null,
+    }));
+    return [...located, ...unlocated].sort((a, b) => a.start.localeCompare(b.start));
+  }, [waypoints, timeBlocks]);
+
+  if (meetings.length === 0) return null;
+
+  return (
+    <section className="flex flex-col gap-2" aria-label="Today's meetings">
+      <p className="text-eyebrow text-text-subtle">Today's meetings · {meetings.length}</p>
+      <div className="flex flex-col gap-2">
+        {meetings.map((m) => (
+          <div
+            key={m.id}
+            className="flex items-start gap-3 rounded-radius-md border border-border-subtle bg-surface-default p-4"
+          >
+            <span
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-surface-sunken text-text-muted"
+              aria-hidden
+            >
+              <Calendar className="h-4 w-4" />
+            </span>
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <p className="truncate text-body-strong text-text-default">{m.title}</p>
+              <p className="text-caption text-text-muted">
+                {formatTime(m.start)}
+                {m.location ? <>{" · "}{m.location}</> : null}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 // ── Empty states ──────────────────────────────────────────────────────
 
 function EmptyTodayCard() {
@@ -681,15 +757,19 @@ export function ActivitiesPage() {
 
           {/* Today */}
           <Tabs.Content value="today" className="mt-4 focus-visible:outline-none">
-            {todayCount === 0 ? (
-              typeFilter !== "all" ? (
-                <FilteredEmptyCard typeLabel={typeFilterLabel(typeFilter)} onClear={() => setTypeFilter("all")} />
+            <div className="flex flex-col gap-4">
+              {/* External calendar meetings for today (read-only). Sits above the
+                  follow-up task sections and is independent of the type filter. */}
+              <TodaysMeetingsSection now={now} />
+              {todayCount === 0 ? (
+                typeFilter !== "all" ? (
+                  <FilteredEmptyCard typeLabel={typeFilterLabel(typeFilter)} onClear={() => setTypeFilter("all")} />
+                ) : (
+                  <EmptyTodayCard />
+                )
               ) : (
-                <EmptyTodayCard />
-              )
-            ) : (
-              <div className="flex flex-col gap-4">
-                {overdue.length > 0 && (
+                <div className="flex flex-col gap-4">
+                  {overdue.length > 0 && (
                   <section className="flex flex-col gap-2">
                     <p className="text-eyebrow text-status-danger">Overdue · {overdue.length}</p>
                     <div className="flex flex-col gap-2">
@@ -709,8 +789,9 @@ export function ActivitiesPage() {
                     </div>
                   </section>
                 )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </Tabs.Content>
 
           {/* Upcoming */}
