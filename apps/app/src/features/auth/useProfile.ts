@@ -22,6 +22,7 @@ export interface Profile {
   view_as_enabled: boolean;
   full_name: string | null;
   created_at: string;
+  primary_calendar_provider: "google" | "microsoft" | null;
 }
 
 export function useProfile() {
@@ -32,7 +33,7 @@ export function useProfile() {
     queryFn: async (): Promise<Profile | null> => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, org_id, role, role_level, view_as_enabled, full_name, created_at")
+        .select("id, org_id, role, role_level, view_as_enabled, full_name, created_at, primary_calendar_provider")
         .eq("id", userId!)
         .maybeSingle();
       if (error) throw error;

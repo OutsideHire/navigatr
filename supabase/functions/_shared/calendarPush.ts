@@ -45,7 +45,15 @@ export async function resolvePushToken(
 
   const active = ((rows ?? []) as Array<{ id: string; provider: CalendarProviderId; status?: string }>)
     .filter((r) => r.status === "active");
-  const provider = pickPushProvider(active.map((r) => r.provider), existingProvider);
+  // The rep's chosen primary calendar (null = auto). Honored by the resolver
+  // when that provider is still active, else it falls back to the auto rule.
+  const { data: prof } = await userClient
+    .from("profiles")
+    .select("primary_calendar_provider")
+    .eq("id", userId)
+    .maybeSingle();
+  const primary = (prof?.primary_calendar_provider ?? null) as CalendarProviderId | null;
+  const provider = pickPushProvider(active.map((r) => r.provider), existingProvider, primary);
   if (!provider) return null;
   const connectionId = active.find((r) => r.provider === provider)!.id;
 
