@@ -76,8 +76,20 @@ describe("computeKpis", () => {
 
   it("returns zeros for an empty list", () => {
     expect(computeKpis([])).toEqual(
-      expect.objectContaining({ totalPipeline: 0, weighted: 0, activeDeals: 0 }),
+      expect.objectContaining({ totalPipeline: 0, weighted: 0, activeDeals: 0, noValueActiveDeals: 0 }),
     );
+  });
+
+  it("counts active deals with no value (they contribute $0 to Total/Weighted)", () => {
+    const deals = [
+      d({ id: "a", stage: "new", valueCents: 100_00, probability: 20 }),
+      d({ id: "b", stage: "qualified", valueCents: 0, probability: 50 }),
+      // A won deal with no value is not an ACTIVE no-value deal.
+      d({ id: "c", stage: "won", valueCents: 0, probability: 100 }),
+    ];
+    const k = computeKpis(deals);
+    expect(k.noValueActiveDeals).toBe(1);
+    expect(k.activeDeals).toBe(2);
   });
 
   it("counts won deals closed this month and excludes prior-month wins", () => {
