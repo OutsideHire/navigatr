@@ -10,7 +10,7 @@
  * lives here, rendered straight from useTodayPath stop snapshots.
  */
 import * as React from "react";
-import { ArrowRight, CalendarClock, Check, CircleDashed, Navigation, Plus, SkipForward, Trash2 } from "lucide-react";
+import { ArrowRight, CalendarClock, Check, CircleDashed, ClipboardList, ExternalLink, Navigation, Plus, SkipForward, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -24,6 +24,8 @@ import type { TodayStop } from "../hooks/useTodayPath";
 import { useMeetingStops } from "../hooks/useMeetingStops";
 import type { MeetingStop } from "../lib/meetingStops";
 import { routeStats, formatEta } from "../lib/routeStats";
+import { directionsUrl } from "../lib/directionsUrl";
+import { AppointmentOutcomeSheet } from "@/features/appointments/components/AppointmentOutcomeSheet";
 import { MerchantMap } from "./MerchantMap";
 import { PathSummary } from "./PathSummary";
 
@@ -39,12 +41,20 @@ interface ActivePathViewProps {
 export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathViewProps) {
   const { stops, setStatus, remove, clear, isComplete } = useTodayPath();
   // The day's meetings (booked appointments + located external calendar events),
-  // time-ordered. RENDER-ONLY this slice: no check-in / skip / navigate wiring
-  // yet (that is Slice 5C). Native route stops carry no scheduled clock time
-  // (only route position), so meetings are shown as their own time-anchored
-  // block rather than woven into the route order.
+  // time-ordered and actionable per kind (Slice 5C): appointments open the deal
+  // and log an outcome, external meetings navigate and toggle a local done
+  // state. Native route stops carry no scheduled clock time (only route
+  // position), so meetings are shown as their own time-anchored block rather
+  // than woven into the route order.
   const { stops: meetingStops } = useMeetingStops(todayISO());
   const navigate = useNavigate();
+
+  // The appointment meeting stop whose outcome sheet is open, if any. Reuses
+  // the exact AppointmentOutcomeSheet the Activities page opens (Slice 5C), so
+  // logging an outcome from the Path runs the same recordOutcome flow. Only
+  // appointment stops that carry both a dealId and an appointmentId can log an
+  // outcome; external calendar meetings never do.
+  const [outcomeStop, setOutcomeStop] = React.useState<MeetingStop | null>(null);
 
   const stats = React.useMemo(
     () => routeStats(origin, stops.map((s) => ({ lat: s.lat, lng: s.lng }))),
@@ -137,7 +147,16 @@ export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathV
                 <div className="flex flex-col gap-1.5">
                   <span className="text-caption font-medium text-text-muted">Meetings</span>
                   {meetingStops.map((m) => (
-                    <MeetingStopCard key={m.id} stop={m} />
+                    <MeetingStopCard
+                      key={m.id}
+                      stop={m}
+                      onOpenDeal={m.dealId ? () => navigate(`/pipeline/${m.dealId}`) : undefined}
+                      onLogOutcome={
+                        m.kind === "appointment" && m.past && m.appointmentId && m.dealId
+                          ? () => setOutcomeStop(m)
+                          : undefined
+                      }
+                    />
                   ))}
                 </div>
               )}
@@ -187,6 +206,24 @@ export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathV
       <div className="min-h-[280px]">
         <MerchantMap position={origin} merchants={[]} routePath={routePath} />
       </div>
+
+      {/* Reused, not rebuilt: the same outcome capture the Activities page uses.
+          Guarded by the onLogOutcome wiring above, so dealId/appointmentId are
+          always present here. hasFutureAppointment is false: this meeting stop
+          is itself the appointment being logged, and the Path day view does not
+          track other future appointments on the deal. */}
+      {outcomeStop && outcomeStop.dealId && outcomeStop.appointmentId && (
+        <AppointmentOutcomeSheet
+          open
+          onOpenChange={(o) => {
+            if (!o) setOutcomeStop(null);
+          }}
+          appointmentId={outcomeStop.appointmentId}
+          dealId={outcomeStop.dealId}
+          merchantName={outcomeStop.dealName ?? outcomeStop.title}
+          hasFutureAppointment={false}
+        />
+      )}
     </div>
   );
 }
@@ -199,17 +236,40 @@ function fmtTime(iso: string): string {
 }
 
 /**
- * A time-anchored meeting on the rep's day. Read-only this slice (Slice 5B):
- * no check-in / skip / navigate actions yet. Styling mirrors CalendarOverlay's
- * WaypointCard (purple accent-violet = calendar-owned) so meetings read as
- * distinct from the blue route stops. A past meeting dims and reads "Ended".
+ * A time-anchored meeting on the rep's day, now actionable per kind (Slice 5C).
+ * Styling mirrors CalendarOverlay's WaypointCard (purple accent-violet =
+ * calendar-owned) so meetings read as distinct from the blue route stops. A
+ * past meeting dims and reads "Ended".
+ *
+ * Actions differ by kind:
+ *   - appointment: "Open deal" (navigates to the deal) plus, once the
+ *     appointment is past, "Log outcome" (opens the reused
+ *     AppointmentOutcomeSheet). Both are wired by the parent and only present
+ *     when the stop carries the ids they need.
+ *   - external: "Navigate" (the same Google Maps deep link the running route's
+ *     native stops use) plus a client-only "Mark done" toggle. External
+ *     meetings never log an outcome.
  */
-function MeetingStopCard({ stop }: { stop: MeetingStop }) {
+function MeetingStopCard({
+  stop,
+  onOpenDeal,
+  onLogOutcome,
+}: {
+  stop: MeetingStop;
+  /** Present when the stop has a dealId; navigates to that deal. */
+  onOpenDeal?: () => void;
+  /** Present only for a past appointment with a deal + appointment id. */
+  onLogOutcome?: () => void;
+}) {
+  // Client-only "done" state for external meetings: no persistence, no outcome.
+  const [done, setDone] = React.useState(false);
+  const canNavigate = stop.lat != null && stop.lng != null;
+
   return (
     <div
       className={cn(
         "flex items-start gap-3 rounded-radius-md border border-accent-violet/40 bg-accent-violet-20 p-3",
-        stop.past && "opacity-60",
+        (stop.past || done) && "opacity-60",
       )}
     >
       <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-radius-full bg-accent-violet-20 text-accent-violet">
@@ -220,7 +280,7 @@ function MeetingStopCard({ stop }: { stop: MeetingStop }) {
           <p
             className={cn(
               "truncate text-body-md font-medium text-text-default",
-              stop.past && "line-through",
+              (stop.past || done) && "line-through",
             )}
           >
             {stop.title}
@@ -234,6 +294,44 @@ function MeetingStopCard({ stop }: { stop: MeetingStop }) {
         <span className="mt-1 inline-flex items-center rounded-radius-full bg-accent-violet-20 px-2 py-0.5 text-caption font-medium text-accent-violet">
           {stop.past ? "Ended" : stop.kind === "appointment" ? "Appointment" : "From calendar"}
         </span>
+
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {stop.kind === "appointment" ? (
+            <>
+              {onOpenDeal && (
+                <Button variant="secondary" size="sm" leadingIcon={ExternalLink} onClick={onOpenDeal}>
+                  Open deal
+                </Button>
+              )}
+              {onLogOutcome && (
+                <Button variant="tertiary" size="sm" leadingIcon={ClipboardList} onClick={onLogOutcome}>
+                  Log outcome
+                </Button>
+              )}
+            </>
+          ) : (
+            <>
+              {canNavigate && (
+                <a
+                  href={directionsUrl(stop.lat as number, stop.lng as number)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-radius-md border border-border-default px-3 py-1.5 text-caption font-medium text-text-default hover:bg-surface-sunken"
+                >
+                  <Navigation className="h-3.5 w-3.5" aria-hidden /> Navigate
+                </a>
+              )}
+              <Button
+                variant="tertiary"
+                size="sm"
+                leadingIcon={done ? CircleDashed : Check}
+                onClick={() => setDone((v) => !v)}
+              >
+                {done ? "Mark not done" : "Mark done"}
+              </Button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
