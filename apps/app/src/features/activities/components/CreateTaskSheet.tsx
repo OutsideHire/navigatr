@@ -267,7 +267,7 @@ export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, deals, d
                   ))}
                 </div>
                 <Input id="task-due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-                <p className="text-caption text-text-subtle tabular-nums">
+                <p className="text-caption text-brand-primary tabular-nums">
                   Target {bands.target_at} · earliest {bands.earliest_at} · latest {bands.latest_at} · interval
                 </p>
               </div>
