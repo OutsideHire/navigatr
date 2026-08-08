@@ -120,6 +120,10 @@ interface PageTask {
   id: string;
   type: TaskType;
   companyName: string;
+  /** The deal's business name (joined). For an appointment the `title` holds the
+   *  meeting agenda, so this is the only place the deal is named. Null when the
+   *  task has no deal. */
+  dealName: string | null;
   dueAt: string; // task.targetAt (YYYY-MM-DD)
   dealId: string | null;
   sourceOutcome: string | null;
@@ -137,6 +141,7 @@ function toPageTask(t: Task): PageTask {
     id: t.id,
     type: t.type,
     companyName: t.title,
+    dealName: t.dealName,
     dueAt: t.targetAt,
     dealId: t.dealId,
     sourceOutcome: t.sourceOutcome,
@@ -182,6 +187,17 @@ function TaskRow({
 }) {
   const overdue = daysBetween(now, new Date(task.dueAt)) < 0;
   const isTodo = task.type === "todo";
+  const isAppointment = task.type === "appointment";
+  // For an appointment the deal name lives on `dealName` (its `title` holds the
+  // meeting agenda), whereas call/drop-in/email rows already carry the deal name
+  // in `companyName`. Surface the deal name as the row's identity for every type
+  // so a rep can always tell which deal it is; fall back to companyName so a row
+  // never renders blank when a deal name is missing.
+  const primaryName = isAppointment ? task.dealName ?? task.companyName : task.companyName;
+  // The agenda the rep typed, kept as a secondary line so it isn't lost. Only
+  // when it differs from the deal name (avoids showing the deal name twice).
+  const agenda =
+    isAppointment && task.dealName && task.companyName !== task.dealName ? task.companyName : null;
   const Icon = isTodo ? CheckIcon : TYPE_ICON[task.type as ActivityType];
   const accent = isTodo
     ? { bg: "bg-surface-sunken", fg: "text-text-muted" }
@@ -234,7 +250,7 @@ function TaskRow({
         </span>
         <div className="flex min-w-0 flex-col gap-0.5">
           <p className="flex items-center gap-1.5 text-body-strong text-text-default">
-            <span className="truncate">{task.companyName}</span>
+            <span className="truncate">{primaryName}</span>
             {!isTodo && <BandBadge band={band} className="shrink-0" />}
             {task.priority === "high" && (
               <span className="inline-flex shrink-0 items-center rounded-radius-full bg-status-danger-bg px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-danger">
@@ -242,6 +258,7 @@ function TaskRow({
               </span>
             )}
           </p>
+          {agenda && <p className="truncate text-caption text-text-muted">{agenda}</p>}
           <p className="text-caption text-text-muted">
             <span className={overdue ? "font-medium text-status-danger" : "text-text-default"}>
               {formatRelativeShort(task.dueAt, now)}

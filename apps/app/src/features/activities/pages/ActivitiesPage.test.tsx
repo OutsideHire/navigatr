@@ -53,7 +53,7 @@ function deal(id: string, company: string): Deal {
 
 function makeTask(id: string, dealId: string, targetAt: string, type: TaskType = "call"): Task {
   return {
-    id, orgId: "org-1", ownerId: "user-1", type, title: `Company ${dealId}`, dealId,
+    id, orgId: "org-1", ownerId: "user-1", type, title: `Company ${dealId}`, dealId, dealName: null,
     status: "open", earliestAt: targetAt, targetAt, latestAt: targetAt, originalTargetAt: targetAt,
     dateSource: "interval", startAt: null, reminderAt: null, priority: null, repeatRule: null,
     sourceActivityId: null, sourceOutcome: "positive_engagement", snoozeCount: 0,
@@ -230,6 +230,36 @@ describe("ActivitiesPage / task row type indicator", () => {
   it("keeps the red overdue treatment when overdue", () => {
     renderWithSeed({ tasks: [makeTask("t-1", "d-1", "2020-01-01", "email")], deals: [deal("d-1", "Acme")] });
     expect(iconSpan()?.className).toContain("bg-status-danger");
+  });
+});
+
+describe("ActivitiesPage / appointment traceability", () => {
+  // An appointment's `title` holds the meeting agenda, so the deal name must
+  // come from the joined `dealName`. The row has to name the deal (QA fix) the
+  // same way call/drop-in rows do, and keep the agenda visible too.
+  it("names the deal on an appointment row and keeps the agenda", () => {
+    const appt: Task = {
+      ...makeTask("t-appt", "d-appt", todayDate(), "appointment"),
+      title: "Q3 pricing review",
+      dealName: "Acme Co",
+    };
+    renderWithSeed({ tasks: [appt], deals: [deal("d-appt", "Acme Co")] });
+
+    const row = screen.getByTestId("task-row");
+    expect(within(row).getByText("Acme Co")).toBeInTheDocument();
+    expect(within(row).getByText("Q3 pricing review")).toBeInTheDocument();
+  });
+
+  it("falls back to the title when an appointment has no joined deal name", () => {
+    const appt: Task = {
+      ...makeTask("t-appt", "d-appt", todayDate(), "appointment"),
+      title: "Walk-in meeting",
+      dealName: null,
+    };
+    renderWithSeed({ tasks: [appt], deals: [deal("d-appt", "Acme Co")] });
+
+    const row = screen.getByTestId("task-row");
+    expect(within(row).getByText("Walk-in meeting")).toBeInTheDocument();
   });
 });
 

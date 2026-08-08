@@ -44,7 +44,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   const target = overrides.targetAt ?? "2026-05-22";
   return {
     id: "t-1", orgId: "org-1", ownerId: "user-1", type: "call" as TaskType, title: "Acme",
-    dealId: "deal-1", status: "open", earliestAt: target, targetAt: target, latestAt: target,
+    dealId: "deal-1", dealName: "Acme", status: "open", earliestAt: target, targetAt: target, latestAt: target,
     originalTargetAt: target, dateSource: "interval", startAt: null, reminderAt: null,
     priority: null, repeatRule: null, sourceActivityId: null, sourceOutcome: "positive_engagement",
     snoozeCount: 0, excludeFromPath: false, completedAt: null, cancelledAt: null,

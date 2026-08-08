@@ -48,7 +48,7 @@ function deal(): Deal {
 
 function task(targetAt: string): Task {
   return {
-    id: "t-1", orgId: "org-1", ownerId: "user-1", type: "call", title: "TomorrowCo", dealId: "d-1",
+    id: "t-1", orgId: "org-1", ownerId: "user-1", type: "call", title: "TomorrowCo", dealId: "d-1", dealName: "TomorrowCo",
     status: "open", earliestAt: targetAt, targetAt, latestAt: targetAt, originalTargetAt: targetAt,
     dateSource: "interval", startAt: null, reminderAt: null, priority: null, repeatRule: null,
     sourceActivityId: null, sourceOutcome: "positive_engagement", snoozeCount: 0,

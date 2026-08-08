@@ -59,7 +59,7 @@ beforeEach(() => {
 });
 
 const TASK: Task = {
-  id: "t-1", orgId: "org-1", ownerId: "user-1", type: "call", title: "Acme Co", dealId: "d-1",
+  id: "t-1", orgId: "org-1", ownerId: "user-1", type: "call", title: "Acme Co", dealId: "d-1", dealName: "Acme Co",
   status: "open", earliestAt: "2026-08-04", targetAt: "2026-08-05", latestAt: "2026-08-07",
   originalTargetAt: "2026-08-05", dateSource: "interval", startAt: null, reminderAt: null,
   priority: null, repeatRule: null, sourceActivityId: "a-1", sourceOutcome: "positive_engagement",

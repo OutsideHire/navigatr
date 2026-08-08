@@ -15,6 +15,10 @@ export interface Task {
   type: TaskType;
   title: string;
   dealId: string | null;
+  /** The task's deal's business name, joined from `deals.company_name`. Null
+   *  when the task has no deal (a standalone to-do). Appointment/call/etc. rows
+   *  surface this so the rep can tell which deal a task belongs to. */
+  dealName: string | null;
   status: TaskStatus;
   earliestAt: string;
   targetAt: string;
@@ -43,6 +47,9 @@ export interface TaskRow {
   type: string;
   title: string;
   deal_id: string | null;
+  /** Embedded from the `deals(company_name)` join. A to-one FK, so Supabase
+   *  returns a single object (or null when there is no deal). */
+  deals: { company_name: string } | null;
   status: string;
   earliest_at: string;
   target_at: string;
@@ -66,7 +73,8 @@ export interface TaskRow {
 export const TASK_SELECT =
   "id, org_id, owner_id, type, title, deal_id, status, earliest_at, target_at, latest_at, " +
   "original_target_at, date_source, start_at, reminder_at, priority, repeat_rule, " +
-  "source_activity_id, source_outcome, snooze_count, exclude_from_path, completed_at, cancelled_at, created_at, updated_at";
+  "source_activity_id, source_outcome, snooze_count, exclude_from_path, completed_at, cancelled_at, created_at, updated_at, " +
+  "deals(company_name)";
 
 export function rowToTask(r: TaskRow): Task {
   return {
@@ -76,6 +84,7 @@ export function rowToTask(r: TaskRow): Task {
     type: r.type as TaskType,
     title: r.title,
     dealId: r.deal_id,
+    dealName: r.deals?.company_name ?? null,
     status: r.status as TaskStatus,
     earliestAt: r.earliest_at,
     targetAt: r.target_at,
