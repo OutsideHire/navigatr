@@ -11,7 +11,9 @@ import { DropInSheet } from "./DropInSheet";
 import { EndRouteSheet } from "./EndRouteSheet";
 import { PathSummary } from "./PathSummary";
 import { RunScheduleOverlay } from "./RunScheduleOverlay";
+import { TieredStopList } from "./TieredStopList";
 import { usePathMutations } from "../hooks/usePathMutations";
+import { useLiveDayTiers } from "../hooks/useLiveDayTiers";
 import { todayISO } from "../lib/today";
 import { DISPOSITIONS, type Disposition } from "@/lib/followUpScheduling";
 import { firstPendingIndex } from "../lib/pathTypes";
@@ -74,13 +76,25 @@ function computePathSummaryStats(
 }
 
 /**
- * RunningPath — Path v3 running mode. One focused stop at a time: Call / Directions /
- * Log drop-in, with Prev/Skip/Next. Logging a drop-in (via DropInSheet) auto-advances
- * to the next pending stop + an Undo toast. When no stops are pending, shows PathSummary.
+ * RunningPath. Path v3 running mode. One focused NATIVE stop at a time: Call /
+ * Directions / Log drop-in, with Prev/Skip/Next. Logging a drop-in (via
+ * DropInSheet) auto-advances to the next pending stop + an Undo toast. When no
+ * native stops are pending, shows PathSummary.
+ *
+ * SP-C3: above the focused native card it also surfaces the day's OTHER tiers
+ * (appointments, past-due, due-today) via the shared `useLiveDayTiers` +
+ * `TieredStopList`, so Start route shows the whole prioritized day - not just
+ * appointments - with the same Open deal / Log outcome / Log drop-in actions as
+ * the Stops tab. The focused native guided-run flow is unchanged.
  */
 export function RunningPath({ origin, onPause, onViewPipeline, onExit, runOverlay }: RunningPathProps) {
   const { stops, setStatus, clear, pathId, pendingCount } = useTodayPath();
   const { carryToTomorrow, finalizeCurrentPath } = usePathMutations();
+  // The day's LIVE tiers (appointments + past-due + due-today) and their reused
+  // action sheets, shared verbatim with the Stops tab via useLiveDayTiers. These
+  // render as an actionable list above the focused native guided-run card so the
+  // running rep sees the WHOLE prioritized day, not just the native route.
+  const { rows: liveRows, sheets: liveSheets } = useLiveDayTiers(todayISO());
   // stops arrive position-ordered (useActivePath sorts, useTodayPath preserves it),
   // so array index == position order. Seek to the first pending stop; -1 (all done)
   // falls back to 0 — that case renders the summary anyway, index is unused.
@@ -208,6 +222,18 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit, runOverla
         </div>
       </div>
 
+      {/* The day's other tiers (appointments, past-due, due-today) as an
+          actionable list ABOVE the focused native card, so Start route surfaces
+          the whole prioritized day (directly fixing "Start path only shows
+          Appointments, no Due today or Past due"). Actions match the Stops tab:
+          appointment = Open deal + Log outcome; past-due / due-today = Open deal
+          + Log drop-in. Rendered only when there's something to show. */}
+      {liveRows.length > 0 && (
+        <section aria-label="Appointments and follow-ups" className="flex flex-col gap-1.5">
+          <TieredStopList rows={liveRows} />
+        </section>
+      )}
+
       <div className="flex flex-col gap-3 rounded-radius-md border border-border-default p-4">
         <span className="text-caption font-medium uppercase tracking-wide text-text-muted">Stop {index + 1} of {total}</span>
         <div className="flex flex-col gap-1">
@@ -247,6 +273,10 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit, runOverla
         <Button variant="tertiary" size="sm" trailingIcon={ChevronRight} disabled={index >= total - 1}
           onClick={() => setIndex((i) => Math.min(total - 1, i + 1))}>Next</Button>
       </div>
+
+      {/* The reused outcome / drop-in sheets for the live tiers, owned by the
+          shared useLiveDayTiers hook (same flows as the Stops tab). */}
+      {liveSheets}
 
       <DropInSheet merchant={merchantFromStop(cur)} open={logOpen} onOpenChange={setLogOpen} onLogged={handleLogged} />
       <EndRouteSheet

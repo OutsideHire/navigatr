@@ -26,9 +26,8 @@
  * resolved the list swaps for the end-of-path PathSummary.
  */
 import * as React from "react";
-import { ArrowRight, Check, CircleDashed, ClipboardList, DoorOpen, ExternalLink, Navigation, Plus, SkipForward, Trash2 } from "lucide-react";
+import { ArrowRight, Check, CircleDashed, Navigation, Plus, SkipForward, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
@@ -37,15 +36,8 @@ import { formatDistance, haversineMeters } from "@/lib/distance";
 import type { Disposition } from "@/lib/followUpScheduling";
 import { labelForCategory } from "../mockData";
 import { useTodayPath, todayISO } from "../hooks/useTodayPath";
-import { useMeetingStops } from "../hooks/useMeetingStops";
-import { useOwedVisits } from "../hooks/useOwedVisits";
-import { useDueTodayVisits } from "../hooks/useDueTodayVisits";
-import type { MeetingStop } from "../lib/meetingStops";
-import type { OwedVisit } from "../lib/owedVisits";
+import { useLiveDayTiers } from "../hooks/useLiveDayTiers";
 import { routeStats, formatEta } from "../lib/routeStats";
-import { directionsUrl } from "../lib/directionsUrl";
-import { AppointmentOutcomeSheet } from "@/features/appointments/components/AppointmentOutcomeSheet";
-import { LogActivitySheet } from "@/features/activities/components/LogActivitySheet";
 import { MerchantMap } from "./MerchantMap";
 import { PathSummary } from "./PathSummary";
 import { TieredStopList, type TieredStopRow } from "./TieredStopList";
@@ -58,19 +50,6 @@ interface ActivePathViewProps {
   onAddStops: () => void;
   /** Enter running mode (turn-by-turn route). */
   onStartRoute: () => void;
-}
-
-/** Local-tz clock time, e.g. "10:30 AM". */
-function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
-/** Whole days between an ISO timestamp and now (floored, never negative) - the
- *  past-due staleness age, matching useTodaysPath's owed sort key. */
-function ageDaysSince(iso: string): number {
-  const then = Date.parse(iso);
-  if (Number.isNaN(then)) return 0;
-  return Math.max(0, Math.floor((Date.now() - then) / 86_400_000));
 }
 
 /** Native-stop status badge - the status-colored circle the old StopRow drew,
@@ -101,37 +80,12 @@ function NativeBadge({ status, index }: { status: StopStatus; index: number }) {
 export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathViewProps) {
   const { stops, setStatus, remove, clear, isComplete } = useTodayPath();
   const pathDate = todayISO();
-  // The day's meetings (booked appointments + located external calendar events),
-  // time-ordered, actionable per kind: appointments open the deal and log an
-  // outcome; external meetings navigate and toggle a local done state.
-  const { stops: meetingStops } = useMeetingStops(pathDate);
-  // Owed / due-today follow-ups: existing deals the rep owes a drop-in. Rendered
-  // LIVE (never persisted as path_stops). `useOwedVisits` returns the whole
-  // opened window (earliest_at <= today), so keep only the PAST-DUE slice here;
-  // due-today comes from its own disjoint band.
-  const { owed } = useOwedVisits(pathDate);
-  const { dueToday } = useDueTodayVisits(pathDate);
+  // The day's LIVE tiers (appointments + past-due + due-today) and their reused
+  // action sheets, shared verbatim with the guided Run view via useLiveDayTiers
+  // so both surfaces read ONE source of truth. Native nearby rows are appended
+  // after these below.
+  const { rows: liveRows, sheets: liveSheets } = useLiveDayTiers(pathDate);
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-
-  // The appointment meeting stop whose outcome sheet is open, if any. Reuses the
-  // exact AppointmentOutcomeSheet the Activities page opens, so logging from the
-  // Path runs the same recordOutcome flow.
-  const [outcomeStop, setOutcomeStop] = React.useState<MeetingStop | null>(null);
-  // The deal id whose Log-a-drop-in sheet is open, if any (owed / due-today).
-  // Reuses LogActivitySheet keyed by dealId - these deals already exist, so we
-  // never route them through the create-deal DropInSheet path.
-  const [logDealId, setLogDealId] = React.useState<string | null>(null);
-  // Client-only "done" state for external meetings: no persistence, no outcome.
-  const [doneExternal, setDoneExternal] = React.useState<ReadonlySet<string>>(() => new Set());
-  const toggleDone = React.useCallback((id: string) => {
-    setDoneExternal((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
 
   const stats = React.useMemo(
     () => routeStats(origin, stops.map((s) => ({ lat: s.lat, lng: s.lng }))),
@@ -145,14 +99,6 @@ export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathV
   const pending = stops.filter((s) => s.status === "pending").length;
   const complete = isComplete();
 
-  // Past-due = the strictly-before-today slice of the opened owed window (the
-  // equal-to-today rows are the disjoint due-today tier). Compare on the
-  // YYYY-MM-DD date part (earliestAt is a date).
-  const pastDue = React.useMemo(
-    () => owed.filter((v) => v.earliestAt.slice(0, 10) < pathDate),
-    [owed, pathDate],
-  );
-
   // Leg distances: cursor starts at origin; each stop's leg is the hop from the
   // previous point, then the cursor advances to that stop.
   const legs = React.useMemo(() => {
@@ -164,125 +110,14 @@ export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathV
     });
   }, [stops, origin]);
 
-  // Invalidate the owed / due-today reads after logging a drop-in so the stop
-  // leaves the live list once its follow-up is resolved.
-  const handleLogged = React.useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ["path", "owed-visits"] });
-    void queryClient.invalidateQueries({ queryKey: ["path", "due-today-visits"] });
-  }, [queryClient]);
-
-  // The one ordered, tiered list: appointments, then past-due, due-today, and
-  // finally the native nearby route stops. Each row carries its tier chip and
-  // the actions appropriate to its kind.
-  const rows = React.useMemo<TieredStopRow[]>(() => {
-    const out: TieredStopRow[] = [];
-
-    // 1. Appointments + located external meetings (already time-ordered).
-    for (const m of meetingStops) {
-      const done = m.kind === "external" && doneExternal.has(m.id);
-      const dimmed = m.past || done;
-      const canNavigate = m.lat != null && m.lng != null;
-      out.push({
-        key: `meeting-${m.id}`,
-        tier: "appointment",
-        external: m.kind === "external",
-        name: m.title,
-        timeLabel: fmtTime(m.startAt),
-        dimmed,
-        strikethrough: dimmed,
-        chipOverride: dimmed ? "Ended" : undefined,
-        detail:
-          m.dealName || m.address ? (
-            <>
-              {m.dealName && <span className="block truncate">{m.dealName}</span>}
-              {m.address && <span className="block truncate">{m.address}</span>}
-            </>
-          ) : undefined,
-        actions:
-          m.kind === "appointment" ? (
-            <>
-              {m.dealId && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  leadingIcon={ExternalLink}
-                  onClick={() => navigate(`/pipeline/${m.dealId}`)}
-                >
-                  Open deal
-                </Button>
-              )}
-              {m.past && m.appointmentId && m.dealId && (
-                <Button
-                  variant="tertiary"
-                  size="sm"
-                  leadingIcon={ClipboardList}
-                  onClick={() => setOutcomeStop(m)}
-                >
-                  Log outcome
-                </Button>
-              )}
-            </>
-          ) : (
-            <>
-              {canNavigate && (
-                <a
-                  href={directionsUrl(m.lat as number, m.lng as number)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-radius-md border border-border-default px-3 py-1.5 text-caption font-medium text-text-default hover:bg-surface-sunken"
-                >
-                  <Navigation className="h-3.5 w-3.5" aria-hidden /> Navigate
-                </a>
-              )}
-              <Button
-                variant="tertiary"
-                size="sm"
-                leadingIcon={done ? CircleDashed : Check}
-                onClick={() => toggleDone(m.id)}
-              >
-                {done ? "Mark not done" : "Mark done"}
-              </Button>
-            </>
-          ),
-      });
-    }
-
-    // 2 + 3. Owed (past-due) then due-today - existing deals: Open deal + Log
-    // drop-in against that deal.
-    const dealRow = (v: OwedVisit, tier: "past_due" | "due_today"): TieredStopRow => ({
-      key: `owed-${v.taskId}`,
-      tier,
-      name: v.name,
-      detail: v.address ?? undefined,
-      ageDays: tier === "past_due" ? ageDaysSince(v.createdAt) : undefined,
-      actions: (
-        <>
-          <Button
-            variant="secondary"
-            size="sm"
-            leadingIcon={ExternalLink}
-            onClick={() => navigate(`/pipeline/${v.dealId}`)}
-          >
-            Open deal
-          </Button>
-          <Button
-            variant="tertiary"
-            size="sm"
-            leadingIcon={DoorOpen}
-            onClick={() => setLogDealId(v.dealId)}
-          >
-            Log drop-in
-          </Button>
-        </>
-      ),
-    });
-    for (const v of pastDue) out.push(dealRow(v, "past_due"));
-    for (const v of dueToday) out.push(dealRow(v, "due_today"));
-
-    // 4. Native nearby stops - keep the existing visited / skip / remove / reopen.
-    stops.forEach((s, i) => {
+  // The one ordered, tiered list: the shared LIVE tiers (appointments, past-due,
+  // due-today) from useLiveDayTiers, then the native nearby route stops. The
+  // native rows keep the Stops-tab-only visited / skip / remove / reopen actions
+  // and their leg lines; the live rows carry their own actions from the hook.
+  const nativeRows = React.useMemo<TieredStopRow[]>(() => {
+    return stops.map((s, i) => {
       const resolved = s.status !== "pending";
-      out.push({
+      return {
         key: `native-${s.merchantId}`,
         tier: "nearby",
         name: s.name,
@@ -347,11 +182,14 @@ export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathV
               Reopen
             </Button>
           ),
-      });
+      };
     });
+  }, [stops, legs, setStatus, remove]);
 
-    return out;
-  }, [meetingStops, doneExternal, pastDue, dueToday, stops, legs, navigate, setStatus, remove, toggleDone]);
+  const rows = React.useMemo<TieredStopRow[]>(
+    () => [...liveRows, ...nativeRows],
+    [liveRows, nativeRows],
+  );
 
   return (
     <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4 md:grid md:grid-cols-[1.4fr_1fr]">
@@ -441,39 +279,10 @@ export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathV
         <MerchantMap position={origin} merchants={[]} routePath={routePath} />
       </div>
 
-      {/* Reused, not rebuilt: the same outcome capture the Activities page uses.
-          Guarded by the onLogOutcome wiring above, so dealId/appointmentId are
-          always present here. hasFutureAppointment is false: this meeting stop
-          is itself the appointment being logged, and the Path day view does not
-          track other future appointments on the deal. */}
-      {outcomeStop && outcomeStop.dealId && outcomeStop.appointmentId && (
-        <AppointmentOutcomeSheet
-          open
-          onOpenChange={(o) => {
-            if (!o) setOutcomeStop(null);
-          }}
-          appointmentId={outcomeStop.appointmentId}
-          dealId={outcomeStop.dealId}
-          merchantName={outcomeStop.dealName ?? outcomeStop.title}
-          hasFutureAppointment={false}
-        />
-      )}
-
-      {/* Reused, not rebuilt: the same activity-logging sheet the pipeline / deal
-          screens use, keyed by the owed / due-today deal id and opened straight
-          to the drop-in form. These deals already exist, so this never touches
-          the create-deal DropInSheet path. */}
-      {logDealId && (
-        <LogActivitySheet
-          open
-          onOpenChange={(o) => {
-            if (!o) setLogDealId(null);
-          }}
-          dealId={logDealId}
-          defaultType="drop_in"
-          onLogged={handleLogged}
-        />
-      )}
+      {/* The reused AppointmentOutcomeSheet + LogActivitySheet, owned by the
+          shared useLiveDayTiers hook so the Stops tab and the Run view wire the
+          identical logging flows. */}
+      {liveSheets}
     </div>
   );
 }
