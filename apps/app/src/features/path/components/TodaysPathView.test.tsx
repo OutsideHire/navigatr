@@ -108,7 +108,7 @@ describe("TodaysPathView", () => {
   it("renders the overflow list under a carry-over heading", () => {
     renderView();
     expect(screen.getByText(/won't fit today/i)).toBeInTheDocument();
-    expect(screen.getByText(/carry over to tomorrow/i)).toBeInTheDocument();
+    expect(screen.getByText(/still waiting for you tomorrow/i)).toBeInTheDocument();
     expect(screen.getByText("Overflow Co")).toBeInTheDocument();
   });
 

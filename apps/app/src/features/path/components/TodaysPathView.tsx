@@ -195,7 +195,10 @@ export function TodaysPathView({
             </Button>
           </div>
 
-          {/* Overflow: read-only "carry over to tomorrow" (SP-D wires the carry). */}
+          {/* Overflow: stops that did not fit today. Read-only, and no explicit
+              "carry" action is needed: past-due stays past-due, due-today becomes
+              past-due, and nearby is re-discovered, so these reappear on their own
+              the next time the rep builds a path. */}
           {visibleOverflow.length > 0 && (
             <div className="flex flex-col gap-1.5">
               <div className="flex flex-col">
@@ -203,7 +206,7 @@ export function TodaysPathView({
                   Won&apos;t fit today
                 </span>
                 <span className="text-caption text-text-subtle">
-                  Carry over to tomorrow
+                  Still waiting for you tomorrow
                 </span>
               </div>
               {visibleOverflow.map((s) => (
