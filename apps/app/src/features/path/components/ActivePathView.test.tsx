@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { toast } from "sonner";
 import { ActivePathView } from "./ActivePathView";
 import type { MeetingStop } from "../lib/meetingStops";
+import type { OwedVisit } from "../lib/owedVisits";
 
 // react-router's useNavigate, spied so we can assert "Open deal" routes to the
 // deal. The component still renders inside a real MemoryRouter (renderView).
@@ -21,6 +23,17 @@ vi.mock("@/features/appointments/components/AppointmentOutcomeSheet", () => ({
   AppointmentOutcomeSheet: (props: { appointmentId: string; dealId: string }) => {
     outcomeSheet(props);
     return <div data-testid="outcome-sheet" data-appt={props.appointmentId} data-deal={props.dealId} />;
+  },
+}));
+
+// The reused deal-scoped activity-logging sheet, mocked like the outcome sheet
+// so we can assert an owed / due-today stop's "Log drop-in" reaches the existing
+// flow keyed by the deal id (and opened straight to the drop-in form).
+const logActivitySheet = vi.fn();
+vi.mock("@/features/activities/components/LogActivitySheet", () => ({
+  LogActivitySheet: (props: { dealId: string; defaultType?: string }) => {
+    logActivitySheet(props);
+    return <div data-testid="log-activity-sheet" data-deal={props.dealId} data-type={props.defaultType} />;
   },
 }));
 
@@ -71,12 +84,17 @@ const todayState = {
 // Meeting stops (Slice 5B). Default: none, so existing tests see only the
 // route stops. Individual tests override meetingState.current.stops.
 const meetingState = { current: { stops: [] as MeetingStop[] } };
+// Owed (past-due) + due-today live tiers (SP-C2). Default: none.
+const owedState = { current: { owed: [] as OwedVisit[] } };
+const dueTodayState = { current: { dueToday: [] as OwedVisit[] } };
 
 vi.mock("../hooks/useTodayPath", () => ({
   useTodayPath: () => todayState.current,
   todayISO: () => "2026-08-08",
 }));
 vi.mock("../hooks/useMeetingStops", () => ({ useMeetingStops: () => meetingState.current }));
+vi.mock("../hooks/useOwedVisits", () => ({ useOwedVisits: () => owedState.current }));
+vi.mock("../hooks/useDueTodayVisits", () => ({ useDueTodayVisits: () => dueTodayState.current }));
 vi.mock("./MerchantMap", () => ({ MerchantMap: () => <div data-testid="map" /> }));
 vi.mock("./PathSummary", () => ({ PathSummary: () => <div data-testid="summary" /> }));
 vi.mock("sonner", () => ({
@@ -84,14 +102,17 @@ vi.mock("sonner", () => ({
 }));
 
 function renderView(props?: Partial<{ onAddStops: () => void; onStartRoute: () => void }>) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter>
-      <ActivePathView
-        origin={{ lat: 30, lng: -97 }}
-        onAddStops={props?.onAddStops ?? vi.fn()}
-        onStartRoute={props?.onStartRoute ?? vi.fn()}
-      />
-    </MemoryRouter>,
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <ActivePathView
+          origin={{ lat: 30, lng: -97 }}
+          onAddStops={props?.onAddStops ?? vi.fn()}
+          onStartRoute={props?.onStartRoute ?? vi.fn()}
+        />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -101,11 +122,39 @@ beforeEach(() => {
   clear.mockClear();
   navigate.mockClear();
   outcomeSheet.mockClear();
+  logActivitySheet.mockClear();
   vi.mocked(toast).mockClear();
   vi.mocked(toast.success).mockClear();
   complete = false;
   meetingState.current = { stops: [] };
+  owedState.current = { owed: [] };
+  dueTodayState.current = { dueToday: [] };
 });
+
+/** A routable owed visit fixture (SP-C2). `earliestAt` before todayISO()
+ *  ("2026-08-08") makes it PAST-DUE; equal-to would be due-today. `createdAt`
+ *  five days back gives a deterministic "5d overdue" age. */
+function owedVisit(over: Partial<OwedVisit> = {}): OwedVisit {
+  return {
+    taskId: "t1",
+    dealId: "deal-owed-1",
+    name: "Owed Co",
+    address: "500 Owed St",
+    placeId: "place-1",
+    lat: 30.2,
+    lng: -97.6,
+    urgency: 1,
+    bandPosition: "aging",
+    dateSource: "interval",
+    targetAt: "2026-08-05",
+    earliestAt: "2026-08-01",
+    latestAt: "2026-08-10",
+    snoozeCount: 0,
+    sourceOutcome: "appt_no_show",
+    createdAt: new Date(Date.now() - 5 * 86_400_000).toISOString(),
+    ...over,
+  };
+}
 
 const appointmentStop: MeetingStop = {
   id: "a1",
@@ -337,5 +386,75 @@ describe("ActivePathView", () => {
     // Toggling back restores the original label.
     fireEvent.click(screen.getByRole("button", { name: /mark not done/i }));
     expect(screen.getByRole("button", { name: /^mark done$/i })).toBeInTheDocument();
+  });
+
+  // ─── SP-C2: one ordered, tiered list ──────────────────────────────────
+
+  it("renders all four tiers in ONE list with tier chips, appointment time, and past-due age", () => {
+    meetingState.current = { stops: [futureAppointmentStop] };
+    owedState.current = { owed: [owedVisit()] };
+    dueTodayState.current = {
+      dueToday: [owedVisit({ taskId: "t2", dealId: "deal-due-1", name: "Due Today Co", earliestAt: "2026-08-08" })],
+    };
+    // Native stops come from the default todayState (Uratex pending, Amkor visited).
+    renderView();
+
+    // Tier chips - one continuous list carries all four.
+    expect(screen.getByText("Appointment")).toBeInTheDocument();
+    expect(screen.getByText("Past due")).toBeInTheDocument();
+    expect(screen.getByText("Due today")).toBeInTheDocument();
+    expect(screen.getAllByText("Nearby").length).toBe(2); // both native stops
+
+    // Each tier's name is present.
+    expect(screen.getByText("Kickoff call")).toBeInTheDocument(); // appointment
+    expect(screen.getByText("Owed Co")).toBeInTheDocument(); // past-due
+    expect(screen.getByText("Due Today Co")).toBeInTheDocument(); // due-today
+    expect(screen.getByText("Uratex")).toBeInTheDocument(); // native
+
+    // Appointment time + past-due overdue age render.
+    expect(screen.getAllByText(/\d{1,2}:\d{2}/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/5d overdue/)).toBeInTheDocument();
+  });
+
+  it("a past-due owed stop exposes Open deal + Log drop-in wired to its deal", () => {
+    owedState.current = { owed: [owedVisit()] };
+    renderView();
+
+    // Open deal navigates to the owed stop's deal.
+    fireEvent.click(screen.getByRole("button", { name: /open deal/i }));
+    expect(navigate).toHaveBeenCalledWith("/pipeline/deal-owed-1");
+
+    // Log drop-in opens the reused LogActivitySheet keyed by the deal id, on the
+    // drop-in form - NOT the create-deal path.
+    expect(screen.queryByTestId("log-activity-sheet")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /log drop-in/i }));
+    const sheet = screen.getByTestId("log-activity-sheet");
+    expect(sheet).toHaveAttribute("data-deal", "deal-owed-1");
+    expect(sheet).toHaveAttribute("data-type", "drop_in");
+    expect(logActivitySheet).toHaveBeenCalledWith(
+      expect.objectContaining({ dealId: "deal-owed-1", defaultType: "drop_in" }),
+    );
+  });
+
+  it("a due-today stop exposes Open deal + Log drop-in but NO overdue age", () => {
+    dueTodayState.current = {
+      dueToday: [owedVisit({ taskId: "t2", dealId: "deal-due-1", name: "Due Today Co", earliestAt: "2026-08-08" })],
+    };
+    renderView();
+    expect(screen.getByText("Due today")).toBeInTheDocument();
+    // Due-today is not overdue.
+    expect(screen.queryByText(/overdue/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /log drop-in/i }));
+    expect(logActivitySheet).toHaveBeenCalledWith(
+      expect.objectContaining({ dealId: "deal-due-1", defaultType: "drop_in" }),
+    );
+  });
+
+  it("keeps native stop actions working alongside the live tiers", () => {
+    owedState.current = { owed: [owedVisit()] };
+    renderView();
+    // The native pending stop still marks visited via setStatus.
+    fireEvent.click(screen.getByRole("button", { name: /mark visited/i }));
+    expect(setStatus).toHaveBeenCalledWith("m1", "visited");
   });
 });

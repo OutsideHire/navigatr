@@ -23,8 +23,9 @@ import { ArrowRight, CalendarClock, Loader2, MapPin, Navigation, Plus, RefreshCw
 
 import { cn } from "@/lib/utils";
 import { Button, Card } from "@/components/navigatr";
-import type { OrderedStop, FlexibleStop, StopTier } from "../lib/todaysPath";
+import type { OrderedStop, FlexibleStop } from "../lib/todaysPath";
 import type { TodaysPathStatus } from "../hooks/useTodaysPath";
+import { tierAccent, tierChipLabel } from "../lib/tierStyles";
 
 interface TodaysPathViewProps {
   /** Ordered run list (appointments interleaved with flexible stops) from useTodaysPath. */
@@ -46,52 +47,6 @@ interface TodaysPathViewProps {
 /** Local-tz clock time, e.g. "10:30 AM". */
 function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
-/** Human tier label for a stop. Appointments distinguish calendar-sourced ones. */
-function tierLabel(stop: OrderedStop): string {
-  switch (stop.tier) {
-    case "appointment":
-      return stop.kind === "external" ? "From calendar" : "Appointment";
-    case "past_due":
-      return "Past due";
-    case "due_today":
-      return "Due today";
-    case "nearby":
-      return "Nearby";
-  }
-}
-
-/** Accent classes per tier so the plan reads at a glance. Past-due is warning-
- *  toned (work you owe), appointments violet (calendar-owned, matching the
- *  ActivePathView meeting cards), the rest neutral. */
-function tierAccent(tier: StopTier): { chip: string; border: string; icon: string } {
-  switch (tier) {
-    case "appointment":
-      return {
-        chip: "bg-accent-violet-20 text-accent-violet",
-        border: "border-accent-violet/40 bg-accent-violet-20",
-        icon: "bg-accent-violet-20 text-accent-violet",
-      };
-    case "past_due":
-      return {
-        chip: "bg-status-warning-bg text-status-warning",
-        border: "border-status-warning/40",
-        icon: "bg-status-warning-bg text-status-warning",
-      };
-    case "due_today":
-      return {
-        chip: "bg-brand-primary-10 text-brand-primary",
-        border: "border-border-subtle",
-        icon: "bg-brand-primary-10 text-brand-primary",
-      };
-    case "nearby":
-      return {
-        chip: "bg-surface-sunken text-text-muted",
-        border: "border-border-subtle",
-        icon: "bg-surface-sunken text-text-muted",
-      };
-  }
 }
 
 export function TodaysPathView({
@@ -321,7 +276,7 @@ function ProposalRow({
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
           <span className={cn("inline-flex items-center rounded-radius-full px-2 py-0.5 text-caption font-medium", accent.chip)}>
-            {tierLabel(stop)}
+            {tierChipLabel(stop.tier, { external: stop.kind === "external" })}
           </span>
           {stop.tier === "past_due" && stop.ageDays != null && (
             <span className="text-caption font-medium text-status-warning tabular-nums">
