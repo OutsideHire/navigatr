@@ -25,7 +25,8 @@ import { cn } from "@/lib/utils";
 import { Button, Card } from "@/components/navigatr";
 import type { OrderedStop, FlexibleStop } from "../lib/todaysPath";
 import type { TodaysPathStatus } from "../hooks/useTodaysPath";
-import { tierAccent, tierChipLabel } from "../lib/tierStyles";
+import { tierAccent } from "../lib/tierStyles";
+import { reasonLine } from "../lib/reasonLine";
 
 interface TodaysPathViewProps {
   /** Ordered run list (appointments interleaved with flexible stops) from useTodaysPath. */
@@ -135,7 +136,7 @@ export function TodaysPathView({
             </p>
           </div>
           <Button variant="secondary" size="sm" leadingIcon={Plus} onClick={onAddNearby}>
-            Find nearby
+            Build my day
           </Button>
         </Card>
       ) : (
@@ -148,7 +149,7 @@ export function TodaysPathView({
               type="button"
               onClick={() => onStart(flexibleStops)}
               disabled={isStarting}
-              aria-label={`Start path, ${flexibleStops.length} stop${flexibleStops.length === 1 ? "" : "s"}`}
+              aria-label={`Start driving, ${flexibleStops.length} stop${flexibleStops.length === 1 ? "" : "s"}`}
               className={cn(
                 "group flex w-full items-center gap-3 rounded-radius-lg px-4 py-3.5 text-left",
                 "bg-brand-primary text-brand-primary-foreground shadow-sm",
@@ -165,7 +166,7 @@ export function TodaysPathView({
                 )}
               </span>
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="text-body-lg font-semibold leading-tight">Start path</span>
+                <span className="text-body-lg font-semibold leading-tight">Start driving</span>
                 <span className="text-caption text-brand-primary-foreground/75">
                   {flexibleStops.length} stop{flexibleStops.length === 1 ? "" : "s"} to run
                 </span>
@@ -177,7 +178,16 @@ export function TodaysPathView({
             </button>
           )}
 
-          {/* The proposal, in run order, each stop labeled by tier. */}
+          {/* One-sentence rationale for the order, on demand (FR-PATH-UX-14). */}
+          <details className="text-caption text-text-subtle">
+            <summary className="cursor-pointer select-none">Why this order?</summary>
+            <p className="mt-1 text-text-muted">
+              Appointments go where they are booked. Everything else is ordered by how long it has been,
+              unless a place is well out of your way.
+            </p>
+          </details>
+
+          {/* The proposal, in run order, each stop showing its plain reason line. */}
           <ol className="flex flex-col gap-1.5">
             {visibleProposal.map((stop, i) => (
               <ProposalRow
@@ -219,13 +229,16 @@ export function TodaysPathView({
                   </span>
                   <div className="flex min-w-0 flex-1 flex-col">
                     <p className="truncate text-body-strong text-text-default">{s.name}</p>
-                    <span className={cn("mt-0.5 inline-flex w-fit items-center rounded-radius-full px-2 py-0.5 text-caption font-medium", tierAccent(s.tier).chip)}>
-                      {s.tier === "past_due" && s.ageDays != null
-                        ? `${s.ageDays}d overdue`
-                        : s.tier === "due_today"
-                          ? "Due today"
-                          : "Nearby"}
-                    </span>
+                    <p className={cn("mt-0.5 text-caption", s.tier === "past_due" && s.ageDays != null && s.ageDays > 0 ? "text-status-warning" : "text-text-muted")}>
+                      {reasonLine({
+                        kind: "flexible",
+                        tier: s.tier,
+                        startAt: null,
+                        ageDays: s.ageDays,
+                        datePromisedToday: false,
+                        hasPriorActivity: s.tier !== "nearby",
+                      })}
+                    </p>
                   </div>
                 </div>
               ))}
@@ -277,16 +290,17 @@ function ProposalRow({
             </span>
           )}
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-1.5">
-          <span className={cn("inline-flex items-center rounded-radius-full px-2 py-0.5 text-caption font-medium", accent.chip)}>
-            {tierChipLabel(stop.tier, { external: stop.kind === "external" })}
-          </span>
-          {stop.tier === "past_due" && stop.ageDays != null && (
-            <span className="text-caption font-medium text-status-warning tabular-nums">
-              {stop.ageDays}d overdue
-            </span>
-          )}
-        </div>
+        {/* One plain reason line per row (FR-PATH-UX-05), appointments included. */}
+        <p className={cn("mt-0.5 text-caption", stop.tier === "past_due" && stop.ageDays != null && stop.ageDays > 0 ? "text-status-warning" : "text-text-muted")}>
+          {reasonLine({
+            kind: stop.kind,
+            tier: stop.tier,
+            startAt: stop.startAt,
+            ageDays: stop.ageDays,
+            datePromisedToday: false,
+            hasPriorActivity: stop.tier !== "nearby",
+          })}
+        </p>
       </div>
 
       {onRemove && (

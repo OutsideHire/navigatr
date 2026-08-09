@@ -755,7 +755,7 @@ describe("PathPage handleStartTodaysPath (only nearby tier persists)", () => {
     };
     render(<PathPage />, { wrapper });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /start path/i }));
+      fireEvent.click(screen.getByRole("button", { name: /start driving/i }));
     });
 
     expect(todayState.current.addMany).toHaveBeenCalledTimes(1);
@@ -783,7 +783,7 @@ describe("PathPage handleStartTodaysPath (only nearby tier persists)", () => {
     };
     render(<PathPage />, { wrapper });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /start path/i }));
+      fireEvent.click(screen.getByRole("button", { name: /start driving/i }));
     });
 
     expect(todayState.current.addMany).not.toHaveBeenCalled();

@@ -31,6 +31,12 @@ const overflow: FlexibleStop[] = [
   { id: "of1", dealId: null, name: "Overflow Co", lat: 30.5, lng: -97.5, tier: "nearby", ageDays: null },
 ];
 
+// Mirrors the component's local-tz clock formatting so the assertion is
+// tz-independent (matches the dedicated time column, not the reason sentence).
+function fmtLocalTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
 function renderView(props?: Partial<ComponentProps<typeof TodaysPathView>>) {
   return render(
     <TodaysPathView
@@ -63,12 +69,16 @@ describe("TodaysPathView", () => {
     expect(orderOf("Renewal review")).toBeLessThan(orderOf("DueToday Co"));
     expect(orderOf("DueToday Co")).toBeLessThan(orderOf("Nearby Co"));
 
-    // The past-due stop shows its overdue age.
-    expect(screen.getByText("12d overdue")).toBeInTheDocument();
+    // The past-due stop shows a plain reason line, not a tier chip or age.
+    expect(screen.getByText("You have not stopped by in 12 days.")).toBeInTheDocument();
+    expect(screen.queryByText(/overdue/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/past due/i)).not.toBeInTheDocument();
 
-    // The appointment shows a clock time (locale "h:mm" form).
+    // The appointment carries its own reason line (FR-PATH-UX-05, every row).
     const apptRow = items[orderOf("Renewal review")]!;
-    expect(within(apptRow).getByText(/\d{1,2}:\d{2}/)).toBeInTheDocument();
+    expect(within(apptRow).getByText(/^You have a .+ here\.$/)).toBeInTheDocument();
+    // The dedicated time column still renders the formatted clock time.
+    expect(within(apptRow).getByText(fmtLocalTime("2026-08-09T17:30:00Z"))).toBeInTheDocument();
   });
 
   it("removing a flexible stop drops it from the plan", () => {
@@ -88,7 +98,7 @@ describe("TodaysPathView", () => {
   it("Start invokes onStart with only the flexible stops (appointments excluded)", () => {
     const onStart = vi.fn();
     renderView({ onStart });
-    fireEvent.click(screen.getByRole("button", { name: /start path/i }));
+    fireEvent.click(screen.getByRole("button", { name: /start driving/i }));
     expect(onStart).toHaveBeenCalledTimes(1);
     const passed = onStart.mock.calls[0]![0] as OrderedStop[];
     expect(passed).toHaveLength(3);
@@ -100,7 +110,7 @@ describe("TodaysPathView", () => {
     const onStart = vi.fn();
     renderView({ onStart });
     fireEvent.click(screen.getByRole("button", { name: /remove owed co/i }));
-    fireEvent.click(screen.getByRole("button", { name: /start path/i }));
+    fireEvent.click(screen.getByRole("button", { name: /start driving/i }));
     const passed = onStart.mock.calls[0]![0] as OrderedStop[];
     expect(passed.map((s) => s.id)).toEqual(["due1", "near1"]);
   });
@@ -123,17 +133,17 @@ describe("TodaysPathView", () => {
     const onAddNearby = vi.fn();
     renderView({ proposal: [], overflow: [], onAddNearby });
     expect(screen.getByText(/all caught up/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /find nearby/i }));
+    fireEvent.click(screen.getByRole("button", { name: /build my day/i }));
     expect(onAddNearby).toHaveBeenCalledTimes(1);
     // No Start button when there's nothing to run.
-    expect(screen.queryByRole("button", { name: /start path/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /start driving/i })).not.toBeInTheDocument();
   });
 
   it("hides Start when the plan is all appointments (no flexible stops to run)", () => {
     const apptOnly: OrderedStop[] = [proposal[1]!];
     renderView({ proposal: apptOnly, overflow: [] });
     expect(screen.getByText("Renewal review")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /start path/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /start driving/i })).not.toBeInTheDocument();
     // Add more nearby is still available so the rep can fill an empty run.
     expect(screen.getByRole("button", { name: /add more nearby/i })).toBeInTheDocument();
   });
@@ -149,5 +159,18 @@ describe("TodaysPathView", () => {
     renderView({ isLoading: true });
     expect(screen.getByText(/building today's path/i)).toBeInTheDocument();
     expect(screen.queryByText("Owed Co")).not.toBeInTheDocument();
+  });
+
+  it("shows the one-sentence 'Why this order?' explanation on demand", () => {
+    renderView();
+    fireEvent.click(screen.getByText(/why this order/i));
+    expect(screen.getByText(/Appointments go where they are booked/i)).toBeInTheDocument();
+  });
+
+  it("empty day offers a single 'Build my day' action", () => {
+    const onAddNearby = vi.fn();
+    renderView({ proposal: [], overflow: [], onAddNearby });
+    fireEvent.click(screen.getByRole("button", { name: /build my day/i }));
+    expect(onAddNearby).toHaveBeenCalledTimes(1);
   });
 });
