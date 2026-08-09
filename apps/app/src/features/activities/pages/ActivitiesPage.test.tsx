@@ -8,6 +8,8 @@ import { ActivitiesPage } from "./ActivitiesPage";
 import { ACTIVITIES_ORG_QUERY_KEY } from "../hooks/useActivities";
 import { TASKS_QUERY_KEY } from "../hooks/useTasks";
 import { DEALS_QUERY_KEY } from "@/features/pipeline/hooks/useDeals";
+import { myAppointmentsKey } from "@/features/appointments/useAppointments";
+import type { ScheduledAppointment } from "@/features/appointments/types";
 import { toDateOnly } from "@/lib/calendarDate";
 import type { Activity } from "../mockData";
 import type { Deal } from "@/features/pipeline/mockData";
@@ -94,6 +96,41 @@ function makeTask(id: string, dealId: string, targetAt: string, type: TaskType =
   };
 }
 
+// A scheduled_appointments row for today. By default it starts at the top of
+// today and ends at end-of-day, so it is "today and not yet ended" for any
+// realistic run time (the Today-view placement rule). Callers override startAt
+// and endAt to exercise the already-ended (de-dup) case.
+function makeAppointment(
+  id: string,
+  dealId: string,
+  title: string,
+  overrides: Partial<ScheduledAppointment> = {},
+): ScheduledAppointment {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  return {
+    id,
+    dealId,
+    ownerId: "user-1",
+    title,
+    startAt: start.toISOString(),
+    endAt: end.toISOString(),
+    locationAddress: null,
+    locationLat: null,
+    locationLng: null,
+    notes: null,
+    status: "scheduled",
+    calendarEventId: null,
+    calendarSyncStatus: "pending",
+    calendarSyncError: null,
+    createdAt: "2026-05-18T12:00:00Z",
+    updatedAt: "2026-05-18T12:00:00Z",
+    ...overrides,
+  };
+}
+
 function historyActivity(id: string, dealId: string, type: Activity["type"] = "call"): Activity {
   return {
     id, dealId, type, disposition: "positive_engagement", durationMinutes: 10,
@@ -101,7 +138,13 @@ function historyActivity(id: string, dealId: string, type: Activity["type"] = "c
   };
 }
 
-function renderWithSeed(args: { tasks?: Task[]; completedTasks?: Task[]; activities?: Activity[]; deals: Deal[] }) {
+function renderWithSeed(args: {
+  tasks?: Task[];
+  completedTasks?: Task[];
+  activities?: Activity[];
+  deals: Deal[];
+  appointments?: ScheduledAppointment[];
+}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   // userId is undefined in tests (no auth mock), so useTasks is disabled and
   // reads this seeded cache instead of hitting Supabase.
@@ -109,6 +152,8 @@ function renderWithSeed(args: { tasks?: Task[]; completedTasks?: Task[]; activit
   client.setQueryData(TASKS_QUERY_KEY(undefined, "completed"), args.completedTasks ?? []);
   client.setQueryData(ACTIVITIES_ORG_QUERY_KEY(undefined), args.activities ?? []);
   client.setQueryData(DEALS_QUERY_KEY(undefined), args.deals);
+  // useMyAppointments is likewise disabled without a userId; seed its cache.
+  client.setQueryData(myAppointmentsKey(undefined), args.appointments ?? []);
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/activities"]}>
@@ -348,5 +393,70 @@ describe("ActivitiesPage / empty", () => {
   it("renders no task rows when there are no open tasks", () => {
     renderWithSeed({ tasks: [], deals: [deal("d-1", "Acme")] });
     expect(screen.queryAllByTestId("task-row")).toHaveLength(0);
+  });
+});
+
+describe("ActivitiesPage / drop-in merchant name (QF-2)", () => {
+  // A drop-in task's `title` is free text the rep typed ("Swing by in person"),
+  // not the merchant. The row must show the deal's business name as its
+  // identity, keeping the typed title as a secondary agenda line.
+  it("shows the merchant (deal) name on a drop-in row, not just the typed title", () => {
+    const dropIn: Task = {
+      ...makeTask("t-drop", "d-drop", todayDate(), "drop_in"),
+      title: "Swing by in person",
+      dealName: "Merchant X",
+    };
+    renderWithSeed({ tasks: [dropIn], deals: [deal("d-drop", "Merchant X")] });
+
+    const row = screen.getByTestId("task-row");
+    expect(within(row).getByText("Merchant X")).toBeInTheDocument();
+    expect(within(row).getByText("Swing by in person")).toBeInTheDocument();
+  });
+});
+
+describe("ActivitiesPage / booked appointments in Today (QF-3)", () => {
+  it("surfaces a today booked appointment as a row with the merchant name", () => {
+    renderWithSeed({
+      tasks: [],
+      deals: [deal("d-appt", "Acme Co")],
+      appointments: [makeAppointment("appt-1", "d-appt", "Kickoff meeting")],
+    });
+
+    const section = screen.getByRole("region", { name: /Booked appointments/i });
+    expect(within(section).getByText("Acme Co")).toBeInTheDocument();
+    expect(within(section).getByText("Kickoff meeting")).toBeInTheDocument();
+  });
+
+  it("does not list an appointment that has already ended (owned by the awaiting-outcome nudge)", () => {
+    // Started and ended earlier today: excluded here so it is not double-placed.
+    const endedStart = new Date();
+    endedStart.setHours(0, 0, 0, 0);
+    const endedEnd = new Date();
+    endedEnd.setHours(0, 1, 0, 0);
+    renderWithSeed({
+      tasks: [],
+      deals: [deal("d-appt", "Acme Co")],
+      appointments: [
+        makeAppointment("appt-past", "d-appt", "Old meeting", {
+          startAt: endedStart.toISOString(),
+          endAt: endedEnd.toISOString(),
+        }),
+      ],
+    });
+
+    expect(screen.queryByRole("region", { name: /Booked appointments/i })).not.toBeInTheDocument();
+  });
+
+  it("hides booked appointments under a non-appointment type filter", async () => {
+    const user = userEvent.setup();
+    renderWithSeed({
+      tasks: [],
+      deals: [deal("d-appt", "Acme Co")],
+      appointments: [makeAppointment("appt-1", "d-appt", "Kickoff meeting")],
+    });
+
+    expect(screen.getByRole("region", { name: /Booked appointments/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Email" }));
+    expect(screen.queryByRole("region", { name: /Booked appointments/i })).not.toBeInTheDocument();
   });
 });

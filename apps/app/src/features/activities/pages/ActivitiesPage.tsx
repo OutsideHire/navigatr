@@ -51,6 +51,7 @@ import { EditActivitySheet } from "../components/EditActivitySheet";
 import { CreateTaskSheet } from "../components/CreateTaskSheet";
 import { UnloggedCallsSection } from "../components/UnloggedCallsSection";
 import { AppointmentsAwaitingOutcome } from "@/features/appointments/components/AppointmentsAwaitingOutcome";
+import { useMyAppointments } from "@/features/appointments/useAppointments";
 import { useActivitiesForOrg } from "../hooks/useActivities";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { useTasks } from "../hooks/useTasks";
@@ -188,17 +189,20 @@ function TaskRow({
 }) {
   const overdue = daysBetween(now, new Date(task.dueAt)) < 0;
   const isTodo = task.type === "todo";
-  const isAppointment = task.type === "appointment";
-  // For an appointment the deal name lives on `dealName` (its `title` holds the
-  // meeting agenda), whereas call/drop-in/email rows already carry the deal name
-  // in `companyName`. Surface the deal name as the row's identity for every type
-  // so a rep can always tell which deal it is; fall back to companyName so a row
-  // never renders blank when a deal name is missing.
-  const primaryName = isAppointment ? task.dealName ?? task.companyName : task.companyName;
-  // The agenda the rep typed, kept as a secondary line so it isn't lost. Only
-  // when it differs from the deal name (avoids showing the deal name twice).
+  // A task's `title` (surfaced here as `companyName`) is free text the rep typed
+  // (e.g. "Swing by in person" for a drop-in, or a meeting agenda for an
+  // appointment), NOT necessarily the merchant. Whenever the task is linked to a
+  // deal, surface the deal's business name as the row's identity so a rep can
+  // always tell which merchant it is (QA fix: drop-ins were showing the typed
+  // title, not the merchant). Fall back to the title when there is no linked
+  // deal so a row never renders blank.
+  const hasDealName = task.dealName != null && task.dealName !== "";
+  const primaryName = hasDealName ? (task.dealName as string) : task.companyName;
+  // The title the rep typed (agenda / note), kept as a secondary line so it
+  // isn't lost. Only when it differs from the deal name (avoids showing it
+  // twice) and is non-empty.
   const agenda =
-    isAppointment && task.dealName && task.companyName !== task.dealName ? task.companyName : null;
+    hasDealName && task.companyName && task.companyName !== task.dealName ? task.companyName : null;
   const Icon = isTodo ? CheckIcon : TYPE_ICON[task.type as ActivityType];
   const accent = isTodo
     ? { bg: "bg-surface-sunken", fg: "text-text-muted" }
@@ -417,7 +421,10 @@ function TodaysMeetingsSection({ now }: { now: Date }) {
 
   return (
     <section className="flex flex-col gap-2" aria-label="Today's meetings">
-      <p className="text-eyebrow text-text-subtle">Today's meetings · {meetings.length}</p>
+      <div className="flex flex-col gap-0.5">
+        <p className="text-eyebrow text-text-subtle">Today's meetings · {meetings.length}</p>
+        <p className="text-caption text-text-muted">From your connected calendar</p>
+      </div>
       <div className="flex flex-col gap-2">
         {meetings.map((m) => (
           <div
@@ -439,6 +446,82 @@ function TodaysMeetingsSection({ now }: { now: Date }) {
             </div>
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+// ── Today's booked appointments (navigatr scheduled_appointments) ─────
+
+/** A today booked-appointment row: the flattened view the section renders. */
+interface TodaysAppointmentRow {
+  id: string;
+  dealId: string;
+  /** The deal's business name (joined from the deals list). Null when the deal
+   *  is not in the rep's visible list. */
+  dealName: string | null;
+  /** The appointment title (agenda), kept as a secondary line. */
+  title: string;
+  startAt: string;
+}
+
+/** Today's navigatr-booked appointments (scheduled_appointments), read-only-ish
+ *  rows that link to the deal.
+ *
+ *  These are DISTINCT from appointment-type TASKS (a booked appointment is a
+ *  scheduled_appointments row, not a `task` row) and from external calendar
+ *  meetings (which come from the connected calendar). De-dup with the
+ *  "Appointments to log" nudge is handled by the caller: only appointments that
+ *  have NOT yet ended land here; ended ones are owned by that nudge. Renders
+ *  nothing when there is nothing to show. */
+function BookedAppointmentsSection({
+  appointments,
+  onOpenDeal,
+}: {
+  appointments: TodaysAppointmentRow[];
+  onOpenDeal: (dealId: string) => void;
+}) {
+  if (appointments.length === 0) return null;
+
+  const accent = TYPE_ACCENT.appointment;
+  return (
+    <section className="flex flex-col gap-2" aria-label="Booked appointments">
+      <div className="flex flex-col gap-0.5">
+        <p className="text-eyebrow text-text-subtle">Booked appointments · {appointments.length}</p>
+        <p className="text-caption text-text-muted">Appointments you booked on a deal in navigatr</p>
+      </div>
+      <div className="flex flex-col gap-2">
+        {appointments.map((a) => {
+          const primaryName = a.dealName ?? a.title;
+          const agenda = a.dealName && a.title && a.title !== a.dealName ? a.title : null;
+          return (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => onOpenDeal(a.dealId)}
+              className={cn(
+                "flex w-full items-start gap-3 rounded-radius-md border border-border-subtle bg-surface-default p-4 text-left transition-colors",
+                "hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas",
+              )}
+            >
+              <span
+                className={cn(
+                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full",
+                  accent.bg,
+                  accent.fg,
+                )}
+                aria-hidden
+              >
+                <Calendar className="h-4 w-4" />
+              </span>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <p className="truncate text-body-strong text-text-default">{primaryName}</p>
+                {agenda && <p className="truncate text-caption text-text-muted">{agenda}</p>}
+                <p className="text-caption text-text-muted">Appointment · {formatTime(a.startAt)}</p>
+              </div>
+            </button>
+          );
+        })}
       </div>
     </section>
   );
@@ -540,6 +623,10 @@ export function ActivitiesPage() {
   const { tasks: completedTasks } = useTasks("completed");
   const { data: activities = [] } = useActivitiesForOrg();
   const { data: deals = [] } = useDeals();
+  // The rep's booked appointments (scheduled_appointments). Surfaced in the
+  // Today view so a deal-booked appointment shows up alongside tasks (QA fix:
+  // previously only `task` rows + external meetings appeared).
+  const { data: myAppointments = [] } = useMyAppointments();
   const { completeTask, cancelTask, snoozeTask } = useTaskMutations();
   const navigate = useNavigate();
 
@@ -547,6 +634,39 @@ export function ActivitiesPage() {
     () => new Map(deals.map((d) => [d.id, d])),
     [deals],
   );
+
+  // Today's booked appointments as rows: those starting today that have NOT yet
+  // ended. Excluding already-ended ones is the de-dup with the "Appointments to
+  // log" nudge (AppointmentsAwaitingOutcome), which owns past appointments with
+  // no outcome recorded, so a given appointment is only ever placed once.
+  const todaysAppointments = React.useMemo<TodaysAppointmentRow[]>(() => {
+    const nowMs = now.getTime();
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(now);
+    dayEnd.setHours(23, 59, 59, 999);
+    const startMs = dayStart.getTime();
+    const endMs = dayEnd.getTime();
+    return myAppointments
+      .filter((a) => {
+        const s = new Date(a.startAt).getTime();
+        const e = new Date(a.endAt).getTime();
+        return s >= startMs && s <= endMs && e >= nowMs;
+      })
+      .map((a) => ({
+        id: a.id,
+        dealId: a.dealId,
+        dealName: dealById.get(a.dealId)?.companyName ?? null,
+        title: a.title,
+        startAt: a.startAt,
+      }))
+      .sort((x, y) => x.startAt.localeCompare(y.startAt));
+  }, [myAppointments, now, dealById]);
+
+  // Booked appointments are appointment-typed, so the shared type filter should
+  // hide them unless "All" or "Appointment" is selected (consistent with how the
+  // task rows respect the filter).
+  const showBookedAppointments = typeFilter === "all" || typeFilter === "appointment";
 
   // Keep the full Task objects addressable by id (snooze needs the band dates).
   const taskById = React.useMemo(
@@ -761,6 +881,11 @@ export function ActivitiesPage() {
               {/* External calendar meetings for today (read-only). Sits above the
                   follow-up task sections and is independent of the type filter. */}
               <TodaysMeetingsSection now={now} />
+              {/* navigatr-booked appointments for today (from a deal). Distinct
+                  from external meetings above and from appointment TASKS below. */}
+              {showBookedAppointments && (
+                <BookedAppointmentsSection appointments={todaysAppointments} onOpenDeal={handleOpenDeal} />
+              )}
               {todayCount === 0 ? (
                 typeFilter !== "all" ? (
                   <FilteredEmptyCard typeLabel={typeFilterLabel(typeFilter)} onClear={() => setTypeFilter("all")} />
@@ -771,7 +896,10 @@ export function ActivitiesPage() {
                 <div className="flex flex-col gap-4">
                   {overdue.length > 0 && (
                   <section className="flex flex-col gap-2">
-                    <p className="text-eyebrow text-status-danger">Overdue · {overdue.length}</p>
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-eyebrow text-status-danger">Overdue · {overdue.length}</p>
+                      <p className="text-caption text-text-muted">Your navigatr tasks and follow-ups</p>
+                    </div>
                     <div className="flex flex-col gap-2">
                       {overdue.map((t) => (
                         <TaskRow key={t.id} task={t} now={now} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
@@ -781,7 +909,10 @@ export function ActivitiesPage() {
                 )}
                 {today.length > 0 && (
                   <section className="flex flex-col gap-2">
-                    <p className="text-eyebrow text-text-subtle">Due today · {today.length}</p>
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-eyebrow text-text-subtle">Due today · {today.length}</p>
+                      <p className="text-caption text-text-muted">Your navigatr tasks and follow-ups</p>
+                    </div>
                     <div className="flex flex-col gap-2">
                       {today.map((t) => (
                         <TaskRow key={t.id} task={t} now={now} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
