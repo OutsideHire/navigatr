@@ -185,9 +185,18 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
     mode: "onBlur",
   });
 
-  // Re-seed when the deal prop changes or the sheet re-opens.
+  // Re-seed ONLY on the open transition (closed -> open), not on every
+  // `deal` reference change. useDeal derives the deal via deals.find() on
+  // the React Query cache, so a background refetch (window refocus, cache
+  // invalidation) hands us a fresh `deal` object with identical data. If we
+  // reset on that, we wipe the rep's in-progress edits (and the dirty-field
+  // baseline), so a typed email/phone silently reverts before Save. Guarding
+  // on the transition keeps edits intact while still seeding fresh when the
+  // sheet opens for a (possibly different) deal.
+  const wasOpen = React.useRef(false);
   React.useEffect(() => {
-    if (open) reset(defaultValues);
+    if (open && !wasOpen.current) reset(defaultValues);
+    wasOpen.current = open;
   }, [open, defaultValues, reset]);
 
   const watchedStage = watch("stage");
