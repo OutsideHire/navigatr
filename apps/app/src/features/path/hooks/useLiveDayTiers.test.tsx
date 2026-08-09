@@ -129,8 +129,36 @@ describe("useLiveDayTiers", () => {
     expect(screen.getByTestId("counts")).toHaveTextContent("0/1/0");
     expect(screen.getByText("Owed Co")).toBeInTheDocument();
     expect(screen.queryByText("Same Day Co")).not.toBeInTheDocument();
-    expect(screen.getByText("Past due")).toBeInTheDocument();
-    expect(screen.getByText(/5d overdue/)).toBeInTheDocument();
+    // The tier chip + "Nd overdue" age are replaced by a plain reason line.
+    expect(screen.queryByText("Past due")).not.toBeInTheDocument();
+    expect(screen.queryByText(/overdue/)).not.toBeInTheDocument();
+    // createdAt is 5 days ago in the fixture.
+    expect(screen.getByText("You have not stopped by in 5 days.")).toBeInTheDocument();
+  });
+
+  it("an appointment row shows a reason line instead of any tier / Ended chip", () => {
+    meetingState.current = { stops: [pastAppointment] };
+    renderHarness();
+    // The reason sentence renders (exact clock time is tz-dependent).
+    expect(screen.getByText(/^You have a .+ here\.$/)).toBeInTheDocument();
+    // No tier chip and no "Ended" chip on the row.
+    expect(screen.queryByText("Appointment")).not.toBeInTheDocument();
+    expect(screen.queryByText("From calendar")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ended")).not.toBeInTheDocument();
+    expect(screen.queryByText("Past due")).not.toBeInTheDocument();
+    expect(screen.queryByText("Due today")).not.toBeInTheDocument();
+  });
+
+  it("a due-today row shows a reason line instead of the Due today chip", () => {
+    dueTodayState.current = {
+      dueToday: [owedVisit({ taskId: "t2", dealId: "deal-due-1", name: "Due Today Co", earliestAt: PATH_DATE })],
+    };
+    renderHarness();
+    expect(screen.getByTestId("counts")).toHaveTextContent("0/0/1");
+    expect(screen.getByText("Due Today Co")).toBeInTheDocument();
+    expect(screen.queryByText("Due today")).not.toBeInTheDocument();
+    // createdAt is 5 days ago in the fixture; datePromisedToday stays false.
+    expect(screen.getByText("You have not stopped by in 5 days.")).toBeInTheDocument();
   });
 
   it("orders appointments, then past-due, then due-today", () => {

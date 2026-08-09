@@ -315,9 +315,10 @@ describe("ActivePathView", () => {
     // The appointment shows its joined deal name.
     expect(screen.getByText("Acme Payments")).toBeInTheDocument();
 
-    // A live appointment is labelled; the past meeting shows the ended treatment.
-    expect(screen.getByText("Appointment")).toBeInTheDocument();
-    expect(screen.getByText("Ended")).toBeInTheDocument();
+    // Each meeting now carries a plain reason line, not a tier / Ended chip.
+    expect(screen.getAllByText(/^You have a .+ here\.$/).length).toBe(2);
+    expect(screen.queryByText("Appointment")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ended")).not.toBeInTheDocument();
 
     // Each meeting shows a clock time (locale "h:mm" form).
     expect(screen.getAllByText(/\d{1,2}:\d{2}/).length).toBeGreaterThanOrEqual(2);
@@ -390,7 +391,7 @@ describe("ActivePathView", () => {
 
   // ─── SP-C2: one ordered, tiered list ──────────────────────────────────
 
-  it("renders all four tiers in ONE list with tier chips, appointment time, and past-due age", () => {
+  it("renders all four tiers in ONE list with reason lines and appointment time", () => {
     meetingState.current = { stops: [futureAppointmentStop] };
     owedState.current = { owed: [owedVisit()] };
     dueTodayState.current = {
@@ -399,11 +400,11 @@ describe("ActivePathView", () => {
     // Native stops come from the default todayState (Uratex pending, Amkor visited).
     renderView();
 
-    // Tier chips - one continuous list carries all four.
-    expect(screen.getByText("Appointment")).toBeInTheDocument();
-    expect(screen.getByText("Past due")).toBeInTheDocument();
-    expect(screen.getByText("Due today")).toBeInTheDocument();
-    expect(screen.getAllByText("Nearby").length).toBe(2); // both native stops
+    // No tier chips - the redesign replaces them with plain reason lines.
+    expect(screen.queryByText("Appointment")).not.toBeInTheDocument();
+    expect(screen.queryByText("Past due")).not.toBeInTheDocument();
+    expect(screen.queryByText("Due today")).not.toBeInTheDocument();
+    expect(screen.queryByText("Nearby")).not.toBeInTheDocument();
 
     // Each tier's name is present.
     expect(screen.getByText("Kickoff call")).toBeInTheDocument(); // appointment
@@ -411,9 +412,15 @@ describe("ActivePathView", () => {
     expect(screen.getByText("Due Today Co")).toBeInTheDocument(); // due-today
     expect(screen.getByText("Uratex")).toBeInTheDocument(); // native
 
-    // Appointment time + past-due overdue age render.
+    // Reason lines replace the chips: appointment sentence, owed/due-today age,
+    // and the native "new" line.
+    expect(screen.getByText(/^You have a .+ here\.$/)).toBeInTheDocument();
+    expect(screen.getAllByText("You have not stopped by in 5 days.").length).toBe(2);
+    expect(screen.getAllByText("New. Nobody has been in.").length).toBe(2); // both native stops
+
+    // Appointment time still renders.
     expect(screen.getAllByText(/\d{1,2}:\d{2}/).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/5d overdue/)).toBeInTheDocument();
+    expect(screen.queryByText(/overdue/)).not.toBeInTheDocument();
   });
 
   it("a past-due owed stop exposes Open deal + Log drop-in wired to its deal", () => {
@@ -441,7 +448,9 @@ describe("ActivePathView", () => {
       dueToday: [owedVisit({ taskId: "t2", dealId: "deal-due-1", name: "Due Today Co", earliestAt: "2026-08-08" })],
     };
     renderView();
-    expect(screen.getByText("Due today")).toBeInTheDocument();
+    // No tier chip; a plain reason line renders instead.
+    expect(screen.queryByText("Due today")).not.toBeInTheDocument();
+    expect(screen.getByText("You have not stopped by in 5 days.")).toBeInTheDocument();
     // Due-today is not overdue.
     expect(screen.queryByText(/overdue/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /log drop-in/i }));

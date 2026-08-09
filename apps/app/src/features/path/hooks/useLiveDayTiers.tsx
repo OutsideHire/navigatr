@@ -37,6 +37,7 @@ import { useDueTodayVisits } from "./useDueTodayVisits";
 import type { MeetingStop } from "../lib/meetingStops";
 import type { OwedVisit } from "../lib/owedVisits";
 import { directionsUrl } from "../lib/directionsUrl";
+import { reasonLine } from "../lib/reasonLine";
 import type { TieredStopRow } from "../components/TieredStopList";
 
 /** Local-tz clock time, e.g. "10:30 AM". */
@@ -128,9 +129,9 @@ export function useLiveDayTiers(pathDate: string): LiveDayTiers {
         external: m.kind === "external",
         name: m.title,
         timeLabel: fmtTime(m.startAt),
+        reason: `You have a ${fmtTime(m.startAt)} here.`,
         dimmed,
         strikethrough: dimmed,
-        chipOverride: dimmed ? "Ended" : undefined,
         detail:
           m.dealName || m.address ? (
             <>
@@ -189,12 +190,22 @@ export function useLiveDayTiers(pathDate: string): LiveDayTiers {
 
     // 2 + 3. Owed (past-due) then due-today - existing deals: Open deal + Log
     // drop-in against that deal.
-    const dealRow = (v: OwedVisit, tier: "past_due" | "due_today"): TieredStopRow => ({
+    const dealRow = (v: OwedVisit, tier: "past_due" | "due_today"): TieredStopRow => {
+      const age = ageDaysSince(v.createdAt);
+      return {
       key: `owed-${v.taskId}`,
       tier,
       name: v.name,
       detail: v.address ?? undefined,
-      ageDays: tier === "past_due" ? ageDaysSince(v.createdAt) : undefined,
+      reason: reasonLine({
+        kind: "flexible",
+        tier,
+        startAt: null,
+        ageDays: age,
+        datePromisedToday: false, // TODO(Robert): plumb date_source for the "promised" line
+        hasPriorActivity: true,
+      }),
+      aging: tier === "past_due" && age > 0,
       actions: (
         <>
           <Button
@@ -215,7 +226,8 @@ export function useLiveDayTiers(pathDate: string): LiveDayTiers {
           </Button>
         </>
       ),
-    });
+      };
+    };
     for (const v of pastDue) out.push(dealRow(v, "past_due"));
     for (const v of dueToday) out.push(dealRow(v, "due_today"));
 

@@ -37,6 +37,7 @@ import type { Disposition } from "@/lib/followUpScheduling";
 import { labelForCategory } from "../mockData";
 import { useTodayPath, todayISO } from "../hooks/useTodayPath";
 import { useLiveDayTiers } from "../hooks/useLiveDayTiers";
+import { reasonLine } from "../lib/reasonLine";
 import { routeStats, formatEta } from "../lib/routeStats";
 import { MerchantMap } from "./MerchantMap";
 import { PathSummary } from "./PathSummary";
@@ -121,6 +122,14 @@ export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathV
         key: `native-${s.merchantId}`,
         tier: "nearby",
         name: s.name,
+        reason: reasonLine({
+          kind: "flexible",
+          tier: "nearby",
+          startAt: null,
+          ageDays: null,
+          datePromisedToday: false,
+          hasPriorActivity: false,
+        }),
         strikethrough: resolved,
         dimmed: resolved,
         badge: <NativeBadge status={s.status} index={i} />,

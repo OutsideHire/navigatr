@@ -394,8 +394,10 @@ describe("RunningPath", () => {
     const live = region();
     expect(live.getByText("Owed Co")).toBeInTheDocument();
     expect(live.getByText("Due Today Co")).toBeInTheDocument();
-    expect(live.getByText("Past due")).toBeInTheDocument();
-    expect(live.getByText("Due today")).toBeInTheDocument();
+    // Reason lines replace the tier chips on both rows (createdAt is 5 days ago).
+    expect(live.queryByText("Past due")).not.toBeInTheDocument();
+    expect(live.queryByText("Due today")).not.toBeInTheDocument();
+    expect(live.getAllByText("You have not stopped by in 5 days.").length).toBe(2);
   });
 
   it("renders appointment tiers in the run", () => {
@@ -421,7 +423,9 @@ describe("RunningPath", () => {
     renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
     const live = region();
     expect(live.getByText("Renewal review")).toBeInTheDocument();
-    expect(live.getByText("Appointment")).toBeInTheDocument();
+    // A reason line replaces the tier chip.
+    expect(live.queryByText("Appointment")).not.toBeInTheDocument();
+    expect(live.getByText(/^You have a .+ here\.$/)).toBeInTheDocument();
   });
 
   it("an owed stop in the run exposes Open deal + Log drop-in firing with the right dealId", () => {
