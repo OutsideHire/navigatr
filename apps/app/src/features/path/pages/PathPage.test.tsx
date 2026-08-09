@@ -127,6 +127,21 @@ const todayState = {
 };
 vi.mock("../hooks/useTodayPath", () => ({ useTodayPath: () => todayState.current }));
 
+// Auto-built Today's Path (SP-B2). Mocked so the entry landing's TodaysPathView
+// renders from a controllable proposal WITHOUT the real hook firing its four tier
+// sub-hooks (useMeetingStops/useOwedVisits/useDueTodayVisits/useMerchants) in
+// jsdom. Default: empty proposal → the "all caught up / find nearby" empty state,
+// under which the demoted Create/Plan actions still render.
+const todaysPathState = {
+  current: {
+    proposal: [] as unknown[],
+    overflow: [] as unknown[],
+    status: "ok" as string,
+    isLoading: false,
+  },
+};
+vi.mock("../hooks/useTodaysPath", () => ({ useTodaysPath: () => todaysPathState.current }));
+
 // Detection hook — controllable per test.
 const prevUnfinishedState = { current: { data: null as null | { pathId: string; pathDate: string; pendingCount: number } } };
 vi.mock("../hooks/usePreviousUnfinishedPath", () => ({
@@ -188,6 +203,7 @@ beforeEach(() => {
   nearestNeighborSpy.mockClear();
   useMerchantsSpy.mockClear();
   prevUnfinishedState.current = { data: null };
+  todaysPathState.current = { proposal: [], overflow: [], status: "ok", isLoading: false };
   continueMutate.mockReset();
   closeMutate.mockReset();
   capturedRunOverlay = null;

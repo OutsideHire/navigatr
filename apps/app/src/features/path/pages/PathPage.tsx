@@ -50,7 +50,7 @@ import { MerchantList, type MerchantWithDistance } from "../components/MerchantL
 import { MerchantDetailSheet } from "../components/MerchantDetailSheet";
 import { CreatePathWizard } from "../components/CreatePathWizard";
 import { PlanPathWizard } from "./PlanPathWizard";
-import { PathEntry } from "../components/PathEntry";
+import { TodaysPathView } from "../components/TodaysPathView";
 import { UpcomingPaths } from "../components/UpcomingPaths";
 import { PathSettings } from "../components/PathSettings";
 import { ActivePathView } from "../components/ActivePathView";
@@ -74,6 +74,8 @@ import { pickNextMeeting, fitsBeforeMeeting } from "../lib/discoverFit";
 import { DiscoverMeetingBanner } from "../components/DiscoverMeetingBanner";
 import { useQueryClient } from "@tanstack/react-query";
 import { useOwedVisits } from "../hooks/useOwedVisits";
+import { useTodaysPath } from "../hooks/useTodaysPath";
+import type { OrderedStop } from "../lib/todaysPath";
 import { OwedVisitsList, type OwedVisitRow } from "../components/OwedVisitsList";
 import { OwedTimedStops, type OwedTimedRow } from "../components/OwedTimedStops";
 import { placeOwedVisits } from "../lib/owedTimedPlacement";
@@ -197,6 +199,12 @@ export function PathPage() {
   const hasPending = queueStops.some((s) => s.status === "pending");
   const prevUnfinished = usePreviousUnfinishedPath();
   const { continuePreviousPath, closePreviousPath } = usePathMutations();
+
+  // Auto-built Today's Path (SP-B1/B2): the prioritized proposal the entry
+  // landing renders as its primary content. THIN: the assembler owns all
+  // ordering/selection; here we only read it and hand its flexible stops to the
+  // same create+start mechanism `handleStartPath` uses.
+  const todaysPath = useTodaysPath(origin);
 
   // Route-around optimizer (Slice 2): a live, meeting-aware overlay for the
   // RUNNING path. This is independent of the planning `calWindow` above — we
@@ -698,6 +706,53 @@ export function PathPage() {
     [createMerchants, todayPath],
   );
 
+  // Start the auto-built Today's Path from its FLEXIBLE stops. Appointments are
+  // calendar anchors shown in the plan but never created as merchant stops (they
+  // already come from the calendar). This REUSES the exact create+start mechanism
+  // handleStartPath uses (clear() then addMany(..., { start: true }) through
+  // usePathMutations) rather than inventing a parallel path-create. The only
+  // difference is the snapshot source: flexible OrderedStops (owed / due-today /
+  // nearby) instead of wizard-selected merchant ids. Nearby stops are enriched
+  // from the loaded browse set when present; owed / due-today deals carry no
+  // merchant record, so they fall back to the ordered-stop fields.
+  const [startingTodaysPath, setStartingTodaysPath] = React.useState(false);
+  const handleStartTodaysPath = React.useCallback(
+    async (flexibleStops: OrderedStop[]) => {
+      if (startingTodaysPath) return;
+      const byId = new Map(liveMerchants.map((m) => [m.id, m]));
+      const snapshots = flexibleStops
+        .filter((s) => s.kind === "flexible" && s.lat != null && s.lng != null)
+        .map((s) => {
+          const m = byId.get(s.id);
+          return {
+            prospectId: s.id,
+            name: s.name,
+            address: m?.address ?? null,
+            phone: m?.phone ?? null,
+            lat: s.lat as number,
+            lng: s.lng as number,
+            category: (m?.category ?? "other") as MerchantCategory,
+            primaryType: m?.primaryType ?? null,
+          };
+        });
+      if (snapshots.length === 0) {
+        toast("Nothing to start yet. Add a nearby stop first.");
+        return;
+      }
+      setStartingTodaysPath(true);
+      try {
+        await todayPath.clear();
+        await todayPath.addMany(snapshots, { start: true });
+        finalizePrevious();
+      } catch {
+        toast.error("Couldn't start the path. Please try again.");
+      } finally {
+        setStartingTodaysPath(false);
+      }
+    },
+    [startingTodaysPath, liveMerchants, todayPath, finalizePrevious],
+  );
+
   return (
     <div className="mx-auto flex h-[calc(100dvh-4rem)] w-full flex-col px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
       {/* Header */}
@@ -714,9 +769,9 @@ export function PathPage() {
         <div className="flex items-center gap-2">
           {/* Start-a-path actions + the location control live in the header ONLY
               on the browse/discover view. On the entry landing they are redundant
-              with the two big PathEntry cards ("Create a Path" / "Plan a Path"),
-              which own those actions, so we hide them there; on an active run
-              (pathView "path") they stay hidden too. */}
+              with the Today's Path proposal + the demoted "Create a Path" / "Plan a
+              Path" secondary actions, which own those flows, so we hide them there;
+              on an active run (pathView "path") they stay hidden too. */}
           {pathView === "discover" && (
             <>
               <Button
@@ -855,7 +910,32 @@ export function PathPage() {
               disabled={continuePreviousPath.isPending || closePreviousPath.isPending}
             />
           )}
-          <PathEntry onCreate={handleCreate} onPlan={handlePlan} />
+          {/* Primary landing: the auto-built, reviewable Today's Path proposal.
+              "Add more nearby" reveals the Find-near-me discovery (weaving it in
+              without an active path); Start hands the flexible stops to the shared
+              create+start mechanism. */}
+          <TodaysPathView
+            proposal={todaysPath.proposal}
+            overflow={todaysPath.overflow}
+            isLoading={todaysPath.isLoading}
+            status={todaysPath.status}
+            onStart={handleStartTodaysPath}
+            onAddNearby={enterDiscover}
+            isStarting={startingTodaysPath}
+          />
+          {/* Demoted secondary: build a custom day by hand (Create / Plan), no
+              longer the primary content now that the proposal leads. */}
+          <div className="mt-2 flex flex-col gap-2 self-stretch md:mx-auto md:w-full md:max-w-2xl">
+            <span className="text-caption font-medium text-text-muted">Prefer to build it yourself?</span>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="tertiary" size="sm" leadingIcon={RouteIcon} onClick={handleCreate}>
+                Create a Path
+              </Button>
+              <Button variant="tertiary" size="sm" leadingIcon={MapPinned} onClick={handlePlan}>
+                Plan a Path
+              </Button>
+            </div>
+          </div>
           {/* Upcoming (future-dated planned) paths — launch navigates to /path,
               where the today-path/discover flow takes over. */}
           <UpcomingPaths onLaunch={() => navigate("/path")} />
