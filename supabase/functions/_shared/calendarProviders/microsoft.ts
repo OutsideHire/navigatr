@@ -1,4 +1,5 @@
 import type { RawCalendarEvent } from "../calendarQualify.ts";
+import { extractMicrosoftLocation, type GraphLocation } from "../calendarLocation.ts";
 import type { TokenBundle } from "../googleToken.ts";
 import { isExpired } from "../googleToken.ts";
 import type { CalendarEventInput, CalendarProvider, RefreshDeps, RefreshResult, UpsertResult } from "./types.ts";
@@ -30,7 +31,7 @@ interface GraphEvent {
   sensitivity?: string;             // normal | personal | private | confidential
   start?: { dateTime?: string; timeZone?: string };
   end?: { dateTime?: string; timeZone?: string };
-  location?: { displayName?: string };
+  location?: GraphLocation;
   responseStatus?: { response?: string };  // none|organizer|tentativelyAccepted|accepted|declined|notResponded
   singleValueExtendedProperties?: Array<{ id?: string; value?: string }>; // our navigatr tag, when expanded
 }
@@ -116,7 +117,7 @@ export const microsoftProvider: CalendarProvider = {
       status: e.isCancelled ? "cancelled" : "confirmed",
       visibility: e.sensitivity ?? null,          // 'private'/'confidential' → excluded by classifyEvent
       responseStatus: e.responseStatus?.response ?? null, // 'declined' → excluded
-      location: e.location?.displayName ?? null,
+      location: extractMicrosoftLocation(e.location),
       navigatrAppointmentId:
         e.singleValueExtendedProperties?.find((p) => p.id === NAVIGATR_APPT_PROP_ID)?.value ?? null,
     }));

@@ -1,4 +1,5 @@
 import type { RawCalendarEvent } from "../calendarQualify.ts";
+import { extractGoogleLocation } from "../calendarLocation.ts";
 import { getFreshAccessToken } from "../googleToken.ts";
 import type { CalendarEventInput, CalendarProvider, UpsertResult } from "./types.ts";
 import { buildFollowupEvent, buildGoogleEventPayload, buildPathBlockEvent } from "../googleEvent.ts";
@@ -73,7 +74,7 @@ export const googleProvider: CalendarProvider = {
             start: item.start?.dateTime ?? null, end: item.end?.dateTime ?? null,
             isAllDay: !!item.start?.date && !item.start?.dateTime,
             status: item.status ?? null, visibility: item.visibility ?? null,
-            responseStatus: self?.responseStatus ?? null, location: item.location ?? null,
+            responseStatus: self?.responseStatus ?? null, location: extractGoogleLocation(item.location),
             navigatrAppointmentId: item.extendedProperties?.private?.navigatr_appointment_id ?? null,
           };
         });
