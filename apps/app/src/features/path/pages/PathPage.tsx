@@ -720,8 +720,15 @@ export function PathPage() {
     async (flexibleStops: OrderedStop[]) => {
       if (startingTodaysPath) return;
       const byId = new Map(liveMerchants.map((m) => [m.id, m]));
+      // Only the "nearby" tier is persisted as path_stops here. A nearby stop's
+      // id IS a real prospects.id, which satisfies path_stops.prospect_id's NOT
+      // NULL FK. past_due / due_today stops carry a TASK id (see useTodaysPath),
+      // which is NOT a prospects row, so routing them through addStops' single
+      // batched upsert would fail the whole insert on a real DB. Those live tiers
+      // are DEALS/tasks rendered live in the run by SP-C2/C3 (useOwedVisits /
+      // useDueTodayVisits, which carry dealId/placeId), never persisted here.
       const snapshots = flexibleStops
-        .filter((s) => s.kind === "flexible" && s.lat != null && s.lng != null)
+        .filter((s) => s.kind === "flexible" && s.tier === "nearby" && s.lat != null && s.lng != null)
         .map((s) => {
           const m = byId.get(s.id);
           return {
@@ -735,8 +742,28 @@ export function PathPage() {
             primaryType: m?.primaryType ?? null,
           };
         });
+      // A day with owed / due-today work but no nearby stop has nothing to persist
+      // as a path_stop, yet it is still a meaningful day. Stamp started_at (via
+      // start()) rather than blocking the rep with a false "nothing to start"
+      // error, so the run surface lights up for those live tiers as SP-C2/C3 land.
+      // Only truly-empty days (no nearby AND no live tiers) keep the gentle guard.
       if (snapshots.length === 0) {
-        toast("Nothing to start yet. Add a nearby stop first.");
+        const hasLiveTiers = flexibleStops.some(
+          (s) => s.kind === "flexible" && (s.tier === "past_due" || s.tier === "due_today"),
+        );
+        if (!hasLiveTiers) {
+          toast("Nothing to start yet. Add a nearby stop first.");
+          return;
+        }
+        setStartingTodaysPath(true);
+        try {
+          finalizePrevious();
+          await todayPath.start();
+        } catch {
+          toast.error("Couldn't start the path. Please try again.");
+        } finally {
+          setStartingTodaysPath(false);
+        }
         return;
       }
       setStartingTodaysPath(true);

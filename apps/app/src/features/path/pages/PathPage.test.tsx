@@ -719,3 +719,76 @@ describe("PathPage handleStartPath — dropped stops", () => {
     expect(toastMock.error).not.toHaveBeenCalled();
   });
 });
+
+describe("PathPage handleStartTodaysPath (only nearby tier persists)", () => {
+  const readyOrigin: PathOrigin = {
+    ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
+  };
+  // The nearby stop's id is a real prospects.id; the owed / due-today stops carry
+  // TASK ids that do NOT exist in prospects (path_stops.prospect_id FK).
+  const flexible = (over: Record<string, unknown>) => ({
+    kind: "flexible", name: "Stop", dealId: null, startAt: null, endAt: null, ageDays: null, ...over,
+  });
+
+  beforeEach(() => {
+    originState.current = readyOrigin;
+    // liveMerchants carries the nearby prospect so the snapshot enriches from it.
+    merchantsState.current = {
+      merchants: [
+        { id: "prospect-1", name: "Nearby Co", address: "9 N St", phone: null, lat: 30.1, lng: -97.1, category: "retail", primaryType: null },
+      ] as unknown as typeof merchantsState.current.merchants,
+      isLoading: false, isError: false, refetch: vi.fn(),
+    } as typeof merchantsState.current;
+  });
+
+  it("persists ONLY the nearby stop (task-id owed/due-today stops are never sent to addMany)", async () => {
+    // Proposal has a past-due (task id), a due-today (task id), and a nearby
+    // (real prospect id). Before the fix, ALL THREE were mapped into snapshots,
+    // sending task ids into path_stops.prospect_id → FK violation on a real DB.
+    todaysPathState.current = {
+      proposal: [
+        flexible({ id: "task-1", tier: "past_due", name: "Owed Co", dealId: "deal-1", lat: 30.05, lng: -97.05, ageDays: 5 }),
+        flexible({ id: "task-2", tier: "due_today", name: "Due Today Co", dealId: "deal-2", lat: 30.06, lng: -97.06 }),
+        flexible({ id: "prospect-1", tier: "nearby", name: "Nearby Co", lat: 30.1, lng: -97.1 }),
+      ] as unknown[],
+      overflow: [], status: "ok", isLoading: false,
+    };
+    render(<PathPage />, { wrapper });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /start path/i }));
+    });
+
+    expect(todayState.current.addMany).toHaveBeenCalledTimes(1);
+    const sent = (todayState.current.addMany as ReturnType<typeof vi.fn>).mock.calls[0][0] as Array<{ prospectId: string }>;
+    // Only the nearby prospect id, no task ids.
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ prospectId: "prospect-1" });
+    expect(sent.map((s) => s.prospectId)).not.toContain("task-1");
+    expect(sent.map((s) => s.prospectId)).not.toContain("task-2");
+    // Auto-starts, and never surfaces the failure toast for a mixed proposal.
+    expect(todayState.current.addMany).toHaveBeenCalledWith(expect.anything(), { start: true });
+    expect(toastMock.error).not.toHaveBeenCalled();
+  });
+
+  it("starts the day gracefully when only live tiers exist (no nearby to persist, no false error)", async () => {
+    // Owed + due-today only: nothing to persist as a path_stop, but the day is
+    // still meaningful. Stamp started_at via start(); do not send task ids to
+    // addMany and do not show a "nothing to start" / error toast.
+    todaysPathState.current = {
+      proposal: [
+        flexible({ id: "task-1", tier: "past_due", name: "Owed Co", dealId: "deal-1", lat: 30.05, lng: -97.05, ageDays: 5 }),
+        flexible({ id: "task-2", tier: "due_today", name: "Due Today Co", dealId: "deal-2", lat: 30.06, lng: -97.06 }),
+      ] as unknown[],
+      overflow: [], status: "ok", isLoading: false,
+    };
+    render(<PathPage />, { wrapper });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /start path/i }));
+    });
+
+    expect(todayState.current.addMany).not.toHaveBeenCalled();
+    expect(todayState.current.start).toHaveBeenCalledTimes(1);
+    expect(toastMock).not.toHaveBeenCalled();
+    expect(toastMock.error).not.toHaveBeenCalled();
+  });
+});
