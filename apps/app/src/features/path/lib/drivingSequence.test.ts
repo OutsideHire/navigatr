@@ -189,7 +189,7 @@ describe("drivingSequence", () => {
     const native = cards.find((c) => c.kind === "nearby")!;
     expect(appt.reason).toMatch(/^You have a .+ here\.$/);
     expect(owed.reason).toBe("You have not stopped by in 9 days.");
-    expect(native.reason).toBe("New. Nobody has been in.");
+    expect(native.reason).toBe("New. You have not been in.");
   });
 
   it("uses the exact clock time for appointment arriveLabel and 'around' for flexible", () => {

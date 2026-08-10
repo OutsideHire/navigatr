@@ -25,7 +25,7 @@ describe("reasonLine", () => {
   });
   it("discovered stop with no prior activity", () => {
     expect(reasonLine({ ...base, tier: "nearby", hasPriorActivity: false }))
-      .toBe("New. Nobody has been in.");
+      .toBe("New. You have not been in.");
   });
   it("due_today without a promise falls back to a plain owed line by age", () => {
     expect(reasonLine({ ...base, tier: "due_today", datePromisedToday: false, ageDays: 0 }))

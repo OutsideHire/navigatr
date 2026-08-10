@@ -416,7 +416,7 @@ describe("ActivePathView", () => {
     // and the native "new" line.
     expect(screen.getByText(/^You have a .+ here\.$/)).toBeInTheDocument();
     expect(screen.getAllByText("You have not stopped by in 5 days.").length).toBe(2);
-    expect(screen.getAllByText("New. Nobody has been in.").length).toBe(2); // both native stops
+    expect(screen.getAllByText("New. You have not been in.").length).toBe(2); // both native stops
 
     // Appointment time still renders.
     expect(screen.getAllByText(/\d{1,2}:\d{2}/).length).toBeGreaterThanOrEqual(1);

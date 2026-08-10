@@ -29,7 +29,7 @@ export function reasonLine(stop: ReasonStop): string {
     return "You told the owner you would come back today.";
   }
   if (stop.tier === "nearby" && !stop.hasPriorActivity) {
-    return "New. Nobody has been in.";
+    return "New. You have not been in.";
   }
   const n = stop.ageDays ?? 0;
   return `You have not stopped by in ${n} ${n === 1 ? "day" : "days"}.`;
