@@ -126,23 +126,26 @@ export function PathPage() {
   // (fetch every bucket); otherwise the selected categories scope the ingest.
   const [ingestIndustries, setIngestIndustries] = React.useState<MerchantCategory[]>([]);
   const [ingestAllIndustries, setIngestAllIndustries] = React.useState(false);
-  // Seed the discover ingest from the rep's saved default industries so the first
-  // browse fetch scopes to what they actually work, not an empty set. Runs ONCE,
+  // Seed the discover ingest from the rep's effective default industries so the
+  // first browse fetch scopes to relevant buckets, not an empty set. Runs ONCE,
   // the first time the preference query resolves (guarded by a ref) so a later
   // refetch OR a rep's in-session edit via the CreatePathWizard
-  // (onIndustriesChange / onAllIndustriesChange) is never clobbered. With saved
-  // industries → those categories (allIndustries false); with none saved → all
-  // industries, matching the in-view chip filter which already defaults to "All".
+  // (onIndustriesChange / onAllIndustriesChange) is never clobbered. Note
+  // `usePathPreferences` substitutes a recommended set when the rep has saved
+  // nothing, so `selectedCategories` is effectively always non-empty here: a
+  // no-saved rep is seeded to the recommended industries (relevant defaults),
+  // not raw "all". The all-industries branch is a defensive fallback only.
   const { data: pathPrefs } = usePathPreferences();
   const industriesSeededRef = React.useRef(false);
   React.useEffect(() => {
     if (industriesSeededRef.current || !pathPrefs) return;
     industriesSeededRef.current = true;
-    const saved = selectedCategories(pathPrefs);
-    if (saved.length > 0) {
-      setIngestIndustries(saved);
+    const seed = selectedCategories(pathPrefs);
+    if (seed.length > 0) {
+      setIngestIndustries(seed);
       setIngestAllIndustries(false);
     } else {
+      // Unreachable in practice (see note above); fall back to all industries.
       setIngestAllIndustries(true);
     }
   }, [pathPrefs]);

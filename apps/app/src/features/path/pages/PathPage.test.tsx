@@ -181,6 +181,7 @@ vi.mock("../hooks/useCalendarEvents", () => ({
 // back to "all" when none are saved). Default: undefined (still loading) so the
 // existing tests never see a seed and behave exactly as before.
 import type { IndustrySelection } from "../lib/industrySelection";
+import { RECOMMENDED_SELECTION, selectedCategories } from "../lib/industrySelection";
 const pathPrefsState = { current: { data: undefined as IndustrySelection | undefined } };
 vi.mock("../hooks/usePathPreferences", () => ({
   usePathPreferences: () => pathPrefsState.current,
@@ -901,12 +902,20 @@ describe("PathPage discover industries — seeded from saved prefs (Path QA C2)"
     });
   });
 
-  it("defaults the browse fetch to all industries when the rep has no saved set", async () => {
-    // Empty saved selection → allIndustries true (matches the in-view "All" chip).
-    pathPrefsState.current = { data: {} as IndustrySelection };
+  it("seeds the browse fetch from the recommended set when the rep has no saved industries", async () => {
+    // usePathPreferences substitutes RECOMMENDED_SELECTION when the rep has saved
+    // nothing, so the hook never returns an empty set. A no-saved rep is therefore
+    // seeded to the recommended industries (relevant defaults), allIndustries false,
+    // not raw "all". (The all-industries else branch is a defensive fallback only,
+    // unreachable via the real hook.)
+    pathPrefsState.current = { data: RECOMMENDED_SELECTION };
     render(<PathPage />, { wrapper });
     await waitFor(() => {
-      expect(latestBrowseOpts()?.allIndustries).toBe(true);
+      const opts = latestBrowseOpts();
+      expect(opts?.allIndustries).toBe(false);
+      expect(opts?.industries).toEqual(
+        expect.arrayContaining(selectedCategories(RECOMMENDED_SELECTION)),
+      );
     });
   });
 });
