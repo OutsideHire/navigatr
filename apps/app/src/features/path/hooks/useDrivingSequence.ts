@@ -61,6 +61,7 @@ export function useDrivingSequence(
           dealId: m.dealId,
           appointmentId: m.appointmentId,
           startAt: m.startAt,
+          endAt: m.endAt,
           lat: m.lat,
           lng: m.lng,
         })),

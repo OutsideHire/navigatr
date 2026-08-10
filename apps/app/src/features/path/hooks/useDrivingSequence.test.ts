@@ -104,14 +104,16 @@ describe("useDrivingSequence", () => {
     const { result } = renderHook(() => useDrivingSequence(PATH_DATE, ORIGIN, NOW));
 
     expect(result.current.cards).toHaveLength(4);
+    // The appointment is 4.5 hours out, so every flexible drop-in fits before
+    // it and is woven in ahead of the anchor by time (not meetings-first).
     expect(result.current.cards.map((c) => c.kind)).toEqual([
-      "appointment",
       "owed",
       "owed",
       "nearby",
+      "appointment",
     ]);
     // The visited native is absent; the pending one is the nearby card.
-    expect(result.current.cards[3].name).toBe("Pending Cafe");
+    expect(result.current.cards.find((c) => c.kind === "nearby")!.name).toBe("Pending Cafe");
     expect(result.current.cards.some((c) => c.name === "Visited Cafe")).toBe(false);
   });
 

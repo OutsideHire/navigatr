@@ -1,6 +1,11 @@
 import type { LatLng } from "@/lib/distance";
 import { driveMinutesBetween } from "./driveTime";
 import { reasonLine, lastVisitContext } from "./reasonLine";
+import {
+  interleaveAroundAnchors,
+  type AnchorLike,
+  type FlexibleLike,
+} from "./interleaveAroundAnchors";
 
 /**
  * FR-PATH-UX-06. Merge the whole day (appointments, external meetings, owed
@@ -41,6 +46,7 @@ export interface DrivingMeetingInput {
   dealId?: string | null;
   appointmentId?: string | null;
   startAt: string; // ISO
+  endAt?: string | null;
   lat?: number | null;
   lng?: number | null;
 }
@@ -105,17 +111,25 @@ export function drivingSequence(
   const dwellMin = input.dwellMin ?? DEFAULT_DWELL_MIN;
   const lastOutcome = input.lastOutcomeByDealId ?? {};
 
-  // Ordering rule (matches ActivePathView's [...liveRows, ...nativeRows]):
-  // meetings first sorted by startAt asc, then past-due (given order),
-  // then due-today (given order), then native nearby (given order).
+  // Ordering rule (matches the landing's `drivingSequence` order): weave the
+  // day into calendar-time order. Appointments/external meetings are fixed
+  // TIME ANCHORS (sorted asc by startAt); the flexible drop-ins (past-due,
+  // then due-today, then native nearby, in that order) are routed into the
+  // gaps before each anchor via the shared `interleaveAroundAnchors` helper.
+  // A flexible stop only lands before an anchor if it plus the drive on to
+  // that anchor fits before the anchor's start; leftovers follow the anchors.
   const meetings = [...input.meetings].sort((a, b) =>
     a.startAt < b.startAt ? -1 : a.startAt > b.startAt ? 1 : 0,
   );
 
-  const pending: Pending[] = [];
+  // Each interleave item carries the fully-built Pending so we can recover the
+  // card kind/refs/reason after the (possibly reordered) weave.
+  type AnchorItem = AnchorLike & { pending: Pending };
+  type FlexItem = FlexibleLike & { pending: Pending };
 
+  const anchors: AnchorItem[] = [];
   for (const m of meetings) {
-    pending.push({
+    const pending: Pending = {
       card: {
         id: m.id,
         kind: m.kind,
@@ -136,11 +150,20 @@ export function drivingSequence(
         hasPriorActivity: true,
       }),
       startAt: m.startAt,
+    };
+    anchors.push({
+      startAt: m.startAt,
+      endAt: m.endAt ?? null,
+      lat: m.lat ?? null,
+      lng: m.lng ?? null,
+      pending,
     });
   }
 
+  const flexibleQueue: FlexItem[] = [];
+
   for (const o of input.pastDue) {
-    pending.push({
+    const pending: Pending = {
       card: {
         id: o.taskId,
         kind: "owed",
@@ -161,11 +184,12 @@ export function drivingSequence(
         hasPriorActivity: true,
       }),
       startAt: null,
-    });
+    };
+    flexibleQueue.push({ lat: o.lat ?? 0, lng: o.lng ?? 0, pending });
   }
 
   for (const d of input.dueToday) {
-    pending.push({
+    const pending: Pending = {
       card: {
         id: d.taskId,
         kind: "owed",
@@ -186,11 +210,12 @@ export function drivingSequence(
         hasPriorActivity: true,
       }),
       startAt: null,
-    });
+    };
+    flexibleQueue.push({ lat: d.lat ?? 0, lng: d.lng ?? 0, pending });
   }
 
   for (const n of input.native) {
-    pending.push({
+    const pending: Pending = {
       card: {
         id: n.merchantId,
         kind: "nearby",
@@ -211,15 +236,25 @@ export function drivingSequence(
         hasPriorActivity: false,
       }),
       startAt: null,
-    });
+    };
+    flexibleQueue.push({ lat: n.lat, lng: n.lng, pending });
   }
 
-  // Walk the ordered cards, threading a running clock and a location cursor.
-  let clockMs = new Date(now).getTime();
+  const effectiveStartMs = new Date(now).getTime();
+  const interleaved = interleaveAroundAnchors(anchors, flexibleQueue, {
+    origin: input.origin,
+    dwellMin,
+    effectiveStartMs,
+  });
+  const ordered: Pending[] = interleaved.map((x) => x.item.pending);
+
+  // Walk the interleaved order, threading a running clock and a location
+  // cursor. Semantics per card are unchanged; only the ORDER changed.
+  let clockMs = effectiveStartMs;
   let cursor: LatLng = input.origin;
 
   const out: DrivingCard[] = [];
-  for (const p of pending) {
+  for (const p of ordered) {
     const hasCoords = p.card.lat != null && p.card.lng != null;
 
     let driveMin = 0;
