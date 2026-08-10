@@ -295,10 +295,19 @@ export function PathPage() {
 
   // Handlers for transitioning between views.
   const enterDiscover = React.useCallback(() => setPathView("discover"), []);
-  // Leave discover → "entry"; the queueStops sync effect immediately upgrades to
-  // "path" when stops exist. Avoids a stale queueStops.length read right after
-  // an async add.
-  const handleDoneDiscovering = React.useCallback(() => setPathView("entry"), []);
+  // Leave discover → go straight to the right view from the CURRENT stop count:
+  // "path" when the rep has stops (the ones they just added already landed in the
+  // cache), else "entry". Routing through "entry" and leaning on the queueStops
+  // sync effect to upgrade to "path" left the rep stranded on the entry/proposal
+  // view whenever the add had already settled before they tapped Next — that
+  // effect only re-runs when queueStops.length / startedAt change, not on the view
+  // switch, so it never fired (Path QA R4: added stops missing until a refresh).
+  // If the add is still in flight (length still 0), we land on "entry" and the
+  // sync effect upgrades to "path" the moment the stops arrive.
+  const handleDoneDiscovering = React.useCallback(
+    () => setPathView(queueStops.length > 0 ? "path" : "entry"),
+    [queueStops.length],
+  );
 
   // Continue the unfinished path into today: reparent its pending stops; the
   // stops-sync effect then moves us to the active home once they land.

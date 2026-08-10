@@ -1010,6 +1010,57 @@ describe("PathPage discover — action bar reachable on mobile (Path QA C4)", ()
   });
 });
 
+describe("PathPage discover — added stops appear on return without a refresh (Path QA R4)", () => {
+  const readyOrigin: PathOrigin = {
+    ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
+  };
+  // A geocoded live merchant so the discover branch renders.
+  const liveMerchants = [
+    { id: "a", name: "Alpha", address: "1 A St", phone: null, lat: 30.05, lng: -97.05, category: "retail", primaryType: null },
+  ] as unknown as typeof merchantsState.current.merchants;
+
+  beforeEach(() => {
+    originState.current = readyOrigin;
+    merchantsState.current = { merchants: liveMerchants, isLoading: false, isError: false, refetch: vi.fn() } as typeof merchantsState.current;
+  });
+
+  it("returns to the active path (reflecting the just-added stop) when the rep taps Next, WITHOUT a manual refresh", () => {
+    // The reported bug: from discover ("Add nearby") the rep adds a stop, then taps
+    // "Next" to go back to the path — but the newly added stop does NOT show on the
+    // path until a manual reload. Root cause: handleDoneDiscovering bounced to
+    // "entry" and depended on the queueStops-length sync effect to upgrade to
+    // "path"; once the added stop has already landed in the cache (the common fast
+    // case), that effect's deps no longer change on the view switch, so the rep is
+    // stranded on the entry/proposal view. Only a reload re-runs the mount effect.
+    //
+    // Start on the empty entry landing (no stops), enter discover, then simulate the
+    // add landing (useActivePath refetch grows the stops), then tap Next.
+    todayState.current = { ...todayState.current, stops: [] as unknown as typeof todayState.current.stops };
+    const { rerender } = render(<PathPage />, { wrapper });
+    // Entry landing → discover (the "Add nearby" flow).
+    fireEvent.click(screen.getByRole("button", { name: /build my day/i }));
+    // Empty queue → the back action reads "Done".
+    expect(screen.getByRole("button", { name: /^done$/i })).toBeInTheDocument();
+
+    // The add lands: query invalidation → useActivePath refetch surfaces the stop.
+    todayState.current = {
+      ...todayState.current,
+      stops: [
+        { merchantId: "a", name: "Alpha", address: "1 A St", lat: 30.05, lng: -97.05, category: "retail", status: "pending" },
+      ] as unknown as typeof todayState.current.stops,
+    };
+    rerender(<PathPage />);
+    // With a stop queued, the back action now reads "Next"; the rep taps it.
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i }));
+
+    // The rep must land back on the active path (which reflects the added stop),
+    // NOT on the entry/proposal landing. Before the fix this asserts false because
+    // pathView was stranded at "entry".
+    expect(screen.getByTestId("active-path")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /build my day/i })).not.toBeInTheDocument();
+  });
+});
+
 describe("PathPage discover — Show/Hide map + Next label (Path QA R4)", () => {
   const readyOrigin: PathOrigin = {
     ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
