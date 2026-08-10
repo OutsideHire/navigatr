@@ -1,8 +1,8 @@
 import * as React from "react";
-import { Pause, Phone, Navigation, ChevronLeft, ChevronRight, ClipboardList } from "lucide-react";
+import { Loader2, Navigation, Pause } from "lucide-react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/navigatr";
-import { labelForCategory } from "../mockData";
 import { useTodayPath, type TodayStop } from "../hooks/useTodayPath";
 import { routeStats } from "../lib/routeStats";
 import { directionsUrl } from "../lib/directionsUrl";
@@ -10,35 +10,22 @@ import { merchantFromStop } from "../lib/merchantFromStop";
 import { DropInSheet } from "./DropInSheet";
 import { EndRouteSheet } from "./EndRouteSheet";
 import { PathSummary } from "./PathSummary";
-import { RunScheduleOverlay } from "./RunScheduleOverlay";
-import { TieredStopList } from "./TieredStopList";
+import { LogActivitySheet } from "@/features/activities/components/LogActivitySheet";
+import { AppointmentOutcomeSheet } from "@/features/appointments/components/AppointmentOutcomeSheet";
 import { usePathMutations } from "../hooks/usePathMutations";
-import { useLiveDayTiers } from "../hooks/useLiveDayTiers";
+import { useDrivingSequence } from "../hooks/useDrivingSequence";
+import type { DrivingCard } from "../lib/drivingSequence";
 import { todayISO } from "../lib/today";
-import { DISPOSITIONS, type Disposition } from "@/lib/followUpScheduling";
-import { repOutcomeLabel } from "../lib/outcomeRepLabels";
-import { firstPendingIndex } from "../lib/pathTypes";
+import { type Disposition } from "@/lib/followUpScheduling";
+import type { Merchant, MerchantCategory } from "../mockData";
 
 export interface RunningPathProps {
   origin: { lat: number; lng: number };
   onPause: () => void;
   onViewPipeline: () => void;
   onExit: () => void;
-  /**
-   * Calendar-aware run overlay for the current stop (route-around optimizer,
-   * Slice 2). Computed live by the parent from the rep's calendar + position;
-   * null/undefined when there's nothing to show (calendar not connected, no
-   * meetings today, or route complete) — in which case nothing new renders and
-   * the running card looks exactly as it did before.
-   */
-  runOverlay?: {
-    arrive: string | null;
-    dwellMin: number;
-    currentStopName: string;
-    nextMeeting: { title: string; start: string; located: boolean } | null;
-    stopsUntilNextMeeting: number;
-    fits: boolean;
-  } | null;
+  /** Open the "find near me" discovery surface (PathPage's enterDiscover). */
+  onFindNearby: () => void;
 }
 
 type PathSummaryStats = {
@@ -76,56 +63,131 @@ function computePathSummaryStats(
   };
 }
 
+/** Build the Merchant shape DropInSheet needs for a "nearby" card. A nearby
+ *  card is a native path_stop, so the persisted snapshot (with its category and
+ *  phone) is the source of truth. Reuse merchantFromStop while we still hold it,
+ *  falling back to the card's own fields if the stop has already left the list. */
+function nearbyMerchant(card: DrivingCard, stops: TodayStop[]): Merchant {
+  const stop = stops.find((s) => s.merchantId === card.merchantId);
+  if (stop) return merchantFromStop(stop);
+  return {
+    id: card.merchantId ?? card.id,
+    name: card.name,
+    category: "other" as MerchantCategory,
+    address: card.address ?? "",
+    lat: card.lat ?? 0,
+    lng: card.lng ?? 0,
+    phone: "",
+    employeeCountRange: "",
+    status: "untouched",
+    lastActivity: null,
+    primaryType: null,
+  };
+}
+
 /**
- * RunningPath. Path v3 running mode. One focused NATIVE stop at a time: Call /
- * Directions / Log drop-in, with Prev/Skip/Next. Logging a drop-in (via
- * DropInSheet) auto-advances to the next pending stop + an Undo toast. When no
- * native stops are pending, shows PathSummary.
+ * RunningPath (FR-PATH-UX-06/07/09). The in-field Driving screen: the WHOLE day
+ * presented ONE stop at a time as a single-card carousel over
+ * `useDrivingSequence` (appointments, owed drop-ins, due-today, and native
+ * nearby, in the app's composed order). Each card shows the business, its
+ * arrival and drive estimates, the reason it is on the route, and exactly three
+ * actions (I'm here / Navigate / Skip for now) plus a "Who's near me right now"
+ * escape hatch into discovery.
  *
- * SP-C3: above the focused native card it also surfaces the day's OTHER tiers
- * (appointments, past-due, due-today) via the shared `useLiveDayTiers` +
- * `TieredStopList`, so Start route shows the whole prioritized day - not just
- * appointments - with the same Open deal / Log outcome / Log drop-in actions as
- * the Stops tab. The focused native guided-run flow is unchanged.
+ * "I'm here" opens the outcome flow appropriate to the card's kind (appointment
+ * outcome, owed drop-in against the existing deal, or a create-deal drop-in for
+ * a nearby prospect); an external calendar meeting has no navigatr outcome, so
+ * its action reads "Mark done" and simply resolves the card.
+ *
+ * Advancement is deterministic and does NOT depend on refetch timing: a
+ * successful log (or a skip / mark-done) adds the card id to a LOCAL `resolved`
+ * set, so the card leaves `visibleCards` immediately and the clamp shows the
+ * next stop. This is uniform across every kind, fixing the case where owed
+ * cards linger and appointment cards never left the carousel. The top bar
+ * (Pause / End route) and the End-route/Pause flow are unchanged.
  */
-export function RunningPath({ origin, onPause, onViewPipeline, onExit, runOverlay }: RunningPathProps) {
-  const { stops, setStatus, clear, pathId, pendingCount } = useTodayPath();
+export function RunningPath({ origin, onPause, onViewPipeline, onExit, onFindNearby }: RunningPathProps) {
+  const { stops, clear, pathId, pendingCount } = useTodayPath();
   const { carryToTomorrow, finalizeCurrentPath } = usePathMutations();
-  // The day's LIVE tiers (appointments + past-due + due-today) and their reused
-  // action sheets, shared verbatim with the Stops tab via useLiveDayTiers. These
-  // render as an actionable list above the focused native guided-run card so the
-  // running rep sees the WHOLE prioritized day, not just the native route.
-  const { rows: liveRows, sheets: liveSheets } = useLiveDayTiers(todayISO());
-  // stops arrive position-ordered (useActivePath sorts, useTodayPath preserves it),
-  // so array index == position order. Seek to the first pending stop; -1 (all done)
-  // falls back to 0 — that case renders the summary anyway, index is unused.
-  const fpi = firstPendingIndex(stops.map((s, i) => ({ position: i, status: s.status })));
-  const [index, setIndex] = React.useState(Math.max(0, fpi));
-  const [logOpen, setLogOpen] = React.useState(false);
+  const queryClient = useQueryClient();
+
+  // A STABLE `now` captured once on mount (the arrival clock threads forward
+  // from here) and a reference-stable origin so useDrivingSequence's memo does
+  // not churn every render.
+  const [nowIso] = React.useState(() => new Date().toISOString());
+  const stableOrigin = React.useMemo(() => ({ lat: origin.lat, lng: origin.lng }), [origin.lat, origin.lng]);
+  const { cards, isLoading } = useDrivingSequence(todayISO(), stableOrigin, nowIso);
+
+  const [index, setIndex] = React.useState(0);
   const [endOpen, setEndOpen] = React.useState(false);
   const [completed, setCompleted] = React.useState<PathSummaryStats | null>(null);
+  // Cards the rep has resolved this session (logged, skipped, or marked done).
+  // Drives advancement locally so the carousel never waits on a refetch.
+  const [resolved, setResolved] = React.useState<ReadonlySet<string>>(() => new Set());
+  const resolve = React.useCallback((id: string) => {
+    setResolved((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
+  // Open outcome-sheet state, keyed by card kind. Only one is ever open.
+  const [apptSheet, setApptSheet] = React.useState<{ id: string; appointmentId: string; dealId: string; name: string } | null>(null);
+  const [owedCard, setOwedCard] = React.useState<{ id: string; dealId: string } | null>(null);
+  const [nearby, setNearby] = React.useState<{ id: string; merchant: Merchant } | null>(null);
+
+  const visibleCards = React.useMemo(
+    () => cards.filter((c) => !resolved.has(c.id)),
+    [cards, resolved],
+  );
 
   const total = stops.length;
   const visited = stops.filter((s) => s.status === "visited").length;
-  const allDone = total > 0 && stops.every((s) => s.status !== "pending");
 
+  // Keep the index in range as cards resolve out of the carousel or the
+  // sequence first populates.
   React.useEffect(() => {
-    if (index > total - 1) setIndex(Math.max(0, total - 1));
-  }, [total, index]);
+    if (index > visibleCards.length - 1) setIndex(Math.max(0, visibleCards.length - 1));
+  }, [visibleCards.length, index]);
 
-  // When the stop list first populates (mount-before-load), jump to the first
-  // pending stop. Fires only on the 0 → N transition so it never fights manual
-  // Prev/Next or advance().
-  const prevTotalRef = React.useRef(0);
-  React.useEffect(() => {
-    if (prevTotalRef.current === 0 && total > 0) {
-      const fp = stops.findIndex((s) => s.status === "pending");
-      if (fp > 0) setIndex(fp);
+  const handleEndRoute = () => {
+    if (pendingCount() === 0) { onExit(); return; }
+    setEndOpen(true);
+  };
+  const handleCarry = async () => {
+    if (!pathId) return;
+    try {
+      await carryToTomorrow.mutateAsync({ pathId, pathDate: todayISO() });
+      setEndOpen(false);
+      onExit();
+    } catch {
+      toast.error("Couldn't carry the stops to tomorrow. Please try again.");
     }
-    prevTotalRef.current = total;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [total]);
+  };
+  const handleComplete = async () => {
+    if (!pathId) return;
+    const snapshot = computePathSummaryStats(stops, origin, visited, total, { countPendingAsSkipped: true });
+    try {
+      await finalizeCurrentPath.mutateAsync(pathId);
+      setEndOpen(false);
+      setCompleted(snapshot);
+    } catch {
+      toast.error("Couldn't mark the route complete. Please try again.");
+    }
+  };
+  const handleClearRestart = async () => {
+    if (!window.confirm("Clear today's path and start over?")) return;
+    try {
+      await clear();
+      setEndOpen(false);
+      onExit();
+    } catch {
+      toast.error("Couldn't clear the path. Please try again.");
+    }
+  };
 
+  // The route was explicitly finalized (End route then Mark complete): show the
+  // report snapshot. Takes precedence over the live sequence.
   if (completed) {
     return (
       <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
@@ -138,7 +200,17 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit, runOverla
     );
   }
 
-  if (allDone) {
+  if (isLoading) {
+    return (
+      <div className="mt-6 flex flex-col items-center justify-center gap-2">
+        <Loader2 className="h-6 w-6 animate-spin text-text-subtle" aria-hidden />
+        <p className="text-caption text-text-muted">Loading your day...</p>
+      </div>
+    );
+  }
+
+  // Nothing left on the whole day: the done report (all tiers resolved).
+  if (visibleCards.length === 0) {
     const stats = computePathSummaryStats(stops, origin, visited, total, { countPendingAsSkipped: false });
     return (
       <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
@@ -151,63 +223,41 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit, runOverla
     );
   }
 
-  const cur = stops[index];
-  if (!cur) return null;
+  const clampedIndex = Math.min(index, visibleCards.length - 1);
+  const card = visibleCards[clampedIndex]!;
+  const hasCoords = card.lat != null && card.lng != null;
+  const isExternal = card.kind === "external";
 
-  // The run overlay describes the CURRENT (first-pending) stop — the one
-  // RunningPath seeks to on entry and the one PathPage computed the schedule
-  // for. Prev/Next let the rep peek other stops; the overlay must not follow
-  // onto them (it would name the wrong stop's ETA / meeting fit), so gate it to
-  // the first-pending stop by merchantId.
-  const firstPending = stops.find((s) => s.status === "pending");
+  const handleImHere = () => {
+    switch (card.kind) {
+      case "appointment":
+        if (card.appointmentId && card.dealId) {
+          setApptSheet({ id: card.id, appointmentId: card.appointmentId, dealId: card.dealId, name: card.name });
+        } else {
+          resolve(card.id);
+        }
+        break;
+      case "owed":
+        if (card.dealId) setOwedCard({ id: card.id, dealId: card.dealId });
+        else resolve(card.id);
+        break;
+      case "nearby":
+        setNearby({ id: card.id, merchant: nearbyMerchant(card, stops) });
+        break;
+      case "external":
+        // No navigatr outcome to record: "Mark done" just resolves the card.
+        resolve(card.id);
+        break;
+    }
+  };
 
-  const advance = () => {
-    const after = stops.findIndex((s, i) => i > index && s.status === "pending");
-    if (after !== -1) { setIndex(after); return; }
-    const anyPending = stops.findIndex((s) => s.status === "pending");
-    if (anyPending !== -1) setIndex(anyPending);
-  };
-  const handleLogged = (d: Disposition) => {
-    toast(`Logged: ${repOutcomeLabel(d)}`, {
-      action: { label: "Undo", onClick: () => { void setStatus(cur.merchantId, "pending"); } },
-    });
-    advance();
-  };
-  const skip = () => { void setStatus(cur.merchantId, "skipped"); advance(); };
-  const handleEndRoute = () => {
-    if (pendingCount() === 0) { onExit(); return; }
-    setEndOpen(true);
-  };
-  const handleCarry = async () => {
-    if (!pathId) return;
-    try {
-      await carryToTomorrow.mutateAsync({ pathId, pathDate: todayISO() });
-      setEndOpen(false);
-      onExit();
-    } catch {
-      toast.error("Couldn't carry the stops to tomorrow — please try again.");
-    }
-  };
-  const handleComplete = async () => {
-    if (!pathId) return;
-    const snapshot = computePathSummaryStats(stops, origin, visited, total, { countPendingAsSkipped: true });
-    try {
-      await finalizeCurrentPath.mutateAsync(pathId);
-      setEndOpen(false);
-      setCompleted(snapshot);
-    } catch {
-      toast.error("Couldn't mark the route complete — please try again.");
-    }
-  };
-  const handleClearRestart = async () => {
-    if (!window.confirm("Clear today's path and start over?")) return;
-    try {
-      await clear();
-      setEndOpen(false);
-      onExit();
-    } catch {
-      toast.error("Couldn't clear the path — please try again.");
-    }
+  const skip = () => {
+    // TODO(Robert): wire task snooze (FR-PATH-DROP-08). A snooze mutation exists
+    // (useTaskMutations.snoozeTask), but it needs the task's band dates
+    // (earliest/target/latest/snoozeCount) which the DrivingCard does not carry,
+    // so it is not reusable from here yet. Resolve locally (advance) only; the
+    // underlying task is never deleted.
+    resolve(card.id);
   };
 
   return (
@@ -223,63 +273,62 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit, runOverla
         </div>
       </div>
 
-      {/* The day's other tiers (appointments, past-due, due-today) as an
-          actionable list ABOVE the focused native card, so Start route surfaces
-          the whole prioritized day (directly fixing "Start path only shows
-          Appointments, no Due today or Past due"). Actions match the Stops tab:
-          appointment = Open deal + Log outcome; past-due / due-today = Open deal
-          + Log drop-in. Rendered only when there's something to show. */}
-      {liveRows.length > 0 && (
-        <section aria-label="Appointments and follow-ups" className="flex flex-col gap-1.5">
-          <TieredStopList rows={liveRows} />
-        </section>
-      )}
+      <div className="flex flex-col gap-4 rounded-radius-md border border-border-default p-4">
+        <span className="text-caption font-medium uppercase tracking-wide text-text-muted">
+          Stop {clampedIndex + 1} of {visibleCards.length}
+        </span>
 
-      <div className="flex flex-col gap-3 rounded-radius-md border border-border-default p-4">
-        <span className="text-caption font-medium uppercase tracking-wide text-text-muted">Stop {index + 1} of {total}</span>
         <div className="flex flex-col gap-1">
-          <h2 className="text-heading-sm text-text-default">{cur.name}</h2>
-          <p className="text-body-md text-text-muted">
-            {cur.address ? `${cur.address} · ` : ""}{labelForCategory(cur.category)}
-          </p>
+          <h2 className="text-heading-md text-text-default">{card.name}</h2>
+          {card.address && <p className="truncate text-body-md text-text-muted">{card.address}</p>}
         </div>
-        {runOverlay && firstPending && cur.merchantId === firstPending.merchantId && (
-          <RunScheduleOverlay {...runOverlay} />
-        )}
-        <div className="flex flex-wrap gap-2">
-          {cur.phone && (
-            <a href={`tel:${cur.phone}`}
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-radius-md border border-border-default px-3 py-2 text-body-md text-text-default hover:bg-surface-sunken">
-              <Phone className="h-4 w-4" aria-hidden /> Call
-            </a>
-          )}
-          <a href={directionsUrl(cur.lat, cur.lng)} target="_blank" rel="noreferrer"
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-radius-md border border-border-default px-3 py-2 text-body-md text-text-default hover:bg-surface-sunken">
-            <Navigation className="h-4 w-4" aria-hidden /> Directions
-          </a>
+
+        {/* Arrival and drive estimates, side by side. */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-col gap-0.5 rounded-radius-md bg-surface-sunken px-3 py-2">
+            <span className="text-caption font-medium uppercase tracking-wide text-text-muted">Arrival</span>
+            <span className="text-body-strong text-text-default">{card.arriveLabel}</span>
+          </div>
+          <div className="flex flex-col gap-0.5 rounded-radius-md bg-surface-sunken px-3 py-2">
+            <span className="text-caption font-medium uppercase tracking-wide text-text-muted">Drive</span>
+            <span className="text-body-strong text-text-default">{card.driveMinLabel}</span>
+          </div>
         </div>
-        {cur.status !== "pending" && cur.disposition && (
-          <span className="text-caption text-text-muted">✓ Logged: {DISPOSITIONS[cur.disposition as Disposition] ? repOutcomeLabel(cur.disposition as Disposition) : cur.disposition}</span>
-        )}
-        {cur.status !== "pending" && cur.notes && (
-          <p className="text-caption italic text-text-muted">“{cur.notes}”</p>
-        )}
-        <Button variant="primary" leadingIcon={ClipboardList} className="w-full" onClick={() => setLogOpen(true)}>Log drop-in</Button>
+
+        <div className="flex flex-col gap-1">
+          <p className="text-body-md text-text-default">{card.reason}</p>
+          {card.lastVisit && <p className="text-caption text-text-muted">{card.lastVisit}</p>}
+        </div>
+
+        {/* Exactly three actions. */}
+        <div className="flex flex-col gap-2">
+          <Button variant="primary" className="w-full" onClick={handleImHere}>
+            {isExternal ? "Mark done" : "I'm here"}
+          </Button>
+          <div className="flex gap-2">
+            {hasCoords && (
+              <a
+                href={directionsUrl(card.lat as number, card.lng as number)}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-radius-md border border-border-default px-3 py-2 text-body-md text-text-default hover:bg-surface-sunken"
+              >
+                <Navigation className="h-4 w-4" aria-hidden /> Navigate
+              </a>
+            )}
+            <Button variant="secondary" className="flex-1" onClick={skip}>Skip for now</Button>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onFindNearby}
+          className="self-start text-body-md font-medium text-brand-primary hover:underline"
+        >
+          Who's near me right now
+        </button>
       </div>
 
-      <div className="flex items-center justify-between">
-        <Button variant="tertiary" size="sm" leadingIcon={ChevronLeft} disabled={index === 0}
-          onClick={() => setIndex((i) => Math.max(0, i - 1))}>Prev</Button>
-        <Button variant="tertiary" size="sm" onClick={skip}>Skip</Button>
-        <Button variant="tertiary" size="sm" trailingIcon={ChevronRight} disabled={index >= total - 1}
-          onClick={() => setIndex((i) => Math.min(total - 1, i + 1))}>Next</Button>
-      </div>
-
-      {/* The reused outcome / drop-in sheets for the live tiers, owned by the
-          shared useLiveDayTiers hook (same flows as the Stops tab). */}
-      {liveSheets}
-
-      <DropInSheet merchant={merchantFromStop(cur)} open={logOpen} onOpenChange={setLogOpen} onLogged={handleLogged} />
       <EndRouteSheet
         open={endOpen}
         onOpenChange={setEndOpen}
@@ -288,6 +337,42 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit, runOverla
         onComplete={handleComplete}
         onCarry={handleCarry}
         onClear={handleClearRestart}
+      />
+
+      {/* Outcome sheets, reused verbatim from the Stops tab / pipeline. On a
+          successful log we resolve the card locally so it leaves the carousel
+          immediately; the sheets fire their own confirmation toasts. */}
+      {apptSheet && (
+        <AppointmentOutcomeSheet
+          open
+          onOpenChange={(o) => { if (!o) setApptSheet(null); }}
+          appointmentId={apptSheet.appointmentId}
+          dealId={apptSheet.dealId}
+          merchantName={apptSheet.name}
+          hasFutureAppointment={false}
+          onRecorded={() => resolve(apptSheet.id)}
+        />
+      )}
+      {owedCard && (
+        <LogActivitySheet
+          open
+          onOpenChange={(o) => { if (!o) setOwedCard(null); }}
+          dealId={owedCard.dealId}
+          defaultType="drop_in"
+          onLogged={() => {
+            resolve(owedCard.id);
+            // Belt and suspenders: also invalidate the owed / due-today reads so
+            // the other surfaces (Stops tab) drop the resolved stop too.
+            void queryClient.invalidateQueries({ queryKey: ["path", "owed-visits"] });
+            void queryClient.invalidateQueries({ queryKey: ["path", "due-today-visits"] });
+          }}
+        />
+      )}
+      <DropInSheet
+        merchant={nearby?.merchant ?? null}
+        open={nearby != null}
+        onOpenChange={(o) => { if (!o) setNearby(null); }}
+        onLogged={() => { if (nearby) resolve(nearby.id); }}
       />
     </div>
   );

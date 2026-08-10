@@ -68,12 +68,12 @@ vi.mock("../components/ActivePathView", () => ({
 }));
 // Stub RunningPath — the guided run has its own tests; here we only assert the
 // two-tab surface renders it as the default (Run) tab for a started path, and
-// capture the runOverlay prop so the calendar-glue test can assert PathPage
-// computed + handed down a non-null overlay.
-let capturedRunOverlay: unknown = null;
+// capture the onFindNearby prop so the discover-glue test can assert PathPage
+// wired it to enterDiscover.
+let capturedOnFindNearby: (() => void) | null = null;
 vi.mock("../components/RunningPath", () => ({
-  RunningPath: (props: { runOverlay?: unknown }) => {
-    capturedRunOverlay = props.runOverlay ?? null;
+  RunningPath: (props: { onFindNearby?: () => void }) => {
+    capturedOnFindNearby = props.onFindNearby ?? null;
     return <div data-testid="running-path" />;
   },
 }));
@@ -206,7 +206,7 @@ beforeEach(() => {
   todaysPathState.current = { proposal: [], overflow: [], status: "ok", isLoading: false };
   continueMutate.mockReset();
   closeMutate.mockReset();
-  capturedRunOverlay = null;
+  capturedOnFindNearby = null;
   calendarState.current = {
     waypoints: [], timeBlocks: [], status: "not_connected",
     isLoading: false, isError: false, refetch: vi.fn(),
@@ -491,35 +491,21 @@ describe("PathPage active-path surface — Run | Stops tabs", () => {
     expect(screen.queryByTestId("active-path")).not.toBeInTheDocument();
   });
 
-  it("hands RunningPath a non-null runOverlay when the calendar is connected with a future located meeting", () => {
+  it("wires RunningPath's onFindNearby to the discover view", () => {
     originState.current = readyOrigin;
     todayState.current = {
       ...todayState.current,
       startedAt: "2026-07-02T15:00:00.000Z",
       stops: geoStops as unknown as typeof todayState.current.stops,
     };
-    // Calendar connected ("ok") with one FUTURE located meeting. Far-future date
-    // so annotateRunSchedule (which drops meetings whose end <= now) keeps it
-    // regardless of the wall-clock time the suite runs at.
-    calendarState.current = {
-      waypoints: [
-        {
-          id: "cal1", title: "Acme sync",
-          start: "2099-01-01T15:00:00.000Z", end: "2099-01-01T16:00:00.000Z",
-          address: "1 Main", lat: 30.01, lng: -97.01, source: "calendar",
-        },
-      ],
-      timeBlocks: [],
-      status: "ok",
-      isLoading: false,
-      isError: false,
-      refetch: vi.fn(),
-    };
     render(<PathPage />, { wrapper });
-    // RunningPath renders on the default Run tab and receives a non-null overlay.
+    // RunningPath renders on the default Run tab and receives an onFindNearby.
     expect(screen.getByTestId("running-path")).toBeInTheDocument();
-    expect(capturedRunOverlay).not.toBeNull();
-    expect((capturedRunOverlay as { nextMeeting: { title: string } | null }).nextMeeting?.title).toBe("Acme sync");
+    expect(typeof capturedOnFindNearby).toBe("function");
+    // Invoking it opens the discover surface (enterDiscover), replacing the run.
+    act(() => capturedOnFindNearby!());
+    expect(screen.queryByTestId("running-path")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /back to path/i })).toBeInTheDocument();
   });
 
   it("switching to the Stops tab shows the overview; back to Run shows the guided run", () => {

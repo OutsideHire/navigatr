@@ -1,19 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, act, within } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { RunningPath } from "./RunningPath";
 import type { TodayStop } from "../hooks/useTodayPath";
-import type { MeetingStop } from "../lib/meetingStops";
-import type { OwedVisit } from "../lib/owedVisits";
+import type { DrivingCard } from "../lib/drivingSequence";
+import { directionsUrl } from "../lib/directionsUrl";
 
-const setStatus = vi.fn(async () => {});
+// ─── Mocks ────────────────────────────────────────────────────────────────
+
 const clear = vi.fn(async () => {});
 let stops: TodayStop[] = [];
 let pathId: string | null = "today-1";
 let pendingCount = () => stops.filter((s) => s.status === "pending").length;
 vi.mock("../hooks/useTodayPath", () => ({
-  useTodayPath: () => ({ stops, setStatus, clear, pathId, pendingCount }),
+  useTodayPath: () => ({ stops, clear, pathId, pendingCount }),
 }));
+
 const carryMutate = vi.fn();
 const finalizeMutate = vi.fn();
 vi.mock("../hooks/usePathMutations", () => ({
@@ -23,48 +24,39 @@ vi.mock("../hooks/usePathMutations", () => ({
   }),
 }));
 
-// SP-C3: RunningPath now composes useLiveDayTiers, which reads the day's LIVE
-// tiers from these three hooks. Mock them (default: none) so the existing
-// guided-run tests see only native stops, and individual SP-C3 tests override.
-const meetingState = { current: { stops: [] as MeetingStop[] } };
-const owedState = { current: { owed: [] as OwedVisit[] } };
-const dueTodayState = { current: { dueToday: [] as OwedVisit[] } };
-vi.mock("../hooks/useMeetingStops", () => ({ useMeetingStops: () => meetingState.current }));
-vi.mock("../hooks/useOwedVisits", () => ({ useOwedVisits: () => owedState.current }));
-vi.mock("../hooks/useDueTodayVisits", () => ({ useDueTodayVisits: () => dueTodayState.current }));
+// The single-card carousel reads the whole day from useDrivingSequence — mock
+// it with a mutable `.current` so each test supplies its own cards array (and a
+// rerender can simulate a logged card leaving the sequence on refetch).
+const seqState = { current: { cards: [] as DrivingCard[], isLoading: false } };
+vi.mock("../hooks/useDrivingSequence", () => ({
+  useDrivingSequence: () => seqState.current,
+}));
 
-// useLiveDayTiers routes "Open deal" through react-router's useNavigate; spy it.
-const navigate = vi.fn();
-vi.mock("react-router-dom", async () => {
-  const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
-  return { ...actual, useNavigate: () => navigate };
+// RunningPath invalidates the owed / due-today path keys after an owed log. No
+// QueryClientProvider in these tests, so stub useQueryClient.
+const invalidateQueries = vi.fn();
+vi.mock("@tanstack/react-query", async () => {
+  const actual = await vi.importActual<typeof import("@tanstack/react-query")>("@tanstack/react-query");
+  return { ...actual, useQueryClient: () => ({ invalidateQueries }) };
 });
 
-// The reused live-tier sheets, mocked as sibling-visible surfaces so we can
-// assert an owed stop's "Log drop-in" reaches the existing flow keyed by the
-// deal id WITHOUT exercising the real sheet.
-const outcomeSheet = vi.fn();
+// The three reused outcome sheets, mocked as sibling-visible surfaces. Each
+// exposes a button that simulates a SUCCESSFUL log so we can assert the card is
+// resolved out of the carousel.
 vi.mock("@/features/appointments/components/AppointmentOutcomeSheet", () => ({
-  AppointmentOutcomeSheet: (props: { appointmentId: string; dealId: string }) => {
-    outcomeSheet(props);
-    return <div data-testid="outcome-sheet" data-appt={props.appointmentId} data-deal={props.dealId} />;
-  },
-}));
-const logActivitySheet = vi.fn();
-vi.mock("@/features/activities/components/LogActivitySheet", () => ({
-  LogActivitySheet: (props: { dealId: string; defaultType?: string }) => {
-    logActivitySheet(props);
-    return <div data-testid="log-activity-sheet" data-deal={props.dealId} data-type={props.defaultType} />;
-  },
-}));
-
-vi.mock("./EndRouteSheet", () => ({
-  EndRouteSheet: (p: { open: boolean; pendingCount: number; onCarry: () => void; onClear: () => void; onComplete: () => void; onOpenChange: (o: boolean) => void }) =>
+  AppointmentOutcomeSheet: (p: { open: boolean; appointmentId: string; dealId: string; onRecorded?: () => void; onOpenChange: (o: boolean) => void }) =>
     p.open ? (
-      <div data-testid="end-sheet"><span>{p.pendingCount} pending</span>
-        <button onClick={p.onComplete}>mark-complete</button>
-        <button onClick={p.onCarry}>carry</button><button onClick={p.onClear}>clear</button>
-        <button onClick={() => p.onOpenChange(false)}>cancel</button></div>
+      <div data-testid="appt-sheet" data-appt={p.appointmentId} data-deal={p.dealId}>
+        <button onClick={() => { p.onRecorded?.(); p.onOpenChange(false); }}>record-appt</button>
+      </div>
+    ) : null,
+}));
+vi.mock("@/features/activities/components/LogActivitySheet", () => ({
+  LogActivitySheet: (p: { open: boolean; dealId: string; defaultType?: string; onLogged?: (id: string) => void; onOpenChange: (o: boolean) => void }) =>
+    p.open ? (
+      <div data-testid="log-activity-sheet" data-deal={p.dealId} data-type={p.defaultType}>
+        <button onClick={() => { p.onLogged?.("act-1"); p.onOpenChange(false); }}>save-activity</button>
+      </div>
     ) : null,
 }));
 vi.mock("./DropInSheet", () => ({
@@ -76,191 +68,318 @@ vi.mock("./DropInSheet", () => ({
       </div>
     ) : null,
 }));
-vi.mock("./PathSummary", () => ({ PathSummary: (p: { skippedCount: number }) => <div data-testid="summary" data-skipped={p.skippedCount}>summary</div> }));
+
+vi.mock("./EndRouteSheet", () => ({
+  EndRouteSheet: (p: { open: boolean; pendingCount: number; onCarry: () => void; onClear: () => void; onComplete: () => void; onOpenChange: (o: boolean) => void }) =>
+    p.open ? (
+      <div data-testid="end-sheet"><span>{p.pendingCount} pending</span>
+        <button onClick={p.onComplete}>mark-complete</button>
+        <button onClick={p.onCarry}>carry</button><button onClick={p.onClear}>clear</button>
+        <button onClick={() => p.onOpenChange(false)}>cancel</button></div>
+    ) : null,
+}));
+vi.mock("./PathSummary", () => ({
+  PathSummary: (p: { skippedCount: number; onNewPath: () => void }) => (
+    <div data-testid="summary" data-skipped={p.skippedCount}>
+      <button onClick={p.onNewPath}>new-path</button>
+    </div>
+  ),
+}));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 
-function stop(id: string, over: Partial<TodayStop> = {}): TodayStop {
-  return { merchantId: id, name: id, address: "1 Main", lat: 35, lng: -97, category: "manufacturing_wholesale",
-    primaryType: null, phone: "+15551230000", status: "pending", disposition: null, notes: null, dealCreated: false, addedAt: "t", ...over };
-}
-const ORIGIN = { lat: 35, lng: -97 };
+// ─── Fixtures ───────────────────────────────────────────────────────────────
 
-/** A routable owed visit fixture (SP-C3). `earliestAt` strictly before today
- *  makes it PAST-DUE; equal-to-today would be due-today. */
-function owedVisit(over: Partial<OwedVisit> = {}): OwedVisit {
+function drivingCard(over: Partial<DrivingCard> = {}): DrivingCard {
   return {
-    taskId: "t1",
-    dealId: "deal-owed-1",
-    name: "Owed Co",
-    address: "500 Owed St",
-    placeId: "place-1",
-    lat: 30.2,
-    lng: -97.6,
-    urgency: 1,
-    bandPosition: "aging",
-    dateSource: "interval",
-    targetAt: "2000-01-05",
-    earliestAt: "2000-01-01",
-    latestAt: "2000-01-10",
-    snoozeCount: 0,
-    sourceOutcome: "appt_no_show",
-    createdAt: new Date(Date.now() - 5 * 86_400_000).toISOString(),
+    id: "c1",
+    kind: "nearby",
+    name: "Alpha",
+    address: "1 A St",
+    reason: "You have not stopped by here yet.",
+    lastVisit: null,
+    arriveLabel: "around 3:00 PM",
+    driveMinLabel: "12 min",
+    dealId: null,
+    appointmentId: null,
+    merchantId: "m1",
+    lat: 30,
+    lng: -97,
     ...over,
   };
 }
 
-// Render inside a QueryClientProvider (useLiveDayTiers calls useQueryClient). The
-// `wrapper` option makes rerender re-apply the provider automatically.
-function renderRun(ui: React.ReactElement) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(ui, {
-    wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
-  });
+function stop(id: string, over: Partial<TodayStop> = {}): TodayStop {
+  return {
+    merchantId: id, name: id, address: "1 Main", lat: 35, lng: -97, category: "manufacturing_wholesale",
+    primaryType: null, phone: "+15551230000", status: "pending", disposition: null, notes: null, dealCreated: false, addedAt: "t", ...over,
+  };
 }
+const ORIGIN = { lat: 35, lng: -97 };
 
 beforeEach(() => {
-  setStatus.mockClear();
   clear.mockClear();
   carryMutate.mockReset();
   finalizeMutate.mockReset();
-  navigate.mockClear();
-  outcomeSheet.mockClear();
-  logActivitySheet.mockClear();
+  invalidateQueries.mockClear();
+  stops = [];
   pathId = "today-1";
   pendingCount = () => stops.filter((s) => s.status === "pending").length;
-  meetingState.current = { stops: [] };
-  owedState.current = { owed: [] };
-  dueTodayState.current = { dueToday: [] };
+  seqState.current = { cards: [], isLoading: false };
 });
 
-describe("RunningPath", () => {
-  it("starts at the first pending stop", () => {
-    stops = [stop("A", { status: "visited" }), stop("B"), stop("C")];
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
-    expect(screen.getByRole("heading", { name: "B" })).toBeInTheDocument();
-    expect(screen.getByText(/stop 2 of 3/i)).toBeInTheDocument();
+describe("RunningPath — driving carousel", () => {
+  it("renders ONE card: counter, name, address, both tiles, reason, and lastVisit", () => {
+    seqState.current = {
+      cards: [
+        drivingCard({ name: "Alpha", address: "1 A St", reason: "You owe them a visit.", lastVisit: "Last time, met the decision maker.", arriveLabel: "around 3:00 PM", driveMinLabel: "12 min" }),
+        drivingCard({ id: "c2", name: "Bravo", merchantId: "m2" }),
+      ],
+      isLoading: false,
+    };
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+
+    expect(screen.getByText(/stop 1 of 2/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
+    expect(screen.getByText("1 A St")).toBeInTheDocument();
+    expect(screen.getByText("around 3:00 PM")).toBeInTheDocument();
+    expect(screen.getByText("12 min")).toBeInTheDocument();
+    expect(screen.getByText("You owe them a visit.")).toBeInTheDocument();
+    expect(screen.getByText("Last time, met the decision maker.")).toBeInTheDocument();
+    // Only ONE card at a time: Bravo is not rendered.
+    expect(screen.queryByRole("heading", { name: "Bravo" })).not.toBeInTheDocument();
   });
-  it("hides Call when the stop has no phone, shows Directions always", () => {
-    stops = [stop("A", { phone: null })];
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
-    expect(screen.queryByRole("link", { name: /call/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /directions/i })).toHaveAttribute("href", expect.stringContaining("maps/dir"));
+
+  it("renders exactly three actions plus the Who's-near-me link, which calls onFindNearby", () => {
+    seqState.current = { cards: [drivingCard()], isLoading: false };
+    const onFindNearby = vi.fn();
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={onFindNearby} />);
+
+    expect(screen.getByRole("button", { name: /i'm here/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /navigate/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /skip for now/i })).toBeInTheDocument();
+
+    const link = screen.getByRole("button", { name: /who's near me right now/i });
+    fireEvent.click(link);
+    expect(onFindNearby).toHaveBeenCalledTimes(1);
   });
-  it("Skip marks the stop skipped and advances", () => {
-    stops = [stop("A"), stop("B")];
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: /skip/i }));
-    expect(setStatus).toHaveBeenCalledWith("A", "skipped");
-    expect(screen.getByRole("heading", { name: "B" })).toBeInTheDocument();
+
+  it("Navigate is an anchor to directionsUrl(lat,lng); hidden when coords are null", () => {
+    seqState.current = { cards: [drivingCard({ lat: 30, lng: -97 })], isLoading: false };
+    const { rerender } = render(
+      <RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />,
+    );
+    expect(screen.getByRole("link", { name: /navigate/i })).toHaveAttribute("href", directionsUrl(30, -97));
+
+    seqState.current = { cards: [drivingCard({ lat: null, lng: null })], isLoading: false };
+    rerender(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    expect(screen.queryByRole("link", { name: /navigate/i })).not.toBeInTheDocument();
   });
-  it("logging a drop-in advances to the next pending stop", () => {
-    stops = [stop("A"), stop("B")];
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: /log drop-in/i }));
+
+  it("I'm here opens the AppointmentOutcomeSheet for an appointment card", () => {
+    seqState.current = { cards: [drivingCard({ kind: "appointment", appointmentId: "a1", dealId: "d1", merchantId: null })], isLoading: false };
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
+    const sheet = screen.getByTestId("appt-sheet");
+    expect(sheet).toHaveAttribute("data-appt", "a1");
+    expect(sheet).toHaveAttribute("data-deal", "d1");
+  });
+
+  it("I'm here opens the LogActivitySheet (drop_in) for an owed card", () => {
+    seqState.current = { cards: [drivingCard({ kind: "owed", dealId: "deal-owed-1", merchantId: null })], isLoading: false };
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
+    const sheet = screen.getByTestId("log-activity-sheet");
+    expect(sheet).toHaveAttribute("data-deal", "deal-owed-1");
+    expect(sheet).toHaveAttribute("data-type", "drop_in");
+  });
+
+  it("I'm here opens the DropInSheet for a nearby card", () => {
+    seqState.current = { cards: [drivingCard({ kind: "nearby", name: "Alpha", merchantId: "m1" })], isLoading: false };
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
+    expect(screen.getByTestId("dropin")).toBeInTheDocument();
+    expect(screen.getByText("sheet:Alpha")).toBeInTheDocument();
+  });
+
+  it("an external card's action reads Mark done and advances with no outcome grid", () => {
+    seqState.current = {
+      cards: [
+        drivingCard({ kind: "external", name: "Team sync", appointmentId: null, dealId: null, merchantId: null }),
+        drivingCard({ id: "c2", name: "Bravo", merchantId: "m2" }),
+      ],
+      isLoading: false,
+    };
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /^i'm here$/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /mark done/i }));
+    // The external card resolves out; the next card takes its place, no sheet.
+    expect(screen.getByRole("heading", { name: "Bravo" })).toBeInTheDocument();
+    expect(screen.getByText(/stop 1 of 1/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Team sync" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("dropin")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("appt-sheet")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("log-activity-sheet")).not.toBeInTheDocument();
+  });
+
+  it("Skip for now resolves the current card so the next one shows", () => {
+    seqState.current = {
+      cards: [drivingCard({ name: "Alpha", merchantId: "m1" }), drivingCard({ id: "c2", name: "Bravo", merchantId: "m2" })],
+      isLoading: false,
+    };
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    expect(screen.getByText(/stop 1 of 2/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /skip for now/i }));
+    expect(screen.getByRole("heading", { name: "Bravo" })).toBeInTheDocument();
+    expect(screen.getByText(/stop 1 of 1/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Alpha" })).not.toBeInTheDocument();
+  });
+
+  it("logging the current NEARBY card resolves it out of the carousel (no refetch needed)", () => {
+    seqState.current = {
+      cards: [drivingCard({ name: "Alpha", merchantId: "m1" }), drivingCard({ id: "c2", name: "Bravo", merchantId: "m2" })],
+      isLoading: false,
+    };
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
     fireEvent.click(screen.getByText("save-log"));
-    expect(screen.getByRole("heading", { name: "B" })).toBeInTheDocument();
+    // Alpha is gone locally (via the resolved set); Bravo is now the only stop.
+    expect(screen.getByRole("heading", { name: "Bravo" })).toBeInTheDocument();
+    expect(screen.getByText(/stop 1 of 1/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Alpha" })).not.toBeInTheDocument();
   });
-  it("Prev is disabled on the first shown stop", () => {
-    stops = [stop("A"), stop("B")];
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
-    expect(screen.getByRole("button", { name: /prev/i })).toBeDisabled();
+
+  it("logging the current OWED card resolves it out of the carousel", () => {
+    seqState.current = {
+      cards: [
+        drivingCard({ id: "owed-1", kind: "owed", name: "Owed Co", dealId: "deal-owed-1", merchantId: null }),
+        drivingCard({ id: "c2", name: "Bravo", merchantId: "m2" }),
+      ],
+      isLoading: false,
+    };
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    expect(screen.getByRole("heading", { name: "Owed Co" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
+    fireEvent.click(screen.getByText("save-activity"));
+    expect(screen.getByRole("heading", { name: "Bravo" })).toBeInTheDocument();
+    expect(screen.getByText(/stop 1 of 1/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Owed Co" })).not.toBeInTheDocument();
+    // Belt and suspenders: the owed / due-today reads are invalidated so other
+    // surfaces (Stops tab) drop the resolved stop too.
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["path", "owed-visits"] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ["path", "due-today-visits"] });
   });
-  it("shows the summary when no stops are pending", () => {
+
+  it("recording an APPOINTMENT outcome resolves it out of the carousel", () => {
+    seqState.current = {
+      cards: [
+        drivingCard({ id: "appt-1", kind: "appointment", name: "Renewal review", appointmentId: "a1", dealId: "d1", merchantId: null }),
+        drivingCard({ id: "c2", name: "Bravo", merchantId: "m2" }),
+      ],
+      isLoading: false,
+    };
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    expect(screen.getByRole("heading", { name: "Renewal review" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
+    fireEvent.click(screen.getByText("record-appt"));
+    expect(screen.getByRole("heading", { name: "Bravo" })).toBeInTheDocument();
+    expect(screen.getByText(/stop 1 of 1/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Renewal review" })).not.toBeInTheDocument();
+  });
+
+  it("shows a loading state while the sources load", () => {
+    seqState.current = { cards: [], isLoading: true };
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    expect(screen.getByText(/loading your day/i)).toBeInTheDocument();
+  });
+
+  it("shows the done state (with a start-again affordance) when no cards remain", () => {
+    seqState.current = { cards: [], isLoading: false };
     stops = [stop("A", { status: "visited" }), stop("B", { status: "skipped" })];
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
     expect(screen.getByTestId("summary")).toBeInTheDocument();
+    expect(screen.getByText("new-path")).toBeInTheDocument();
   });
+});
+
+// ─── End-route / Pause flow (unchanged; still driven from the top bar) ───────
+
+describe("RunningPath — End route / Pause flow", () => {
+  beforeEach(() => {
+    seqState.current = { cards: [drivingCard()], isLoading: false };
+  });
+
   it("Pause calls onPause", () => {
-    stops = [stop("A")];
     const onPause = vi.fn();
-    renderRun(<RunningPath origin={ORIGIN} onPause={onPause} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onPause={onPause} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /pause/i }));
     expect(onPause).toHaveBeenCalled();
-  });
-  it("shows summary after logging the last pending stop", () => {
-    stops = [stop("A")]; // only one pending
-    const { rerender } = renderRun(
-      <RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: /log drop-in/i }));
-    fireEvent.click(screen.getByText("save-log"));
-    // Simulate the query refetch flipping the logged stop to visited:
-    stops = [stop("A", { status: "visited" })];
-    rerender(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
-    expect(screen.getByTestId("summary")).toBeInTheDocument();
   });
 
   it("End route with pending stops opens the sheet", () => {
     stops = [stop("A"), stop("B")];
     pendingCount = () => 2;
-    pathId = "today-1";
     const onExitSpy = vi.fn();
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} />);
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /end route/i }));
     expect(screen.getByTestId("end-sheet")).toBeInTheDocument();
     expect(onExitSpy).not.toHaveBeenCalled();
   });
+
+  it("End route with no pending stops exits immediately", () => {
+    stops = [stop("A", { status: "visited" })];
+    pendingCount = () => 0;
+    const onExitSpy = vi.fn();
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /end route/i }));
+    expect(onExitSpy).toHaveBeenCalled();
+    expect(screen.queryByTestId("end-sheet")).not.toBeInTheDocument();
+  });
+
   it("Carry to tomorrow calls carryToTomorrow then exits", async () => {
     stops = [stop("A"), stop("B")];
     pendingCount = () => 2;
-    pathId = "today-1";
     carryMutate.mockResolvedValueOnce(undefined);
     const onExitSpy = vi.fn();
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} />);
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /end route/i }));
     await act(async () => { fireEvent.click(screen.getByText("carry")); });
     expect(carryMutate).toHaveBeenCalledWith({ pathId: "today-1", pathDate: expect.any(String) });
     expect(onExitSpy).toHaveBeenCalled();
     expect(screen.queryByTestId("end-sheet")).not.toBeInTheDocument();
   });
+
   it("Carry failure keeps the sheet open and does not exit", async () => {
     stops = [stop("A"), stop("B")];
     pendingCount = () => 2;
-    pathId = "today-1";
     carryMutate.mockRejectedValueOnce(new Error("network"));
     const onExitSpy = vi.fn();
     const { toast } = await import("sonner");
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} />);
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /end route/i }));
     await act(async () => { fireEvent.click(screen.getByText("carry")); });
     expect(toast.error).toHaveBeenCalled();
     expect(onExitSpy).not.toHaveBeenCalled();
     expect(screen.getByTestId("end-sheet")).toBeInTheDocument();
   });
+
   it("Clear & start over (confirmed) clears and exits", async () => {
     stops = [stop("A"), stop("B")];
     pendingCount = () => 2;
-    pathId = "today-1";
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const onExitSpy = vi.fn();
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} />);
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /end route/i }));
     await act(async () => { fireEvent.click(screen.getByText("clear")); });
     expect(clear).toHaveBeenCalled();
     expect(onExitSpy).toHaveBeenCalled();
   });
-  it("Clear failure keeps the sheet open and does not exit", async () => {
-    stops = [stop("A"), stop("B")];
-    pendingCount = () => 2;
-    pathId = "today-1";
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    clear.mockRejectedValueOnce(new Error("delete failed"));
-    const onExitSpy = vi.fn();
-    const { toast } = await import("sonner");
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} />);
-    fireEvent.click(screen.getByRole("button", { name: /end route/i }));
-    await act(async () => { fireEvent.click(screen.getByText("clear")); });
-    expect(toast.error).toHaveBeenCalled();
-    expect(onExitSpy).not.toHaveBeenCalled();
-    expect(screen.getByTestId("end-sheet")).toBeInTheDocument();
-  });
+
   it("Mark route complete finalizes and shows the report without exiting", async () => {
     stops = [stop("A"), stop("B", { status: "visited" })];
     pendingCount = () => 1;
-    pathId = "today-1";
     finalizeMutate.mockResolvedValueOnce(undefined);
     const onExitSpy = vi.fn();
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} />);
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /end route/i }));
     await act(async () => { fireEvent.click(screen.getByText("mark-complete")); });
     expect(finalizeMutate).toHaveBeenCalledWith("today-1");
@@ -270,218 +389,31 @@ describe("RunningPath", () => {
     expect(summary).toHaveAttribute("data-skipped", "1");
     expect(onExitSpy).not.toHaveBeenCalled();
   });
+
   it("Mark complete failure toasts and keeps the sheet open (no report)", async () => {
     stops = [stop("A")];
     pendingCount = () => 1;
-    pathId = "today-1";
     finalizeMutate.mockRejectedValueOnce(new Error("boom"));
     const onExitSpy = vi.fn();
     const { toast } = await import("sonner");
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} />);
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /end route/i }));
     await act(async () => { fireEvent.click(screen.getByText("mark-complete")); });
     expect(toast.error).toHaveBeenCalled();
     expect(screen.queryByTestId("summary")).not.toBeInTheDocument();
     expect(onExitSpy).not.toHaveBeenCalled();
   });
+
   it("Cancel closes the sheet without mutating or exiting", () => {
     stops = [stop("A"), stop("B")];
     pendingCount = () => 2;
-    pathId = "today-1";
     const onExitSpy = vi.fn();
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} />);
+    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /end route/i }));
     fireEvent.click(screen.getByText("cancel"));
     expect(screen.queryByTestId("end-sheet")).not.toBeInTheDocument();
     expect(carryMutate).not.toHaveBeenCalled();
     expect(clear).not.toHaveBeenCalled();
     expect(onExitSpy).not.toHaveBeenCalled();
-  });
-
-  // ─── runOverlay (S3: meeting-aware overlay) ──────────────────────────
-  const OVERLAY = {
-    arrive: "2026-07-08T15:00:00.000Z",
-    dwellMin: 20,
-    currentStopName: "A",
-    nextMeeting: { title: "Acme sync", start: "2026-07-08T16:00:00.000Z", located: true },
-    stopsUntilNextMeeting: 2,
-    fits: true,
-  };
-
-  it("renders the next meeting title and stops-to-go when a runOverlay is given", () => {
-    stops = [stop("A"), stop("B")];
-    renderRun(
-      <RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} runOverlay={OVERLAY} />,
-    );
-    expect(screen.getByText(/Acme sync/)).toBeInTheDocument();
-    expect(screen.getByText(/2 stops to go/i)).toBeInTheDocument();
-  });
-
-  it("renders a role=alert warning when the current stop won't fit (fits:false)", () => {
-    stops = [stop("A")];
-    renderRun(
-      <RunningPath
-        origin={ORIGIN}
-        onPause={vi.fn()}
-        onViewPipeline={vi.fn()}
-        onExit={vi.fn()}
-        runOverlay={{ ...OVERLAY, fits: false }}
-      />,
-    );
-    expect(screen.getByRole("alert")).toBeInTheDocument();
-  });
-
-  it("renders no meeting or alert text when runOverlay is null (existing behavior preserved)", () => {
-    stops = [stop("A")];
-    renderRun(
-      <RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} runOverlay={null} />,
-    );
-    expect(screen.queryByText(/Acme sync/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-
-  it("renders no meeting or alert text when runOverlay is omitted (existing behavior preserved)", () => {
-    stops = [stop("A")];
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
-    expect(screen.queryByText(/Acme sync/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-
-  it("hides the overlay when Prev peeks a non-current (visited) stop", () => {
-    // First stop visited, second pending → the run starts on the pending stop (B),
-    // which IS the current (first-pending) stop, so the overlay renders. Navigating
-    // Prev onto the visited stop A (not the current stop) must hide the overlay so
-    // it never names a meeting/ETA under a stop the rep is only peeking at.
-    stops = [stop("A", { status: "visited" }), stop("B")];
-    renderRun(
-      <RunningPath
-        origin={ORIGIN}
-        onPause={vi.fn()}
-        onViewPipeline={vi.fn()}
-        onExit={vi.fn()}
-        runOverlay={{ ...OVERLAY, fits: false }}
-      />,
-    );
-    // Starts at the first pending stop (B) → overlay + fit warning visible.
-    // (With fits:false the title appears in both the banner and the alert.)
-    expect(screen.getByRole("heading", { name: "B" })).toBeInTheDocument();
-    expect(screen.getAllByText(/Acme sync/).length).toBeGreaterThan(0);
-    expect(screen.getByRole("alert")).toBeInTheDocument();
-    // Prev peeks the visited, non-current stop A → overlay must not follow.
-    fireEvent.click(screen.getByRole("button", { name: /prev/i }));
-    expect(screen.getByRole("heading", { name: "A" })).toBeInTheDocument();
-    expect(screen.queryByText(/Acme sync/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-
-  // ─── SP-C3: the run surfaces ALL tiers, not just the native route ─────
-  const region = () =>
-    within(screen.getByRole("region", { name: /appointments and follow-ups/i }));
-
-  it("surfaces past-due and due-today tiers alongside the focused native card", () => {
-    stops = [stop("A")]; // one native pending stop → focused card renders
-    owedState.current = { owed: [owedVisit()] };
-    dueTodayState.current = {
-      dueToday: [owedVisit({ taskId: "t2", dealId: "deal-due-1", name: "Due Today Co", earliestAt: new Date().toISOString().slice(0, 10) })],
-    };
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
-
-    // The focused native guided-run card still renders (unchanged behavior).
-    expect(screen.getByRole("heading", { name: "A" })).toBeInTheDocument();
-    expect(screen.getByText(/stop 1 of 1/i)).toBeInTheDocument();
-
-    // The live tiers now appear in the run - the QA complaint fix.
-    const live = region();
-    expect(live.getByText("Owed Co")).toBeInTheDocument();
-    expect(live.getByText("Due Today Co")).toBeInTheDocument();
-    // Reason lines replace the tier chips on both rows (createdAt is 5 days ago).
-    expect(live.queryByText("Past due")).not.toBeInTheDocument();
-    expect(live.queryByText("Due today")).not.toBeInTheDocument();
-    expect(live.getAllByText("You have not stopped by in 5 days.").length).toBe(2);
-  });
-
-  it("renders appointment tiers in the run", () => {
-    stops = [stop("A")];
-    meetingState.current = {
-      stops: [
-        {
-          id: "a1",
-          kind: "appointment",
-          title: "Renewal review",
-          dealId: "d1",
-          dealName: "Acme Payments",
-          startAt: "2026-08-08T13:30:00Z",
-          endAt: "2026-08-08T14:00:00Z",
-          lat: 30.3,
-          lng: -97.7,
-          address: "100 Congress Ave",
-          appointmentId: "a1",
-          past: false,
-        },
-      ],
-    };
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
-    const live = region();
-    expect(live.getByText("Renewal review")).toBeInTheDocument();
-    // A reason line replaces the tier chip.
-    expect(live.queryByText("Appointment")).not.toBeInTheDocument();
-    expect(live.getByText(/^You have a .+ here\.$/)).toBeInTheDocument();
-  });
-
-  it("an owed stop in the run exposes Open deal + Log drop-in firing with the right dealId", () => {
-    stops = [stop("A")];
-    owedState.current = { owed: [owedVisit()] };
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
-    const live = region();
-
-    // Open deal navigates to the owed stop's deal.
-    fireEvent.click(live.getByRole("button", { name: /open deal/i }));
-    expect(navigate).toHaveBeenCalledWith("/pipeline/deal-owed-1");
-
-    // Log drop-in opens the reused LogActivitySheet keyed by the deal id, on the
-    // drop-in form - NOT the create-deal DropInSheet path. (Scope to the live
-    // region: the focused native card also has a "Log drop-in" button.)
-    expect(screen.queryByTestId("log-activity-sheet")).not.toBeInTheDocument();
-    fireEvent.click(live.getByRole("button", { name: /log drop-in/i }));
-    const sheet = screen.getByTestId("log-activity-sheet");
-    expect(sheet).toHaveAttribute("data-deal", "deal-owed-1");
-    expect(sheet).toHaveAttribute("data-type", "drop_in");
-    expect(logActivitySheet).toHaveBeenCalledWith(
-      expect.objectContaining({ dealId: "deal-owed-1", defaultType: "drop_in" }),
-    );
-  });
-
-  it("keeps the native guided-run flow (skip + log drop-in) working when live tiers are present", () => {
-    stops = [stop("A"), stop("B")];
-    // A due-today tier is present (Open deal + Log drop-in) but we drive the
-    // NATIVE card. Its "Log drop-in" sits outside the live region, so exclude the
-    // region's owed button by taking the native one directly.
-    dueTodayState.current = {
-      dueToday: [owedVisit({ taskId: "t9", dealId: "deal-due-9", name: "Due Co", earliestAt: new Date().toISOString().slice(0, 10) })],
-    };
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
-
-    // Native Skip still advances A → B.
-    fireEvent.click(screen.getByRole("button", { name: /^skip$/i }));
-    expect(setStatus).toHaveBeenCalledWith("A", "skipped");
-    expect(screen.getByRole("heading", { name: "B" })).toBeInTheDocument();
-
-    // The native focused card's Log drop-in opens the DropInSheet (native path),
-    // NOT the live tier's LogActivitySheet. The native button is the full-width
-    // one after the live region; pick the button that is not inside the region.
-    const allLogDropIn = screen.getAllByRole("button", { name: /log drop-in/i });
-    const liveRegion = screen.getByRole("region", { name: /appointments and follow-ups/i });
-    const nativeLogDropIn = allLogDropIn.find((b) => !liveRegion.contains(b))!;
-    expect(nativeLogDropIn).toBeDefined();
-    fireEvent.click(nativeLogDropIn);
-    expect(screen.getByTestId("dropin")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("save-log"));
-    expect(screen.queryByTestId("log-activity-sheet")).not.toBeInTheDocument();
-  });
-
-  it("renders no live-tier region when there are no appointments / owed / due-today", () => {
-    stops = [stop("A")];
-    renderRun(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} />);
-    expect(screen.queryByRole("region", { name: /appointments and follow-ups/i })).not.toBeInTheDocument();
   });
 });

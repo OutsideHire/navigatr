@@ -35,6 +35,10 @@ export interface AppointmentOutcomeSheetProps {
   /** True when the deal already has another scheduled appointment, passed
    *  straight through to useRecordAppointmentOutcome. */
   hasFutureAppointment: boolean;
+  /** Optional: fired after a SUCCESSFUL outcome record (before the sheet
+   *  closes). Additive - existing callers that only pass onOpenChange are
+   *  unaffected. Lets a caller resolve the stop it opened this sheet for. */
+  onRecorded?: () => void;
 }
 
 export function AppointmentOutcomeSheet({
@@ -44,6 +48,7 @@ export function AppointmentOutcomeSheet({
   dealId,
   merchantName,
   hasFutureAppointment,
+  onRecorded,
 }: AppointmentOutcomeSheetProps) {
   const recordOutcome = useRecordAppointmentOutcome();
 
@@ -85,6 +90,7 @@ export function AppointmentOutcomeSheet({
           selected === "appt_presented_awaiting" ? decisionDate || null : null,
       });
       toast.success(`Outcome logged: ${repOutcomeLabel(selected)}`);
+      onRecorded?.();
       onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't log the outcome. Please try again.");
