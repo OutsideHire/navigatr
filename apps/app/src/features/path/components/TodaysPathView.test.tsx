@@ -128,6 +128,38 @@ describe("TodaysPathView", () => {
     expect(screen.getByText("Overflow Co")).toBeInTheDocument();
   });
 
+  it("removing an overflow item drops it from the 'Won't fit today' list, leaving the others", () => {
+    const twoOverflow: FlexibleStop[] = [
+      { id: "of1", dealId: null, name: "Overflow One", lat: 30.5, lng: -97.5, tier: "nearby", ageDays: null },
+      { id: "of2", dealId: null, name: "Overflow Two", lat: 30.6, lng: -97.6, tier: "nearby", ageDays: null },
+    ];
+    renderView({ overflow: twoOverflow });
+    expect(screen.getByText("Overflow One")).toBeInTheDocument();
+    expect(screen.getByText("Overflow Two")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /remove overflow one/i }));
+
+    expect(screen.queryByText("Overflow One")).not.toBeInTheDocument();
+    // The other overflow item remains.
+    expect(screen.getByText("Overflow Two")).toBeInTheDocument();
+  });
+
+  it("removing an overflow item does not change the routed proposal list", () => {
+    const onStart = vi.fn();
+    renderView({ onStart });
+    fireEvent.click(screen.getByRole("button", { name: /remove overflow co/i }));
+
+    // The proposal rows are untouched.
+    expect(screen.getByText("Owed Co")).toBeInTheDocument();
+    expect(screen.getByText("DueToday Co")).toBeInTheDocument();
+    expect(screen.getByText("Nearby Co")).toBeInTheDocument();
+
+    // And Start still hands back exactly the flexible proposal stops.
+    fireEvent.click(screen.getByRole("button", { name: /start driving/i }));
+    const passed = onStart.mock.calls[0]![0] as OrderedStop[];
+    expect(passed.map((s) => s.id)).toEqual(["owed1", "due1", "near1"]);
+  });
+
   it("Add more nearby opens the discovery", () => {
     const onAddNearby = vi.fn();
     renderView({ onAddNearby });

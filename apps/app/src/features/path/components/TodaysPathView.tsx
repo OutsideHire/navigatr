@@ -16,8 +16,9 @@
  *     (appointments are calendar anchors shown in the plan, never created as
  *     merchant stops). An empty day instead shows "Build my day".
  *
- * The overflow list ("Won't fit today") is read-only here; wiring carry-over is
- * SP-D.
+ * The overflow list ("Won't fit today") shows the flexible candidates that did
+ * not fit; each is removable (drops from the visible overflow, same local
+ * override as the proposal rows). Wiring true carry-over is SP-D.
  */
 import * as React from "react";
 import { ArrowRight, CalendarClock, ExternalLink, Loader2, MapPin, MapPinOff, Navigation, Plus, RefreshCw, Trash2 } from "lucide-react";
@@ -351,6 +352,14 @@ export function TodaysPathView({
                       })}
                     </p>
                   </div>
+                  <Button
+                    variant="tertiary"
+                    size="sm"
+                    iconOnly
+                    leadingIcon={Trash2}
+                    aria-label={`Remove ${s.name}`}
+                    onClick={() => handleRemove(s.id)}
+                  />
                 </div>
               ))}
             </div>
