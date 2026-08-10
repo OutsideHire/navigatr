@@ -32,7 +32,7 @@
 
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import { List, ListChecks, Loader2, LocateFixed, Lock, Map as MapIcon, MapPinned, MapPinOff, Navigation, Route as RouteIcon, Settings } from "lucide-react";
+import { List, ListChecks, Loader2, LocateFixed, Lock, Map as MapIcon, MapPinned, MapPinOff, Navigation, Plus, Route as RouteIcon, Settings } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button, Card, Chip } from "@/components/navigatr";
@@ -51,6 +51,7 @@ import { MerchantDetailSheet } from "../components/MerchantDetailSheet";
 import { CreatePathWizard } from "../components/CreatePathWizard";
 import { PlanPathWizard } from "./PlanPathWizard";
 import { TodaysPathView } from "../components/TodaysPathView";
+import { PathOverflowSheet } from "../components/PathOverflowSheet";
 import { UpcomingPaths } from "../components/UpcomingPaths";
 import { PathSettings } from "../components/PathSettings";
 import { ActivePathView } from "../components/ActivePathView";
@@ -283,11 +284,15 @@ export function PathPage() {
     if (prev) closePreviousPath.mutate({ prevPathId: prev.pathId, prevPathDate: prev.pathDate });
   }, [prevUnfinished.data, closePreviousPath]);
 
-  const handleCreate = React.useCallback(() => { if (!closePreviousPath.isPending) finalizePrevious(); setCreateOpen(true); }, [finalizePrevious, closePreviousPath.isPending]);
-  // "Plan a Path" opens the stepped slide-out wizard (mode → search → results →
+  // "Plan a new area" opens the stepped slide-out wizard (mode → search → results →
   // review → schedule → saved). The in-page map/list discover view is still
   // reachable via "Add stops" on an active path (ActivePathView.onAddStops).
   const handlePlan = React.useCallback(() => { if (!closePreviousPath.isPending) finalizePrevious(); setPlanOpen(true); }, [finalizePrevious, closePreviousPath.isPending]);
+
+  // Header "+" overflow (FR-PATH-UX-12): the rarely-used actions ("Add more stops
+  // today", "Plan a new area", "Who's near me right now") live in a sheet so they
+  // stop competing with the daily action on the "Your day" landing.
+  const [overflowOpen, setOverflowOpen] = React.useState(false);
 
   // One-time migration: an existing local queue -> today's server path. Runs once
   // per device when merchants are loaded (snapshots need their display fields).
@@ -715,10 +720,10 @@ export function PathPage() {
         </div>
         <div className="flex items-center gap-2">
           {/* Start-a-path actions + the location control live in the header ONLY
-              on the browse/discover view. On the entry landing they are redundant
-              with the Today's Path proposal + the demoted "Create a Path" / "Plan a
-              Path" secondary actions, which own those flows, so we hide them there;
-              on an active run (pathView "path") they stay hidden too. */}
+              on the browse/discover view. On the entry landing the Today's Path
+              proposal owns the daily action, and the rarely-used flows live in the
+              "+" overflow sheet, so we hide these there; on an active run
+              (pathView "path") they stay hidden too. */}
           {pathView === "discover" && (
             <>
               <Button
@@ -727,7 +732,7 @@ export function PathPage() {
                 leadingIcon={MapPinned}
                 onClick={() => setPlanOpen(true)}
               >
-                Plan ahead
+                Plan a new area
               </Button>
               <Button
                 variant="secondary"
@@ -736,7 +741,7 @@ export function PathPage() {
                 onClick={() => setCreateOpen(true)}
                 disabled={!anyGeocoded}
               >
-                Create path
+                Start a path
               </Button>
             </>
           )}
@@ -750,6 +755,20 @@ export function PathPage() {
             >
               {originSource === "gps" ? "Re-center" : "Use my location"}
             </Button>
+          )}
+          {/* "+" overflow (the rarely-used Path actions). Surfaced on the "Your
+              day" landing only, where it replaces the demoted secondary buttons;
+              on discover the header already exposes those actions, and on an active
+              run they don't belong. */}
+          {pathView === "entry" && (
+            <Button
+              variant="tertiary"
+              size="sm"
+              iconOnly
+              leadingIcon={Plus}
+              aria-label="More Path actions"
+              onClick={() => setOverflowOpen(true)}
+            />
           )}
           {/* Path settings — manage default industries. Visible in every
               pathView (entry / active / discover) since it lives in the
@@ -858,9 +877,9 @@ export function PathPage() {
             />
           )}
           {/* Primary landing: the auto-built, reviewable Today's Path proposal.
-              "Add more nearby" reveals the Find-near-me discovery (weaving it in
-              without an active path); Start hands the flexible stops to the shared
-              create+start mechanism. */}
+              The daily action lives here; the rarely-used build-it-yourself flows
+              (plan a new area / who's near me) now live in the header "+" overflow,
+              so the proposal is the only thing competing for attention. */}
           <TodaysPathView
             proposal={todaysPath.proposal}
             overflow={todaysPath.overflow}
@@ -872,19 +891,6 @@ export function PathPage() {
             remainingMin={todaysPath.remainingMin}
             windowEndHour={todaysPath.windowEndHour}
           />
-          {/* Demoted secondary: build a custom day by hand (Create / Plan), no
-              longer the primary content now that the proposal leads. */}
-          <div className="mt-2 flex flex-col gap-2 self-stretch md:mx-auto md:w-full md:max-w-2xl">
-            <span className="text-caption font-medium text-text-muted">Prefer to build it yourself?</span>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="tertiary" size="sm" leadingIcon={RouteIcon} onClick={handleCreate}>
-                Create a Path
-              </Button>
-              <Button variant="tertiary" size="sm" leadingIcon={MapPinned} onClick={handlePlan}>
-                Plan a Path
-              </Button>
-            </div>
-          </div>
           {/* Upcoming (future-dated planned) paths — launch navigates to /path,
               where the today-path/discover flow takes over. */}
           <UpcomingPaths onLaunch={() => navigate("/path")} />
@@ -1218,6 +1224,14 @@ export function PathPage() {
       />
 
       <PathSettings open={settingsOpen} onOpenChange={setSettingsOpen} />
+
+      <PathOverflowSheet
+        open={overflowOpen}
+        onOpenChange={setOverflowOpen}
+        onAddMoreStops={enterDiscover}
+        onPlanNewArea={handlePlan}
+        onFindNearby={enterDiscover}
+      />
     </div>
   );
 }

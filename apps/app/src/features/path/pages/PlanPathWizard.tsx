@@ -419,7 +419,7 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
       {/* Header */}
       <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border-default px-5 py-4">
         <div className="flex flex-col gap-1">
-          <Dialog.Title className="text-heading-sm text-text-default">Plan a path</Dialog.Title>
+          <Dialog.Title className="text-heading-sm text-text-default">Plan a new area</Dialog.Title>
           <p className="text-caption text-text-muted">
             {stepLabel(stepKey)} · {step.title}
           </p>

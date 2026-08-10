@@ -272,8 +272,10 @@ describe("PathPage location states", () => {
     // page shows the entry view regardless of loading state.
     merchantsState.current = { ...merchantsState.current, isLoading: true };
     render(<PathPage />, { wrapper });
-    expect(screen.getByRole("button", { name: /create a path/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /plan a path/i })).toBeInTheDocument();
+    // Entry landing: the header "+" overflow is present and the discover-only
+    // "Discovering businesses nearby" spinner is not.
+    expect(screen.getByRole("button", { name: /more path actions/i })).toBeInTheDocument();
+    expect(screen.queryByText(/discovering businesses nearby/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/location is blocked/i)).not.toBeInTheDocument();
   });
 
@@ -289,23 +291,31 @@ describe("PathPage location states", () => {
     expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
   });
 
-  it("Plan a Path opens the stepped slide-out wizard", () => {
+  it("Plan a new area (from the + overflow) opens the stepped slide-out wizard", () => {
     originState.current = { ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready" };
     todayState.current = { ...todayState.current, stops: [] };
     render(<PathPage />, { wrapper });
-    fireEvent.click(screen.getByRole("button", { name: /plan a path/i }));
+    // Plan moved off the landing and into the header "+" overflow sheet.
+    fireEvent.click(screen.getByRole("button", { name: /more path actions/i }));
+    fireEvent.click(screen.getByRole("button", { name: /plan a new area/i }));
     // The Plan wizard slide-out mounts at its first step (search).
     expect(screen.getByText(/step 1 of 5/i)).toBeInTheDocument();
   });
 });
 
 describe("PathPage path-first view states", () => {
-  it("shows the two-card entry when origin is set and there is no active path", () => {
+  it("exposes the relocated Plan / Find-near-me actions via the header + overflow", () => {
     todayState.current = { ...todayState.current, stops: [] };
     originState.current = { ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready" };
     render(<PathPage />, { wrapper });
-    expect(screen.getByRole("button", { name: /create a path/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /plan a path/i })).toBeInTheDocument();
+    // The internal names are gone from the landing; the rarely-used actions live
+    // behind the header "+" overflow now.
+    expect(screen.queryByRole("button", { name: /create a path/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /plan a path/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /more path actions/i }));
+    expect(screen.getByRole("button", { name: /add more stops today/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /plan a new area/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /who's near me right now/i })).toBeInTheDocument();
   });
 
   it("shows the active path view when today's path has stops", () => {
@@ -321,17 +331,18 @@ describe("PathPage landing header actions: redundant buttons hidden", () => {
     ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
   };
 
-  it("hides the Plan ahead / Create path / Re-center header buttons on the entry landing (the two cards own those actions)", () => {
+  it("hides the Plan ahead / Create path / Re-center header buttons on the entry landing (the proposal + '+' overflow own those actions)", () => {
     originState.current = readyOrigin;
     todayState.current = { ...todayState.current, stops: [] };
     render(<PathPage />, { wrapper });
-    // The two big cards ARE the way to start a path on the landing.
-    expect(screen.getByRole("button", { name: /create a path/i })).toBeInTheDocument();
-    // The header buttons that duplicate them are hidden here (exact names so
-    // "Create path" does not match the "Create a Path" card).
-    expect(screen.queryByRole("button", { name: /^plan ahead$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^create path$/i })).not.toBeInTheDocument();
+    // The discover-only header buttons are hidden on the landing (the overflow
+    // sheet that carries "Plan a new area" is closed by default, so it's absent too).
+    expect(screen.queryByRole("button", { name: /^plan a new area$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^start a path$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /re-center|use my location/i })).not.toBeInTheDocument();
+    // The rep-facing internal names are gone from the landing entirely.
+    expect(screen.queryByRole("button", { name: /create a path/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /plan a path/i })).not.toBeInTheDocument();
   });
 
   it("still shows those header buttons on the discover/browse view", () => {
@@ -352,8 +363,10 @@ describe("PathPage landing header actions: redundant buttons hidden", () => {
     };
     render(<PathPage />, { wrapper });
     fireEvent.click(screen.getByRole("button", { name: /add stops/i }));
-    expect(screen.getByRole("button", { name: /^plan ahead$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^create path$/i })).toBeInTheDocument();
+    // Plain rep-facing labels (FR-PATH-UX-13): no internal feature names on the
+    // discover surface either, since a rep reaches it via "Who's near me right now".
+    expect(screen.getByRole("button", { name: /^plan a new area$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^start a path$/i })).toBeInTheDocument();
   });
 });
 
@@ -385,12 +398,13 @@ describe("PathPage carryover", () => {
     await waitFor(() => expect(continueMutate).toHaveBeenCalledWith({ prevPathId: "p7", prevPathDate: "2026-06-07" }));
   });
 
-  it("starting a fresh Create path implicitly closes the unfinished path", () => {
+  it("starting a fresh Plan (from the + overflow) implicitly closes the unfinished path", () => {
     originState.current = ready;
     todayState.current = { ...todayState.current, stops: [] };
     prevUnfinishedState.current = { data: { pathId: "p7", pathDate: "2026-06-07", pendingCount: 4 } };
     render(<PathPage />, { wrapper });
-    fireEvent.click(screen.getByRole("button", { name: /create a path/i }));
+    fireEvent.click(screen.getByRole("button", { name: /more path actions/i }));
+    fireEvent.click(screen.getByRole("button", { name: /plan a new area/i }));
     expect(closeMutate).toHaveBeenCalledWith({ prevPathId: "p7", prevPathDate: "2026-06-07" });
   });
 
