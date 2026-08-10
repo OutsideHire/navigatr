@@ -74,6 +74,7 @@ import { DiscoverMeetingBanner } from "../components/DiscoverMeetingBanner";
 import { useQueryClient } from "@tanstack/react-query";
 import { useOwedVisits } from "../hooks/useOwedVisits";
 import { useTodaysPath } from "../hooks/useTodaysPath";
+import { useBackfillOwedCoords } from "../hooks/useBackfillOwedCoords";
 import type { OrderedStop } from "../lib/todaysPath";
 import { OwedVisitsList, type OwedVisitRow } from "../components/OwedVisitsList";
 import type { OwedVisit } from "../lib/owedVisits";
@@ -202,6 +203,16 @@ export function PathPage() {
   // ordering/selection; here we only read it and hand its flexible stops to the
   // same create+start mechanism `handleStartPath` uses.
   const todaysPath = useTodaysPath(origin);
+
+  // Lazy geocode: owed drop-ins that surfaced in "No location yet" BUT carry a
+  // street address get geocoded once (per dealId, per session) and their lat/lng
+  // stamped, so they graduate into the routed path on the next read. Only stubs
+  // with an address are eligible.
+  const noLocationWithAddress = React.useMemo(
+    () => todaysPath.noLocation.filter((s) => Boolean(s.address && s.address.trim())),
+    [todaysPath.noLocation],
+  );
+  useBackfillOwedCoords(noLocationWithAddress);
 
   // TODAY's calendar, read live for the discover view's meeting-aware banner +
   // drop-in fit flags (below). Independent of the planning `calWindow` above.

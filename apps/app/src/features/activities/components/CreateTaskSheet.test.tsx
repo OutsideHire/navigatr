@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render as rtlRender, screen, fireEvent, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactElement, ReactNode } from "react";
 import { CreateTaskSheet } from "./CreateTaskSheet";
 
 const createMutate = vi.fn();
@@ -13,11 +15,43 @@ vi.mock("../hooks/useTaskMutations", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+// Supabase powers the real useGeocodeDealCoords a drop-in triggers: it reads the
+// deal's guard fields (from().select().eq().single()), invokes the geocoder,
+// then writes lat/lng (from().update().eq()).
+const singleMock = vi.fn();
+const updateEqMock = vi.fn();
+const updateMock = vi.fn(() => ({ eq: updateEqMock }));
+const invokeMock = vi.fn();
+vi.mock("@/lib/supabase", () => ({
+  supabase: {
+    from: () => ({
+      select: () => ({ eq: () => ({ single: singleMock }) }),
+      update: updateMock,
+    }),
+    functions: { invoke: (...args: unknown[]) => invokeMock(...args) },
+  },
+}));
+
+// A drop-in geocodes its deal, so every render needs a QueryClient.
+function Providers({ children }: { children: ReactNode }) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+const render = (ui: ReactElement) => rtlRender(ui, { wrapper: Providers });
+
 beforeAll(() => {
   if (!Element.prototype.hasPointerCapture) Element.prototype.hasPointerCapture = () => false;
   if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
 });
-beforeEach(() => createMutate.mockReset());
+beforeEach(() => {
+  createMutate.mockReset();
+  singleMock.mockReset();
+  updateEqMock.mockReset().mockResolvedValue({ error: null });
+  updateMock.mockClear();
+  invokeMock.mockReset();
+});
 
 describe("CreateTaskSheet", () => {
   it("prefills the title from the deal name", () => {
@@ -98,5 +132,55 @@ describe("CreateTaskSheet", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Create task$/i }));
     expect(createMutate).not.toHaveBeenCalled();
     expect(screen.getByText(/Pick a deal/i)).toBeInTheDocument();
+  });
+
+  it("creating a drop-in on a deal with an address and no coords geocodes it and stamps lat/lng", async () => {
+    singleMock.mockResolvedValueOnce({
+      data: { address: "500 Elm St", lat: null, lng: null, place_id: null },
+      error: null,
+    });
+    invokeMock.mockResolvedValueOnce({ data: { result: { lat: 1.1, lng: 2.2 } } });
+
+    render(<CreateTaskSheet open onOpenChange={() => {}} dealId="d-1" dealName="Acme Co" />);
+    fireEvent.click(screen.getByRole("button", { name: "Drop-in" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Create task$/i }));
+
+    // The drop-in task is still created.
+    expect(createMutate).toHaveBeenCalledTimes(1);
+    expect(createMutate.mock.calls[0][0]).toMatchObject({ type: "drop_in", dealId: "d-1" });
+
+    // And the deal is geocoded + stamped so the drop-in becomes routable.
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("geocode", { body: { query: "500 Elm St" } }),
+    );
+    await waitFor(() => expect(updateMock).toHaveBeenCalledWith({ lat: 1.1, lng: 2.2 }));
+    expect(updateEqMock).toHaveBeenCalledWith("id", "d-1");
+  });
+
+  it("creating a drop-in on a deal that already has coords does NOT call the geocoder", async () => {
+    singleMock.mockResolvedValueOnce({
+      data: { address: "500 Elm St", lat: 9.9, lng: 8.8, place_id: null },
+      error: null,
+    });
+
+    render(<CreateTaskSheet open onOpenChange={() => {}} dealId="d-2" dealName="Located Co" />);
+    fireEvent.click(screen.getByRole("button", { name: "Drop-in" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Create task$/i }));
+
+    expect(createMutate).toHaveBeenCalledTimes(1);
+    // Guard reads the deal row, sees coords, and never invokes the geocoder.
+    await waitFor(() => expect(singleMock).toHaveBeenCalled());
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("creating a call (not a drop-in) never geocodes the deal", async () => {
+    render(<CreateTaskSheet open onOpenChange={() => {}} dealId="d-3" dealName="Acme Co" />);
+    // Default type is "call".
+    fireEvent.click(screen.getByRole("button", { name: /^Create task$/i }));
+    expect(createMutate).toHaveBeenCalledTimes(1);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(singleMock).not.toHaveBeenCalled();
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 });

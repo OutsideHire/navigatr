@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { toDateOnly } from "@/lib/calendarDate";
 import { Button, FormField, Input, Select, type SelectOption } from "@/components/navigatr";
 import { useTaskMutations } from "../hooks/useTaskMutations";
+import { useGeocodeDealCoords } from "@/features/pipeline/hooks/useGeocodeDealCoords";
 import { bandsFromTarget } from "../lib/taskBands";
 import { type TaskType } from "../lib/isProspectTouch";
 
@@ -85,6 +86,7 @@ export interface CreateTaskSheetProps {
 
 export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, deals, defaultType }: CreateTaskSheetProps) {
   const { createTask } = useTaskMutations();
+  const geocodeDealCoords = useGeocodeDealCoords();
   const boundMode = dealId != null;
   const [type, setType] = React.useState<TaskType>(defaultType ?? "call");
   const [title, setTitle] = React.useState(dealName ?? "");
@@ -150,6 +152,16 @@ export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, deals, d
     const startAt = type === "appointment" ? iso : null;
     const reminderAt = type === "appointment" ? null : iso;
     const priorityVal = priorityShown(type) && priority !== "normal" ? priority : null;
+
+    // A drop-in is only routable once its deal has coordinates. If the deal has
+    // an address but no coords (and no place_id), geocode + stamp lat/lng now so
+    // the drop-in joins the route instead of sitting in "No location yet". The
+    // hook re-reads the live deal row and applies the same guard as create-time,
+    // so a deal that already has coords or a place_id is left untouched.
+    // Best-effort and fire-and-forget: it never blocks task creation.
+    if (type === "drop_in" && resolvedDealId) {
+      geocodeDealCoords.mutate({ dealId: resolvedDealId });
+    }
 
     createTask.mutate(
       {
