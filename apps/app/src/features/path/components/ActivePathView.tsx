@@ -26,7 +26,7 @@
  * resolved the list swaps for the end-of-path PathSummary.
  */
 import * as React from "react";
-import { ArrowRight, Check, CircleDashed, Navigation, Plus, SkipForward, Trash2 } from "lucide-react";
+import { ArrowRight, Check, CircleDashed, Map as MapIcon, Navigation, Plus, SkipForward, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -87,6 +87,11 @@ export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathV
   // after these below.
   const { rows: liveRows, sheets: liveSheets } = useLiveDayTiers(pathDate);
   const navigate = useNavigate();
+
+  // Show/Hide map (Path QA R4). Default HIDDEN so mobile leads with the day's
+  // list and the map never eats the small screen. Desktop always shows the map
+  // (the `md:block` gate on the map pane wins there); the toggle is `md:hidden`.
+  const [mapVisible, setMapVisible] = React.useState(false);
 
   const stats = React.useMemo(
     () => routeStats(origin, stops.map((s) => ({ lat: s.lat, lng: s.lng }))),
@@ -210,6 +215,20 @@ export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathV
           </span>
         </div>
 
+        {/* Show/Hide map toggle (Path QA R4). Mobile-only; the map pane below
+            defaults hidden and is always shown on desktop via `md:block`. */}
+        <button
+          type="button"
+          onClick={() => setMapVisible((v) => !v)}
+          aria-pressed={mapVisible}
+          className={cn(
+            "inline-flex items-center gap-1.5 self-start rounded-radius-md bg-surface-sunken px-3 py-1.5 text-caption font-medium text-text-default transition-colors hover:bg-surface-sunken/80 md:hidden",
+          )}
+        >
+          <MapIcon className="h-3.5 w-3.5" aria-hidden />
+          {mapVisible ? "Hide map" : "Show map"}
+        </button>
+
         {complete ? (
           <PathSummary
             visitedCount={visited}
@@ -284,7 +303,7 @@ export function ActivePathView({ origin, onAddStops, onStartRoute }: ActivePathV
         )}
       </div>
 
-      <div className="min-h-[280px]">
+      <div className={cn("min-h-[280px]", mapVisible ? "block" : "hidden", "md:block")}>
         <MerchantMap position={origin} merchants={[]} routePath={routePath} />
       </div>
 

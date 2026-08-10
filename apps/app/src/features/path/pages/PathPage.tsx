@@ -6,10 +6,9 @@
  * chips. Tapping a merchant opens a detail sheet with quick actions.
  *
  * Layout:
- *   Mobile: a Map/List toggle (Apple Maps pattern would be a draggable
- *           bottom sheet, but a tab toggle is simpler and works on
- *           every browser without gesture handling). Filters always
- *           visible above the active view.
+ *   Mobile: list-first, with a Show/Hide map toggle (the map defaults
+ *           hidden so it never eats the small screen). Filters always
+ *           visible above the list.
  *   Desktop (md+): map on the left (60%), list on the right (40%),
  *           filters at top spanning both.
  *
@@ -32,7 +31,7 @@
 
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import { List, ListChecks, Loader2, LocateFixed, Lock, Map as MapIcon, MapPinned, MapPinOff, Navigation, Plus, Route as RouteIcon, Settings } from "lucide-react";
+import { ListChecks, Loader2, LocateFixed, Lock, Map as MapIcon, MapPinned, MapPinOff, Navigation, Plus, Route as RouteIcon, Settings } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button, Card, Chip } from "@/components/navigatr";
@@ -90,8 +89,6 @@ type CategoryFilter = "all" | MerchantCategory;
 function chipLabel(f: CategoryFilter): string {
   return f === "all" ? "All" : CATEGORY_LABEL[f];
 }
-
-type ViewMode = "map" | "list";
 
 // Radius options (miles → meters). The selected radius drives the INGEST:
 // useMerchants(origin, { radiusM }) fetches + caches that whole area from Google
@@ -175,7 +172,11 @@ export function PathPage() {
   const [sortMode, setSortMode] = React.useState<PathSortMode>(DEFAULT_SORT_MODE);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = React.useState(false);
-  const [view, setView] = React.useState<ViewMode>("list"); // default to list until merchants are geocoded
+  // Show/Hide map (Path QA R4). Default HIDDEN so mobile leads with the list and
+  // the map never eats the small screen. Desktop always shows the map regardless
+  // of this state (the toggle and this flag only govern mobile) — see the
+  // `md:block` gate on the map pane and the `md:hidden` gate on the toggle.
+  const [mapVisible, setMapVisible] = React.useState(false);
 
   // Calendar-Aware Path (Slice 1): ephemeral planning overlay. The wizard emits
   // its day time-window; we read the rep's calendar for that window and derive
@@ -1111,30 +1112,21 @@ export function PathPage() {
             </div>
           )}
 
-          {/* Mobile view toggle: only shown when the map has something to render */}
+          {/* Show/Hide map toggle (Path QA R4). Mobile-only (`md:hidden`); the map
+              defaults HIDDEN so the list leads on a small screen. Desktop keeps
+              the two-pane map always visible via the `md:block` gate below. */}
           {anyGeocoded && (
-          <div className="mt-3 flex gap-1 self-start rounded-radius-md bg-surface-sunken p-0.5 md:hidden">
-            <button
-              type="button"
-              onClick={() => setView("map")}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-radius-sm px-3 py-1.5 text-caption font-medium transition-colors",
-                view === "map" ? "bg-surface-default text-text-default shadow-sm" : "text-text-muted hover:text-text-default",
-              )}
-            >
-              <MapIcon className="h-3.5 w-3.5" aria-hidden /> Map
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("list")}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-radius-sm px-3 py-1.5 text-caption font-medium transition-colors",
-                view === "list" ? "bg-surface-default text-text-default shadow-sm" : "text-text-muted hover:text-text-default",
-              )}
-            >
-              <List className="h-3.5 w-3.5" aria-hidden /> List ({sorted.length})
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setMapVisible((v) => !v)}
+            aria-pressed={mapVisible}
+            className={cn(
+              "mt-3 inline-flex items-center gap-1.5 self-start rounded-radius-md bg-surface-sunken px-3 py-1.5 text-caption font-medium text-text-default transition-colors hover:bg-surface-sunken/80 md:hidden",
+            )}
+          >
+            <MapIcon className="h-3.5 w-3.5" aria-hidden />
+            {mapVisible ? "Hide map" : "Show map"}
+          </button>
           )}
 
           {/* Discovery body — mobile single pane, desktop split. When nothing is
@@ -1183,9 +1175,11 @@ export function PathPage() {
             "mt-3 grid min-h-0 flex-1 gap-4",
             anyGeocoded && "md:grid-cols-[1.4fr_1fr]",
           )}>
-            {/* Map — only when at least one merchant is geocoded. */}
+            {/* Map — only when at least one merchant is geocoded. On mobile the
+                map is gated by the Show/Hide toggle (default hidden); `md:block`
+                keeps the desktop two-pane map always visible. */}
             {anyGeocoded ? (
-              <div className={cn("min-h-[320px]", view === "list" && "hidden md:block")}>
+              <div className={cn("min-h-[320px]", mapVisible ? "block" : "hidden", "md:block")}>
                 <MerchantMap
                   position={origin}
                   merchants={sorted.filter((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng))}
@@ -1202,11 +1196,9 @@ export function PathPage() {
                 </p>
               </div>
             )}
-            {/* List */}
-            <div className={cn(
-              "min-h-0 overflow-y-auto",
-              anyGeocoded && view === "map" && "hidden md:block",
-            )}>
+            {/* List — always visible; on mobile it leads and takes the full
+                width whenever the map is hidden (its grid cell collapses). */}
+            <div className="min-h-0 overflow-y-auto">
               <MerchantList
                 merchants={sorted}
                 selectedId={selectedId}
@@ -1260,7 +1252,7 @@ export function PathPage() {
               </Button>
             )}
             <Button variant="tertiary" size="sm" onClick={handleDoneDiscovering}>
-              {queueStops.length > 0 ? "Back to path" : "Done"}
+              {queueStops.length > 0 ? "Next" : "Done"}
             </Button>
           </div>
         </>

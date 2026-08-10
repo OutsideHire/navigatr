@@ -466,4 +466,31 @@ describe("ActivePathView", () => {
     fireEvent.click(screen.getByRole("button", { name: /mark visited/i }));
     expect(setStatus).toHaveBeenCalledWith("m1", "visited");
   });
+
+  // ─── R4: Show/Hide map toggle (default hidden on mobile) ────────────────
+
+  it("defaults the map hidden on mobile (hidden md:block) and offers a Show map toggle", () => {
+    renderView();
+    // Desktop always shows the map via md:block; mobile starts hidden.
+    const pane = screen.getByTestId("map").parentElement as HTMLElement;
+    expect(pane).toHaveClass("hidden");
+    expect(pane).toHaveClass("md:block");
+    expect(pane).not.toHaveClass("block");
+    // The single mobile toggle reads "Show map" while hidden.
+    expect(screen.getByRole("button", { name: /^show map$/i })).toBeInTheDocument();
+  });
+
+  it("toggling Show map flips the mobile visibility class and the label to Hide map", () => {
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: /^show map$/i }));
+    const pane = screen.getByTestId("map").parentElement as HTMLElement;
+    // Now visible on mobile too; md:block still present for desktop.
+    expect(pane).toHaveClass("block");
+    expect(pane).toHaveClass("md:block");
+    expect(pane).not.toHaveClass("hidden");
+    // Label flips; toggling back hides it again.
+    expect(screen.getByRole("button", { name: /^hide map$/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^hide map$/i }));
+    expect(screen.getByTestId("map").parentElement as HTMLElement).toHaveClass("hidden");
+  });
 });

@@ -546,9 +546,11 @@ describe("PathPage active-path surface — Run | Stops tabs", () => {
     expect(screen.getByTestId("running-path")).toBeInTheDocument();
     expect(typeof capturedOnFindNearby).toBe("function");
     // Invoking it opens the discover surface (enterDiscover), replacing the run.
+    // The secondary discover action is "Next" (Path QA R4) whenever the queue has
+    // stops; its presence confirms the discover surface is showing.
     act(() => capturedOnFindNearby!());
     expect(screen.queryByTestId("running-path")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /back to path/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^next$/i })).toBeInTheDocument();
   });
 
   it("switching to the Stops tab shows the overview; back to Run shows the guided run", () => {
@@ -1005,5 +1007,58 @@ describe("PathPage discover — action bar reachable on mobile (Path QA C4)", ()
     // solid background + top border; a regression that moves it out fails here.
     expect(bar).toHaveClass("sticky");
     expect(bar).toHaveClass("bottom-0");
+  });
+});
+
+describe("PathPage discover — Show/Hide map + Next label (Path QA R4)", () => {
+  const readyOrigin: PathOrigin = {
+    ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
+  };
+  // A geocoded merchant so the map pane renders (anyGeocoded true).
+  const liveMerchants = [
+    { id: "a", name: "Alpha", address: "1 A St", phone: null, lat: 30.05, lng: -97.05, category: "retail", primaryType: null },
+  ] as unknown as typeof merchantsState.current.merchants;
+
+  beforeEach(() => {
+    originState.current = readyOrigin;
+    merchantsState.current = { merchants: liveMerchants, isLoading: false, isError: false, refetch: vi.fn() } as typeof merchantsState.current;
+    todayState.current = {
+      ...todayState.current,
+      stops: [
+        { merchantId: "a", name: "Alpha", address: "1 A St", lat: 30.05, lng: -97.05, category: "retail", status: "pending" },
+      ] as unknown as typeof todayState.current.stops,
+    };
+  });
+
+  it("defaults the discover map hidden on mobile (hidden md:block) with a Show map toggle", () => {
+    render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /add stops/i }));
+    // The map pane wraps the mocked MerchantMap; desktop always shows it (md:block)
+    // while mobile starts hidden.
+    const pane = screen.getByTestId("map").parentElement as HTMLElement;
+    expect(pane).toHaveClass("hidden");
+    expect(pane).toHaveClass("md:block");
+    expect(pane).not.toHaveClass("block");
+    expect(screen.getByRole("button", { name: /^show map$/i })).toBeInTheDocument();
+  });
+
+  it("toggling Show map flips the mobile visibility class and label", () => {
+    render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /add stops/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^show map$/i }));
+    const pane = screen.getByTestId("map").parentElement as HTMLElement;
+    expect(pane).toHaveClass("block");
+    expect(pane).toHaveClass("md:block");
+    expect(pane).not.toHaveClass("hidden");
+    expect(screen.getByRole("button", { name: /^hide map$/i })).toBeInTheDocument();
+  });
+
+  it("labels the secondary discover action 'Next' when there are queued stops", () => {
+    render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /add stops/i }));
+    // Primary launch stays "Start path"; the secondary back action is now "Next".
+    expect(screen.getByRole("button", { name: /^start path$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^next$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /back to path/i })).not.toBeInTheDocument();
   });
 });
