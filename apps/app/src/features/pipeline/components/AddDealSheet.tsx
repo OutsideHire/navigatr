@@ -205,7 +205,10 @@ const baseShape = {
   // Primary contact
   contactName: z.string().min(1, "Contact name is required"),
   contactTitle: z.string().optional(),
-  contactEmail: z.string().email("Enter a valid email"),
+  // Optional: an empty string is allowed (submitted as no email), but a
+  // non-empty value must still be a valid email. Email is not required to
+  // create a deal (Path QA D).
+  contactEmail: z.string().email("Enter a valid email").optional().or(z.literal("")),
   // Permissive on purpose: 10 digits (US). libphonenumber's strict "valid"
   // check rejects 555-555-5555 (reserved area code), which is the most-typed
   // test number on Earth. Sprint 2 can tighten if we route real calls.
@@ -690,7 +693,9 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
         employeeCountRange,
         contactName,
         contactTitle,
-        contactEmail,
+        // Email is optional; send undefined (→ null column) for an empty value
+        // so a blank field never persists as "".
+        contactEmail: contactEmail?.trim() ? contactEmail : undefined,
         // Normalize to E.164 ("+1XXXXXXXXXX"). The form validator already
         // guarantees 10 digits; PhoneWithClickToCall on the deal card
         // requires E.164 to render without an "Invalid number" error.
@@ -966,7 +971,7 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
                 <FormField htmlFor="contactTitle" label="Title / role">
                   <Input id="contactTitle" placeholder="Owner, Manager, etc." {...register("contactTitle")} />
                 </FormField>
-                <FormField htmlFor="contactEmail" label="Email" required error={errors.contactEmail?.message}>
+                <FormField htmlFor="contactEmail" label="Email" error={errors.contactEmail?.message}>
                   <Input id="contactEmail" type="email" placeholder="contact@company.com" {...register("contactEmail")} />
                 </FormField>
                 <Controller
@@ -981,8 +986,15 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
                         autoComplete="tel"
                         placeholder="(555) 123-4567"
                         value={field.value ?? ""}
-                        onChange={(e) => field.onChange(formatUSPhone(e.target.value))}
-                        onBlur={field.onBlur}
+                        // Keep the raw typed value while editing so backspacing a
+                        // formatting char (e.g. the ")") deletes naturally instead
+                        // of AsYouType re-inserting it and stranding the caret.
+                        // Format on blur; submit strips to digits regardless.
+                        onChange={(e) => field.onChange(e.target.value)}
+                        onBlur={(e) => {
+                          field.onChange(formatUSPhone(e.target.value));
+                          field.onBlur();
+                        }}
                       />
                     </FormField>
                   )}

@@ -129,7 +129,13 @@ describe("EditDealSheet: contact email and phone persist", () => {
     const { refetch } = renderSheetWithRefetch();
 
     const phone = document.getElementById("contactPhone") as HTMLInputElement;
+    // Raw value flows through on change (no live reformat), then formats on blur.
     fireEvent.change(phone, { target: { value: "3105551234" } });
+    expect(phone.value).toBe("3105551234");
+    fireEvent.blur(phone);
+    expect((document.getElementById("contactPhone") as HTMLInputElement).value).toBe(
+      "(310) 555-1234",
+    );
 
     refetch();
 
@@ -141,5 +147,77 @@ describe("EditDealSheet: contact email and phone persist", () => {
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
     const [{ patch }] = mutateAsync.mock.calls[0];
     expect(patch.contactPhone).toBe("+13105551234");
+  });
+});
+
+describe("EditDealSheet: phone deletion is caret-free (format on blur)", () => {
+  it("shrinks the digits on successive backspaces, including through the area code", () => {
+    renderSheet();
+    const phone = document.getElementById("contactPhone") as HTMLInputElement;
+
+    // Prefilled + formatted from the deal (+12025550100 -> "(202) 555-0100").
+    expect(phone.value).toBe("(202) 555-0100");
+
+    // Simulate the rep deleting through the whole number. Because the raw value
+    // flows through unchanged, each deletion is reflected immediately without a
+    // caret reposition -- the value simply shrinks.
+    fireEvent.change(phone, { target: { value: "(202) 555-010" } });
+    expect(phone.value).toBe("(202) 555-010");
+    fireEvent.change(phone, { target: { value: "(202) 555-01" } });
+    expect(phone.value).toBe("(202) 555-01");
+    // Backspacing past the area-code punctuation: the digits keep shrinking.
+    fireEvent.change(phone, { target: { value: "(202" } });
+    expect(phone.value).toBe("(202");
+    fireEvent.change(phone, { target: { value: "(20" } });
+    expect(phone.value).toBe("(20");
+    fireEvent.change(phone, { target: { value: "" } });
+    expect(phone.value).toBe("");
+  });
+
+  it("re-formats a re-typed number on blur", () => {
+    renderSheet();
+    const phone = document.getElementById("contactPhone") as HTMLInputElement;
+
+    fireEvent.change(phone, { target: { value: "4155559876" } });
+    expect(phone.value).toBe("4155559876");
+    fireEvent.blur(phone);
+    expect((document.getElementById("contactPhone") as HTMLInputElement).value).toBe(
+      "(415) 555-9876",
+    );
+  });
+});
+
+describe("EditDealSheet: email is optional", () => {
+  it("saves with a cleared (empty) email as null, not \"\"", async () => {
+    renderSheet();
+
+    const email = document.getElementById("contactEmail") as HTMLInputElement;
+    fireEvent.change(email, { target: { value: "" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    const [{ patch }] = mutateAsync.mock.calls[0];
+    expect(patch.contactEmail).toBeNull();
+  });
+
+  it("rejects a non-empty invalid email", async () => {
+    renderSheet();
+
+    const email = document.getElementById("contactEmail") as HTMLInputElement;
+    fireEvent.change(email, { target: { value: "not-an-email" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+
+    expect(await screen.findByText(/Enter a valid email/i)).toBeInTheDocument();
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("has no required affordance on the Email field", () => {
+    renderSheet();
+    const label = document.querySelector('label[for="contactEmail"]') as HTMLLabelElement;
+    expect(label).not.toBeNull();
+    expect(label.textContent).not.toContain("*");
+    expect(label.querySelector('[title="Required"]')).toBeNull();
   });
 });

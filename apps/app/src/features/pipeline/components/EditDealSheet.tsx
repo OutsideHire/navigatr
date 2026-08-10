@@ -85,7 +85,9 @@ const EMPLOYEE_COUNT_OPTIONS: SelectOption[] = [
 const editSchema = z.object({
   companyName: z.string().min(1, "Company name is required"),
   contactName: z.string().min(1, "Contact name is required"),
-  contactEmail: z.string().email("Enter a valid email"),
+  // Optional: an empty string clears the email; a non-empty value must be a
+  // valid email. Email is not required on a deal (Path QA D).
+  contactEmail: z.string().email("Enter a valid email").optional().or(z.literal("")),
   contactPhone: z
     .string()
     .min(1, "Phone is required")
@@ -209,7 +211,10 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
     const patch: Parameters<typeof update.mutateAsync>[0]["patch"] = {};
     if (dirtyFields.companyName) patch.companyName = values.companyName;
     if (dirtyFields.contactName) patch.contactName = values.contactName;
-    if (dirtyFields.contactEmail) patch.contactEmail = values.contactEmail;
+    if (dirtyFields.contactEmail) {
+      // Empty clears the email (send null, never ""), otherwise the typed value.
+      patch.contactEmail = values.contactEmail?.trim() ? values.contactEmail : null;
+    }
     if (dirtyFields.contactPhone) {
       patch.contactPhone = "+1" + digitsOnly(values.contactPhone);
     }
@@ -356,7 +361,7 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
                 <FormField htmlFor="contactName" label="Contact name" required error={errors.contactName?.message}>
                   <Input id="contactName" {...register("contactName")} />
                 </FormField>
-                <FormField htmlFor="contactEmail" label="Email" required error={errors.contactEmail?.message}>
+                <FormField htmlFor="contactEmail" label="Email" error={errors.contactEmail?.message}>
                   <Input id="contactEmail" type="email" {...register("contactEmail")} />
                 </FormField>
                 <Controller
@@ -370,8 +375,14 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
                         inputMode="tel"
                         autoComplete="tel"
                         value={field.value ?? ""}
-                        onChange={(e) => field.onChange(formatUSPhone(e.target.value))}
-                        onBlur={field.onBlur}
+                        // Raw value while editing (so backspacing a formatting
+                        // char deletes naturally), formatted on blur. Submit
+                        // strips to digits regardless (Path QA D).
+                        onChange={(e) => field.onChange(e.target.value)}
+                        onBlur={(e) => {
+                          field.onChange(formatUSPhone(e.target.value));
+                          field.onBlur();
+                        }}
                       />
                     </FormField>
                   )}
