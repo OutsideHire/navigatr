@@ -11,6 +11,12 @@
 // displayName is blank we compose the address text from those sub-fields, so an
 // Outlook meeting carries an address the same way a Google one does instead of
 // silently collapsing to a no-location time block.
+//
+// Graph ALSO exposes a plural `locations[]` array alongside the singular
+// `location`. Real Outlook events routinely arrive with the singular `location`
+// empty (or absent) while the address lives in `locations[]`; reading only the
+// singular object lost that address. `extractMicrosoftLocation` therefore falls
+// back through the `locations[]` entries when the singular resolves to nothing.
 
 export interface GraphLocationAddress {
   street?: string | null;
@@ -40,11 +46,11 @@ export function extractGoogleLocation(
 }
 
 /**
- * Microsoft Graph event location. Prefer the displayName (what the user typed
- * or the picked venue name); when it is blank, compose a comma-joined address
- * from the structured address sub-fields so an address still surfaces.
+ * Resolve a single Graph location object to text: prefer the displayName (what
+ * the user typed or the picked venue name); when it is blank, compose a
+ * comma-joined address from the structured address sub-fields.
  */
-export function extractMicrosoftLocation(
+function resolveGraphLocation(
   location: GraphLocation | null | undefined,
 ): string | null {
   if (!location) return null;
@@ -62,4 +68,25 @@ export function extractMicrosoftLocation(
     .map((part) => cleanText(part))
     .filter((part): part is string => part !== null);
   return parts.length > 0 ? parts.join(", ") : null;
+}
+
+/**
+ * Microsoft Graph event location. Resolve the singular `location` first; when it
+ * yields nothing, fall through the plural `locations[]` array and return the
+ * first entry that resolves to usable text. Returns null when neither carries a
+ * location, so the event classifies as a no-location time block.
+ */
+export function extractMicrosoftLocation(
+  location: GraphLocation | null | undefined,
+  locations?: ReadonlyArray<GraphLocation | null | undefined> | null,
+): string | null {
+  const primary = resolveGraphLocation(location);
+  if (primary) return primary;
+  if (locations) {
+    for (const entry of locations) {
+      const resolved = resolveGraphLocation(entry);
+      if (resolved) return resolved;
+    }
+  }
+  return null;
 }

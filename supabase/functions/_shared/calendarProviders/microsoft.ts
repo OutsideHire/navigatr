@@ -32,6 +32,7 @@ interface GraphEvent {
   start?: { dateTime?: string; timeZone?: string };
   end?: { dateTime?: string; timeZone?: string };
   location?: GraphLocation;
+  locations?: GraphLocation[]; // plural; carries the address when singular is blank
   responseStatus?: { response?: string };  // none|organizer|tentativelyAccepted|accepted|declined|notResponded
   singleValueExtendedProperties?: Array<{ id?: string; value?: string }>; // our navigatr tag, when expanded
 }
@@ -117,7 +118,7 @@ export const microsoftProvider: CalendarProvider = {
       status: e.isCancelled ? "cancelled" : "confirmed",
       visibility: e.sensitivity ?? null,          // 'private'/'confidential' → excluded by classifyEvent
       responseStatus: e.responseStatus?.response ?? null, // 'declined' → excluded
-      location: extractMicrosoftLocation(e.location),
+      location: extractMicrosoftLocation(e.location, e.locations),
       navigatrAppointmentId:
         e.singleValueExtendedProperties?.find((p) => p.id === NAVIGATR_APPT_PROP_ID)?.value ?? null,
     }));
