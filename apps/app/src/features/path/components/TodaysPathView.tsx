@@ -78,6 +78,17 @@ export function TodaysPathView({
     () => visibleProposal.filter((s) => s.kind === "flexible"),
     [visibleProposal],
   );
+  // How many auto-added "nearby" fills sit in the plan, and whether the day has
+  // any committed stop (appointment/owed/due) at all. On a truly empty day the
+  // "Build my day" button owns the messaging, so the count line is suppressed.
+  const nearbyFillCount = React.useMemo(
+    () => visibleProposal.filter((s) => s.tier === "nearby").length,
+    [visibleProposal],
+  );
+  const hasCommitment = React.useMemo(
+    () => visibleProposal.some((s) => s.tier !== "nearby"),
+    [visibleProposal],
+  );
 
   const handleRemove = React.useCallback((id: string) => {
     setRemoved((prev) => {
@@ -199,6 +210,15 @@ export function TodaysPathView({
               />
             ))}
           </ol>
+
+          {/* State how many nearby stops were auto-added into open time, with a
+              plain drop affordance (FR-PATH-UX-02). Suppressed on an empty day
+              (handled by "Build my day") and when nothing was auto-filled. */}
+          {hasCommitment && nearbyFillCount > 0 && (
+            <p className="text-caption text-text-muted">
+              {nearbyFillCount} new {nearbyFillCount === 1 ? "place was" : "places were"} added in your open time. Tap one to drop it.
+            </p>
+          )}
 
           <div className="flex items-center justify-between gap-2">
             <Button variant="secondary" size="sm" leadingIcon={Plus} onClick={onAddNearby}>

@@ -167,6 +167,37 @@ describe("TodaysPathView", () => {
     expect(screen.getByText(/Appointments go where they are booked/i)).toBeInTheDocument();
   });
 
+  it("states how many nearby stops were auto-added when the day has commitments", () => {
+    // the default `proposal` fixture has committed stops (appointment/owed/due) + 1 nearby
+    renderView();
+    expect(
+      screen.getByText(/1 new place was added in your open time\. tap one to drop it\./i),
+    ).toBeInTheDocument();
+  });
+
+  it("pluralizes the auto-added count", () => {
+    const proposal = [
+      { id: "ap", kind: "appointment", tier: "appointment", name: "Appt", dealId: "d", lat: 1, lng: 1, startAt: "2026-08-10T17:00:00Z", endAt: null, ageDays: null },
+      { id: "n1", kind: "flexible", tier: "nearby", name: "N1", dealId: null, lat: 1, lng: 1, startAt: null, endAt: null, ageDays: null },
+      { id: "n2", kind: "flexible", tier: "nearby", name: "N2", dealId: null, lat: 1, lng: 1, startAt: null, endAt: null, ageDays: null },
+    ] as OrderedStop[];
+    renderView({ proposal, overflow: [] });
+    expect(screen.getByText(/2 new places were added in your open time/i)).toBeInTheDocument();
+  });
+
+  it("does not show the auto-add line on an empty day", () => {
+    renderView({ proposal: [], overflow: [] });
+    expect(screen.queryByText(/added in your open time/i)).not.toBeInTheDocument();
+  });
+
+  it("does not show the auto-add line when the day has no nearby fill", () => {
+    const proposal = [
+      { id: "o1", kind: "flexible", tier: "past_due", name: "Owed", dealId: "d", lat: 1, lng: 1, startAt: null, endAt: null, ageDays: 5 },
+    ] as OrderedStop[];
+    renderView({ proposal, overflow: [] });
+    expect(screen.queryByText(/added in your open time/i)).not.toBeInTheDocument();
+  });
+
   it("empty day offers a single 'Build my day' action", () => {
     const onAddNearby = vi.fn();
     renderView({ proposal: [], overflow: [], onAddNearby });
