@@ -78,11 +78,20 @@ function isFeasible(
       ? driveMinutesBetween(cursorLoc, { lat: stop.lat, lng: stop.lng })
       : 0;
     const arriveMs = cursorMs + driveMin * 60000;
-    if (stop.kind !== "flexible") {
+    if (stop.kind === "flexible") {
+      // A flexible stop occupies a flat dwell.
+      cursorMs = arriveMs + dwellMin * 60000;
+    } else {
+      // A fixed appointment must be reached at or before it starts, and it holds
+      // the rep until its endAt (mirroring the assembler, todaysPath.ts:322-323):
+      // arriving early means waiting for the window, then departing at endAt, not
+      // after a flat dwell. Under-modeling this (a flat 20 min) is what let a
+      // candidate wedge between two close appointments and make the later one late.
       const startMs = parseMs(stop.startAt);
       if (Number.isFinite(startMs) && arriveMs > startMs) return false;
+      const apptEndMs = stop.endAt ? parseMs(stop.endAt) : startMs;
+      cursorMs = Math.max(arriveMs, Number.isFinite(apptEndMs) ? apptEndMs : startMs);
     }
-    cursorMs = arriveMs + dwellMin * 60000;
     if (hasCoords(stop)) cursorLoc = { lat: stop.lat, lng: stop.lng };
   }
   return cursorMs <= windowEndMs;

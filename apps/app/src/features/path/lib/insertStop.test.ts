@@ -36,6 +36,7 @@ function appt(
   lat: number,
   lng: number,
   startAt: string,
+  endAt: string | null = null,
 ): OrderedStop {
   return {
     id,
@@ -46,7 +47,7 @@ function appt(
     lat,
     lng,
     startAt,
-    endAt: null,
+    endAt,
     ageDays: null,
   };
 }
@@ -121,6 +122,33 @@ describe("insertStop", () => {
 
     expect(result).not.toBeNull();
     expect(ids(result!)).toEqual(["m", "c"]);
+  });
+
+  it("does not wedge a stop between two close appointments (models appointment occupancy, so a later appointment is never made late)", () => {
+    // Two appointments back-to-back: A holds 09:30-10:30, B starts 10:40.
+    // A and B sit next to the origin; the candidate is far. Inserting the
+    // candidate BEFORE A makes A late, and inserting it BETWEEN A and B would
+    // only look feasible under a naive flat-dwell model that ignores A's real
+    // occupancy through 10:30. Once A is modeled as held until its endAt, the
+    // only place the candidate can go is AFTER B.
+    const a = appt("a", 0, 0.007, "2026-08-10T09:30:00Z", "2026-08-10T10:30:00Z");
+    const b = appt("b", 0, 0.007, "2026-08-10T10:40:00Z");
+    const ordered = [a, b];
+    const candidate = flex("c", 0, 0.2); // far: ~27 min each way from origin
+    const opts: InsertStopOptions = {
+      origin: ORIGIN,
+      windowEndHour: 17,
+      now: "2026-08-10T09:00:00Z",
+    };
+
+    const result = insertStop(ordered, candidate, opts);
+
+    expect(result).not.toBeNull();
+    // The candidate must land after B (never between A and B).
+    expect(ids(result!)).toEqual(["a", "b", "c"]);
+    const idxC = ids(result!).indexOf("c");
+    const idxB = ids(result!).indexOf("b");
+    expect(idxC).toBeGreaterThan(idxB);
   });
 
   it("returns null when the candidate has no coordinates", () => {
