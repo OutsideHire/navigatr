@@ -928,7 +928,11 @@ export function PathPage() {
           )}
         </Card>
       ) : pathView === "entry" ? (
-        <>
+        // Own scroll region within the fixed-height shell: a long proposal +
+        // "Won't fit today" + no-location list must scroll HERE, not overflow the
+        // box and paint over the AppLayout footer below it (the "footer in the
+        // middle of the page" bug). Mirrors the discover view's scroll wrapper.
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
           {prevUnfinished.data && (
             <ResumePathCard
               pathDate={prevUnfinished.data.pathDate}
@@ -959,7 +963,7 @@ export function PathPage() {
           {/* Upcoming (future-dated planned) paths — launch navigates to /path,
               where the today-path/discover flow takes over. */}
           <UpcomingPaths onLaunch={() => navigate("/path")} />
-        </>
+        </div>
       ) : pathView === "path" ? (
         landing === "entry" ? (
           /* Planned / legacy (started_at null): the Stops overview only — no
