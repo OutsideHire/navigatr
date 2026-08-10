@@ -27,6 +27,7 @@
 
 import { nearestNeighborOrder, type LatLng } from "@/lib/distance";
 import { driveMinutesBetween } from "./driveTime";
+import { interleaveAroundAnchors } from "./interleaveAroundAnchors";
 
 // --- inputs ------------------------------------------------------------------
 
@@ -296,38 +297,10 @@ export function assembleTodaysPath(
   const order = nearestNeighborOrder(origin, selected.map((s) => ({ lat: s.lat, lng: s.lng })));
   const queue = order.map((i) => selected[i]!);
 
-  const proposal: OrderedStop[] = [];
-  let cursorMs = effectiveStartMs;
-  let cursorLoc: LatLng = origin;
-  let qi = 0;
-
-  for (const appt of anchors) {
-    const apptStartMs = parseMs(appt.startAt);
-    const apptLoc: LatLng | null = hasCoords(appt) ? { lat: appt.lat, lng: appt.lng } : null;
-    while (qi < queue.length) {
-      const stop = queue[qi]!;
-      const arriveMs = cursorMs + driveMinutesBetween(cursorLoc, { lat: stop.lat, lng: stop.lng }) * 60000;
-      const departMs = arriveMs + dwellMin * 60000;
-      const driveOnMin = apptLoc ? driveMinutesBetween({ lat: stop.lat, lng: stop.lng }, apptLoc) : 0;
-      const fitsBeforeAppt = Number.isNaN(apptStartMs)
-        ? true
-        : departMs + driveOnMin * 60000 <= apptStartMs;
-      if (!fitsBeforeAppt) break;
-      proposal.push(flexibleToOrdered(stop));
-      cursorMs = departMs;
-      cursorLoc = { lat: stop.lat, lng: stop.lng };
-      qi++;
-    }
-    proposal.push(appointmentToOrdered(appt));
-    const apptEndMs = appt.endAt ? parseMs(appt.endAt) : apptStartMs;
-    if (Number.isFinite(apptEndMs)) cursorMs = Math.max(cursorMs, apptEndMs);
-    if (apptLoc) cursorLoc = apptLoc;
-  }
-  // Remaining selected flexible stops go after the last anchor.
-  while (qi < queue.length) {
-    proposal.push(flexibleToOrdered(queue[qi]!));
-    qi++;
-  }
+  const interleaved = interleaveAroundAnchors(anchors, queue, { origin, dwellMin, effectiveStartMs });
+  const proposal: OrderedStop[] = interleaved.map((e) =>
+    e.kind === "anchor" ? appointmentToOrdered(e.item) : flexibleToOrdered(e.item),
+  );
 
   return { proposal, overflow, remainingMin, windowEndHour: window.endHour };
 }
