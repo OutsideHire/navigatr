@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { TodaysPathView } from "./TodaysPathView";
 import type { OrderedStop, FlexibleStop } from "../lib/todaysPath";
@@ -49,6 +49,7 @@ function renderView(props?: Partial<ComponentProps<typeof TodaysPathView>>) {
       isStarting={props?.isStarting}
       remainingMin={props?.remainingMin ?? 120}
       windowEndHour={props?.windowEndHour ?? 17}
+      origin={props?.origin ?? { lat: 30, lng: -97 }}
     />,
   );
 }
@@ -219,5 +220,70 @@ describe("TodaysPathView", () => {
     renderView({ proposal: [], overflow: [], onAddNearby });
     fireEvent.click(screen.getByRole("button", { name: /build my day/i }));
     expect(onAddNearby).toHaveBeenCalledTimes(1);
+  });
+
+  describe("one-tap 'Add more stops' (FR-PATH-UX-11 incremental insert)", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    // Freeze the clock so the component's captured `now` is deterministic and
+    // the insertStop feasibility math does not depend on when the suite runs.
+    // Fake only Date so React Testing Library timers are untouched.
+    function freezeAt(iso: string) {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(iso));
+    }
+
+    // No appointments, an origin next to the candidate, and a wide-open window:
+    // the overflow candidate has an obvious gap and folds into the plan.
+    const appointmentFreeProposal: OrderedStop[] = [
+      { id: "o1", kind: "flexible", tier: "past_due", name: "Owed Co", dealId: "d1", lat: 30.01, lng: -97.01, startAt: null, endAt: null, ageDays: 4 },
+    ];
+    const fittingOverflow: FlexibleStop[] = [
+      { id: "fit1", dealId: null, name: "Fits Co", lat: 30.0, lng: -97.0, tier: "nearby", ageDays: null },
+    ];
+
+    it("inserts the next candidate into the plan when it fits", () => {
+      freezeAt("2026-08-10T09:00:00Z");
+      renderView({
+        proposal: appointmentFreeProposal,
+        overflow: fittingOverflow,
+        origin: { lat: 30.0, lng: -97.0 },
+        windowEndHour: 17,
+      });
+
+      // Before the tap the candidate lives only in the "won't fit" list.
+      const beforeItems = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
+      expect(beforeItems.some((t) => t.includes("Fits Co"))).toBe(false);
+
+      fireEvent.click(screen.getByRole("button", { name: /add more stops/i }));
+
+      // Now it is a real stop in the plan (a list item), not just overflow.
+      const afterItems = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
+      expect(afterItems.some((t) => t.includes("Fits Co"))).toBe(true);
+      // The originally placed stop is still present (insertStop splices the
+      // candidate in without dropping the stop already placed).
+      expect(afterItems.some((t) => t.includes("Owed Co"))).toBe(true);
+    });
+
+    it("leaves the plan unchanged when the candidate cannot be placed", () => {
+      // windowEndHour == now's hour leaves zero minutes, so nothing new fits.
+      freezeAt("2026-08-10T17:00:00Z");
+      renderView({
+        proposal: appointmentFreeProposal,
+        overflow: fittingOverflow,
+        origin: { lat: 30.0, lng: -97.0 },
+        windowEndHour: 17,
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: /add more stops/i }));
+
+      // The candidate did not join the plan (still no matching list item).
+      const items = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
+      expect(items.some((t) => t.includes("Fits Co"))).toBe(false);
+      // The placed stop is untouched.
+      expect(screen.getByText("Owed Co")).toBeInTheDocument();
+    });
   });
 });

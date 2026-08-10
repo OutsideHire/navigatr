@@ -29,6 +29,7 @@ import type { TodaysPathStatus } from "../hooks/useTodaysPath";
 import { tierAccent } from "../lib/tierStyles";
 import { reasonLine } from "../lib/reasonLine";
 import { capacitySentence, fullDaySentence } from "../lib/dayCapacity";
+import { insertStop } from "../lib/insertStop";
 
 /** Below this many open minutes, no further stop can fit (a stop needs at least
  *  a minimum dwell). At/above it, capacity is stated; below it, the day is full. */
@@ -53,6 +54,8 @@ interface TodaysPathViewProps {
   remainingMin: number;
   /** Working-window close hour (0..24), for the full-day sentence. */
   windowEndHour: number;
+  /** Rep origin, for the one-tap incremental insert (FR-PATH-UX-11). */
+  origin: { lat: number; lng: number };
 }
 
 /** Local-tz clock time, e.g. "10:30 AM". */
@@ -70,6 +73,7 @@ export function TodaysPathView({
   isStarting = false,
   remainingMin,
   windowEndHour,
+  origin,
 }: TodaysPathViewProps) {
   // Local, pre-start removals: the rep can drop a flexible stop from the plan
   // before starting. Keyed by stop id; appointments can't be removed (they're
@@ -77,14 +81,54 @@ export function TodaysPathView({
   // untouched. This is a view-only override.
   const [removed, setRemoved] = React.useState<ReadonlySet<string>>(() => new Set());
 
+  // One-tap incremental insert (FR-PATH-UX-11): fold the next ranked overflow
+  // candidate into the day at the first position that still holds, WITHOUT
+  // rebuilding or re-sequencing the placed stops. `workingProposal` is the
+  // assembler's proposal plus any locally inserted stops; `poolCursor` walks the
+  // ranked overflow pool. Both reset whenever a real refetch delivers a fresh
+  // `proposal`, so local inserts never fight incoming data.
+  const [workingProposal, setWorkingProposal] = React.useState<OrderedStop[]>(proposal);
+  const [poolCursor, setPoolCursor] = React.useState(0);
+  // Captured once, so insertStop stays deterministic across taps (no Date.now()
+  // read mid-interaction).
+  const [now] = React.useState(() => new Date().toISOString());
+
+  React.useEffect(() => {
+    setWorkingProposal(proposal);
+    setPoolCursor(0);
+  }, [proposal]);
+
   const visibleProposal = React.useMemo(
-    () => proposal.filter((s) => !(s.kind === "flexible" && removed.has(s.id))),
-    [proposal, removed],
+    () => workingProposal.filter((s) => !(s.kind === "flexible" && removed.has(s.id))),
+    [workingProposal, removed],
+  );
+  // Ids already placed (assembler + any inserted) so an inserted candidate does
+  // not also linger in the "won't fit" list.
+  const placedIds = React.useMemo(
+    () => new Set(workingProposal.map((s) => s.id)),
+    [workingProposal],
   );
   const visibleOverflow = React.useMemo(
-    () => overflow.filter((s) => !removed.has(s.id)),
-    [overflow, removed],
+    () => overflow.filter((s) => !removed.has(s.id) && !placedIds.has(s.id)),
+    [overflow, removed, placedIds],
   );
+  // Whether there is still a ranked candidate to try folding in.
+  const canAddStop = poolCursor < overflow.length;
+
+  const handleAddStop = React.useCallback(() => {
+    const candidate = overflow[poolCursor];
+    if (!candidate) return;
+    const next = insertStop(workingProposal, candidate, {
+      origin,
+      dwellMin: 20,
+      windowEndHour,
+      now,
+    });
+    if (next) setWorkingProposal(next);
+    // Advance regardless: a null means this candidate has no gap today, so the
+    // next tap moves on to the next-ranked one rather than retrying a dead pick.
+    setPoolCursor((c) => c + 1);
+  }, [overflow, poolCursor, workingProposal, origin, windowEndHour, now]);
   const flexibleStops = React.useMemo(
     () => visibleProposal.filter((s) => s.kind === "flexible"),
     [visibleProposal],
@@ -240,6 +284,15 @@ export function TodaysPathView({
               <Button variant="secondary" size="sm" leadingIcon={Plus} onClick={onAddNearby}>
                 Add more nearby
               </Button>
+              {/* One-tap incremental insert: folds the next ranked candidate into
+                  its gap in place. Shown only while the pool still has a
+                  candidate to try; when it cannot place one the plan is left
+                  unchanged and the capacity/full-day sentence below still speaks. */}
+              {canAddStop && (
+                <Button variant="tertiary" size="sm" leadingIcon={Plus} onClick={handleAddStop}>
+                  Add more stops
+                </Button>
+              )}
             </div>
             <p className="text-caption text-text-subtle">
               {remainingMin < MIN_STOP_MIN

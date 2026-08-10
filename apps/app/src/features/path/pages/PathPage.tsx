@@ -890,6 +890,7 @@ export function PathPage() {
             isStarting={startingTodaysPath}
             remainingMin={todaysPath.remainingMin}
             windowEndHour={todaysPath.windowEndHour}
+            origin={origin}
           />
           {/* Upcoming (future-dated planned) paths — launch navigates to /path,
               where the today-path/discover flow takes over. */}
