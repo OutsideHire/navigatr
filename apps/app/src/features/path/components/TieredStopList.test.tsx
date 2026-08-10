@@ -9,11 +9,6 @@ const reasonRows: TieredStopRow[] = [
   { key: "c", tier: "nearby", name: "New Co", reason: "New. Nobody has been in." },
 ];
 
-// A legacy row with no reason still renders the old chip (backward compat).
-const legacyRows: TieredStopRow[] = [
-  { key: "d", tier: "past_due", name: "Legacy Co", ageDays: 5 },
-];
-
 describe("TieredStopList reason lines", () => {
   it("renders one reason line per row when reason is provided", () => {
     render(<TieredStopList rows={reasonRows} />);
@@ -32,9 +27,16 @@ describe("TieredStopList reason lines", () => {
     const aging = screen.getByText("You have not stopped by in 9 days.");
     expect(aging.className).toMatch(/status-warning/);
   });
-  it("still renders the legacy chip when a row has no reason (backward compat)", () => {
-    render(<TieredStopList rows={legacyRows} />);
-    expect(screen.getByText(/past due/i)).toBeInTheDocument();
-    expect(screen.getByText(/5d overdue/i)).toBeInTheDocument();
+  it("never renders tier chips, ages, or scores on any row (FR-PATH-UX-04)", () => {
+    const rows: TieredStopRow[] = [
+      { key: "a", tier: "appointment", name: "Appt", timeLabel: "3:00 PM", reason: "You have a 3:00 PM here." },
+      { key: "b", tier: "past_due", name: "Owed", reason: "You have not stopped by in 9 days.", aging: true },
+      { key: "c", tier: "due_today", name: "Due", reason: "You have not stopped by in 0 days." },
+      { key: "d", tier: "nearby", name: "New", reason: "New. Nobody has been in." },
+    ];
+    render(<TieredStopList rows={rows} />);
+    for (const forbidden of [/past due/i, /due today/i, /\bnearby\b/i, /\bappointment\b/i, /overdue/i, /from calendar/i, /\bscore\b/i, /\bmi\b/, /detour/i]) {
+      expect(screen.queryByText(forbidden)).not.toBeInTheDocument();
+    }
   });
 });

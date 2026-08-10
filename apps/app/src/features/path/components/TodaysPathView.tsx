@@ -3,17 +3,18 @@
  * "Today's Path" proposal.
  *
  * This is the primary Path landing when the rep has an origin and no active
- * path: a reviewable, tier-labeled plan for the day assembled by
- * `useTodaysPath` (SP-B1) from the pure `assembleTodaysPath` (SP-A). It is
- * RENDER + LOCAL-REVIEW only; it never routes, sorts, or gates (that all lives
- * in the assembler). The rep can:
- *   - see the proposal in run order, each stop labeled by tier (appointment,
- *     past-due, due-today, nearby-fill), with appointment times + overdue age;
+ * path: a reviewable day assembled by `useTodaysPath` (SP-B1) from the pure
+ * `assembleTodaysPath` (SP-A). It is RENDER + LOCAL-REVIEW only; it never
+ * routes, sorts, or gates (that all lives in the assembler). The rep can:
+ *   - see the proposal in run order, each stop showing one plain reason line
+ *     (no tier chips, scores, or overdue ages); appointment times sit beside
+ *     the name, and a "Why this order?" explainer describes the ordering;
  *   - REMOVE a flexible stop from the plan (local, pre-start);
  *   - "Add more nearby" to open the Find-near-me discovery;
- *   - "Start path", which hands the remaining FLEXIBLE stops back up to
- *     PathPage's existing create+start mechanism (appointments are calendar
- *     anchors shown in the plan, never created as merchant stops).
+ *   - the single hero action reads "Start driving", which hands the remaining
+ *     FLEXIBLE stops back up to PathPage's existing create+start mechanism
+ *     (appointments are calendar anchors shown in the plan, never created as
+ *     merchant stops). An empty day instead shows "Build my day".
  *
  * The overflow list ("Won't fit today") is read-only here; wiring carry-over is
  * SP-D.

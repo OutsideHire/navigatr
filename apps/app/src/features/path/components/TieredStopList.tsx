@@ -16,7 +16,7 @@ import { CalendarClock, MapPin } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { StopTier } from "../lib/todaysPath";
-import { tierAccent, tierChipLabel } from "../lib/tierStyles";
+import { tierAccent } from "../lib/tierStyles";
 
 export interface TieredStopRow {
   /** Stable React key. */
@@ -30,19 +30,15 @@ export interface TieredStopRow {
   detail?: React.ReactNode;
   /** Appointment clock time, right-aligned next to the name. */
   timeLabel?: string;
-  /** Past-due staleness; renders "Nd overdue" beside the chip. */
-  ageDays?: number | null;
   /** 1-based number shown in the default badge for numbered stops. When omitted
    *  (and no `badge` override), the tier icon shows instead. */
   index?: number;
   /** Full badge node replacing the default tier circle (native stops pass their
    *  status-colored badge here). */
   badge?: React.ReactNode;
-  /** Chip label override (e.g. "Ended" for a past appointment). */
-  chipOverride?: string;
-  /** One plain reason sentence (spec 6.1). When present, the row shows this
-   *  instead of the tier chip + overdue age. */
-  reason?: string;
+  /** One plain reason sentence (spec 6.1) shown under the name. Required: every
+   *  row renders this single line (no tier chips / overdue ages). */
+  reason: string;
   /** Warning-color the reason line (a place is aging). Colour is the only signal. */
   aging?: boolean;
   /** Dim the whole row (past / resolved). */
@@ -109,32 +105,14 @@ function Row({ row }: { row: TieredStopRow }) {
             <div className="mt-0.5 text-caption text-text-muted">{row.detail}</div>
           )}
 
-          {row.reason != null ? (
-            <p
-              className={cn(
-                "mt-0.5 text-caption",
-                row.aging ? "text-status-warning" : "text-text-muted",
-              )}
-            >
-              {row.reason}
-            </p>
-          ) : (
-            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              <span
-                className={cn(
-                  "inline-flex items-center rounded-radius-full px-2 py-0.5 text-caption font-medium",
-                  accent.chip,
-                )}
-              >
-                {row.chipOverride ?? tierChipLabel(row.tier, { external: row.external })}
-              </span>
-              {row.tier === "past_due" && row.ageDays != null && (
-                <span className="text-caption font-medium text-status-warning tabular-nums">
-                  {row.ageDays}d overdue
-                </span>
-              )}
-            </div>
-          )}
+          <p
+            className={cn(
+              "mt-0.5 text-caption",
+              row.aging ? "text-status-warning" : "text-text-muted",
+            )}
+          >
+            {row.reason}
+          </p>
         </div>
       </div>
 
