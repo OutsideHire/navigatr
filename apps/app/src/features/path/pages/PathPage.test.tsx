@@ -822,6 +822,39 @@ describe("PathPage handleStartTodaysPath (only nearby tier persists)", () => {
     expect(toastMock).not.toHaveBeenCalled();
     expect(toastMock.error).not.toHaveBeenCalled();
   });
+
+  it("starts an appointment-only day (no flexible stops) and enters the run view", async () => {
+    // A day with ONLY appointments has no flexible stops to persist, but the run
+    // view drives the appointments live (useDrivingSequence). Start must stamp
+    // started_at (start()) and flip to the running surface — not toast "nothing
+    // to start" and stay on the landing.
+    const appt = {
+      id: "appt-1", kind: "appointment", tier: "appointment", name: "Renewal review",
+      dealId: "deal-1", lat: 30.2, lng: -97.2,
+      startAt: "2026-08-10T17:30:00Z", endAt: "2026-08-10T18:00:00Z", ageDays: null,
+    };
+    todaysPathState.current = {
+      proposal: [appt] as unknown[],
+      overflow: [], noLocation: [], status: "ok", isLoading: false,
+    };
+    // start() stamps started_at so the view-transition + landing derive the run.
+    todayState.current.start = vi.fn(() => {
+      todayState.current.startedAt = "2026-08-10T17:00:00Z";
+    });
+
+    render(<PathPage />, { wrapper });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /start driving/i }));
+    });
+
+    // No merchant stops to persist; the day starts via start(), no false error.
+    expect(todayState.current.addMany).not.toHaveBeenCalled();
+    expect(todayState.current.start).toHaveBeenCalledTimes(1);
+    expect(toastMock).not.toHaveBeenCalled();
+    expect(toastMock.error).not.toHaveBeenCalled();
+    // The running surface is now on screen (started_at set, run tab).
+    await waitFor(() => expect(screen.getByTestId("running-path")).toBeInTheDocument());
+  });
 });
 
 describe("PathPage discover header — trimmed on mobile (Path QA C1)", () => {

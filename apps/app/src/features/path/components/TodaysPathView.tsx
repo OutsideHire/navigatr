@@ -224,15 +224,19 @@ export function TodaysPathView({
         <>
           {hasRoutable && (
           <>
-          {/* Hero Start: the rep's single most important daily action. Only when
-              there's at least one flexible (drivable) stop to create; a plan that
-              is all appointments has nothing to start as a merchant route. */}
-          {flexibleStops.length > 0 && (
+          {/* Hero Start: the rep's single most important daily action. Rendered
+              whenever the day has ANY stop (visibleProposal), so an
+              appointment-only day can still start the driving view (which drives
+              the appointments live). onStart still receives only the FLEXIBLE
+              stops — appointments are calendar anchors, never created as merchant
+              stops — so the flexible array may be empty on an appointment-only
+              day. The subline counts the whole drivable day. */}
+          {visibleProposal.length > 0 && (
             <button
               type="button"
               onClick={() => onStart(flexibleStops)}
               disabled={isStarting}
-              aria-label={`Start driving, ${flexibleStops.length} stop${flexibleStops.length === 1 ? "" : "s"}`}
+              aria-label={`Start driving, ${visibleProposal.length} stop${visibleProposal.length === 1 ? "" : "s"}`}
               className={cn(
                 "group flex w-full items-center gap-3 rounded-radius-lg px-4 py-3.5 text-left",
                 "bg-brand-primary text-brand-primary-foreground shadow-sm",
@@ -251,7 +255,7 @@ export function TodaysPathView({
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="text-body-lg font-semibold leading-tight">Start driving</span>
                 <span className="text-caption text-brand-primary-foreground/75">
-                  {flexibleStops.length} stop{flexibleStops.length === 1 ? "" : "s"} to run
+                  {visibleProposal.length} stop{visibleProposal.length === 1 ? "" : "s"} to run
                 </span>
               </span>
               <ArrowRight
@@ -278,6 +282,7 @@ export function TodaysPathView({
                 stop={stop}
                 index={i}
                 onRemove={stop.kind === "flexible" ? () => handleRemove(stop.id) : undefined}
+                onOpenDeal={onOpenDeal}
               />
             ))}
           </ol>
@@ -417,13 +422,20 @@ function ProposalRow({
   stop,
   index,
   onRemove,
+  onOpenDeal,
 }: {
   stop: OrderedStop;
   index: number;
   onRemove?: () => void;
+  /** Open the appointment's deal from the landing. */
+  onOpenDeal?: (dealId: string) => void;
 }) {
   const accent = tierAccent(stop.tier);
   const isAppointment = stop.tier === "appointment";
+  // Appointments with a linked deal get an "Open deal" action so the rep can
+  // reach the deal straight from the landing (external calendar meetings carry
+  // no dealId, so they show nothing). Flexible rows keep the remove control.
+  const appointmentDealId = isAppointment ? stop.dealId : null;
 
   return (
     <li
@@ -473,6 +485,18 @@ function ProposalRow({
           aria-label={`Remove ${stop.name}`}
           onClick={onRemove}
         />
+      )}
+
+      {appointmentDealId && onOpenDeal && (
+        <Button
+          variant="secondary"
+          size="sm"
+          leadingIcon={ExternalLink}
+          aria-label={`Open deal for ${stop.name}`}
+          onClick={() => onOpenDeal(appointmentDealId)}
+        >
+          Open deal
+        </Button>
       )}
     </li>
   );

@@ -209,13 +209,56 @@ describe("TodaysPathView", () => {
     expect(screen.queryByRole("button", { name: /start driving/i })).not.toBeInTheDocument();
   });
 
-  it("hides Start when the plan is all appointments (no flexible stops to run)", () => {
+  it("shows Start on an appointment-only plan and starts it with an empty flexible array", () => {
+    // A day with ONLY appointments (no owed/due/nearby flexible stops) must still
+    // offer the primary action: the run view drives the appointments live. Start
+    // hands back an empty flexible array (appointments are never created as stops).
+    const onStart = vi.fn();
     const apptOnly: OrderedStop[] = [proposal[1]!];
-    renderView({ proposal: apptOnly, overflow: [] });
+    renderView({ proposal: apptOnly, overflow: [], onStart });
     expect(screen.getByText("Renewal review")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /start driving/i })).not.toBeInTheDocument();
+    const start = screen.getByRole("button", { name: /start driving/i });
+    expect(start).toBeInTheDocument();
+    fireEvent.click(start);
+    expect(onStart).toHaveBeenCalledTimes(1);
+    expect(onStart.mock.calls[0]![0]).toEqual([]);
     // Add more nearby is still available so the rep can fill an empty run.
     expect(screen.getByRole("button", { name: /add more nearby/i })).toBeInTheDocument();
+  });
+
+  it("an appointment row with a dealId exposes an Open-deal control that opens the deal", () => {
+    const onOpenDeal = vi.fn();
+    renderView({ onOpenDeal });
+    const items = screen.getAllByRole("listitem");
+    const apptRow = items.find((li) => (li.textContent ?? "").includes("Renewal review"))!;
+    // The appointment (dealId "d2") shows Open deal; clicking opens that deal.
+    const openBtn = within(apptRow).getByRole("button", { name: /open deal/i });
+    fireEvent.click(openBtn);
+    expect(onOpenDeal).toHaveBeenCalledWith("d2");
+    // The calendar anchor is still not removable.
+    expect(within(apptRow).queryByRole("button", { name: /remove renewal review/i })).not.toBeInTheDocument();
+  });
+
+  it("an external appointment (no dealId) shows no Open-deal control", () => {
+    const external: OrderedStop[] = [
+      {
+        id: "ext1", kind: "external", tier: "appointment", name: "Team offsite",
+        dealId: null, lat: 30.2, lng: -97.2,
+        startAt: "2026-08-09T18:00:00Z", endAt: "2026-08-09T19:00:00Z", ageDays: null,
+      },
+    ];
+    renderView({ proposal: external, overflow: [] });
+    const apptRow = screen.getByText("Team offsite").closest("li")!;
+    expect(within(apptRow).queryByRole("button", { name: /open deal/i })).not.toBeInTheDocument();
+  });
+
+  it("flexible rows keep the Remove control and never show Open-deal", () => {
+    renderView();
+    const items = screen.getAllByRole("listitem");
+    const owedRow = items.find((li) => (li.textContent ?? "").includes("Owed Co"))!;
+    // Flexible stop: removable, and no Open-deal even though it carries a dealId.
+    expect(within(owedRow).getByRole("button", { name: /remove owed co/i })).toBeInTheDocument();
+    expect(within(owedRow).queryByRole("button", { name: /open deal/i })).not.toBeInTheDocument();
   });
 
   it("shows a non-blocking reconnect notice but still renders the plan when status is needs_reconnect", () => {

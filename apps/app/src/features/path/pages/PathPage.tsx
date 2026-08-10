@@ -274,7 +274,16 @@ export function PathPage() {
   React.useEffect(() => {
     setPathView((v) => {
       if (v === "discover") return v;
-      if (queueStops.length === 0) return "entry";
+      if (queueStops.length === 0) {
+        // No persisted merchant stops. Normally the entry landing. BUT an
+        // appointment-only (or live-tier-only) day has nothing to persist yet is
+        // still a real day the rep can run — the driving view reads appointments
+        // / owed / due-today live (useDrivingSequence). So once such a day has
+        // been explicitly started (started_at stamped by handleStartTodaysPath,
+        // which also sets pathView "path"), keep the current view rather than
+        // yanking the rep back to the landing.
+        return startedAt ? v : "entry";
+      }
       // Stops exist:
       //  - startedAt null (Planned / legacy) → the overview ("path" w/ Stops), no
       //    auto-jump into a run.
@@ -723,23 +732,23 @@ export function PathPage() {
             primaryType: m?.primaryType ?? null,
           };
         });
-      // A day with owed / due-today work but no nearby stop has nothing to persist
-      // as a path_stop, yet it is still a meaningful day. Stamp started_at (via
-      // start()) rather than blocking the rep with a false "nothing to start"
-      // error, so the run surface lights up for those live tiers as SP-C2/C3 land.
-      // Only truly-empty days (no nearby AND no live tiers) keep the gentle guard.
+      // A day with owed / due-today work OR appointments but no nearby stop has
+      // nothing to persist as a path_stop, yet it is still a meaningful day: the
+      // driving view reads appointments / owed / due-today live (useDrivingSequence),
+      // so it does not need persisted merchant stops. Stamp started_at (via
+      // start()) and flip to the running surface rather than blocking the rep with
+      // a false "nothing to start". The hero Start only renders when the day has at
+      // least one stop, so reaching here always means there is something to drive.
       if (snapshots.length === 0) {
-        const hasLiveTiers = flexibleStops.some(
-          (s) => s.kind === "flexible" && (s.tier === "past_due" || s.tier === "due_today"),
-        );
-        if (!hasLiveTiers) {
-          toast("Nothing to start yet. Add a nearby stop first.");
-          return;
-        }
         setStartingTodaysPath(true);
         try {
           finalizePrevious();
           await todayPath.start();
+          // No queueStops to trigger the view-transition effect, so drive the
+          // view directly to the running surface (the effect preserves it once
+          // started_at is stamped).
+          setPathView("path");
+          setActiveTab("run");
         } catch {
           toast.error("Couldn't start the path. Please try again.");
         } finally {
