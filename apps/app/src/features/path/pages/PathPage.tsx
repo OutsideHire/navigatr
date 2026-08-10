@@ -79,6 +79,8 @@ import type { OrderedStop } from "../lib/todaysPath";
 import { OwedVisitsList, type OwedVisitRow } from "../components/OwedVisitsList";
 import type { OwedVisit } from "../lib/owedVisits";
 import { useTaskMutations } from "@/features/activities/hooks/useTaskMutations";
+import { usePathPreferences } from "../hooks/usePathPreferences";
+import { selectedCategories } from "../lib/industrySelection";
 
 // Phase 2: discovered prospects are all cold leads, so the old deal-lifecycle
 // status chips (prospect/active/won/cooled) don't apply. Filter by business
@@ -124,6 +126,26 @@ export function PathPage() {
   // (fetch every bucket); otherwise the selected categories scope the ingest.
   const [ingestIndustries, setIngestIndustries] = React.useState<MerchantCategory[]>([]);
   const [ingestAllIndustries, setIngestAllIndustries] = React.useState(false);
+  // Seed the discover ingest from the rep's saved default industries so the first
+  // browse fetch scopes to what they actually work, not an empty set. Runs ONCE,
+  // the first time the preference query resolves (guarded by a ref) so a later
+  // refetch OR a rep's in-session edit via the CreatePathWizard
+  // (onIndustriesChange / onAllIndustriesChange) is never clobbered. With saved
+  // industries → those categories (allIndustries false); with none saved → all
+  // industries, matching the in-view chip filter which already defaults to "All".
+  const { data: pathPrefs } = usePathPreferences();
+  const industriesSeededRef = React.useRef(false);
+  React.useEffect(() => {
+    if (industriesSeededRef.current || !pathPrefs) return;
+    industriesSeededRef.current = true;
+    const saved = selectedCategories(pathPrefs);
+    if (saved.length > 0) {
+      setIngestIndustries(saved);
+      setIngestAllIndustries(false);
+    } else {
+      setIngestAllIndustries(true);
+    }
+  }, [pathPrefs]);
   // Results count — how many nearby businesses the discovery fetch returns/shows
   // (the pool size, NOT the stop cap). Default 25, clamped to [1, 50] in the hook.
   const [discoverLimit, setDiscoverLimit] = React.useState(25);
@@ -737,11 +759,17 @@ export function PathPage() {
               (pathView "path") they stay hidden too. */}
           {pathView === "discover" && (
             <>
+              {/* "Plan a new area" is the rarely-used secondary action here. On
+                  mobile the discover header is crowded, so hide it below md (it
+                  stays on desktop, and is also reachable from the entry-view "+"
+                  overflow). Primary "Start a path" + the location control + the
+                  settings gear stay visible on every breakpoint. */}
               <Button
                 variant="tertiary"
                 size="sm"
                 leadingIcon={MapPinned}
                 onClick={() => setPlanOpen(true)}
+                className="hidden md:inline-flex"
               >
                 Plan a new area
               </Button>

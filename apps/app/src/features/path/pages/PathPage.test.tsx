@@ -175,6 +175,18 @@ const calendarState = {
 vi.mock("../hooks/useCalendarEvents", () => ({
   useCalendarEvents: () => calendarState.current,
 }));
+
+// Saved default industries (usePathPreferences). Controllable per test so we can
+// assert PathPage seeds the discover ingest from the rep's saved set (or falls
+// back to "all" when none are saved). Default: undefined (still loading) so the
+// existing tests never see a seed and behave exactly as before.
+import type { IndustrySelection } from "../lib/industrySelection";
+const pathPrefsState = { current: { data: undefined as IndustrySelection | undefined } };
+vi.mock("../hooks/usePathPreferences", () => ({
+  usePathPreferences: () => pathPrefsState.current,
+  // PathSettings (rendered by PathPage) also pulls the update mutation from here.
+  useUpdateDefaultIndustries: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
 vi.mock("../hooks/useGeolocation", () => ({
   useGeolocation: () => ({ coords: null, status: "denied", error: null, retry: vi.fn() }),
 }));
@@ -212,6 +224,7 @@ beforeEach(() => {
     waypoints: [], timeBlocks: [], status: "not_connected",
     isLoading: false, isError: false, refetch: vi.fn(),
   };
+  pathPrefsState.current = { data: undefined };
 });
 
 describe("PathPage location states", () => {
@@ -805,5 +818,95 @@ describe("PathPage handleStartTodaysPath (only nearby tier persists)", () => {
     expect(todayState.current.start).toHaveBeenCalledTimes(1);
     expect(toastMock).not.toHaveBeenCalled();
     expect(toastMock.error).not.toHaveBeenCalled();
+  });
+});
+
+describe("PathPage discover header — trimmed on mobile (Path QA C1)", () => {
+  const readyOrigin: PathOrigin = {
+    ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
+  };
+  // A live geocoded merchant + an active path so "Add stops" enters discover.
+  const liveMerchant = [
+    { id: "x", name: "Xray", address: "9 X St", phone: null, lat: 30.04, lng: -97.04, category: "retail", primaryType: null },
+  ] as unknown as typeof merchantsState.current.merchants;
+
+  function enterDiscover() {
+    render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /add stops/i }));
+  }
+
+  beforeEach(() => {
+    originState.current = readyOrigin;
+    merchantsState.current = { merchants: liveMerchant, isLoading: false, isError: false, refetch: vi.fn() } as typeof merchantsState.current;
+    todayState.current = {
+      ...todayState.current,
+      stops: [
+        { merchantId: "a", name: "Alpha", address: "1 A St", lat: 30.05, lng: -97.05, category: "retail", status: "pending" },
+      ] as unknown as typeof todayState.current.stops,
+    };
+  });
+
+  it("hides 'Plan a new area' on mobile via a responsive class, keeping it inline at md+", () => {
+    enterDiscover();
+    const plan = screen.getByRole("button", { name: /^plan a new area$/i });
+    // hidden below md, re-shown as inline-flex at md+ (desktop unchanged).
+    expect(plan).toHaveClass("hidden");
+    expect(plan).toHaveClass("md:inline-flex");
+  });
+
+  it("keeps the primary 'Start a path', the location control, and settings visible on discover", () => {
+    enterDiscover();
+    // Start a path (primary) is NOT gated behind the mobile-hide.
+    const start = screen.getByRole("button", { name: /^start a path$/i });
+    expect(start).not.toHaveClass("hidden");
+    // Re-center / Use my location remains present.
+    expect(screen.getByRole("button", { name: /re-center|use my location/i })).toBeInTheDocument();
+    // Settings gear remains present.
+    expect(screen.getByRole("button", { name: /path settings/i })).toBeInTheDocument();
+  });
+});
+
+describe("PathPage discover industries — seeded from saved prefs (Path QA C2)", () => {
+  const readyOrigin: PathOrigin = {
+    ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
+  };
+
+  beforeEach(() => {
+    originState.current = readyOrigin;
+  });
+
+  // PathPage's OWN discover browse fetch is the only useMerchants call that omits
+  // `fillToLimit` (the Create + Plan wizard fetches always pass it). Selecting the
+  // latest such call isolates the ingest that ingestIndustries/ingestAllIndustries
+  // drive, so we don't false-match PlanPathWizard's independent RECOMMENDED fetch.
+  type IngestOpts = { industries?: string[]; allIndustries?: boolean; fillToLimit?: boolean };
+  const latestBrowseOpts = (): IngestOpts | undefined => {
+    const browse = useMerchantsSpy.mock.calls
+      .map((call) => call[1] as IngestOpts | undefined)
+      .filter((opts): opts is IngestOpts => !!opts && !("fillToLimit" in opts));
+    return browse[browse.length - 1];
+  };
+
+  it("seeds the browse fetch from the rep's saved default industries (allIndustries false)", async () => {
+    // Saved set: retail + healthcare fully selected. Discover must fetch those
+    // buckets, not an empty industry list.
+    pathPrefsState.current = {
+      data: { retail: ["convenience_store"], healthcare: ["dentist"] } as IndustrySelection,
+    };
+    render(<PathPage />, { wrapper });
+    await waitFor(() => {
+      const opts = latestBrowseOpts();
+      expect(opts?.allIndustries).toBe(false);
+      expect(opts?.industries).toEqual(expect.arrayContaining(["retail", "healthcare"]));
+    });
+  });
+
+  it("defaults the browse fetch to all industries when the rep has no saved set", async () => {
+    // Empty saved selection → allIndustries true (matches the in-view "All" chip).
+    pathPrefsState.current = { data: {} as IndustrySelection };
+    render(<PathPage />, { wrapper });
+    await waitFor(() => {
+      expect(latestBrowseOpts()?.allIndustries).toBe(true);
+    });
   });
 });
