@@ -28,6 +28,11 @@ import type { OrderedStop, FlexibleStop } from "../lib/todaysPath";
 import type { TodaysPathStatus } from "../hooks/useTodaysPath";
 import { tierAccent } from "../lib/tierStyles";
 import { reasonLine } from "../lib/reasonLine";
+import { capacitySentence, fullDaySentence } from "../lib/dayCapacity";
+
+/** Below this many open minutes, no further stop can fit (a stop needs at least
+ *  a minimum dwell). At/above it, capacity is stated; below it, the day is full. */
+const MIN_STOP_MIN = 20;
 
 interface TodaysPathViewProps {
   /** Ordered run list (appointments interleaved with flexible stops) from useTodaysPath. */
@@ -44,6 +49,10 @@ interface TodaysPathViewProps {
   onAddNearby: () => void;
   /** True while the create+start round-trip is in flight. */
   isStarting?: boolean;
+  /** Budget minutes still open, for the capacity sentence (FR-PATH-UX-10). */
+  remainingMin: number;
+  /** Working-window close hour (0..24), for the full-day sentence. */
+  windowEndHour: number;
 }
 
 /** Local-tz clock time, e.g. "10:30 AM". */
@@ -59,6 +68,8 @@ export function TodaysPathView({
   onStart,
   onAddNearby,
   isStarting = false,
+  remainingMin,
+  windowEndHour,
 }: TodaysPathViewProps) {
   // Local, pre-start removals: the rep can drop a flexible stop from the plan
   // before starting. Keyed by stop id; appointments can't be removed (they're
@@ -220,10 +231,21 @@ export function TodaysPathView({
             </p>
           )}
 
-          <div className="flex items-center justify-between gap-2">
-            <Button variant="secondary" size="sm" leadingIcon={Plus} onClick={onAddNearby}>
-              Add more nearby
-            </Button>
+          {/* "+ Add more stops" affordance with a plain remaining-capacity
+              subtitle. When nothing more fits, the subtitle is REPLACED by a
+              static full-day sentence rather than disabling the button
+              (FR-PATH-UX-10). */}
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between gap-2">
+              <Button variant="secondary" size="sm" leadingIcon={Plus} onClick={onAddNearby}>
+                Add more nearby
+              </Button>
+            </div>
+            <p className="text-caption text-text-subtle">
+              {remainingMin < MIN_STOP_MIN
+                ? fullDaySentence(windowEndHour)
+                : capacitySentence(remainingMin)}
+            </p>
           </div>
 
           {/* Overflow: stops that did not fit today. Read-only, and no explicit

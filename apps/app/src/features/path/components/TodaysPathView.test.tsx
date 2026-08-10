@@ -47,6 +47,8 @@ function renderView(props?: Partial<ComponentProps<typeof TodaysPathView>>) {
       onStart={props?.onStart ?? vi.fn()}
       onAddNearby={props?.onAddNearby ?? vi.fn()}
       isStarting={props?.isStarting}
+      remainingMin={props?.remainingMin ?? 120}
+      windowEndHour={props?.windowEndHour ?? 17}
     />,
   );
 }
@@ -196,6 +198,20 @@ describe("TodaysPathView", () => {
     ] as OrderedStop[];
     renderView({ proposal, overflow: [] });
     expect(screen.queryByText(/added in your open time/i)).not.toBeInTheDocument();
+  });
+
+  it("states the remaining capacity in plain terms when more stops still fit", () => {
+    renderView({ remainingMin: 50, windowEndHour: 18 });
+    expect(screen.getByText(/about 50 minutes still open/i)).toBeInTheDocument();
+    expect(screen.queryByText(/that's a full day/i)).not.toBeInTheDocument();
+  });
+
+  it("replaces the capacity line with a full-day sentence when nothing else fits", () => {
+    renderView({ remainingMin: 5, windowEndHour: 18 });
+    expect(
+      screen.getByText(/that's a full day, nothing else fits before 6:00/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/about .* still open/i)).not.toBeInTheDocument();
   });
 
   it("empty day offers a single 'Build my day' action", () => {

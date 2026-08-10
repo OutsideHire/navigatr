@@ -74,6 +74,20 @@ describe("assembleTodaysPath", () => {
     expect(r.overflow).toEqual([]);
   });
 
+  it("exposes remaining capacity and the working-window end hour", () => {
+    // Empty day at 09:00 in the default 09..17 window: the whole 480min budget
+    // is still open and the window closes at hour 17.
+    const r = assembleTodaysPath(base(), NOW);
+    expect(typeof r.remainingMin).toBe("number");
+    expect(r.remainingMin).toBe(480);
+    expect(r.windowEndHour).toBe(17);
+  });
+
+  it("returns the configured window end hour when a dayWindow is given", () => {
+    const r = assembleTodaysPath(base({ dayWindow: { startHour: 9, endHour: 18 } }), NOW);
+    expect(r.windowEndHour).toBe(18);
+  });
+
   it("always includes appointments, ordered ascending by startAt", () => {
     const later = appt({ id: "late", startAt: "2026-08-09T15:00:00.000Z", endAt: "2026-08-09T15:30:00.000Z" });
     const earlier = appt({ id: "early", startAt: "2026-08-09T10:00:00.000Z", endAt: "2026-08-09T10:30:00.000Z" });

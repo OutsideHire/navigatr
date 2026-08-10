@@ -131,6 +131,11 @@ export interface TodaysPathResult {
   proposal: OrderedStop[];
   /** Flexible candidates that did not fit, in strict priority order, for carry-over. */
   overflow: FlexibleStop[];
+  /** Budget minutes still open after the greedy selection. Raw (unrounded); the
+   *  UI capacity sentence rounds it for display (FR-PATH-UX-10). */
+  remainingMin: number;
+  /** The working-window close hour (0..24) so the UI can say "before 6:00". */
+  windowEndHour: number;
 }
 
 // --- helpers -----------------------------------------------------------------
@@ -324,5 +329,5 @@ export function assembleTodaysPath(
     qi++;
   }
 
-  return { proposal, overflow };
+  return { proposal, overflow, remainingMin, windowEndHour: window.endHour };
 }

@@ -869,6 +869,8 @@ export function PathPage() {
             onStart={handleStartTodaysPath}
             onAddNearby={enterDiscover}
             isStarting={startingTodaysPath}
+            remainingMin={todaysPath.remainingMin}
+            windowEndHour={todaysPath.windowEndHour}
           />
           {/* Demoted secondary: build a custom day by hand (Create / Plan), no
               longer the primary content now that the proposal leads. */}

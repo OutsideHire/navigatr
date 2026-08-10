@@ -51,9 +51,17 @@ export type TodaysPathStatus = "ok" | "no_origin" | "needs_reconnect";
 export interface UseTodaysPathResult {
   proposal: OrderedStop[];
   overflow: FlexibleStop[];
+  /** Budget minutes still open, for the capacity sentence (FR-PATH-UX-10). */
+  remainingMin: number;
+  /** Working-window close hour (0..24), for the full-day sentence. */
+  windowEndHour: number;
   status: TodaysPathStatus;
   isLoading: boolean;
 }
+
+/** Default window close hour when no origin/plan is assembled yet. Mirrors the
+ *  assembler's DEFAULT_WINDOW.endHour so the UI reads a sensible time. */
+const DEFAULT_WINDOW_END_HOUR = 17;
 
 const MS_PER_DAY = 86_400_000;
 
@@ -111,7 +119,14 @@ export function useTodaysPath(
 
     // With no origin the assembler has nothing to route from; return empty.
     if (origin == null) {
-      return { proposal: [], overflow: [], status, isLoading: false };
+      return {
+        proposal: [],
+        overflow: [],
+        remainingMin: 0,
+        windowEndHour: DEFAULT_WINDOW_END_HOUR,
+        status,
+        isLoading: false,
+      };
     }
 
     const nowMs = Date.parse(now);
@@ -170,11 +185,11 @@ export function useTodaysPath(
       dealId: null,
     }));
 
-    const { proposal, overflow } = assembleTodaysPath(
+    const { proposal, overflow, remainingMin, windowEndHour } = assembleTodaysPath(
       { appointments, owed: owedCandidates, dueToday, nearbyPool, origin },
       now,
     );
 
-    return { proposal, overflow, status, isLoading };
+    return { proposal, overflow, remainingMin, windowEndHour, status, isLoading };
   }, [origin, now, pathDate, meetings.stops, meetings.status, meetings.isLoading, owed.owed, owed.isLoading, dueTodayVisits.dueToday, dueTodayVisits.isLoading, nearby.merchants, nearby.isLoading]);
 }
