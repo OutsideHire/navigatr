@@ -35,6 +35,7 @@ import {
 import type { Merchant } from "../mockData";
 import { useTodayPath } from "../hooks/useTodayPath";
 import { PATH_DISPOSITION_KEYS } from "../lib/pathDispositions";
+import { repOutcomeLabel, repOutcomeSubtitle } from "../lib/outcomeRepLabels";
 import { todayISO } from "../lib/today";
 import { useCreateDeal, DuplicateDealError } from "@/features/pipeline/hooks/useCreateDeal";
 import { useLogActivity } from "@/features/activities/hooks/useLogActivity";
@@ -158,7 +159,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
         }
       }
     } else {
-      toast.success(`Visit logged: ${DISPOSITIONS[disposition].label}`);
+      toast.success(`Visit logged: ${repOutcomeLabel(disposition)}`);
     }
     setSaving(false);
     savingRef.current = false;
@@ -214,8 +215,8 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
                 <DispositionTile
                   key={key}
                   tier={DISPOSITIONS[key].tier}
-                  title={DISPOSITIONS[key].label}
-                  description={DISPOSITIONS[key].rationale}
+                  title={repOutcomeLabel(key)}
+                  description={repOutcomeSubtitle(key)}
                   selected={selected === key}
                   onClick={() => setSelected(key)}
                 />

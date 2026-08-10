@@ -35,6 +35,7 @@ import { useDeleteActivity } from "../hooks/useDeleteActivity";
 import { useProfile } from "@/features/auth/useProfile";
 import type { Activity } from "../mockData";
 import { DISPOSITIONS_BY_TYPE, DISPOSITION_VALUES } from "../lib/dispositionSets";
+import { repOutcomeLabel, repOutcomeSubtitle } from "@/features/path/lib/outcomeRepLabels";
 
 const emptyToUndefined = (v: unknown) =>
   v === "" || v === null || v === undefined ? undefined : v;
@@ -247,8 +248,8 @@ export function EditActivitySheet({ open, onOpenChange, activity }: EditActivity
                           <DispositionTile
                             key={d}
                             tier={spec.tier}
-                            title={spec.label}
-                            description={spec.rationale}
+                            title={repOutcomeLabel(d)}
+                            description={repOutcomeSubtitle(d)}
                             selected={field.value === d}
                             onClick={() => field.onChange(d)}
                           />

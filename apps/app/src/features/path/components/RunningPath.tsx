@@ -16,6 +16,7 @@ import { usePathMutations } from "../hooks/usePathMutations";
 import { useLiveDayTiers } from "../hooks/useLiveDayTiers";
 import { todayISO } from "../lib/today";
 import { DISPOSITIONS, type Disposition } from "@/lib/followUpScheduling";
+import { repOutcomeLabel } from "../lib/outcomeRepLabels";
 import { firstPendingIndex } from "../lib/pathTypes";
 
 export interface RunningPathProps {
@@ -167,7 +168,7 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit, runOverla
     if (anyPending !== -1) setIndex(anyPending);
   };
   const handleLogged = (d: Disposition) => {
-    toast(`Logged: ${DISPOSITIONS[d].label}`, {
+    toast(`Logged: ${repOutcomeLabel(d)}`, {
       action: { label: "Undo", onClick: () => { void setStatus(cur.merchantId, "pending"); } },
     });
     advance();
@@ -258,7 +259,7 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit, runOverla
           </a>
         </div>
         {cur.status !== "pending" && cur.disposition && (
-          <span className="text-caption text-text-muted">✓ Logged: {DISPOSITIONS[cur.disposition as Disposition]?.label ?? cur.disposition}</span>
+          <span className="text-caption text-text-muted">✓ Logged: {DISPOSITIONS[cur.disposition as Disposition] ? repOutcomeLabel(cur.disposition as Disposition) : cur.disposition}</span>
         )}
         {cur.status !== "pending" && cur.notes && (
           <p className="text-caption italic text-text-muted">“{cur.notes}”</p>

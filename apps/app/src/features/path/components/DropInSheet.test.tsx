@@ -107,11 +107,18 @@ describe("DropInSheet", () => {
     stops = [];
   });
 
-  it("renders the 10 tiles, a Log Stop button, and no Save/contact-name field", () => {
+  it("renders the 10 tiles with casual rep labels (no formal labels, no intervals), a Log Stop button, and no Save/contact-name field", () => {
     renderSheet();
-    expect(screen.getByText("Statement Secured")).toBeInTheDocument();
-    expect(screen.getByText("Highest urgency. 1 day.")).toBeInTheDocument();
-    expect(screen.getByText("Wrong Person")).toBeInTheDocument();
+    // Casual rep-facing labels replace the formal DISPOSITIONS labels here.
+    expect(screen.getByText("Got statements")).toBeInTheDocument();
+    expect(screen.getByText("Best case")).toBeInTheDocument();
+    expect(screen.getByText("Met the owner")).toBeInTheDocument();
+    expect(screen.getByText("Wrong place")).toBeInTheDocument();
+    // The formal manager-facing labels must NOT show on the rep logging grid.
+    expect(screen.queryByText("Statement Secured")).not.toBeInTheDocument();
+    expect(screen.queryByText("Connected with DM")).not.toBeInTheDocument();
+    // Interval / day-count subtitles are hidden on the rep logging grid.
+    expect(screen.queryByText(/\b\d+\s*days?\b/i)).not.toBeInTheDocument();
     expect(logStopBtn()).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^save$/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/contact name/i)).not.toBeInTheDocument();
@@ -127,7 +134,7 @@ describe("DropInSheet", () => {
   it("tapping a tile selects it but does NOT commit", () => {
     const onLogged = vi.fn();
     renderSheet({ onLogged });
-    fireEvent.click(screen.getByText("Statement Secured"));
+    fireEvent.click(screen.getByText("Got statements"));
     expect(logVisit).not.toHaveBeenCalled();
     expect(createDealMutateAsync).not.toHaveBeenCalled();
     expect(onLogged).not.toHaveBeenCalled();
@@ -137,14 +144,14 @@ describe("DropInSheet", () => {
   it("Log Stop is disabled with no selection and enabled after selecting", () => {
     renderSheet();
     expect(logStopBtn()).toBeDisabled();
-    fireEvent.click(screen.getByText("Not Interested"));
+    fireEvent.click(screen.getByText("Not interested"));
     expect(logStopBtn()).toBeEnabled();
   });
 
   it("terminal disposition + Log Stop logs the visit only, then closes", async () => {
     const onLogged = vi.fn();
     renderSheet({ onLogged });
-    fireEvent.click(screen.getByText("Not Interested"));
+    fireEvent.click(screen.getByText("Not interested"));
     await act(async () => { fireEvent.click(logStopBtn()); });
     expect(logVisit).toHaveBeenCalledWith("m-1", "not_interested", "");
     expect(createDealMutateAsync).not.toHaveBeenCalled();
@@ -156,7 +163,7 @@ describe("DropInSheet", () => {
 
   it("follow-up disposition + Log Stop creates deal + activity (voiceNoteUrl null)", async () => {
     renderSheet();
-    fireEvent.click(screen.getByText("Statement Secured"));
+    fireEvent.click(screen.getByText("Got statements"));
     await act(async () => { fireEvent.click(logStopBtn()); });
     expect(logVisit).toHaveBeenCalledWith("m-1", "statement_secured", "");
     expect(createDealMutateAsync).toHaveBeenCalledWith(
@@ -182,7 +189,7 @@ describe("DropInSheet", () => {
 
   it("Follow-Up Requested: date picker shows; Log Stop commits with the chosen date", async () => {
     renderSheet();
-    fireEvent.click(screen.getByText("Follow-Up Requested"));
+    fireEvent.click(screen.getByText("They asked me back"));
     const dateInput = screen.getByLabelText(/follow-up date/i);
     fireEvent.change(dateInput, { target: { value: "2026-06-20" } });
     await act(async () => { fireEvent.click(logStopBtn()); });
@@ -198,7 +205,7 @@ describe("DropInSheet", () => {
 
   it("Follow-Up Requested: Log Stop is disabled when the date is cleared", () => {
     renderSheet();
-    fireEvent.click(screen.getByText("Follow-Up Requested"));
+    fireEvent.click(screen.getByText("They asked me back"));
     fireEvent.change(screen.getByLabelText(/follow-up date/i), { target: { value: "" } });
     expect(logStopBtn()).toBeDisabled();
   });
@@ -206,7 +213,7 @@ describe("DropInSheet", () => {
   it("skips deal creation when the stop already has a deal", async () => {
     stops = [{ merchantId: "m-1", dealCreated: true }];
     renderSheet();
-    fireEvent.click(screen.getByText("Statement Secured"));
+    fireEvent.click(screen.getByText("Got statements"));
     await act(async () => { fireEvent.click(logStopBtn()); });
     await waitFor(() => expect(logVisit).toHaveBeenCalledWith("m-1", "statement_secured", ""));
     expect(createDealMutateAsync).not.toHaveBeenCalled();
@@ -216,7 +223,7 @@ describe("DropInSheet", () => {
 
   it("guards against double-submit: rapid Log Stop clicks log the visit once", async () => {
     renderSheet();
-    fireEvent.click(screen.getByText("Statement Secured"));
+    fireEvent.click(screen.getByText("Got statements"));
     const btn = logStopBtn();
     await act(async () => { fireEvent.click(btn); fireEvent.click(btn); });
     expect(logVisit).toHaveBeenCalledTimes(1);
@@ -226,7 +233,7 @@ describe("DropInSheet", () => {
     logActivityMutateAsync.mockRejectedValueOnce(new Error("boom"));
     const onLogged = vi.fn();
     renderSheet({ onLogged });
-    fireEvent.click(screen.getByText("Statement Secured"));
+    fireEvent.click(screen.getByText("Got statements"));
     await act(async () => { fireEvent.click(logStopBtn()); });
     expect(toast.error).toHaveBeenCalled();
     expect(markDealCreated).not.toHaveBeenCalled();
@@ -238,7 +245,7 @@ describe("DropInSheet", () => {
     logVisit.mockRejectedValueOnce(new Error("net"));
     const onLogged = vi.fn();
     renderSheet({ onLogged });
-    fireEvent.click(screen.getByText("Not Interested"));
+    fireEvent.click(screen.getByText("Not interested"));
     await act(async () => { fireEvent.click(logStopBtn()); });
     expect(toast.error).toHaveBeenCalled();
     expect(onLogged).not.toHaveBeenCalled();
@@ -249,7 +256,7 @@ describe("DropInSheet", () => {
     createDealMutateAsync.mockRejectedValueOnce(new DuplicateDealError());
     const onLogged = vi.fn();
     renderSheet({ onLogged });
-    fireEvent.click(screen.getByText("Statement Secured"));
+    fireEvent.click(screen.getByText("Got statements"));
     await act(async () => { fireEvent.click(logStopBtn()); });
     expect(logVisit).toHaveBeenCalledWith("m-1", "statement_secured", "");
     expect(toast.info).toHaveBeenCalledWith(
@@ -263,7 +270,7 @@ describe("DropInSheet", () => {
 
   it("with no note typed, logs the drop-in activity with empty outcome notes", async () => {
     renderSheet();
-    fireEvent.click(screen.getByText("Statement Secured"));
+    fireEvent.click(screen.getByText("Got statements"));
     await act(async () => { fireEvent.click(logStopBtn()); });
     expect(logActivityMutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({ type: "drop_in", outcomeNotes: "" }),
@@ -272,7 +279,7 @@ describe("DropInSheet", () => {
 
   it("forwards a typed note to the visit and onto the deal activity (follow-up outcome)", async () => {
     renderSheet();
-    fireEvent.click(screen.getByText("Statement Secured"));
+    fireEvent.click(screen.getByText("Got statements"));
     fireEvent.change(screen.getByPlaceholderText(/add a note/i), {
       target: { value: "Uses Square, come back Thursday" },
     });
@@ -285,7 +292,7 @@ describe("DropInSheet", () => {
 
   it("forwards a typed note on a terminal (no-deal) outcome to the visit", async () => {
     renderSheet();
-    fireEvent.click(screen.getByText("Not Interested"));
+    fireEvent.click(screen.getByText("Not interested"));
     fireEvent.change(screen.getByPlaceholderText(/add a note/i), {
       target: { value: "Owner was hostile, do not return" },
     });

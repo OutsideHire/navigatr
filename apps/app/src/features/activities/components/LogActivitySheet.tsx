@@ -56,6 +56,7 @@ import { useLogActivity } from "../hooks/useLogActivity";
 import { useFollowupSync } from "@/features/appointments/useFollowupSync";
 import { DISPOSITIONS_BY_TYPE, DISPOSITION_VALUES } from "../lib/dispositionSets";
 import { formatLogConfirmation } from "../lib/logConfirmation";
+import { repOutcomeLabel, repOutcomeSubtitle } from "@/features/path/lib/outcomeRepLabels";
 
 // ───────────────────────────────────────────────────────────────────────
 // Type picker
@@ -423,8 +424,8 @@ function ActivityForm({
                       <DispositionTile
                         key={d}
                         tier={spec.tier}
-                        title={spec.label}
-                        description={spec.rationale}
+                        title={repOutcomeLabel(d)}
+                        description={repOutcomeSubtitle(d)}
                         selected={field.value === d}
                         onClick={() => field.onChange(d)}
                       />

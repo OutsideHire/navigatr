@@ -11,7 +11,8 @@ import * as React from "react";
 import { Trophy, Route as RouteIcon, LayoutGrid } from "lucide-react";
 
 import { Button } from "@/components/navigatr";
-import { DISPOSITIONS, type Disposition } from "@/lib/followUpScheduling";
+import { type Disposition } from "@/lib/followUpScheduling";
+import { repOutcomeLabel } from "../lib/outcomeRepLabels";
 
 export interface PathSummaryProps {
   visitedCount: number;
@@ -76,7 +77,7 @@ export function PathSummary({
           <p className="text-caption font-medium text-text-muted">Disposition breakdown</p>
           {breakdown.map(([d, n]) => (
             <div key={d} className="flex items-center justify-between rounded-radius-md bg-surface-sunken px-3 py-2">
-              <span className="text-body-sm text-text-default">{DISPOSITIONS[d].label}</span>
+              <span className="text-body-sm text-text-default">{repOutcomeLabel(d)}</span>
               <span className="text-body-sm font-semibold tabular-nums text-text-default">{n}</span>
             </div>
           ))}

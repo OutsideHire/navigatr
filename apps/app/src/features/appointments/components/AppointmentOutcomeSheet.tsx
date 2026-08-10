@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { Button, Checkbox, FormField, Input, NotesFieldWithMic, DispositionTile } from "@/components/navigatr";
 import { DISPOSITIONS, type Disposition } from "@/lib/followUpScheduling";
 import { DISPOSITIONS_BY_TYPE } from "@/features/activities/lib/dispositionSets";
+import { repOutcomeLabel, repOutcomeSubtitle } from "@/features/path/lib/outcomeRepLabels";
 import { useRecordAppointmentOutcome } from "../hooks/useRecordAppointmentOutcome";
 
 const { top: PRIMARY_OUTCOMES, all: ALL_OUTCOMES } = DISPOSITIONS_BY_TYPE.appointment;
@@ -83,7 +84,7 @@ export function AppointmentOutcomeSheet({
         expectedDecisionDate:
           selected === "appt_presented_awaiting" ? decisionDate || null : null,
       });
-      toast.success(`Outcome logged: ${DISPOSITIONS[selected].label}`);
+      toast.success(`Outcome logged: ${repOutcomeLabel(selected)}`);
       onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't log the outcome. Please try again.");
@@ -122,8 +123,8 @@ export function AppointmentOutcomeSheet({
                 <DispositionTile
                   key={key}
                   tier={DISPOSITIONS[key].tier}
-                  title={DISPOSITIONS[key].label}
-                  description={DISPOSITIONS[key].rationale}
+                  title={repOutcomeLabel(key)}
+                  description={repOutcomeSubtitle(key)}
                   selected={selected === key}
                   onClick={() => handleSelect(key)}
                 />
@@ -136,8 +137,8 @@ export function AppointmentOutcomeSheet({
                   <DispositionTile
                     key={key}
                     tier={DISPOSITIONS[key].tier}
-                    title={DISPOSITIONS[key].label}
-                    description={DISPOSITIONS[key].rationale}
+                    title={repOutcomeLabel(key)}
+                    description={repOutcomeSubtitle(key)}
                     selected={selected === key}
                     onClick={() => handleSelect(key)}
                   />
