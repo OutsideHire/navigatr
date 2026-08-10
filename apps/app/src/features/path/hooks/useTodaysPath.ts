@@ -29,7 +29,7 @@
  * `pathDate` the tier hooks key on, so the whole composition is deterministic
  * for a given `now`.
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { LatLng } from "@/lib/distance";
 import { useMeetingStops } from "./useMeetingStops";
 import { useOwedVisits } from "./useOwedVisits";
@@ -87,13 +87,25 @@ function ageDaysSince(iso: string, nowMs: number): number {
  * + overflow with a status the UI can branch an empty state on.
  *
  * @param origin the run's start point, or null (no located origin yet).
- * @param now    ISO instant; defaults to the current time. Drives the budget
- *               AND the local `pathDate` the tier hooks read.
+ * @param nowOverride ISO instant, for tests that pin the clock. In production it
+ *               is omitted: the hook captures `now` ONCE per instance (see below)
+ *               so the whole composition stays referentially stable across
+ *               renders. `now` drives the budget AND the local `pathDate` the tier
+ *               hooks read.
  */
 export function useTodaysPath(
   origin: LatLng | null,
-  now: string = new Date().toISOString(),
+  nowOverride?: string,
 ): UseTodaysPathResult {
+  // Capture `now` ONCE per hook instance rather than reading the clock on every
+  // render. A per-render default (`new Date().toISOString()`) changed the memo's
+  // `now` dep every render, so `proposal`/`overflow` were re-derived with a fresh
+  // array identity each time. That churn reset the entry landing's local review
+  // state (TodaysPathView keys `workingProposal`/`poolCursor` off `proposal`
+  // identity) and is the "needs a manual refresh to populate" QA report. Mirrors
+  // RunningPath's stable `nowIso` for the running view. Tests pin it via nowOverride.
+  const [capturedNow] = useState(() => new Date().toISOString());
+  const now = nowOverride ?? capturedNow;
   const pathDate = localDateOf(now);
 
   // Tier 1: fixed calendar anchors.

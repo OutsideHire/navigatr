@@ -220,6 +220,20 @@ describe("PathPage location states", () => {
     expect(screen.getByText(/finding your location/i)).toBeInTheDocument();
   });
 
+  it("does NOT show the empty 'all caught up' day while geolocation is still resolving (Path QA B1)", () => {
+    // Regression guard for "empty until refresh": with no origin yet and location
+    // still resolving, useTodaysPath reports an empty, not-loading proposal (its
+    // no-origin contract). The landing must render the finding-location loader,
+    // NOT the empty day state, so a rep who does have appointments/owed drop-ins
+    // never sees a false "all caught up" during the origin-pending window. (The
+    // default todaysPathState here is exactly that empty, not-loading proposal.)
+    originState.current = { ...base, geoStatus: "loading" };
+    render(<PathPage />, { wrapper });
+    expect(screen.getByText(/finding your location/i)).toBeInTheDocument();
+    expect(screen.queryByText(/all caught up/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/today's path/i)).not.toBeInTheDocument();
+  });
+
   it("shows the blocked state with inline re-enable steps when GPS is denied", () => {
     originState.current = { ...base, geoStatus: "denied" };
     render(<PathPage />, { wrapper });

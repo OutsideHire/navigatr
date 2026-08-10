@@ -281,4 +281,44 @@ describe("useTodaysPath", () => {
     const stop = result.current.proposal.find((s) => s.id === "old");
     expect(stop?.tier).toBe("past_due");
   });
+
+  // Regression (Path QA B1 / "refresh to populate"): called WITHOUT an explicit
+  // `now` (the production path, where PathPage calls `useTodaysPath(origin)`), the hook
+  // must capture the clock ONCE and keep a stable output identity across renders.
+  // The old code read `now = new Date().toISOString()` as a per-render default, so
+  // the memo's `now` dep changed every render and `proposal`/`overflow` got a fresh
+  // array identity each time. That re-derivation churns the entry landing
+  // (TodaysPathView keys `workingProposal`/`poolCursor` off `proposal` identity and
+  // reset them on every render). It also means the day is NOT stably exposed until
+  // something re-renders "just right", which is the QA-reported empty-until-refresh.
+  // RunningPath already captures a stable `now`; this asserts the entry view does too.
+  it("captures `now` once so the assembled day keeps a stable identity across re-renders (no fixed now)", () => {
+    meetingsRef.stops = [meetingStop()];
+    owedRef.owed = [owedVisit()];
+    merchantsRef.merchants = [merchant()];
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-09T15:00:00.000Z"));
+    try {
+      // Production call signature: no explicit `now` (defaults internally).
+      const { result, rerender } = renderHook(() => useTodaysPath(ORIGIN));
+      const firstProposal = result.current.proposal;
+      const firstOverflow = result.current.overflow;
+      // The day is exposed on the first render (owed + nearby assembled).
+      expect(firstProposal.length).toBeGreaterThan(0);
+
+      // Advance the wall clock and re-render. A per-render `now` default would make
+      // the memo re-derive here and hand a NEW array identity to consumers; a
+      // captured `now` must not.
+      vi.setSystemTime(new Date("2026-08-09T15:00:00.001Z"));
+      rerender();
+      vi.setSystemTime(new Date("2026-08-09T15:00:00.002Z"));
+      rerender();
+
+      expect(result.current.proposal).toBe(firstProposal);
+      expect(result.current.overflow).toBe(firstOverflow);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
