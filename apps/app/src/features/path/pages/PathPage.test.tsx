@@ -910,3 +910,91 @@ describe("PathPage discover industries — seeded from saved prefs (Path QA C2)"
     });
   });
 });
+
+describe("PathPage discover — one-tap Start path (Path QA C3)", () => {
+  const readyOrigin: PathOrigin = {
+    ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
+  };
+  // The queued stop's merchantId matches a live merchant id so handleStartPath
+  // resolves it into a snapshot (it resolves ids against the browse/create set).
+  const liveMerchants = [
+    { id: "a", name: "Alpha", address: "1 A St", phone: null, lat: 30.05, lng: -97.05, category: "retail", primaryType: null },
+  ] as unknown as typeof merchantsState.current.merchants;
+
+  beforeEach(() => {
+    originState.current = readyOrigin;
+    merchantsState.current = { merchants: liveMerchants, isLoading: false, isError: false, refetch: vi.fn() } as typeof merchantsState.current;
+    todayState.current = {
+      ...todayState.current,
+      stops: [
+        { merchantId: "a", name: "Alpha", address: "1 A St", lat: 30.05, lng: -97.05, category: "retail", status: "pending" },
+      ] as unknown as typeof todayState.current.stops,
+    };
+  });
+
+  // A queued path renders ActivePathView, whose "Add stops" enters discover.
+  function enterDiscoverWithStops() {
+    render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /add stops/i }));
+  }
+
+  it("starts the run immediately from the queued stops (clear + addMany { start: true }), skipping the wizard", async () => {
+    enterDiscoverWithStops();
+    // The wizard's onStart is captured, but the one-tap Start must NOT go through
+    // the wizard — it reuses handleStartPath directly on the queued stops.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^start path$/i }));
+    });
+    // Reuses handleStartPath's exact create+start mechanism.
+    expect(todayState.current.clear).toHaveBeenCalledTimes(1);
+    expect(todayState.current.addMany).toHaveBeenCalledTimes(1);
+    expect(todayState.current.addMany).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ prospectId: "a" })]),
+      { start: true },
+    );
+    expect(toastMock.error).not.toHaveBeenCalled();
+  });
+
+  it("does not show the Start path control when there are no queued stops", () => {
+    // Empty queue → the entry landing renders; "Build my day" opens discover with
+    // an empty queue, where the one-tap Start must be hidden (only "Done" remains).
+    todayState.current = { ...todayState.current, stops: [] as unknown as typeof todayState.current.stops };
+    render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /build my day/i }));
+    expect(screen.queryByRole("button", { name: /^start path$/i })).not.toBeInTheDocument();
+    // The secondary back action reads "Done" (not "Back to path") on an empty queue.
+    expect(screen.getByRole("button", { name: /^done$/i })).toBeInTheDocument();
+  });
+});
+
+describe("PathPage discover — action bar reachable on mobile (Path QA C4)", () => {
+  const readyOrigin: PathOrigin = {
+    ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
+  };
+  const liveMerchants = [
+    { id: "a", name: "Alpha", address: "1 A St", phone: null, lat: 30.05, lng: -97.05, category: "retail", primaryType: null },
+  ] as unknown as typeof merchantsState.current.merchants;
+
+  beforeEach(() => {
+    originState.current = readyOrigin;
+    merchantsState.current = { merchants: liveMerchants, isLoading: false, isError: false, refetch: vi.fn() } as typeof merchantsState.current;
+    todayState.current = {
+      ...todayState.current,
+      stops: [
+        { merchantId: "a", name: "Alpha", address: "1 A St", lat: 30.05, lng: -97.05, category: "retail", status: "pending" },
+      ] as unknown as typeof todayState.current.stops,
+    };
+  });
+
+  it("wraps the discover actions in a sticky, scroll-safe footer so they stay reachable on short screens", () => {
+    render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /add stops/i }));
+    const start = screen.getByRole("button", { name: /^start path$/i });
+    const bar = start.closest('[data-testid="discover-action-bar"]');
+    expect(bar).not.toBeNull();
+    // Pinned to the bottom of the fixed-height page column (sticky bottom-0) with a
+    // solid background + top border; a regression that moves it out fails here.
+    expect(bar).toHaveClass("sticky");
+    expect(bar).toHaveClass("bottom-0");
+  });
+});

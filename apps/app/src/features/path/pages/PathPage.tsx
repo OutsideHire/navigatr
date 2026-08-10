@@ -664,6 +664,16 @@ export function PathPage() {
     [createMerchants, todayPath],
   );
 
+  // One-tap Start from discover (Path QA C3): launch the run straight from the
+  // stops the rep has queued in discover, skipping the review wizard. REUSES
+  // handleStartPath (its clear() + addMany(..., { start: true }) core) rather than
+  // duplicating the create+start logic — we only hand it the queued stops' ids,
+  // exactly as the CreatePathWizard's onStart does with its ordered selection.
+  const handleStartFromDiscover = React.useCallback(() => {
+    if (queueStops.length === 0) return;
+    void handleStartPath(queueStops.map((s) => s.merchantId));
+  }, [queueStops, handleStartPath]);
+
   // Start the auto-built Today's Path from its FLEXIBLE stops. Appointments are
   // calendar anchors shown in the plan but never created as merchant stops (they
   // already come from the calendar). This REUSES the exact create+start mechanism
@@ -1000,15 +1010,6 @@ export function PathPage() {
       ) : (
         /* pathView === "discover": filter controls + map+list discovery ladder */
         <>
-          <Button
-            variant="tertiary"
-            size="sm"
-            onClick={handleDoneDiscovering}
-            className="mt-3 self-start"
-          >
-            {queueStops.length > 0 ? "Back to path" : "Done"}
-          </Button>
-
           {/* Meeting-aware header — renders only when the calendar is connected and
               there's a still-upcoming fixed meeting today; otherwise nothing shows
               (no empty spacer). Placed above the filters so it stays visible in both
@@ -1228,6 +1229,37 @@ export function PathPage() {
             </div>
           </div>
           )}
+
+          {/* Discover action bar (Path QA C3/C4). Pinned to the bottom of the
+              fixed-height page column as a sticky footer so the primary "Start
+              path" one-tap launch and the secondary back action stay thumb-
+              reachable on short phone screens (the list pane above scrolls
+              independently). shrink-0 + mt-auto keep it below the flex-1 body;
+              the negative margins let the solid bar span the full width against
+              the page's own horizontal padding. Harmless on desktop, where the
+              column rarely overflows. */}
+          <div
+            data-testid="discover-action-bar"
+            className={cn(
+              "sticky bottom-0 z-10 mt-auto flex shrink-0 items-center gap-2",
+              "-mx-4 border-t border-border-default bg-surface-default/95 px-4 py-3 backdrop-blur",
+              "sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8",
+            )}
+          >
+            {queueStops.length > 0 && (
+              <Button
+                variant="primary"
+                size="sm"
+                leadingIcon={Navigation}
+                onClick={handleStartFromDiscover}
+              >
+                Start path
+              </Button>
+            )}
+            <Button variant="tertiary" size="sm" onClick={handleDoneDiscovering}>
+              {queueStops.length > 0 ? "Back to path" : "Done"}
+            </Button>
+          </div>
         </>
       )}
 
