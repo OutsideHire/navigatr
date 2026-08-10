@@ -39,5 +39,13 @@ export function tierAccent(tier: StopTier): { chip: string; border: string; icon
         border: "border-border-subtle",
         icon: "bg-surface-sunken text-text-muted",
       };
+    // No coordinates yet: neutral, not a route position. The row's caption
+    // carries the "No location yet" state, so styling stays quiet.
+    case "no_location":
+      return {
+        chip: "bg-surface-sunken text-text-muted",
+        border: "border-border-subtle border-dashed",
+        icon: "bg-surface-sunken text-text-muted",
+      };
   }
 }

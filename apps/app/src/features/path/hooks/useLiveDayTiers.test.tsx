@@ -4,12 +4,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useLiveDayTiers } from "./useLiveDayTiers";
 import { TieredStopList } from "../components/TieredStopList";
 import type { MeetingStop } from "../lib/meetingStops";
-import type { OwedVisit } from "../lib/owedVisits";
+import type { OwedVisit, OwedVisitNoCoords } from "../lib/owedVisits";
 
 // The three LIVE data sources, mocked with mutable state (default: none).
 const meetingState = { current: { stops: [] as MeetingStop[] } };
-const owedState = { current: { owed: [] as OwedVisit[] } };
-const dueTodayState = { current: { dueToday: [] as OwedVisit[] } };
+const owedState = { current: { owed: [] as OwedVisit[], noLocation: [] as OwedVisitNoCoords[] } };
+const dueTodayState = { current: { dueToday: [] as OwedVisit[], noLocation: [] as OwedVisitNoCoords[] } };
 vi.mock("./useMeetingStops", () => ({ useMeetingStops: () => meetingState.current }));
 vi.mock("./useOwedVisits", () => ({ useOwedVisits: () => owedState.current }));
 vi.mock("./useDueTodayVisits", () => ({ useDueTodayVisits: () => dueTodayState.current }));
@@ -48,7 +48,7 @@ function Harness() {
     <div>
       <TieredStopList rows={rows} />
       {sheets}
-      <span data-testid="counts">{`${counts.appointments}/${counts.pastDue}/${counts.dueToday}`}</span>
+      <span data-testid="counts">{`${counts.appointments}/${counts.pastDue}/${counts.dueToday}/${counts.noLocation}`}</span>
     </div>
   );
 }
@@ -105,14 +105,19 @@ beforeEach(() => {
   outcomeSheet.mockClear();
   logActivitySheet.mockClear();
   meetingState.current = { stops: [] };
-  owedState.current = { owed: [] };
-  dueTodayState.current = { dueToday: [] };
+  owedState.current = { owed: [], noLocation: [] };
+  dueTodayState.current = { dueToday: [], noLocation: [] };
 });
+
+/** A no-location owed stub (deal without coords). */
+function noCoords(over: Partial<OwedVisitNoCoords> = {}): OwedVisitNoCoords {
+  return { taskId: "nl1", dealId: "deal-nl-1", name: "No Map Co", address: "9 Off Grid Rd", ...over };
+}
 
 describe("useLiveDayTiers", () => {
   it("returns no rows when every tier is empty", () => {
     renderHarness();
-    expect(screen.getByTestId("counts")).toHaveTextContent("0/0/0");
+    expect(screen.getByTestId("counts")).toHaveTextContent("0/0/0/0");
     expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
   });
 
@@ -123,10 +128,11 @@ describe("useLiveDayTiers", () => {
         // equal-to-today belongs to the due-today band, so it is NOT past-due here.
         owedVisit({ taskId: "sameday", dealId: "deal-2", name: "Same Day Co", earliestAt: PATH_DATE }),
       ],
+      noLocation: [],
     };
     renderHarness();
     // Only the truly-overdue one is a past-due row.
-    expect(screen.getByTestId("counts")).toHaveTextContent("0/1/0");
+    expect(screen.getByTestId("counts")).toHaveTextContent("0/1/0/0");
     expect(screen.getByText("Owed Co")).toBeInTheDocument();
     expect(screen.queryByText("Same Day Co")).not.toBeInTheDocument();
     // The tier chip + "Nd overdue" age are replaced by a plain reason line.
@@ -152,9 +158,10 @@ describe("useLiveDayTiers", () => {
   it("a due-today row shows a reason line instead of the Due today chip", () => {
     dueTodayState.current = {
       dueToday: [owedVisit({ taskId: "t2", dealId: "deal-due-1", name: "Due Today Co", earliestAt: PATH_DATE })],
+      noLocation: [],
     };
     renderHarness();
-    expect(screen.getByTestId("counts")).toHaveTextContent("0/0/1");
+    expect(screen.getByTestId("counts")).toHaveTextContent("0/0/1/0");
     expect(screen.getByText("Due Today Co")).toBeInTheDocument();
     expect(screen.queryByText("Due today")).not.toBeInTheDocument();
     // createdAt is 5 days ago in the fixture; datePromisedToday stays false.
@@ -163,12 +170,13 @@ describe("useLiveDayTiers", () => {
 
   it("orders appointments, then past-due, then due-today", () => {
     meetingState.current = { stops: [{ ...pastAppointment, past: false }] };
-    owedState.current = { owed: [owedVisit()] };
+    owedState.current = { owed: [owedVisit()], noLocation: [] };
     dueTodayState.current = {
       dueToday: [owedVisit({ taskId: "t2", dealId: "deal-due-1", name: "Due Today Co", earliestAt: PATH_DATE })],
+      noLocation: [],
     };
     renderHarness();
-    expect(screen.getByTestId("counts")).toHaveTextContent("1/1/1");
+    expect(screen.getByTestId("counts")).toHaveTextContent("1/1/1/0");
     const items = screen.getAllByRole("listitem");
     expect(within(items[0]).getByText("Renewal review")).toBeInTheDocument();
     expect(within(items[1]).getByText("Owed Co")).toBeInTheDocument();
@@ -176,7 +184,7 @@ describe("useLiveDayTiers", () => {
   });
 
   it("an owed row's Open deal navigates and Log drop-in opens the deal-keyed sheet", () => {
-    owedState.current = { owed: [owedVisit()] };
+    owedState.current = { owed: [owedVisit()], noLocation: [] };
     renderHarness();
     fireEvent.click(screen.getByRole("button", { name: /open deal/i }));
     expect(navigate).toHaveBeenCalledWith("/pipeline/deal-owed-1");
@@ -189,7 +197,7 @@ describe("useLiveDayTiers", () => {
   });
 
   it("logging a drop-in invalidates the owed + due-today query keys", () => {
-    owedState.current = { owed: [owedVisit()] };
+    owedState.current = { owed: [owedVisit()], noLocation: [] };
     renderHarness();
     const invalidate = vi.spyOn(client, "invalidateQueries");
     fireEvent.click(screen.getByRole("button", { name: /log drop-in/i }));
@@ -216,5 +224,30 @@ describe("useLiveDayTiers", () => {
     renderHarness();
     expect(screen.getByRole("button", { name: /open deal/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /log outcome/i })).not.toBeInTheDocument();
+  });
+
+  it("surfaces a no-location owed stub in its own group, actionable but NOT in the routed tiers", () => {
+    owedState.current = { owed: [], noLocation: [noCoords()] };
+    renderHarness();
+    // Counted separately from the three routable tiers.
+    expect(screen.getByTestId("counts")).toHaveTextContent("0/0/0/1");
+    const row = screen.getByText("No Map Co").closest("li")!;
+    // A plain "No location yet" caption (no tier chip, no route position).
+    expect(within(row).getByText(/no location yet/i)).toBeInTheDocument();
+    // Actionable: Open deal navigates, Log drop-in opens the deal-keyed sheet.
+    fireEvent.click(within(row).getByRole("button", { name: /open deal/i }));
+    expect(navigate).toHaveBeenCalledWith("/pipeline/deal-nl-1");
+    fireEvent.click(within(row).getByRole("button", { name: /log drop-in/i }));
+    expect(screen.getByTestId("log-activity-sheet")).toHaveAttribute("data-deal", "deal-nl-1");
+  });
+
+  it("dedups a no-location stub that appears in both owed and due-today bands", () => {
+    // A task whose window opens today is read by BOTH useOwedVisits (.lte) and
+    // useDueTodayVisits (.eq); with no coords it lands in both noLocation arrays.
+    owedState.current = { owed: [], noLocation: [noCoords()] };
+    dueTodayState.current = { dueToday: [], noLocation: [noCoords()] };
+    renderHarness();
+    expect(screen.getByTestId("counts")).toHaveTextContent("0/0/0/1");
+    expect(screen.getAllByText("No Map Co")).toHaveLength(1);
   });
 });

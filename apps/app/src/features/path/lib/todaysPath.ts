@@ -32,7 +32,10 @@ import { interleaveAroundAnchors } from "./interleaveAroundAnchors";
 // --- inputs ------------------------------------------------------------------
 
 export type AppointmentKind = "appointment" | "external";
-export type FlexibleTier = "past_due" | "due_today" | "nearby";
+/** `no_location` is a DISPLAY-ONLY tier: an owed drop-in whose deal has no
+ *  coordinates yet, so it can be shown and acted on but never enters the route.
+ *  The routing engine (assembleTodaysPath / drivingSequence) never emits it. */
+export type FlexibleTier = "past_due" | "due_today" | "nearby" | "no_location";
 
 /** A fixed, time-anchored calendar commitment (SP-B feeds these from MeetingStop). */
 export interface PathAppointment {

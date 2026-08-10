@@ -883,10 +883,12 @@ export function PathPage() {
           <TodaysPathView
             proposal={todaysPath.proposal}
             overflow={todaysPath.overflow}
+            noLocation={todaysPath.noLocation}
             isLoading={todaysPath.isLoading}
             status={todaysPath.status}
             onStart={handleStartTodaysPath}
             onAddNearby={enterDiscover}
+            onOpenDeal={(dealId) => navigate(`/pipeline/${dealId}`)}
             isStarting={startingTodaysPath}
             remainingMin={todaysPath.remainingMin}
             windowEndHour={todaysPath.windowEndHour}

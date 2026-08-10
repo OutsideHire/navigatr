@@ -35,7 +35,7 @@ import { useMeetingStops } from "./useMeetingStops";
 import { useOwedVisits } from "./useOwedVisits";
 import { useDueTodayVisits } from "./useDueTodayVisits";
 import type { MeetingStop } from "../lib/meetingStops";
-import type { OwedVisit } from "../lib/owedVisits";
+import type { OwedVisit, OwedVisitNoCoords } from "../lib/owedVisits";
 import { directionsUrl } from "../lib/directionsUrl";
 import { reasonLine } from "../lib/reasonLine";
 import type { TieredStopRow } from "../components/TieredStopList";
@@ -54,12 +54,14 @@ function ageDaysSince(iso: string): number {
 }
 
 export interface LiveDayTiers {
-  /** Appointment + past-due + due-today rows, ordered, for TieredStopList. */
+  /** Appointment + past-due + due-today rows, then a "No location yet" group of
+   *  owed drop-ins that have no coordinates yet (shown but never routed), ordered
+   *  for TieredStopList. */
   rows: TieredStopRow[];
   /** The reused AppointmentOutcomeSheet + LogActivitySheet, rendered off
    *  internal open state. Render this node anywhere in the tree. */
   sheets: React.ReactNode;
-  counts: { appointments: number; pastDue: number; dueToday: number };
+  counts: { appointments: number; pastDue: number; dueToday: number; noLocation: number };
 }
 
 /**
@@ -74,8 +76,8 @@ export function useLiveDayTiers(pathDate: string): LiveDayTiers {
   // LIVE (never persisted as path_stops). `useOwedVisits` returns the whole
   // opened window (earliest_at <= today), so keep only the PAST-DUE slice here;
   // due-today comes from its own disjoint band.
-  const { owed } = useOwedVisits(pathDate);
-  const { dueToday } = useDueTodayVisits(pathDate);
+  const { owed, noLocation: owedNoLocation } = useOwedVisits(pathDate);
+  const { dueToday, noLocation: dueTodayNoLocation } = useDueTodayVisits(pathDate);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -105,6 +107,18 @@ export function useLiveDayTiers(pathDate: string): LiveDayTiers {
     () => owed.filter((v) => v.earliestAt.slice(0, 10) < pathDate),
     [owed, pathDate],
   );
+
+  // No-location owed drop-ins: eligible follow-ups whose deal has no coordinates
+  // yet, so they can be shown + acted on but never routed. A task whose window
+  // opens today is read by BOTH useOwedVisits (.lte) and useDueTodayVisits (.eq),
+  // so the same stub can arrive twice; dedup by taskId (first wins).
+  const noLocation = React.useMemo<OwedVisitNoCoords[]>(() => {
+    const byTask = new Map<string, OwedVisitNoCoords>();
+    for (const s of [...(owedNoLocation ?? []), ...(dueTodayNoLocation ?? [])]) {
+      if (!byTask.has(s.taskId)) byTask.set(s.taskId, s);
+    }
+    return [...byTask.values()];
+  }, [owedNoLocation, dueTodayNoLocation]);
 
   // Invalidate the owed / due-today reads after logging a drop-in so the stop
   // leaves the live list once its follow-up is resolved.
@@ -231,8 +245,41 @@ export function useLiveDayTiers(pathDate: string): LiveDayTiers {
     for (const v of pastDue) out.push(dealRow(v, "past_due"));
     for (const v of dueToday) out.push(dealRow(v, "due_today"));
 
+    // 4. No-location owed drop-ins - existing deals with no coordinates yet, so
+    // they are shown + actionable (Open deal / Log drop-in) but NOT routed. The
+    // caption states the "No location yet" fix instead of a route reason.
+    for (const s of noLocation) {
+      out.push({
+        key: `nolocation-${s.taskId}`,
+        tier: "no_location",
+        name: s.name,
+        detail: s.address ?? undefined,
+        reason: "No location yet. Add an address to put it on your route.",
+        actions: (
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              leadingIcon={ExternalLink}
+              onClick={() => navigate(`/pipeline/${s.dealId}`)}
+            >
+              Open deal
+            </Button>
+            <Button
+              variant="tertiary"
+              size="sm"
+              leadingIcon={DoorOpen}
+              onClick={() => setLogDealId(s.dealId)}
+            >
+              Log drop-in
+            </Button>
+          </>
+        ),
+      });
+    }
+
     return out;
-  }, [meetingStops, doneExternal, pastDue, dueToday, navigate, toggleDone]);
+  }, [meetingStops, doneExternal, pastDue, dueToday, noLocation, navigate, toggleDone]);
 
   const sheets = (
     <>
@@ -275,6 +322,11 @@ export function useLiveDayTiers(pathDate: string): LiveDayTiers {
   return {
     rows,
     sheets,
-    counts: { appointments: meetingStops.length, pastDue: pastDue.length, dueToday: dueToday.length },
+    counts: {
+      appointments: meetingStops.length,
+      pastDue: pastDue.length,
+      dueToday: dueToday.length,
+      noLocation: noLocation.length,
+    },
   };
 }

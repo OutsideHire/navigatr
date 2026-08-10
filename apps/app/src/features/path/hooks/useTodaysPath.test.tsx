@@ -10,7 +10,7 @@ import { renderHook } from "@testing-library/react";
 
 import { useTodaysPath } from "./useTodaysPath";
 import type { MeetingStop } from "../lib/meetingStops";
-import type { OwedVisit } from "../lib/owedVisits";
+import type { OwedVisit, OwedVisitNoCoords } from "../lib/owedVisits";
 import type { Merchant } from "../mockData";
 import type { CalendarStatus } from "./useCalendarEvents";
 
@@ -21,8 +21,8 @@ const meetingsRef = vi.hoisted(() => ({
   status: "ok" as CalendarStatus,
   isLoading: false,
 }));
-const owedRef = vi.hoisted(() => ({ owed: [] as OwedVisit[], isLoading: false }));
-const dueTodayRef = vi.hoisted(() => ({ dueToday: [] as OwedVisit[], isLoading: false }));
+const owedRef = vi.hoisted(() => ({ owed: [] as OwedVisit[], noLocation: [] as OwedVisitNoCoords[], isLoading: false }));
+const dueTodayRef = vi.hoisted(() => ({ dueToday: [] as OwedVisit[], noLocation: [] as OwedVisitNoCoords[], isLoading: false }));
 const merchantsRef = vi.hoisted(() => ({ merchants: [] as Merchant[], isLoading: false }));
 
 vi.mock("./useMeetingStops", () => ({
@@ -33,10 +33,10 @@ vi.mock("./useMeetingStops", () => ({
   }),
 }));
 vi.mock("./useOwedVisits", () => ({
-  useOwedVisits: () => ({ owed: owedRef.owed, isLoading: owedRef.isLoading }),
+  useOwedVisits: () => ({ owed: owedRef.owed, noLocation: owedRef.noLocation, isLoading: owedRef.isLoading }),
 }));
 vi.mock("./useDueTodayVisits", () => ({
-  useDueTodayVisits: () => ({ dueToday: dueTodayRef.dueToday, isLoading: dueTodayRef.isLoading }),
+  useDueTodayVisits: () => ({ dueToday: dueTodayRef.dueToday, noLocation: dueTodayRef.noLocation, isLoading: dueTodayRef.isLoading }),
 }));
 vi.mock("./useMerchants", () => ({
   useMerchants: () => ({ merchants: merchantsRef.merchants, isLoading: merchantsRef.isLoading }),
@@ -115,8 +115,10 @@ beforeEach(() => {
   meetingsRef.status = "ok";
   meetingsRef.isLoading = false;
   owedRef.owed = [];
+  owedRef.noLocation = [];
   owedRef.isLoading = false;
   dueTodayRef.dueToday = [];
+  dueTodayRef.noLocation = [];
   dueTodayRef.isLoading = false;
   merchantsRef.merchants = [];
   merchantsRef.isLoading = false;
@@ -320,5 +322,31 @@ describe("useTodaysPath", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("exposes no-location owed drop-ins, deduped by taskId across the owed + due-today bands, never in the plan", () => {
+    // A window-opens-today task with no coords is read by BOTH useOwedVisits
+    // (.lte) and useDueTodayVisits (.eq), so the same stub arrives twice.
+    const stub: OwedVisitNoCoords = { taskId: "nl-shared", dealId: "deal-nl", name: "No Map Co", address: "9 Off Grid Rd" };
+    owedRef.noLocation = [stub, { taskId: "nl-owed", dealId: "deal-2", name: "Owed Only Co", address: null }];
+    dueTodayRef.noLocation = [stub];
+
+    const { result } = renderHook(() => useTodaysPath(ORIGIN, NOW));
+
+    // Deduped: the shared stub appears once, alongside the owed-only one.
+    expect(result.current.noLocation.map((s) => s.taskId).sort()).toEqual(["nl-owed", "nl-shared"]);
+    // Never routed.
+    expect(result.current.proposal.some((s) => s.dealId === "deal-nl")).toBe(false);
+    expect(result.current.overflow.some((s) => s.name === "No Map Co")).toBe(false);
+  });
+
+  it("still surfaces no-location owed drop-ins when there is no origin (nothing routable)", () => {
+    owedRef.noLocation = [{ taskId: "nl1", dealId: "deal-nl", name: "No Map Co", address: null }];
+
+    const { result } = renderHook(() => useTodaysPath(null, NOW));
+
+    expect(result.current.status).toBe("no_origin");
+    expect(result.current.proposal).toHaveLength(0);
+    expect(result.current.noLocation.map((s) => s.taskId)).toEqual(["nl1"]);
   });
 });

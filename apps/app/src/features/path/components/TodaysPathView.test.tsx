@@ -3,6 +3,7 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { TodaysPathView } from "./TodaysPathView";
 import type { OrderedStop, FlexibleStop } from "../lib/todaysPath";
+import type { OwedVisitNoCoords } from "../lib/owedVisits";
 
 // A prioritized run list mixing all four tiers. Run order is: a past-due owed
 // drop-in, then a fixed appointment, then a due-today follow-up, then a nearby
@@ -42,10 +43,12 @@ function renderView(props?: Partial<ComponentProps<typeof TodaysPathView>>) {
     <TodaysPathView
       proposal={props?.proposal ?? proposal}
       overflow={props?.overflow ?? overflow}
+      noLocation={props?.noLocation ?? []}
       isLoading={props?.isLoading ?? false}
       status={props?.status ?? "ok"}
       onStart={props?.onStart ?? vi.fn()}
       onAddNearby={props?.onAddNearby ?? vi.fn()}
+      onOpenDeal={props?.onOpenDeal ?? vi.fn()}
       isStarting={props?.isStarting}
       remainingMin={props?.remainingMin ?? 120}
       windowEndHour={props?.windowEndHour ?? 17}
@@ -130,6 +133,38 @@ describe("TodaysPathView", () => {
     renderView({ onAddNearby });
     fireEvent.click(screen.getByRole("button", { name: /add more nearby/i }));
     expect(onAddNearby).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces no-location owed drop-ins in their own group with an Open-deal action, NOT in the routed plan", () => {
+    const onOpenDeal = vi.fn();
+    const noLocation: OwedVisitNoCoords[] = [
+      { taskId: "nl1", dealId: "deal-nl-1", name: "No Map Co", address: "9 Off Grid Rd" },
+    ];
+    renderView({ noLocation, onOpenDeal });
+
+    // The group header + hint render.
+    expect(screen.getByText(/no location yet/i)).toBeInTheDocument();
+    // The outer row (items-center) holds both the text and the action button.
+    const row = screen.getByText("No Map Co").closest<HTMLElement>("div.items-center")!;
+    expect(within(row).getByText(/add an address to put this on your route/i)).toBeInTheDocument();
+
+    // It is NOT one of the routed list items (proposal / overflow render as <li>).
+    const listItemTexts = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
+    expect(listItemTexts.some((t) => t.includes("No Map Co"))).toBe(false);
+
+    // Open deal navigates to the deal so the rep can add an address.
+    fireEvent.click(within(row).getByRole("button", { name: /open deal/i }));
+    expect(onOpenDeal).toHaveBeenCalledWith("deal-nl-1");
+  });
+
+  it("shows the no-location group even when the routable day is empty (not 'all caught up')", () => {
+    const noLocation: OwedVisitNoCoords[] = [
+      { taskId: "nl1", dealId: "deal-nl-1", name: "No Map Co", address: null },
+    ];
+    renderView({ proposal: [], overflow: [], noLocation });
+    expect(screen.getByText("No Map Co")).toBeInTheDocument();
+    // The caught-up empty state must NOT show: the rep still owes this drop-in.
+    expect(screen.queryByText(/all caught up/i)).not.toBeInTheDocument();
   });
 
   it("empty proposal renders a friendly empty state that still offers find nearby", () => {

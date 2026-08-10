@@ -20,11 +20,12 @@
  * SP-D.
  */
 import * as React from "react";
-import { ArrowRight, CalendarClock, Loader2, MapPin, Navigation, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowRight, CalendarClock, ExternalLink, Loader2, MapPin, MapPinOff, Navigation, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button, Card } from "@/components/navigatr";
 import type { OrderedStop, FlexibleStop } from "../lib/todaysPath";
+import type { OwedVisitNoCoords } from "../lib/owedVisits";
 import type { TodaysPathStatus } from "../hooks/useTodaysPath";
 import { tierAccent } from "../lib/tierStyles";
 import { reasonLine } from "../lib/reasonLine";
@@ -40,6 +41,9 @@ interface TodaysPathViewProps {
   proposal: OrderedStop[];
   /** Flexible candidates that did not fit; displayed read-only for carry-over (SP-D). */
   overflow: FlexibleStop[];
+  /** Owed drop-ins whose deal has no coordinates yet: shown in a "No location
+   *  yet" group so they never silently vanish, but never routed. */
+  noLocation: OwedVisitNoCoords[];
   /** Assembler is still gathering its tiers. */
   isLoading: boolean;
   /** Non-"ok" statuses drive a non-blocking notice (needs_reconnect). */
@@ -48,6 +52,9 @@ interface TodaysPathViewProps {
   onStart: (flexibleStops: OrderedStop[]) => void;
   /** Open the Find-near-me discovery to add more nearby stops. */
   onAddNearby: () => void;
+  /** Open a deal (used by the "No location yet" rows so the rep can add an
+   *  address). Navigates to the deal in the pipeline. */
+  onOpenDeal: (dealId: string) => void;
   /** True while the create+start round-trip is in flight. */
   isStarting?: boolean;
   /** Budget minutes still open, for the capacity sentence (FR-PATH-UX-10). */
@@ -66,10 +73,12 @@ function fmtTime(iso: string): string {
 export function TodaysPathView({
   proposal,
   overflow,
+  noLocation,
   isLoading,
   status,
   onStart,
   onAddNearby,
+  onOpenDeal,
   isStarting = false,
   remainingMin,
   windowEndHour,
@@ -166,7 +175,11 @@ export function TodaysPathView({
     );
   }
 
-  const empty = visibleProposal.length === 0 && visibleOverflow.length === 0;
+  // The routable day (proposal + overflow). The no-location group is separate:
+  // it renders whenever there are coordinate-less owed drop-ins, even when there
+  // is no routable day, so a truly caught-up rep still sees what they owe.
+  const hasRoutable = visibleProposal.length > 0 || visibleOverflow.length > 0;
+  const empty = !hasRoutable && noLocation.length === 0;
 
   return (
     <div className={wrap}>
@@ -208,6 +221,8 @@ export function TodaysPathView({
         </Card>
       ) : (
         <>
+          {hasRoutable && (
+          <>
           {/* Hero Start: the rep's single most important daily action. Only when
               there's at least one flexible (drivable) stop to create; a plan that
               is all appointments has nothing to start as a merchant route. */}
@@ -336,6 +351,47 @@ export function TodaysPathView({
                       })}
                     </p>
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+          </>
+          )}
+
+          {/* No location yet: owed drop-ins on deals without coordinates. They
+              are surfaced (never dropped) but are NOT routable, so they sit
+              outside the plan with a plain caption and an Open-deal action so the
+              rep can add an address and let a later geocode step route them. */}
+          {noLocation.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col">
+                <span className="text-caption font-medium text-text-muted">No location yet</span>
+                <span className="text-caption text-text-subtle">
+                  Add an address so these can join your route
+                </span>
+              </div>
+              {noLocation.map((s) => (
+                <div
+                  key={s.taskId}
+                  className="flex items-center gap-3 rounded-radius-md border border-dashed border-border-default bg-surface-sunken/40 p-3"
+                >
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-radius-full bg-surface-sunken text-text-muted">
+                    <MapPinOff className="h-3.5 w-3.5" aria-hidden />
+                  </span>
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <p className="truncate text-body-strong text-text-default">{s.name}</p>
+                    <p className="mt-0.5 text-caption text-text-muted">
+                      Add an address to put this on your route.
+                    </p>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    leadingIcon={ExternalLink}
+                    onClick={() => onOpenDeal(s.dealId)}
+                  >
+                    Open deal
+                  </Button>
                 </div>
               ))}
             </div>

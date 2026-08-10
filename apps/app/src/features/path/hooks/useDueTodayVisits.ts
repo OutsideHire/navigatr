@@ -20,7 +20,9 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
 import {
   assembleOwedVisits,
+  type AssembledOwedVisits,
   type OwedVisit,
+  type OwedVisitNoCoords,
   type OwedTaskRow,
   type OwedDealRow,
   type OwedProspectRow,
@@ -41,13 +43,15 @@ function localDayBounds(pathDate: string): { startIso: string; endIso: string } 
   return { startIso: start.toISOString(), endIso: end.toISOString() };
 }
 
-export function useDueTodayVisits(pathDate: string): { dueToday: OwedVisit[]; isLoading: boolean } {
+export function useDueTodayVisits(
+  pathDate: string,
+): { dueToday: OwedVisit[]; noLocation: OwedVisitNoCoords[]; isLoading: boolean } {
   const userId = useAuth((s) => s.user?.id);
   const query = useQuery({
     queryKey: DUE_TODAY_VISITS_QUERY_KEY(userId, pathDate),
     enabled: Boolean(userId) && Boolean(pathDate),
     staleTime: 30_000,
-    queryFn: async (): Promise<OwedVisit[]> => {
+    queryFn: async (): Promise<AssembledOwedVisits> => {
       // 1. Open drop-in tasks whose window OPENS exactly on pathDate (the
       //    due-today band). `.eq` here is the only line that differs from the
       //    owed query's `.lte`. exclude_from_path and stage are filtered in the
@@ -61,7 +65,7 @@ export function useDueTodayVisits(pathDate: string): { dueToday: OwedVisit[]; is
         .not("deal_id", "is", null);
       if (taskErr) throw taskErr;
       const tasks = (taskData ?? []) as unknown as OwedTaskRow[];
-      if (tasks.length === 0) return [];
+      if (tasks.length === 0) return { routable: [], noLocation: [] };
 
       // 2. Their deals: stage (won/lost excluded) + place_id (the coord key) +
       //    the deal's own coords (manual-deal fallback).
@@ -106,5 +110,9 @@ export function useDueTodayVisits(pathDate: string): { dueToday: OwedVisit[]; is
       });
     },
   });
-  return { dueToday: query.data ?? [], isLoading: query.isLoading && query.fetchStatus !== "idle" };
+  return {
+    dueToday: query.data?.routable ?? [],
+    noLocation: query.data?.noLocation ?? [],
+    isLoading: query.isLoading && query.fetchStatus !== "idle",
+  };
 }

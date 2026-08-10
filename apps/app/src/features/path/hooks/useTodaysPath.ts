@@ -44,6 +44,7 @@ import {
   type DueTodayCandidate,
   type NearbyCandidate,
 } from "../lib/todaysPath";
+import type { OwedVisitNoCoords } from "../lib/owedVisits";
 
 /** Enough state for the UI to pick the right empty state. */
 export type TodaysPathStatus = "ok" | "no_origin" | "needs_reconnect";
@@ -51,6 +52,11 @@ export type TodaysPathStatus = "ok" | "no_origin" | "needs_reconnect";
 export interface UseTodaysPathResult {
   proposal: OrderedStop[];
   overflow: FlexibleStop[];
+  /** Owed drop-ins whose deal has no coordinates yet: NOT routable, so never in
+   *  `proposal`/`overflow`, but surfaced so the landing can show them under a
+   *  "No location yet" group (deduped by taskId across the owed + due-today
+   *  bands). A later task geocodes deals with an address so they graduate. */
+  noLocation: OwedVisitNoCoords[];
   /** Budget minutes still open, for the capacity sentence (FR-PATH-UX-10). */
   remainingMin: number;
   /** Working-window close hour (0..24), for the full-day sentence. */
@@ -118,6 +124,19 @@ export function useTodaysPath(
   const nearby = useMerchants(origin);
 
   return useMemo<UseTodaysPathResult>(() => {
+    // No-location owed drop-ins: eligible follow-ups whose deal has no coords
+    // yet. A task whose window opens today is read by BOTH useOwedVisits (.lte)
+    // and useDueTodayVisits (.eq), so the same stub can arrive twice; dedup by
+    // taskId (first wins). Independent of origin, so it is returned in every
+    // branch below - a coordinate-less drop-in must never silently vanish.
+    const noLocation: OwedVisitNoCoords[] = (() => {
+      const byTask = new Map<string, OwedVisitNoCoords>();
+      for (const s of [...owed.noLocation, ...dueTodayVisits.noLocation]) {
+        if (!byTask.has(s.taskId)) byTask.set(s.taskId, s);
+      }
+      return [...byTask.values()];
+    })();
+
     const status: TodaysPathStatus =
       origin == null
         ? "no_origin"
@@ -134,6 +153,7 @@ export function useTodaysPath(
       return {
         proposal: [],
         overflow: [],
+        noLocation,
         remainingMin: 0,
         windowEndHour: DEFAULT_WINDOW_END_HOUR,
         status,
@@ -202,6 +222,6 @@ export function useTodaysPath(
       now,
     );
 
-    return { proposal, overflow, remainingMin, windowEndHour, status, isLoading };
-  }, [origin, now, pathDate, meetings.stops, meetings.status, meetings.isLoading, owed.owed, owed.isLoading, dueTodayVisits.dueToday, dueTodayVisits.isLoading, nearby.merchants, nearby.isLoading]);
+    return { proposal, overflow, noLocation, remainingMin, windowEndHour, status, isLoading };
+  }, [origin, now, pathDate, meetings.stops, meetings.status, meetings.isLoading, owed.owed, owed.noLocation, owed.isLoading, dueTodayVisits.dueToday, dueTodayVisits.noLocation, dueTodayVisits.isLoading, nearby.merchants, nearby.isLoading]);
 }

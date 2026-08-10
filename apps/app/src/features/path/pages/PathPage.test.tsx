@@ -136,6 +136,7 @@ const todaysPathState = {
   current: {
     proposal: [] as unknown[],
     overflow: [] as unknown[],
+    noLocation: [] as unknown[],
     status: "ok" as string,
     isLoading: false,
   },
@@ -203,7 +204,7 @@ beforeEach(() => {
   nearestNeighborSpy.mockClear();
   useMerchantsSpy.mockClear();
   prevUnfinishedState.current = { data: null };
-  todaysPathState.current = { proposal: [], overflow: [], status: "ok", isLoading: false };
+  todaysPathState.current = { proposal: [], overflow: [], noLocation: [], status: "ok", isLoading: false };
   continueMutate.mockReset();
   closeMutate.mockReset();
   capturedOnFindNearby = null;
@@ -765,7 +766,7 @@ describe("PathPage handleStartTodaysPath (only nearby tier persists)", () => {
         flexible({ id: "task-2", tier: "due_today", name: "Due Today Co", dealId: "deal-2", lat: 30.06, lng: -97.06 }),
         flexible({ id: "prospect-1", tier: "nearby", name: "Nearby Co", lat: 30.1, lng: -97.1 }),
       ] as unknown[],
-      overflow: [], status: "ok", isLoading: false,
+      overflow: [], noLocation: [], status: "ok", isLoading: false,
     };
     render(<PathPage />, { wrapper });
     await act(async () => {
@@ -793,7 +794,7 @@ describe("PathPage handleStartTodaysPath (only nearby tier persists)", () => {
         flexible({ id: "task-1", tier: "past_due", name: "Owed Co", dealId: "deal-1", lat: 30.05, lng: -97.05, ageDays: 5 }),
         flexible({ id: "task-2", tier: "due_today", name: "Due Today Co", dealId: "deal-2", lat: 30.06, lng: -97.06 }),
       ] as unknown[],
-      overflow: [], status: "ok", isLoading: false,
+      overflow: [], noLocation: [], status: "ok", isLoading: false,
     };
     render(<PathPage />, { wrapper });
     await act(async () => {
