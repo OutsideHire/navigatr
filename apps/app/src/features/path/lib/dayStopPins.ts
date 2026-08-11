@@ -38,7 +38,7 @@ export interface StopPin {
  * Aging state for a stop (v2.2 B 4.6). DERIVED FROM THE BAND the stop carries
  * (`bandPosition`) via the single-source `agingStateFromBand`: neutral before
  * target, warm past target, hot past the latest acceptable date. No day-count
- * threshold and no tier approximation — an appointment / nearby / band-less stop
+ * threshold and no tier approximation. An appointment / nearby / band-less stop
  * has no band and reads neutral, and "hot" now actually occurs (past latest).
  */
 function agingStateForStop(stop: OrderedStop): AgingState {

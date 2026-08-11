@@ -1,5 +1,5 @@
 /**
- * agingState — the SINGLE source for the three aging states (Robert Path v2.2,
+ * agingState. The SINGLE source for the three aging states (Robert Path v2.2,
  * Ticket B 4.6 + Section 3.1). Color on a Path row / pin encodes AGING ONLY, and
  * that aging is DERIVED FROM THE FOLLOW-UP'S BAND, never from a hardcoded day
  * count:

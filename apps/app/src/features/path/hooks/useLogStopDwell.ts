@@ -1,12 +1,12 @@
 /**
- * useLogStopDwell — records the REAL dwell time of a closed-out stop (Path v2.2
+ * useLogStopDwell. Records the REAL dwell time of a closed-out stop (Path v2.2
  * Ticket B 4.3.2). The driving sequence uses fixed 15/30-minute dwell estimates;
  * this write captures the measured elapsed time between the rep marking arrival
  * ("I'm here") and closing the stop out (logging the outcome), bucketed by stop
  * type, so those estimates can later be replaced with measured per-rep averages.
  *
  * This is INVISIBLE analytics: it changes nothing the rep sees, and it is
- * BEST-EFFORT — every failure path (no signed-in user, a supabase error, a
+ * BEST-EFFORT: every failure path (no signed-in user, a supabase error, a
  * rejected insert, or a not-yet-created table) is swallowed so a dwell write can
  * never disrupt the run or the logging flow. No query invalidation: write-only.
  */

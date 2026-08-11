@@ -38,7 +38,7 @@ vi.mock("../hooks/useDrivingSequence", () => ({
   },
 }));
 
-// Real per-stop dwell logging (v2.2 B 4.3.2) — invisible, best-effort. Mock the
+// Real per-stop dwell logging (v2.2 B 4.3.2): invisible, best-effort. Mock the
 // hook so we can assert what the close-out captures without touching supabase.
 type DwellArg = { stopType: string; dealId: string | null; arrivedAt: string; closedAt: string };
 const logStopDwell = vi.fn((_input: DwellArg) => Promise.resolve());
@@ -609,7 +609,7 @@ describe("RunningPath — End route / Pause flow", () => {
 
 // ─── Real per-stop dwell logging (v2.2 B 4.3.2) ──────────────────────────────
 
-describe("RunningPath — real dwell logging (arrival to close-out)", () => {
+describe("RunningPath real dwell logging (arrival to close-out)", () => {
   it("logs a dwell with the right stopType, dealId, and a positive interval when an APPOINTMENT is closed out after I'm here", () => {
     vi.useFakeTimers();
     try {
