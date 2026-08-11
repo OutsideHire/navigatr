@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { usePathPreferences, useUpdateDefaultIndustries, type PathPreferencesRow } from "./usePathPreferences";
+import { usePathPreferences, usePathEndOfDayMinutes, useUpdateDefaultIndustries, useUpdateEndOfDayMinutes, type PathPreferencesRow } from "./usePathPreferences";
 import { RECOMMENDED_SELECTION } from "../lib/industrySelection";
 
 const maybeSingle = vi.fn();
@@ -74,5 +74,51 @@ describe("useUpdateDefaultIndustries", () => {
       { user_id: "user-1", default_industries: { retail: ["clothing_store"] }, updated_at: expect.any(String) },
       { onConflict: "user_id" },
     );
+  });
+});
+
+describe("usePathEndOfDayMinutes", () => {
+  it("returns the saved override, and null when unset", async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { end_of_day_minutes: 1080 }, error: null });
+    const c = makeClient();
+    const { result } = renderHook(() => usePathEndOfDayMinutes(), { wrapper: wrap(c) });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toBe(1080);
+  });
+});
+
+describe("useUpdateEndOfDayMinutes", () => {
+  it("upserts ONLY the end_of_day_minutes column (never the industries) keyed on the user", async () => {
+    upsertSingle.mockResolvedValueOnce({ data: { user_id: "user-1" }, error: null });
+    const { result } = renderHook(() => useUpdateEndOfDayMinutes(), { wrapper: wrap(makeClient()) });
+    await result.current.mutateAsync(18 * 60);
+    expect(upsert).toHaveBeenCalledWith(
+      { user_id: "user-1", end_of_day_minutes: 1080, updated_at: expect.any(String) },
+      { onConflict: "user_id" },
+    );
+    // The payload must not carry default_industries, or a save would clobber it.
+    expect(upsert).not.toHaveBeenCalledWith(
+      expect.objectContaining({ default_industries: expect.anything() }),
+      expect.anything(),
+    );
+  });
+
+  it("invalidation refetches the separately-keyed end-of-day read (regression: prefix must cover it)", async () => {
+    // Read starts unset (null -> UI shows the default), then the mutation must
+    // cause usePathEndOfDayMinutes to refetch and pick up the new value. With a
+    // [...KEY, userId] invalidation this prefix-missed and the read stayed stale.
+    maybeSingle
+      .mockResolvedValueOnce({ data: { end_of_day_minutes: null }, error: null })
+      .mockResolvedValue({ data: { end_of_day_minutes: 1080 }, error: null });
+    upsertSingle.mockResolvedValue({ data: { user_id: "user-1" }, error: null });
+    const c = makeClient();
+    const read = renderHook(() => usePathEndOfDayMinutes(), { wrapper: wrap(c) });
+    await waitFor(() => expect(read.result.current.isSuccess).toBe(true));
+    expect(read.result.current.data).toBeNull();
+
+    const mutation = renderHook(() => useUpdateEndOfDayMinutes(), { wrapper: wrap(c) });
+    await mutation.result.current.mutateAsync(18 * 60);
+
+    await waitFor(() => expect(read.result.current.data).toBe(1080));
   });
 });

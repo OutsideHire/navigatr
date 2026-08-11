@@ -80,6 +80,38 @@ export function useUpdateDefaultIndustries() {
         .single() as unknown as Promise<{ data: unknown; error: { message: string } | null }>);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: [...PATH_PREFS_QUERY_KEY, userId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: PATH_PREFS_QUERY_KEY }),
+  });
+}
+
+/**
+ * useUpdateEndOfDayMinutes - persist the rep's per-rep end-of-day override (v2.2
+ * B 4.3), as minutes from local midnight, or null to clear it (fall back to
+ * DEFAULT_END_OF_DAY_MINUTES). Upserts ONLY the end_of_day_minutes column so it
+ * never disturbs the saved default_industries on the same one-row-per-rep record;
+ * onConflict user_id updates just this column. Owner-scoped via RLS.
+ */
+export function useUpdateEndOfDayMinutes() {
+  const qc = useQueryClient();
+  const userId = useAuth((s) => s.user?.id);
+  return useMutation({
+    mutationFn: async (endOfDayMinutes: number | null): Promise<void> => {
+      if (!userId) throw new Error("Not signed in");
+      const { error } = await (supabase
+        .from("path_preferences")
+        .upsert(
+          { user_id: userId, end_of_day_minutes: endOfDayMinutes, updated_at: new Date().toISOString() },
+          { onConflict: "user_id" },
+        )
+        .select()
+        .single() as unknown as Promise<{ data: unknown; error: { message: string } | null }>);
+      if (error) throw error;
+    },
+    // Invalidate the 2-element prefix so BOTH the industries read
+    // (["path","preferences",userId]) AND the separately-keyed end-of-day read
+    // (["path","preferences","end_of_day_minutes",userId]) refetch. Keying on
+    // [...KEY, userId] would prefix-miss the end-of-day query and leave the
+    // control + capacity window stale until a refocus.
+    onSuccess: () => qc.invalidateQueries({ queryKey: PATH_PREFS_QUERY_KEY }),
   });
 }

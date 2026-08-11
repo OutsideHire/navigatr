@@ -197,6 +197,8 @@ vi.mock("../hooks/usePathPreferences", () => ({
   useUpdateDefaultIndustries: () => ({ mutateAsync: vi.fn(), isPending: false }),
   // useTodaysPath reads the per-rep end-of-day; null -> global default window.
   usePathEndOfDayMinutes: () => ({ data: null }),
+  // PathSettings also owns the end-of-day save control.
+  useUpdateEndOfDayMinutes: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 vi.mock("../hooks/useGeolocation", () => ({
   useGeolocation: () => ({ coords: null, status: "denied", error: null, retry: vi.fn() }),
