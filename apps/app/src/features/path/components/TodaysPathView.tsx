@@ -41,14 +41,16 @@ import { DayStopsMap } from "./DayStopsMap";
 const MIN_STOP_MIN = 20;
 
 /** Single build-time global flag (v2.2 A3): the "Add more nearby" entry point on
- *  the landing. Enabled by DEFAULT; it hides only when VITE_PATH_ADD_NEARBY is
- *  explicitly set to "false". (It shipped off-by-default at Robert's request,
- *  then turned on for the beta; the off-switch stays so it can be pulled again
- *  without a code change.) This gates ONLY that one link. The "+" overflow menu,
- *  "Build my day", and every shared handler (onAddNearby/enterDiscover,
- *  useMerchants, the discover view) are untouched. The env read lives here, in
- *  one place; PathPage threads it as a prop. */
-export const ADD_NEARBY_ENABLED = import.meta.env.VITE_PATH_ADD_NEARBY !== "false";
+ *  the landing renders ONLY when VITE_PATH_ADD_NEARBY === "true". Default
+ *  (unset / anything else) hides it. It was briefly turned on for beta review,
+ *  then hidden again at Robert's request: the feature works, but the layout and
+ *  workflow need more polish, so it stays off until we revisit it in production.
+ *  Re-enable without a code change by setting the env var to "true". This gates
+ *  ONLY that one link. The "+" overflow menu, "Build my day", and every shared
+ *  handler (onAddNearby/enterDiscover, useMerchants, the discover view) are
+ *  untouched. The env read lives here, in one place; PathPage threads it as a
+ *  prop. */
+export const ADD_NEARBY_ENABLED = import.meta.env.VITE_PATH_ADD_NEARBY === "true";
 
 interface TodaysPathViewProps {
   /** Ordered run list (appointments interleaved with flexible stops) from useTodaysPath. */
