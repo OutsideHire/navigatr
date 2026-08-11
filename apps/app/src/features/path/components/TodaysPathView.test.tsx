@@ -121,43 +121,17 @@ describe("TodaysPathView", () => {
     expect(passed.map((s) => s.id)).toEqual(["due1", "near1"]);
   });
 
-  it("renders the overflow list under a carry-over heading", () => {
+  it("no longer renders the 'Won't fit today' overflow section, but keeps feeding the add-stops pool (v2.2 A4)", () => {
     renderView();
-    expect(screen.getByText(/won't fit today/i)).toBeInTheDocument();
-    expect(screen.getByText(/still waiting for you tomorrow/i)).toBeInTheDocument();
-    expect(screen.getByText("Overflow Co")).toBeInTheDocument();
-  });
-
-  it("removing an overflow item drops it from the 'Won't fit today' list, leaving the others", () => {
-    const twoOverflow: FlexibleStop[] = [
-      { id: "of1", dealId: null, name: "Overflow One", lat: 30.5, lng: -97.5, tier: "nearby", ageDays: null },
-      { id: "of2", dealId: null, name: "Overflow Two", lat: 30.6, lng: -97.6, tier: "nearby", ageDays: null },
-    ];
-    renderView({ overflow: twoOverflow });
-    expect(screen.getByText("Overflow One")).toBeInTheDocument();
-    expect(screen.getByText("Overflow Two")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /remove overflow one/i }));
-
-    expect(screen.queryByText("Overflow One")).not.toBeInTheDocument();
-    // The other overflow item remains.
-    expect(screen.getByText("Overflow Two")).toBeInTheDocument();
-  });
-
-  it("removing an overflow item does not change the routed proposal list", () => {
-    const onStart = vi.fn();
-    renderView({ onStart });
-    fireEvent.click(screen.getByRole("button", { name: /remove overflow co/i }));
-
-    // The proposal rows are untouched.
-    expect(screen.getByText("Owed Co")).toBeInTheDocument();
-    expect(screen.getByText("DueToday Co")).toBeInTheDocument();
-    expect(screen.getByText("Nearby Co")).toBeInTheDocument();
-
-    // And Start still hands back exactly the flexible proposal stops.
-    fireEvent.click(screen.getByRole("button", { name: /start driving/i }));
-    const passed = onStart.mock.calls[0]![0] as OrderedStop[];
-    expect(passed.map((s) => s.id)).toEqual(["owed1", "due1", "near1"]);
+    // A4: the visible overflow list is gone.
+    expect(screen.queryByText(/won't fit today/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/still waiting for you tomorrow/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Overflow Co")).not.toBeInTheDocument();
+    // But the overflow data still flows in and feeds the "Add more stops" pool:
+    // there is a candidate, so the add-stops control is present and enabled.
+    const addStops = screen.getByRole("button", { name: /add more stops/i });
+    expect(addStops).toBeInTheDocument();
+    expect(addStops).not.toBeDisabled();
   });
 
   it("Add more nearby opens the discovery", () => {
@@ -299,49 +273,85 @@ describe("TodaysPathView", () => {
     expect(follows(start, why)).toBe(true);
   });
 
-  it("states how many nearby stops were auto-added when the day has commitments", () => {
-    // the default `proposal` fixture has committed stops (appointment/owed/due) + 1 nearby
-    renderView();
-    expect(
-      screen.getByText(/1 new place was added in your open time\. tap one to drop it\./i),
-    ).toBeInTheDocument();
+  // ─── A8: dashed open-slot add-stops row ─────────────────────────────
+
+  it("renders the add-stops control as a dashed open-slot row with a plus-prefixed label and inline capacity string", () => {
+    renderView({ remainingMin: 50, windowEndHour: 18 });
+    const addStops = screen.getByRole("button", { name: /add more stops/i });
+    // Dashed treatment reads as an open slot; full-width row, no filled bg.
+    expect(addStops.className).toMatch(/border-dashed/);
+    expect(addStops.className).toMatch(/\bw-full\b/);
+    expect(addStops.className).toMatch(/bg-transparent/);
+    // The label carries the plus glyph + the capacity string on the same row.
+    expect(within(addStops).getByText("Add more stops")).toBeInTheDocument();
+    expect(within(addStops).getByText(/about 50 minutes still open/i)).toBeInTheDocument();
   });
 
-  it("pluralizes the auto-added count", () => {
+  it("disables (not hides) the dashed add-stops row when no candidate remains", () => {
+    // No overflow candidates -> the pool is empty, so the control is disabled.
+    renderView({ overflow: [] });
+    const addStops = screen.getByRole("button", { name: /add more stops/i });
+    expect(addStops).toBeInTheDocument();
+    expect(addStops).toBeDisabled();
+  });
+
+  it("disables (not hides) the dashed add-stops row when the day is full, showing the full-day sentence", () => {
+    renderView({ remainingMin: 5, windowEndHour: 18 });
+    const addStops = screen.getByRole("button", { name: /add more stops/i });
+    expect(addStops).toBeDisabled();
+    expect(within(addStops).getByText(/that's a full day, nothing else fits before 6:00/i)).toBeInTheDocument();
+  });
+
+  it("shows the remaining capacity in plain terms on the add-stops row when more stops still fit", () => {
+    renderView({ remainingMin: 50, windowEndHour: 18 });
+    expect(screen.getByText(/about 50 minutes still open/i)).toBeInTheDocument();
+    expect(screen.queryByText(/that's a full day/i)).not.toBeInTheDocument();
+  });
+
+  // ─── A9: tinted fill-notice panel ────────────────────────────────────
+
+  it("renders the fill notice as a panel with the new copy, an Undo affordance, and a dismiss that hides it", () => {
+    // the default `proposal` fixture has committed stops (appointment/owed/due) + 1 nearby
+    renderView();
+    expect(screen.getByText(/added 1 stop to your day\./i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^undo$/i })).toBeInTheDocument();
+    const dismiss = screen.getByRole("button", { name: /dismiss/i });
+    fireEvent.click(dismiss);
+    expect(screen.queryByText(/added 1 stop to your day\./i)).not.toBeInTheDocument();
+  });
+
+  it("pluralizes the fill-notice count", () => {
     const proposal = [
       { id: "ap", kind: "appointment", tier: "appointment", name: "Appt", dealId: "d", lat: 1, lng: 1, startAt: "2026-08-10T17:00:00Z", endAt: null, ageDays: null },
       { id: "n1", kind: "flexible", tier: "nearby", name: "N1", dealId: null, lat: 1, lng: 1, startAt: null, endAt: null, ageDays: null },
       { id: "n2", kind: "flexible", tier: "nearby", name: "N2", dealId: null, lat: 1, lng: 1, startAt: null, endAt: null, ageDays: null },
     ] as OrderedStop[];
     renderView({ proposal, overflow: [] });
-    expect(screen.getByText(/2 new places were added in your open time/i)).toBeInTheDocument();
+    expect(screen.getByText(/added 2 stops to your day\./i)).toBeInTheDocument();
   });
 
-  it("does not show the auto-add line on an empty day", () => {
+  it("does not show the fill notice on an empty day", () => {
     renderView({ proposal: [], overflow: [] });
-    expect(screen.queryByText(/added in your open time/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/to your day\./i)).not.toBeInTheDocument();
   });
 
-  it("does not show the auto-add line when the day has no nearby fill", () => {
+  it("does not show the fill notice when the day has no nearby fill", () => {
     const proposal = [
       { id: "o1", kind: "flexible", tier: "past_due", name: "Owed", dealId: "d", lat: 1, lng: 1, startAt: null, endAt: null, ageDays: 5 },
     ] as OrderedStop[];
     renderView({ proposal, overflow: [] });
-    expect(screen.queryByText(/added in your open time/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/to your day\./i)).not.toBeInTheDocument();
   });
 
-  it("states the remaining capacity in plain terms when more stops still fit", () => {
-    renderView({ remainingMin: 50, windowEndHour: 18 });
-    expect(screen.getByText(/about 50 minutes still open/i)).toBeInTheDocument();
-    expect(screen.queryByText(/that's a full day/i)).not.toBeInTheDocument();
-  });
+  // ─── A8: exactly one filled/primary button ───────────────────────────
 
-  it("replaces the capacity line with a full-day sentence when nothing else fits", () => {
-    renderView({ remainingMin: 5, windowEndHour: 18 });
-    expect(
-      screen.getByText(/that's a full day, nothing else fits before 6:00/i),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/about .* still open/i)).not.toBeInTheDocument();
+  it("carries exactly one filled/primary button ('Start driving')", () => {
+    renderView();
+    const filled = screen
+      .getAllByRole("button")
+      .filter((b) => b.classList.contains("bg-brand-primary"));
+    expect(filled).toHaveLength(1);
+    expect(filled[0]!).toHaveAccessibleName(/start driving/i);
   });
 
   it("empty day offers a single 'Build my day' action", () => {

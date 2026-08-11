@@ -16,12 +16,13 @@
  *     (appointments are calendar anchors shown in the plan, never created as
  *     merchant stops). An empty day instead shows "Build my day".
  *
- * The overflow list ("Won't fit today") shows the flexible candidates that did
- * not fit; each is removable (drops from the visible overflow, same local
- * override as the proposal rows). Wiring true carry-over is SP-D.
+ * The overflow candidates that did not fit are NO LONGER shown as a "Won't fit
+ * today" list (v2.2 A4): the `overflow` prop still flows in and remains the
+ * ranked pool the one-tap "Add more stops" control folds from (and Ticket B's
+ * fill pool), it simply does not render its own visible section anymore.
  */
 import * as React from "react";
-import { ArrowRight, CalendarClock, ExternalLink, Loader2, MapPin, MapPinOff, Navigation, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowRight, CalendarClock, ExternalLink, Loader2, MapPin, MapPinOff, Navigation, Plus, RefreshCw, Trash2, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button, Card } from "@/components/navigatr";
@@ -99,6 +100,9 @@ export function TodaysPathView({
   // `proposal`, so local inserts never fight incoming data.
   const [workingProposal, setWorkingProposal] = React.useState<OrderedStop[]>(proposal);
   const [poolCursor, setPoolCursor] = React.useState(0);
+  // Local dismissal of the fill-notice panel (v2.2 A9). Reset on a fresh
+  // proposal so a new day's fills re-announce.
+  const [fillNoticeDismissed, setFillNoticeDismissed] = React.useState(false);
   // Captured once, so insertStop stays deterministic across taps (no Date.now()
   // read mid-interaction).
   const [now] = React.useState(() => new Date().toISOString());
@@ -106,6 +110,7 @@ export function TodaysPathView({
   React.useEffect(() => {
     setWorkingProposal(proposal);
     setPoolCursor(0);
+    setFillNoticeDismissed(false);
   }, [proposal]);
 
   const visibleProposal = React.useMemo(
@@ -231,86 +236,80 @@ export function TodaysPathView({
             ))}
           </ol>
 
-          {/* State how many nearby stops were auto-added into open time, with a
-              plain drop affordance (FR-PATH-UX-02). Suppressed on an empty day
-              (handled by "Build my day") and when nothing was auto-filled. */}
-          {hasCommitment && nearbyFillCount > 0 && (
-            <p className="text-caption text-text-muted">
-              {nearbyFillCount} new {nearbyFillCount === 1 ? "place was" : "places were"} added in your open time. Tap one to drop it.
-            </p>
-          )}
-
-          {/* "+ Add more stops" affordance with a plain remaining-capacity
-              subtitle. When nothing more fits, the subtitle is REPLACED by a
-              static full-day sentence rather than disabling the button
-              (FR-PATH-UX-10). */}
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between gap-2">
-              <Button variant="secondary" size="sm" leadingIcon={Plus} onClick={onAddNearby}>
-                Add more nearby
-              </Button>
-              {/* One-tap incremental insert: folds the next ranked candidate into
-                  its gap in place. Shown only while the pool still has a
-                  candidate to try; when it cannot place one the plan is left
-                  unchanged and the capacity/full-day sentence below still speaks. */}
-              {canAddStop && (
-                <Button variant="tertiary" size="sm" leadingIcon={Plus} onClick={handleAddStop}>
-                  Add more stops
-                </Button>
+          {/* Add-stops control (v2.2 A8): a single full-width DASHED open-slot
+              row, directly beneath the last stop row and above the fill notice.
+              It is a SECONDARY optional action, so it stays transparent with no
+              elevation; the only FILLED button on the screen is "Start driving".
+              It still folds the next ranked overflow candidate into its gap via
+              handleAddStop (behavior unchanged). When no capacity remains OR no
+              candidate is left it is rendered DISABLED (never hidden), and the
+              capacity string is replaced by the static full-day sentence. */}
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={handleAddStop}
+              disabled={!canAddStop || remainingMin < MIN_STOP_MIN}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-radius-md border border-dashed border-border-default bg-transparent px-3 py-3 text-left",
+                "transition-colors hover:border-border-strong hover:bg-surface-sunken/40 active:bg-surface-sunken",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas",
+                "disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-border-default disabled:hover:bg-transparent",
               )}
-            </div>
-            <p className="text-caption text-text-subtle">
-              {remainingMin < MIN_STOP_MIN
-                ? fullDaySentence(windowEndHour)
-                : capacitySentence(remainingMin)}
-            </p>
+            >
+              <Plus className="h-4 w-4 shrink-0 text-text-default" aria-hidden />
+              <span className="text-body-strong text-text-default">Add more stops</span>
+              {/* Capacity string: advisory, same line, muted + smaller (not part
+                  of the label). Full-day sentence when nothing more fits. */}
+              <span className="ml-auto shrink-0 text-caption text-text-subtle">
+                {remainingMin < MIN_STOP_MIN
+                  ? fullDaySentence(windowEndHour)
+                  : capacitySentence(remainingMin)}
+              </span>
+            </button>
+
+            {/* "Add more nearby" opens Find-near-me. Demoted to a small secondary
+                text link so the dashed row reads as the primary add affordance
+                (v2.2 A8); this link is flag-gated for removal in A-T4. */}
+            <button
+              type="button"
+              onClick={onAddNearby}
+              className="self-start rounded-radius-sm text-caption font-medium text-brand-primary transition-colors hover:text-brand-primary-pressed hover:underline focus-visible:outline-none focus-visible:underline"
+            >
+              Add more nearby
+            </button>
           </div>
 
-          {/* Overflow: stops that did not fit today. Read-only, and no explicit
-              "carry" action is needed: past-due stays past-due, due-today becomes
-              past-due, and nearby is re-discovered, so these reappear on their own
-              the next time the rep builds a path. */}
-          {visibleOverflow.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              <div className="flex flex-col">
-                <span className="text-caption font-medium text-text-muted">
-                  Won&apos;t fit today
-                </span>
-                <span className="text-caption text-text-subtle">
-                  Still waiting for you tomorrow
-                </span>
-              </div>
-              {visibleOverflow.map((s) => (
-                <div
-                  key={s.id}
-                  className="flex items-center gap-3 rounded-radius-md border border-dashed border-border-default bg-surface-sunken/40 p-3 opacity-75"
+          {/* Fill notice (v2.2 A9): a tinted inline PANEL (not a toast, in
+              content flow) reporting how many nearby stops were auto-added into
+              open time. Uses an info tint (never the warm/amber aging range),
+              carries an Undo and a Dismiss affordance, and sits beneath the
+              add-stops control and above Start. Suppressed on an empty day
+              (handled by "Build my day"), when nothing was auto-filled, or once
+              locally dismissed. */}
+          {hasCommitment && nearbyFillCount > 0 && !fillNoticeDismissed && (
+            <div className="flex items-start gap-3 rounded-radius-md border border-status-info/30 bg-status-info-bg px-3 py-3">
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <p className="text-body-md text-text-default">
+                  Added {nearbyFillCount} {nearbyFillCount === 1 ? "stop" : "stops"} to your day.
+                </p>
+                <button
+                  type="button"
+                  // TODO(Ticket B): wire the real reversal of the auto-added
+                  // fills. For this ticket the affordance renders as a no-op.
+                  onClick={() => {}}
+                  className="self-start rounded-radius-sm text-caption font-medium text-brand-primary transition-colors hover:text-brand-primary-pressed hover:underline focus-visible:outline-none focus-visible:underline"
                 >
-                  <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-radius-full", tierAccent(s.tier).icon)}>
-                    <MapPin className="h-3.5 w-3.5" aria-hidden />
-                  </span>
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <p className="truncate text-body-strong text-text-default">{s.name}</p>
-                    <p className={cn("mt-0.5 text-caption", s.tier === "past_due" && s.ageDays != null && s.ageDays > 0 ? "text-status-warning" : "text-text-muted")}>
-                      {reasonLine({
-                        kind: "flexible",
-                        tier: s.tier,
-                        startAt: null,
-                        ageDays: s.ageDays,
-                        datePromisedToday: false,
-                        hasPriorActivity: s.tier !== "nearby",
-                      })}
-                    </p>
-                  </div>
-                  <Button
-                    variant="tertiary"
-                    size="sm"
-                    iconOnly
-                    leadingIcon={Trash2}
-                    aria-label={`Remove ${s.name}`}
-                    onClick={() => handleRemove(s.id)}
-                  />
-                </div>
-              ))}
+                  Undo
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFillNoticeDismissed(true)}
+                aria-label="Dismiss"
+                className="-mr-1 -mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-radius-full text-text-muted transition-colors hover:bg-surface-sunken hover:text-text-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
             </div>
           )}
           </>
