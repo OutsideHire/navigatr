@@ -184,6 +184,35 @@ describe("useLiveDayTiers", () => {
     expect(screen.queryByText(/since your last stop/)).not.toBeInTheDocument();
   });
 
+  it("colors the reason line from the band (v2.2 B 4.6): aging -> danger, past_ideal -> warning, in_window -> muted", () => {
+    owedState.current = {
+      owed: [owedVisit({ taskId: "hot", bandPosition: "aging" })],
+      noLocation: [],
+    };
+    const { unmount } = renderHarness();
+    // The fixture's createdAt is 5 days ago -> the "anytime" days-since sentence.
+    expect(screen.getByText("5 days since your last stop.").className).toMatch(/text-status-danger/);
+    unmount();
+
+    owedState.current = {
+      owed: [owedVisit({ taskId: "warm", bandPosition: "past_ideal" })],
+      noLocation: [],
+    };
+    renderHarness();
+    expect(screen.getByText("5 days since your last stop.").className).toMatch(/text-status-warning/);
+  });
+
+  it("an in_window owed row reads neutral (muted), never a warm/hot aging color", () => {
+    owedState.current = {
+      owed: [owedVisit({ taskId: "neutral", bandPosition: "in_window" })],
+      noLocation: [],
+    };
+    renderHarness();
+    const line = screen.getByText("5 days since your last stop.");
+    expect(line.className).toMatch(/text-text-muted/);
+    expect(line.className).not.toMatch(/text-status-warning|text-status-danger/);
+  });
+
   it("orders appointments, then past-due, then due-today", () => {
     meetingState.current = { stops: [{ ...pastAppointment, past: false }] };
     owedState.current = { owed: [owedVisit()], noLocation: [] };

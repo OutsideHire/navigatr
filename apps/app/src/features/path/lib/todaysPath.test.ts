@@ -160,6 +160,24 @@ describe("assembleTodaysPath", () => {
     expect(byId("n-1").datePromised).toBe(false);
   });
 
+  it("threads bandPosition from owed / due-today candidates onto the ordered stops (v2.2 B 4.6)", () => {
+    const input = base({
+      owed: [
+        owed({ id: "o-warm", ageDays: 6, bandPosition: "past_ideal" }),
+        owed({ id: "o-hot", ageDays: 12, bandPosition: "aging" }),
+      ],
+      dueToday: [due({ id: "d-neutral", bandPosition: "in_window" })],
+      nearbyPool: [nearby({ id: "n-1" })],
+    });
+    const r = assembleTodaysPath(input, NOW);
+    const byId = (id: string) => [...r.proposal, ...r.overflow].find((s) => s.id === id)!;
+    expect(byId("o-warm").bandPosition).toBe("past_ideal");
+    expect(byId("o-hot").bandPosition).toBe("aging");
+    expect(byId("d-neutral").bandPosition).toBe("in_window");
+    // A nearby fill carries no band.
+    expect(byId("n-1").bandPosition).toBeUndefined();
+  });
+
   it("oldest past_due first (preserves the input order of pre-sorted owed)", () => {
     const input = base({
       owed: [owed({ id: "o-old", ageDays: 12 }), owed({ id: "o-mid", ageDays: 7 }), owed({ id: "o-new", ageDays: 2 })],

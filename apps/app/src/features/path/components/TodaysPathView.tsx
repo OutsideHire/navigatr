@@ -31,6 +31,7 @@ import type { OwedVisitNoCoords } from "../lib/owedVisits";
 import type { TodaysPathStatus } from "../hooks/useTodaysPath";
 import { tierAccent } from "../lib/tierStyles";
 import { reasonLine, stopLabel } from "../lib/reasonLine";
+import { agingReasonTextClass, agingStateFromBand } from "../lib/agingState";
 import { capacitySentence, fullDaySentence } from "../lib/dayCapacity";
 import { fillToCapacity } from "../lib/fillToCapacity";
 import { DayStopsMap } from "./DayStopsMap";
@@ -612,7 +613,9 @@ function ProposalRow({
             an appointment with no contact does not leave a blank line, and the
             row never collapses (the name above always renders). */}
         {reason && (
-          <p className={cn("mt-0.5 text-caption", stop.tier === "past_due" && stop.ageDays != null && stop.ageDays > 0 ? "text-status-warning" : "text-text-muted")}>
+          // v2.2 B 4.6: aging COLOR from the band (neutral/warm/hot), not the old
+          // `past_due && ageDays > 0` boolean. Color encodes aging only.
+          <p className={cn("mt-0.5 text-caption", agingReasonTextClass(agingStateFromBand(stop.bandPosition)))}>
             {reason}
           </p>
         )}

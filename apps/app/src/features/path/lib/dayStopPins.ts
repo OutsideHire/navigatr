@@ -12,12 +12,15 @@
  */
 
 import type { OrderedStop } from "./todaysPath";
+import { agingStateFromBand, type AgingState } from "./agingState";
 
 /** The three aging states from the band (Section 3.1, warm range):
  *  - neutral: before target (on time / not yet due)
  *  - warm:    past target
- *  - hot:     past the latest acceptable point */
-export type AgingState = "neutral" | "warm" | "hot";
+ *  - hot:     past the latest acceptable point
+ *  Canonical definition lives in ./agingState; re-exported here for the map's
+ *  existing consumers (DayStopsMap). */
+export type { AgingState };
 
 export interface StopPin {
   id: string;
@@ -32,17 +35,14 @@ export interface StopPin {
 }
 
 /**
- * Aging state for a stop.
- *
- * v2.2 A5 approximation: derive from the data OrderedStop carries TODAY —
- * `past_due` maps to "warm", everything else (appointments, due_today, nearby)
- * to "neutral". We deliberately do NOT emit "hot" yet and do NOT hardcode a
- * day-count threshold: Ticket B 4.6 rewires this to the true three-state band
- * via `bandPosition` (neutral before target / warm past target / hot past
- * latest). Until then a single past_due -> warm rule is the honest signal.
+ * Aging state for a stop (v2.2 B 4.6). DERIVED FROM THE BAND the stop carries
+ * (`bandPosition`) via the single-source `agingStateFromBand`: neutral before
+ * target, warm past target, hot past the latest acceptable date. No day-count
+ * threshold and no tier approximation — an appointment / nearby / band-less stop
+ * has no band and reads neutral, and "hot" now actually occurs (past latest).
  */
 function agingStateForStop(stop: OrderedStop): AgingState {
-  return stop.tier === "past_due" ? "warm" : "neutral";
+  return agingStateFromBand(stop.bandPosition);
 }
 
 const hasCoords = (s: OrderedStop): s is OrderedStop & { lat: number; lng: number } =>

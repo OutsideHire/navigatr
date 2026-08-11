@@ -17,6 +17,7 @@ import { CalendarClock, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { StopTier } from "../lib/todaysPath";
 import { tierAccent } from "../lib/tierStyles";
+import { agingReasonTextClass, type AgingState } from "../lib/agingState";
 
 export interface TieredStopRow {
   /** Stable React key. */
@@ -43,8 +44,10 @@ export interface TieredStopRow {
   /** One plain DETAIL sentence (v2.2 B 4.5.1) shown under the name/label. May be
    *  empty (an appointment with no contact); an empty string renders no line. */
   reason: string;
-  /** Warning-color the reason line (a place is aging). Colour is the only signal. */
-  aging?: boolean;
+  /** Aging state driving the reason-line COLOR (v2.2 B 4.6), derived from the
+   *  band (neutral before target / warm past target / hot past latest). Color is
+   *  the only aging signal. Defaults to neutral (muted) when omitted. */
+  agingState?: AgingState;
   /** Dim the whole row (past / resolved). */
   dimmed?: boolean;
   /** Strike the name (past / resolved). */
@@ -121,10 +124,7 @@ function Row({ row }: { row: TieredStopRow }) {
               an appointment with no contact keeps its layout without a blank line. */}
           {row.reason && (
             <p
-              className={cn(
-                "mt-0.5 text-caption",
-                row.aging ? "text-status-warning" : "text-text-muted",
-              )}
+              className={cn("mt-0.5 text-caption", agingReasonTextClass(row.agingState ?? "neutral"))}
             >
               {row.reason}
             </p>

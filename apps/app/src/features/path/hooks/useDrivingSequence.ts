@@ -74,6 +74,7 @@ export function useDrivingSequence(
           lat: v.lat,
           lng: v.lng,
           datePromised: v.dateSource === "asserted",
+          bandPosition: v.bandPosition,
         })),
         dueToday: dueToday.map((v) => ({
           taskId: v.taskId,
@@ -83,6 +84,7 @@ export function useDrivingSequence(
           lat: v.lat,
           lng: v.lng,
           datePromised: v.dateSource === "asserted",
+          bandPosition: v.bandPosition,
         })),
         native: nativeStops
           .filter((s) => s.status === "pending")

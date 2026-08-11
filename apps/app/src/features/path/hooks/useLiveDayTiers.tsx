@@ -38,6 +38,7 @@ import type { MeetingStop } from "../lib/meetingStops";
 import type { OwedVisit, OwedVisitNoCoords } from "../lib/owedVisits";
 import { directionsUrl } from "../lib/directionsUrl";
 import { reasonLine, stopLabel } from "../lib/reasonLine";
+import { agingStateFromBand } from "../lib/agingState";
 import type { TieredStopRow } from "../components/TieredStopList";
 
 /** Local-tz clock time, e.g. "10:30 AM". */
@@ -242,7 +243,9 @@ export function useLiveDayTiers(pathDate: string): LiveDayTiers {
       detail: v.address ?? undefined,
       label: stopLabel(rstop),
       reason: reasonLine(rstop),
-      aging: tier === "past_due" && age > 0,
+      // v2.2 B 4.6: aging COLOR from the band (neutral before target / warm past
+      // target / hot past latest), not the old `past_due && age > 0` boolean.
+      agingState: agingStateFromBand(v.bandPosition),
       actions: (
         <>
           <Button

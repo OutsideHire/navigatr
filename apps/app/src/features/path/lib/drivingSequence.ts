@@ -1,4 +1,5 @@
 import type { LatLng } from "@/lib/distance";
+import type { BandPosition } from "./classD";
 import { driveMinutesBetween } from "./driveTime";
 import { dwellMinutesForKind } from "./pathCapacityDefaults";
 import { reasonLine, stopLabel, lastVisitContext } from "./reasonLine";
@@ -41,6 +42,10 @@ export interface DrivingCard {
   merchantId: string | null;
   lat: number | null;
   lng: number | null;
+  /** The follow-up's band position (v2.2 B 4.6), for the run map's aging color
+   *  via `agingStateFromBand`. Owed cards carry it; meetings/nearby leave it
+   *  undefined (no band -> neutral). */
+  bandPosition?: BandPosition;
 }
 
 export interface DrivingMeetingInput {
@@ -68,6 +73,8 @@ export interface DrivingOwedInput {
   lng?: number | null;
   /** Asserted follow-up date (date_source "asserted") -> "you promised". */
   datePromised?: boolean;
+  /** Band position for the run map's aging color (v2.2 B 4.6). */
+  bandPosition?: BandPosition;
 }
 export interface DrivingDueTodayInput {
   taskId: string;
@@ -78,6 +85,8 @@ export interface DrivingDueTodayInput {
   lng?: number | null;
   /** Asserted follow-up date (date_source "asserted") -> "you promised". */
   datePromised?: boolean;
+  /** Band position for the run map's aging color (v2.2 B 4.6). */
+  bandPosition?: BandPosition;
 }
 export interface DrivingNativeInput {
   merchantId: string;
@@ -202,6 +211,7 @@ export function drivingSequence(
         merchantId: null,
         lat: o.lat ?? null,
         lng: o.lng ?? null,
+        bandPosition: o.bandPosition,
       },
       label: stopLabel({
         kind: "flexible",
@@ -236,6 +246,7 @@ export function drivingSequence(
         merchantId: null,
         lat: d.lat ?? null,
         lng: d.lng ?? null,
+        bandPosition: d.bandPosition,
       },
       label: stopLabel({
         kind: "flexible",

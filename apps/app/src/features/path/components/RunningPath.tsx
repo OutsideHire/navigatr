@@ -34,8 +34,9 @@ export interface RunningPathProps {
 
 /** Map a driving-card kind onto the OrderedStop kind/tier the shared list + map
  *  components consume, so the "what remains" section speaks the same vocabulary
- *  as the landing. Owed cards read as past_due (the aging colour the run map
- *  uses); nearby stays nearby; meetings stay appointment. */
+ *  as the landing. Owed cards read as past_due; nearby stays nearby; meetings
+ *  stay appointment. The run map's aging COLOR comes from the card's band
+ *  position (carried onto the OrderedStop below), not from this tier (v2.2 B 4.6). */
 function cardStopKind(kind: DrivingCardKind): StopKind {
   return kind === "appointment" ? "appointment" : kind === "external" ? "external" : "flexible";
 }
@@ -367,6 +368,9 @@ export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: Ru
     startAt: null,
     endAt: null,
     ageDays: null,
+    // v2.2 B 4.6: the run map colors aging from the band, so carry the card's
+    // band position onto the OrderedStop the map builds pins from.
+    bandPosition: c.bandPosition,
   }));
 
   return (

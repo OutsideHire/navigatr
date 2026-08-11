@@ -28,6 +28,7 @@
  */
 
 import { nearestNeighborOrder, type LatLng } from "@/lib/distance";
+import type { BandPosition } from "./classD";
 import { driveMinutesBetween } from "./driveTime";
 import { interleaveAroundAnchors } from "./interleaveAroundAnchors";
 import { dwellMinutesForKind } from "./pathCapacityDefaults";
@@ -65,6 +66,11 @@ export interface OwedCandidate {
    *  (date_source "asserted"). Drives the "you promised" label (v2.2 B 4.5).
    *  Defaults to false when absent. */
   datePromised?: boolean;
+  /** The follow-up's band position (v2.2 B 4.6), from OwedVisit.bandPosition.
+   *  Drives the aging COLOR (neutral/warm/hot via `agingStateFromBand`), never a
+   *  day count. The assembler populates it; appointments/nearby leave it
+   *  undefined. */
+  bandPosition?: BandPosition;
 }
 
 /** A drop-in / follow-up due today. */
@@ -76,6 +82,8 @@ export interface DueTodayCandidate {
   lng: number | null;
   /** True when the follow-up date was asserted (date_source "asserted"). */
   datePromised?: boolean;
+  /** Band position for the aging color (v2.2 B 4.6). See OwedCandidate. */
+  bandPosition?: BandPosition;
 }
 
 /** A discovered candidate used to fill the day. Extra fields are ignored. */
@@ -128,6 +136,9 @@ export interface FlexibleStop {
   /** Asserted follow-up date (date_source "asserted") -> "you promised" label
    *  (v2.2 B 4.5). Carried from the owed / due-today candidate; false for nearby. */
   datePromised?: boolean;
+  /** Band position for the aging color (v2.2 B 4.6). Carried from the owed /
+   *  due-today candidate; undefined for nearby. */
+  bandPosition?: BandPosition;
 }
 
 export type StopKind = AppointmentKind | "flexible";
@@ -152,6 +163,9 @@ export interface OrderedStop {
   /** Asserted follow-up date (date_source "asserted") -> "you promised" label
    *  (v2.2 B 4.5). Threaded from the flexible stop; false for appointments. */
   datePromised?: boolean;
+  /** Band position for the aging color (v2.2 B 4.6). Threaded from the flexible
+   *  stop; undefined for appointments and nearby fills. */
+  bandPosition?: BandPosition;
 }
 
 export interface TodaysPathResult {
@@ -205,11 +219,11 @@ function prioritizedFlexible(input: AssembleTodaysPathInput): FlexibleStop[] {
     .map((x) => x.o);
   for (const o of owedOldestFirst) {
     if (!hasCoords(o)) continue;
-    out.push({ id: o.id, dealId: o.dealId, name: o.name, lat: o.lat, lng: o.lng, tier: "past_due", ageDays: o.ageDays, datePromised: o.datePromised ?? false });
+    out.push({ id: o.id, dealId: o.dealId, name: o.name, lat: o.lat, lng: o.lng, tier: "past_due", ageDays: o.ageDays, datePromised: o.datePromised ?? false, bandPosition: o.bandPosition });
   }
   for (const d of input.dueToday) {
     if (!hasCoords(d)) continue;
-    out.push({ id: d.id, dealId: d.dealId, name: d.name, lat: d.lat, lng: d.lng, tier: "due_today", ageDays: null, datePromised: d.datePromised ?? false });
+    out.push({ id: d.id, dealId: d.dealId, name: d.name, lat: d.lat, lng: d.lng, tier: "due_today", ageDays: null, datePromised: d.datePromised ?? false, bandPosition: d.bandPosition });
   }
   for (const n of input.nearbyPool) {
     if (!hasCoords(n)) continue;
@@ -230,6 +244,7 @@ const flexibleToOrdered = (s: FlexibleStop): OrderedStop => ({
   endAt: null,
   ageDays: s.ageDays,
   datePromised: s.datePromised ?? false,
+  bandPosition: s.bandPosition,
 });
 
 const appointmentToOrdered = (a: PathAppointment): OrderedStop => ({
