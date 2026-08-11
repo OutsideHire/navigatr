@@ -15,12 +15,15 @@ import type { OrderedStop } from "../lib/todaysPath";
  * the shared instance registry is created with vi.hoisted so the tests can read
  * it to assert the map is created once and never torn down on re-render.
  */
-const { mapInstances } = vi.hoisted(() => ({ mapInstances: [] as Array<{ removed: boolean }> }));
+const { mapInstances } = vi.hoisted(() => ({
+  mapInstances: [] as Array<{ removed: boolean; resizeCalls: number }>,
+}));
 
 vi.mock("maplibre-gl", () => {
   class FakeMap {
     container: HTMLElement;
     removed = false;
+    resizeCalls = 0;
     constructor(opts: { container: HTMLElement }) {
       this.container = opts.container;
       mapInstances.push(this);
@@ -28,6 +31,9 @@ vi.mock("maplibre-gl", () => {
     on(evt: string, cb: () => void) {
       if (evt === "load") cb(); // synchronous so styleLoaded flips during mount
       return this;
+    }
+    resize() {
+      this.resizeCalls++;
     }
     remove() {
       this.removed = true;
@@ -145,5 +151,23 @@ describe("DayStopsMap", () => {
     rerender(<DayStopsMap stops={[stop({ id: "a" }), stop({ id: "b" })]} origin={origin} onStopClick={vi.fn()} />);
     expect(mapInstances).toHaveLength(1);
     expect(mapInstances[0].removed).toBe(false);
+  });
+
+  it("resizes on the hidden -> shown transition, and not on mount", () => {
+    // Mount as the active view: no resize should fire on mount (the container
+    // already has its box), so the create-once path stays clean.
+    const { rerender } = render(
+      <DayStopsMap stops={[stop({ id: "a" })]} origin={origin} onStopClick={vi.fn()} active />,
+    );
+    expect(mapInstances[0].resizeCalls).toBe(0);
+
+    // Hide it (List view), then show it again (Map view). The false -> true edge
+    // must resize the retained map so it is not stuck at zero size.
+    rerender(<DayStopsMap stops={[stop({ id: "a" })]} origin={origin} onStopClick={vi.fn()} active={false} />);
+    expect(mapInstances[0].resizeCalls).toBe(0);
+    rerender(<DayStopsMap stops={[stop({ id: "a" })]} origin={origin} onStopClick={vi.fn()} active />);
+    expect(mapInstances[0].resizeCalls).toBeGreaterThanOrEqual(1);
+    // Still the same single retained instance.
+    expect(mapInstances).toHaveLength(1);
   });
 });

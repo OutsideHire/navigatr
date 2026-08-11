@@ -36,6 +36,11 @@ export interface DayStopsMapProps {
   origin: { lat: number; lng: number };
   /** Fired when a stop pin is tapped. Surfaces the same stop the list row does. */
   onStopClick: (id: string) => void;
+  /** Whether this map is the visible view (List/Map toggle). A MapLibre map
+   *  initialized inside a `display:none` container has zero size, so when the
+   *  consumer un-hides us we resize on the false -> true transition. Defaults to
+   *  true so a map that is never toggled behaves exactly as before. */
+  active?: boolean;
   className?: string;
 }
 
@@ -122,7 +127,7 @@ function makeRepElement(): HTMLDivElement {
   return el;
 }
 
-export function DayStopsMap({ stops, origin, onStopClick, className }: DayStopsMapProps) {
+export function DayStopsMap({ stops, origin, onStopClick, active = true, className }: DayStopsMapProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<maplibregl.Map | null>(null);
   const repMarkerRef = React.useRef<maplibregl.Marker | null>(null);
@@ -159,6 +164,25 @@ export function DayStopsMap({ stops, origin, onStopClick, className }: DayStopsM
     // handles later changes. Intentionally empty deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── Resize on the hidden -> shown transition (List/Map toggle) ────
+  //    A map created (or living) inside a `display:none` container reports a
+  //    zero-size canvas; once the consumer un-hides us the GL viewport must be
+  //    re-measured or the map renders collapsed. We track the previous `active`
+  //    value and resize only on the false -> true edge (never on mount, since
+  //    prev starts equal to the initial `active`). A deferred second resize lets
+  //    the layout settle after the container gains its real box.
+  const prevActiveRef = React.useRef(active);
+  React.useEffect(() => {
+    const wasActive = prevActiveRef.current;
+    prevActiveRef.current = active;
+    if (!active || wasActive) return;
+    const map = mapRef.current;
+    if (!map) return;
+    map.resize();
+    const t = setTimeout(() => mapRef.current?.resize(), 0);
+    return () => clearTimeout(t);
+  }, [active]);
 
   // ── Labeled rep-position marker ("You") + recenter on move ────────
   React.useEffect(() => {

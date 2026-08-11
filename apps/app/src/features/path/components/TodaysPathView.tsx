@@ -22,7 +22,7 @@
  * fill pool), it simply does not render its own visible section anymore.
  */
 import * as React from "react";
-import { ArrowRight, CalendarClock, ExternalLink, Loader2, MapPin, MapPinOff, Navigation, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { ArrowRight, CalendarClock, ExternalLink, List, Loader2, Map as MapIcon, MapPin, MapPinOff, Navigation, Plus, RefreshCw, Trash2, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button, Card } from "@/components/navigatr";
@@ -33,6 +33,7 @@ import { tierAccent } from "../lib/tierStyles";
 import { reasonLine } from "../lib/reasonLine";
 import { capacitySentence, fullDaySentence } from "../lib/dayCapacity";
 import { insertStop } from "../lib/insertStop";
+import { DayStopsMap } from "./DayStopsMap";
 
 /** Below this many open minutes, no further stop can fit (a stop needs at least
  *  a minimum dwell). At/above it, capacity is stated; below it, the day is full. */
@@ -120,6 +121,12 @@ export function TodaysPathView({
   // Captured once, so insertStop stays deterministic across taps (no Date.now()
   // read mid-interaction).
   const [now] = React.useState(() => new Date().toISOString());
+  // List | Map segmented view (v2.2 A5 / 3.2). List is the DEFAULT. Both views
+  // render the SAME stop set (`visibleProposal`); toggling only switches which
+  // container is shown (client state, no re-fetch). The map instance is retained
+  // across toggles — both containers stay mounted and the inactive one is
+  // CSS-hidden — so MapLibre never re-initializes.
+  const [dayView, setDayView] = React.useState<"list" | "map">("list");
 
   React.useEffect(() => {
     setWorkingProposal(proposal);
@@ -130,6 +137,27 @@ export function TodaysPathView({
   const visibleProposal = React.useMemo(
     () => workingProposal.filter((s) => !(s.kind === "flexible" && removed.has(s.id))),
     [workingProposal, removed],
+  );
+  // The map can only pin stops that carry coordinates. Same set + order as the
+  // list, minus any coordinate-less stops (they live in the "No location yet"
+  // group, which is list-only).
+  const mapStops = React.useMemo(
+    () =>
+      visibleProposal.filter(
+        (s) => s.lat != null && s.lng != null && Number.isFinite(s.lat) && Number.isFinite(s.lng),
+      ),
+    [visibleProposal],
+  );
+  // A map pin tap mirrors the list: for a stop backed by a deal, open the deal
+  // (parity with the row's Open-deal action). A stop with no dealId (a discovery
+  // / nearby fill) has no deal to open yet — a detail sheet is deferred to a
+  // later cross-reference pass (Section 6), so it is a deliberate no-op here.
+  const handleStopClick = React.useCallback(
+    (id: string) => {
+      const stop = visibleProposal.find((s) => s.id === id);
+      if (stop?.dealId) onOpenDeal(stop.dealId);
+    },
+    [visibleProposal, onOpenDeal],
   );
   // Ids already placed (assembler + any inserted) so an inserted candidate does
   // not also linger in the "won't fit" list.
@@ -237,6 +265,41 @@ export function TodaysPathView({
         <>
           {hasRoutable && (
           <>
+          {/* List | Map segmented toggle (v2.2 A5 / 3.2), styled like the Run |
+              Stops tablist. List is the default. Both views render the same day
+              (`visibleProposal`); toggling only flips which container is shown. */}
+          <div
+            role="tablist"
+            aria-label="Day view"
+            className="flex gap-1 self-start rounded-radius-md bg-surface-sunken p-0.5"
+          >
+            {([["list", "List", List], ["map", "Map", MapIcon]] as const).map(([key, label, Icon]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={dayView === key}
+                onClick={() => setDayView(key)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-radius-sm px-4 py-1.5 text-caption font-medium transition-colors",
+                  dayView === key
+                    ? "bg-surface-default text-text-default shadow-sm"
+                    : "text-text-muted hover:text-text-default",
+                )}
+              >
+                <Icon className="size-4" aria-hidden />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* LIST view: the stop list, the add-stops control, and the fill
+              notice. CSS-hidden (not unmounted) when Map is active. The add-stops
+              control + fill notice are list-only for this release (3.2). */}
+          <div
+            data-testid="day-list-wrapper"
+            className={cn("flex flex-col gap-4", dayView === "map" && "hidden")}
+          >
           {/* The proposal, in run order, each stop showing its plain reason line. */}
           <ol className="flex flex-col gap-1.5">
             {visibleProposal.map((stop, i) => (
@@ -329,6 +392,24 @@ export function TodaysPathView({
               </button>
             </div>
           )}
+          </div>
+
+          {/* MAP view: the same day's stops on DayStopsMap. Kept ALWAYS MOUNTED
+              (only CSS-hidden when List is active) so the MapLibre instance and
+              its GL context survive toggles and never re-initialize. The wrapper
+              carries a real height so the map is not zero-size when shown, and
+              `active` tells the map to resize on the hidden -> shown transition. */}
+          <div
+            data-testid="day-map-wrapper"
+            className={cn("h-[60vh] min-h-[360px]", dayView === "list" && "hidden")}
+          >
+            <DayStopsMap
+              stops={mapStops}
+              origin={origin}
+              onStopClick={handleStopClick}
+              active={dayView === "map"}
+            />
+          </div>
           </>
           )}
 

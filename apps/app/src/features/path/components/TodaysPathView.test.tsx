@@ -5,6 +5,35 @@ import { TodaysPathView } from "./TodaysPathView";
 import type { OrderedStop, FlexibleStop } from "../lib/todaysPath";
 import type { OwedVisitNoCoords } from "../lib/owedVisits";
 
+// DayStopsMap owns MapLibre (a real WebGL context jsdom lacks), so stub it with
+// a lightweight component that records the props the toggle wires (stop count +
+// active flag) and exposes a testid. This lets us assert the List/Map toggle
+// wiring and retention without a real map.
+vi.mock("./DayStopsMap", () => ({
+  DayStopsMap: (props: {
+    stops: Array<{ id: string }>;
+    active?: boolean;
+    onStopClick: (id: string) => void;
+  }) => (
+    <div
+      data-testid="day-stops-map"
+      data-stops={props.stops.length}
+      data-active={String(props.active)}
+    >
+      {/* Surface each pin as a button so tests can drive onStopClick wiring
+          without a real map. */}
+      {props.stops.map((s) => (
+        <button
+          key={s.id}
+          type="button"
+          data-testid={`map-pin-${s.id}`}
+          onClick={() => props.onStopClick(s.id)}
+        />
+      ))}
+    </div>
+  ),
+}));
+
 // A prioritized run list mixing all four tiers. Run order is: a past-due owed
 // drop-in, then a fixed appointment, then a due-today follow-up, then a nearby
 // fill. The assembler produces this; the view only renders it.
@@ -389,6 +418,85 @@ describe("TodaysPathView", () => {
     renderView({ proposal: [], overflow: [], onAddNearby });
     fireEvent.click(screen.getByRole("button", { name: /build my day/i }));
     expect(onAddNearby).toHaveBeenCalledTimes(1);
+  });
+
+  // ─── A5 / 3.2: List | Map segmented toggle ──────────────────────────
+
+  describe("List | Map view toggle", () => {
+    it("renders the toggle with List active by default: list content shown, map wrapper CSS-hidden", () => {
+      renderView();
+      const listTab = screen.getByRole("tab", { name: /^list$/i });
+      const mapTab = screen.getByRole("tab", { name: /^map$/i });
+      expect(listTab).toBeInTheDocument();
+      expect(mapTab).toBeInTheDocument();
+      // List is the default view.
+      expect(listTab).toHaveAttribute("aria-selected", "true");
+      expect(mapTab).toHaveAttribute("aria-selected", "false");
+
+      const listWrap = screen.getByTestId("day-list-wrapper");
+      const mapWrap = screen.getByTestId("day-map-wrapper");
+      // List content is visible; the map wrapper is CSS-hidden (not unmounted).
+      expect(listWrap.classList.contains("hidden")).toBe(false);
+      expect(mapWrap.classList.contains("hidden")).toBe(true);
+    });
+
+    it("clicking Map shows the map wrapper and hides the list wrapper; clicking List reverts", () => {
+      renderView();
+      const listWrap = screen.getByTestId("day-list-wrapper");
+      const mapWrap = screen.getByTestId("day-map-wrapper");
+
+      fireEvent.click(screen.getByRole("tab", { name: /^map$/i }));
+      expect(mapWrap.classList.contains("hidden")).toBe(false);
+      expect(listWrap.classList.contains("hidden")).toBe(true);
+      expect(screen.getByRole("tab", { name: /^map$/i })).toHaveAttribute("aria-selected", "true");
+
+      fireEvent.click(screen.getByRole("tab", { name: /^list$/i }));
+      expect(listWrap.classList.contains("hidden")).toBe(false);
+      expect(mapWrap.classList.contains("hidden")).toBe(true);
+    });
+
+    it("keeps DayStopsMap mounted in both views (retained, CSS-hidden not unmounted)", () => {
+      renderView();
+      // Mounted even while List is the active view.
+      expect(screen.getByTestId("day-stops-map")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("tab", { name: /^map$/i }));
+      // Same instance still present after switching to Map.
+      expect(screen.getByTestId("day-stops-map")).toBeInTheDocument();
+    });
+
+    it("passes the day's coordinate-bearing stops to the map and flags active only in Map view", () => {
+      renderView();
+      const map = screen.getByTestId("day-stops-map");
+      // All four fixture stops carry coords, so all four go to the map.
+      expect(map).toHaveAttribute("data-stops", "4");
+      // Inactive under List (so the map can skip resize work until shown).
+      expect(map).toHaveAttribute("data-active", "false");
+      fireEvent.click(screen.getByRole("tab", { name: /^map$/i }));
+      expect(screen.getByTestId("day-stops-map")).toHaveAttribute("data-active", "true");
+    });
+
+    it("keeps Start driving present in both views", () => {
+      renderView();
+      expect(screen.getByRole("button", { name: /start driving/i })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("tab", { name: /^map$/i }));
+      expect(screen.getByRole("button", { name: /start driving/i })).toBeInTheDocument();
+    });
+
+    it("wires a map pin tap to open the stop's deal (dealId parity with the list)", () => {
+      const onOpenDeal = vi.fn();
+      renderView({ onOpenDeal });
+      // The owed fixture stop carries dealId "d1"; tapping its pin opens the deal.
+      fireEvent.click(screen.getByTestId("map-pin-owed1"));
+      expect(onOpenDeal).toHaveBeenCalledWith("d1");
+    });
+
+    it("a map pin for a stop with no dealId is a no-op (no deal to open yet)", () => {
+      const onOpenDeal = vi.fn();
+      renderView({ onOpenDeal });
+      // "near1" is a nearby fill with dealId null; tapping it opens nothing.
+      fireEvent.click(screen.getByTestId("map-pin-near1"));
+      expect(onOpenDeal).not.toHaveBeenCalled();
+    });
   });
 
   describe("one-tap 'Add more stops' (FR-PATH-UX-11 incremental insert)", () => {

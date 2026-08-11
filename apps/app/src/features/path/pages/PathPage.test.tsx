@@ -46,6 +46,13 @@ vi.mock("../components/MerchantMap", () => ({
   ),
 }));
 vi.mock("../components/MerchantDetailSheet", () => ({ MerchantDetailSheet: () => null }));
+// DayStopsMap (the Today's Path List/Map map view) is also MapLibre; stub it so
+// the landing renders in jsdom without a WebGL context.
+vi.mock("../components/DayStopsMap", () => ({
+  DayStopsMap: (props: { stops?: unknown[] }) => (
+    <div data-testid="day-stops-map" data-stops={props.stops?.length ?? 0} />
+  ),
+}));
 // Capture the wizard's onStart so tests can drive handleStartPath directly.
 let capturedOnStart: ((ids: string[]) => void | Promise<void>) | null = null;
 vi.mock("../components/CreatePathWizard", () => ({
