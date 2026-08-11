@@ -83,6 +83,12 @@ export interface NearbyCandidate {
 export interface DayWindow {
   startHour: number; // 0..24 local-UTC hour the working day opens
   endHour: number; // 0..24 local-UTC hour it closes
+  /** Optional minute-precise close, minutes from local midnight (v2.2 B 4.3).
+   *  When set it is AUTHORITATIVE for the working-window end (the per-rep
+   *  end-of-day from `path_preferences.end_of_day_minutes`); `endHour` is then
+   *  only the coarse fallback used when this is absent. `windowEndHour` in the
+   *  result floors this to the hour for the full-day sentence. */
+  endMinutes?: number;
 }
 
 export interface AssembleTodaysPathInput {
@@ -251,7 +257,11 @@ export function assembleTodaysPath(
   // an explicit-offset `now`). The remaining budget runs from max(now, open).
   const d = new Date(nowMs);
   const windowStartMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), window.startHour, 0, 0, 0);
-  const windowEndMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), window.endHour, 0, 0, 0);
+  // Per-rep end-of-day (endMinutes, minutes from midnight) is authoritative when
+  // present; otherwise fall back to the coarse endHour. Date.UTC normalizes the
+  // minutes overflow (e.g. 990 -> 16:30, 1020 -> 17:00).
+  const endMinutesFromMidnight = window.endMinutes ?? window.endHour * 60;
+  const windowEndMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, endMinutesFromMidnight, 0, 0);
   const effectiveStartMs = Math.max(nowMs, windowStartMs);
   const totalWindowMin = Math.max(0, (windowEndMs - effectiveStartMs) / 60000);
 
@@ -326,7 +336,9 @@ export function assembleTodaysPath(
     proposal,
     overflow,
     remainingMin,
-    windowEndHour: window.endHour,
+    // Hour label for the full-day sentence. Track the per-rep EOD when set
+    // (floored to the hour), else the coarse endHour.
+    windowEndHour: window.endMinutes != null ? Math.floor(window.endMinutes / 60) : window.endHour,
     startsAtIso: new Date(effectiveStartMs).toISOString(),
   };
 }

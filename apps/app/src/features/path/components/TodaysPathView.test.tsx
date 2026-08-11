@@ -342,8 +342,9 @@ describe("TodaysPathView", () => {
     expect(addStops.className).toMatch(/\bw-full\b/);
     expect(addStops.className).toMatch(/bg-transparent/);
     // The label carries the plus glyph + the capacity string on the same row.
+    // 50min rounds to the nearest quarter hour (45), hedged with "about".
     expect(within(addStops).getByText("Add more stops")).toBeInTheDocument();
-    expect(within(addStops).getByText(/about 50 minutes still open/i)).toBeInTheDocument();
+    expect(within(addStops).getByText(/about 45 minutes still open/i)).toBeInTheDocument();
   });
 
   it("disables (not hides) the dashed add-stops row when no candidate remains", () => {
@@ -363,7 +364,7 @@ describe("TodaysPathView", () => {
 
   it("shows the remaining capacity in plain terms on the add-stops row when more stops still fit", () => {
     renderView({ remainingMin: 50, windowEndHour: 18 });
-    expect(screen.getByText(/about 50 minutes still open/i)).toBeInTheDocument();
+    expect(screen.getByText(/about 45 minutes still open/i)).toBeInTheDocument();
     expect(screen.queryByText(/that's a full day/i)).not.toBeInTheDocument();
   });
 

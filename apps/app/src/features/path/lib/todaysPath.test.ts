@@ -88,6 +88,27 @@ describe("assembleTodaysPath", () => {
     expect(r.windowEndHour).toBe(18);
   });
 
+  it("honors a minute-precise per-rep end-of-day (endMinutes) for the budget", () => {
+    // 16:00 EOD = 960 min. Starting the empty day at 09:00 leaves 7h = 420min.
+    const r = assembleTodaysPath(base({ dayWindow: { startHour: 9, endHour: 17, endMinutes: 960 } }), NOW);
+    expect(r.remainingMin).toBe(420);
+    // windowEndHour tracks the per-rep EOD (16), not the coarse endHour fallback.
+    expect(r.windowEndHour).toBe(16);
+  });
+
+  it("falls back to the default 17:00 close when no per-rep endMinutes is given", () => {
+    const r = assembleTodaysPath(base(), NOW);
+    expect(r.remainingMin).toBe(480); // full 09..17 window
+    expect(r.windowEndHour).toBe(17);
+  });
+
+  it("endMinutes carries sub-hour precision into windowEndHour (floored) and the budget", () => {
+    // 16:30 EOD = 990 min -> 7.5h = 450min budget; the hour label floors to 16.
+    const r = assembleTodaysPath(base({ dayWindow: { startHour: 9, endHour: 17, endMinutes: 990 } }), NOW);
+    expect(r.remainingMin).toBe(450);
+    expect(r.windowEndHour).toBe(16);
+  });
+
   it("always includes appointments, ordered ascending by startAt", () => {
     const later = appt({ id: "late", startAt: "2026-08-09T15:00:00.000Z", endAt: "2026-08-09T15:30:00.000Z" });
     const earlier = appt({ id: "early", startAt: "2026-08-09T10:00:00.000Z", endAt: "2026-08-09T10:30:00.000Z" });

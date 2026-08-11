@@ -7,14 +7,19 @@
  * a disabled control.
  */
 
-/** Round to the nearest 10 minutes for a calm, non-false-precision reading. */
-function roundTo10(min: number): number {
-  return Math.max(0, Math.round(min / 10) * 10);
+/**
+ * Round to the nearest QUARTER HOUR (15 min). The readout is a reference, not a
+ * promise (v2.2 B 4.3.1): "About 50 minutes" is right, "47 minutes" is false
+ * precision. 50 -> 45, 52 -> 45, 53 -> 60. Never negative.
+ */
+function roundToQuarterHour(min: number): number {
+  return Math.max(0, Math.round(min / 15) * 15);
 }
 
-/** "about 50 minutes still open" (FR-PATH-UX-10). */
+/** "about 45 minutes still open" - hedged + quarter-hour rounded (v2.2 B 4.3.1).
+ *  Lowercase "about" matches the muted add-stops row styling. */
 export function capacitySentence(remainingMin: number): string {
-  return `about ${roundTo10(remainingMin)} minutes still open`;
+  return `about ${roundToQuarterHour(remainingMin)} minutes still open`;
 }
 
 /** Format a 0..24 hour as "h:mm" with no am/pm, e.g. 18 -> "6:00", 9 -> "9:00". */

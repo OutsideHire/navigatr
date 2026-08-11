@@ -35,6 +35,8 @@ import { useMeetingStops } from "./useMeetingStops";
 import { useOwedVisits } from "./useOwedVisits";
 import { useDueTodayVisits } from "./useDueTodayVisits";
 import { useMerchants } from "./useMerchants";
+import { usePathEndOfDayMinutes } from "./usePathPreferences";
+import { DEFAULT_END_OF_DAY_MINUTES } from "../lib/pathCapacityDefaults";
 import {
   assembleTodaysPath,
   type OrderedStop,
@@ -69,9 +71,9 @@ export interface UseTodaysPathResult {
   isLoading: boolean;
 }
 
-/** Default window close hour when no origin/plan is assembled yet. Mirrors the
- *  assembler's DEFAULT_WINDOW.endHour so the UI reads a sensible time. */
-const DEFAULT_WINDOW_END_HOUR = 17;
+/** Working-day open hour. Mirrors the assembler's DEFAULT_WINDOW.startHour so the
+ *  budget starts from the same morning open once the rep EOD is threaded in. */
+const DEFAULT_WINDOW_START_HOUR = 9;
 
 const MS_PER_DAY = 86_400_000;
 
@@ -138,6 +140,12 @@ export function useTodaysPath(
   // Tier 4: nearby discovery fill (disabled internally when origin is null).
   const nearby = useMerchants(origin);
 
+  // Per-rep end-of-day (minutes from midnight), or the global default when the
+  // rep has no override. Feeds the assembler's window end so `remainingMin` /
+  // `windowEndHour` reflect the rep's actual EOD, not the hardcoded 17:00.
+  const endOfDayMinutes = usePathEndOfDayMinutes();
+  const eodMinutes = endOfDayMinutes.data ?? DEFAULT_END_OF_DAY_MINUTES;
+
   return useMemo<UseTodaysPathResult>(() => {
     // No-location owed drop-ins: eligible follow-ups whose deal has no coords
     // yet. A task whose window opens today is read by BOTH useOwedVisits (.lte)
@@ -170,7 +178,7 @@ export function useTodaysPath(
         overflow: [],
         noLocation,
         remainingMin: 0,
-        windowEndHour: DEFAULT_WINDOW_END_HOUR,
+        windowEndHour: Math.floor(eodMinutes / 60),
         startsAt: null,
         status,
         isLoading: false,
@@ -234,7 +242,20 @@ export function useTodaysPath(
     }));
 
     const { proposal, overflow, remainingMin, windowEndHour, startsAtIso } = assembleTodaysPath(
-      { appointments, owed: owedCandidates, dueToday, nearbyPool, origin },
+      {
+        appointments,
+        owed: owedCandidates,
+        dueToday,
+        nearbyPool,
+        origin,
+        // Thread the rep's EOD as a minute-precise window close; endHour is the
+        // coarse fallback the assembler floors to for the label.
+        dayWindow: {
+          startHour: DEFAULT_WINDOW_START_HOUR,
+          endHour: Math.floor(eodMinutes / 60),
+          endMinutes: eodMinutes,
+        },
+      },
       now,
     );
 
@@ -248,5 +269,5 @@ export function useTodaysPath(
       status,
       isLoading,
     };
-  }, [origin, now, pathDate, meetings.stops, meetings.status, meetings.isLoading, owed.owed, owed.noLocation, owed.isLoading, dueTodayVisits.dueToday, dueTodayVisits.noLocation, dueTodayVisits.isLoading, nearby.merchants, nearby.isLoading]);
+  }, [origin, now, pathDate, eodMinutes, meetings.stops, meetings.status, meetings.isLoading, owed.owed, owed.noLocation, owed.isLoading, dueTodayVisits.dueToday, dueTodayVisits.noLocation, dueTodayVisits.isLoading, nearby.merchants, nearby.isLoading]);
 }

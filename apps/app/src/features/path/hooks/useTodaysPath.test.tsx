@@ -24,6 +24,9 @@ const meetingsRef = vi.hoisted(() => ({
 const owedRef = vi.hoisted(() => ({ owed: [] as OwedVisit[], noLocation: [] as OwedVisitNoCoords[], isLoading: false }));
 const dueTodayRef = vi.hoisted(() => ({ dueToday: [] as OwedVisit[], noLocation: [] as OwedVisitNoCoords[], isLoading: false }));
 const merchantsRef = vi.hoisted(() => ({ merchants: [] as Merchant[], isLoading: false }));
+// Per-rep end-of-day (minutes from midnight) or null to use the global default.
+// Mocked so the hook's capacity window is driven without a live DB/QueryClient.
+const eodRef = vi.hoisted(() => ({ current: null as number | null }));
 
 vi.mock("./useMeetingStops", () => ({
   useMeetingStops: () => ({
@@ -40,6 +43,9 @@ vi.mock("./useDueTodayVisits", () => ({
 }));
 vi.mock("./useMerchants", () => ({
   useMerchants: () => ({ merchants: merchantsRef.merchants, isLoading: merchantsRef.isLoading }),
+}));
+vi.mock("./usePathPreferences", () => ({
+  usePathEndOfDayMinutes: () => ({ data: eodRef.current }),
 }));
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -122,6 +128,7 @@ beforeEach(() => {
   dueTodayRef.isLoading = false;
   merchantsRef.merchants = [];
   merchantsRef.isLoading = false;
+  eodRef.current = null;
 });
 
 describe("useTodaysPath", () => {
@@ -338,6 +345,29 @@ describe("useTodaysPath", () => {
     // Never routed.
     expect(result.current.proposal.some((s) => s.dealId === "deal-nl")).toBe(false);
     expect(result.current.overflow.some((s) => s.name === "No Map Co")).toBe(false);
+  });
+
+  it("uses the global 17:00 default end-of-day when the rep has no override", () => {
+    // Empty day, NOW = 15:00 UTC in the 9..17 window: 2h = 120min still open.
+    eodRef.current = null;
+    const { result } = renderHook(() => useTodaysPath(ORIGIN, NOW));
+    expect(result.current.remainingMin).toBe(120);
+    expect(result.current.windowEndHour).toBe(17);
+  });
+
+  it("reflects the rep's per-rep end-of-day in the budget and the window-end hour", () => {
+    // 16:00 EOD = 960 min. From 15:00 that leaves 1h = 60min.
+    eodRef.current = 960;
+    const { result } = renderHook(() => useTodaysPath(ORIGIN, NOW));
+    expect(result.current.remainingMin).toBe(60);
+    expect(result.current.windowEndHour).toBe(16);
+  });
+
+  it("reflects the rep's per-rep end-of-day for the window-end hour even with no origin", () => {
+    eodRef.current = 960;
+    const { result } = renderHook(() => useTodaysPath(null, NOW));
+    expect(result.current.status).toBe("no_origin");
+    expect(result.current.windowEndHour).toBe(16);
   });
 
   it("still surfaces no-location owed drop-ins when there is no origin (nothing routable)", () => {

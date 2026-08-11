@@ -195,6 +195,8 @@ vi.mock("../hooks/usePathPreferences", () => ({
   usePathPreferences: () => pathPrefsState.current,
   // PathSettings (rendered by PathPage) also pulls the update mutation from here.
   useUpdateDefaultIndustries: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  // useTodaysPath reads the per-rep end-of-day; null -> global default window.
+  usePathEndOfDayMinutes: () => ({ data: null }),
 }));
 vi.mock("../hooks/useGeolocation", () => ({
   useGeolocation: () => ({ coords: null, status: "denied", error: null, retry: vi.fn() }),

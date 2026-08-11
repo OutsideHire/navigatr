@@ -41,6 +41,29 @@ export function usePathPreferences() {
   });
 }
 
+/**
+ * usePathEndOfDayMinutes - the rep's per-rep end-of-day override (v2.2 B 4.3),
+ * as minutes from local midnight, or null when unset (the caller then uses
+ * DEFAULT_END_OF_DAY_MINUTES). Read as its own thin query so it can be consumed
+ * (by useTodaysPath's capacity window) without disturbing the industry-selection
+ * hook's IndustrySelection return contract. Owner-scoped via RLS.
+ */
+export function usePathEndOfDayMinutes() {
+  const userId = useAuth((s) => s.user?.id);
+  return useQuery({
+    queryKey: [...PATH_PREFS_QUERY_KEY, "end_of_day_minutes", userId],
+    enabled: !!userId,
+    queryFn: async (): Promise<number | null> => {
+      const { data, error } = await (supabase
+        .from("path_preferences")
+        .select("end_of_day_minutes")
+        .maybeSingle() as unknown as Promise<{ data: { end_of_day_minutes: number | null } | null; error: { message: string } | null }>);
+      if (error) throw error;
+      return data?.end_of_day_minutes ?? null;
+    },
+  });
+}
+
 export function useUpdateDefaultIndustries() {
   const qc = useQueryClient();
   const userId = useAuth((s) => s.user?.id);
