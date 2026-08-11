@@ -673,6 +673,140 @@ describe("TodaysPathView", () => {
       expect(screen.getByText(/added 2 stops to your day\./i)).toBeInTheDocument();
     });
 
+    it("Undo on the fill notice reverses the whole batch and restores the budget/pool so it can re-fill", () => {
+      const origin = { lat: 30.0, lng: -97.0 };
+      const proposal = [
+        { id: "o1", kind: "flexible", tier: "past_due", name: "Owed Co", dealId: "d1", lat: 30.0, lng: -97.0, startAt: null, endAt: null, ageDays: 4 },
+      ] as OrderedStop[];
+      const overflow = [
+        { id: "f1", dealId: null, name: "Fill One", lat: 30.0, lng: -97.0, tier: "nearby", ageDays: null },
+        { id: "f2", dealId: null, name: "Fill Two", lat: 30.0, lng: -97.0, tier: "nearby", ageDays: null },
+      ] as FlexibleStop[];
+      renderView({ proposal, overflow, origin, remainingMin: 300 });
+
+      // A tap folds both candidates in.
+      fireEvent.click(screen.getByRole("button", { name: /add more stops/i }));
+      expect(screen.getByText(/added 2 stops to your day\./i)).toBeInTheDocument();
+      let items = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
+      expect(items.some((t) => t.includes("Fill One"))).toBe(true);
+      expect(items.some((t) => t.includes("Fill Two"))).toBe(true);
+
+      // Undo reverses the entire fill: both filled stops leave the plan, the
+      // notice clears, and the committed stop stays.
+      fireEvent.click(screen.getByRole("button", { name: /^undo$/i }));
+      items = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
+      expect(items.some((t) => t.includes("Fill One"))).toBe(false);
+      expect(items.some((t) => t.includes("Fill Two"))).toBe(false);
+      expect(screen.getByText("Owed Co")).toBeInTheDocument();
+      expect(screen.queryByText(/to your day\./i)).not.toBeInTheDocument();
+
+      // Budget + pool are restored: a fresh tap re-adds the same candidates.
+      fireEvent.click(screen.getByRole("button", { name: /add more stops/i }));
+      items = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
+      expect(items.some((t) => t.includes("Fill One"))).toBe(true);
+      expect(items.some((t) => t.includes("Fill Two"))).toBe(true);
+      expect(screen.getByText(/added 2 stops to your day\./i)).toBeInTheDocument();
+    });
+
+    it("marks filled rows while the notice shows and clears the marker after Undo", () => {
+      const origin = { lat: 30.0, lng: -97.0 };
+      const proposal = [
+        { id: "o1", kind: "flexible", tier: "past_due", name: "Owed Co", dealId: "d1", lat: 30.0, lng: -97.0, startAt: null, endAt: null, ageDays: 4 },
+      ] as OrderedStop[];
+      const overflow = [
+        { id: "f1", dealId: null, name: "Fill One", lat: 30.0, lng: -97.0, tier: "nearby", ageDays: null },
+      ] as FlexibleStop[];
+      renderView({ proposal, overflow, origin, remainingMin: 300 });
+
+      // Before any fill, no row carries the marker.
+      expect(screen.queryByTestId("fill-marker-f1")).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: /add more stops/i }));
+      // The filled row is now marked; the committed (non-fill) row is not.
+      const filledRow = screen.getByText("Fill One").closest("li")!;
+      expect(within(filledRow).getByTestId("fill-marker-f1")).toBeInTheDocument();
+      const owedRow = screen.getByText("Owed Co").closest("li")!;
+      expect(within(owedRow).queryByTestId("fill-marker-o1")).not.toBeInTheDocument();
+
+      // Undo clears both the row and its marker.
+      fireEvent.click(screen.getByRole("button", { name: /^undo$/i }));
+      expect(screen.queryByTestId("fill-marker-f1")).not.toBeInTheDocument();
+    });
+
+    it("removing one filled stop via the existing Trash recounts the notice; removing the last clears it", () => {
+      const origin = { lat: 30.0, lng: -97.0 };
+      const proposal = [
+        { id: "o1", kind: "flexible", tier: "past_due", name: "Owed Co", dealId: "d1", lat: 30.0, lng: -97.0, startAt: null, endAt: null, ageDays: 4 },
+      ] as OrderedStop[];
+      const overflow = [
+        { id: "f1", dealId: null, name: "Fill One", lat: 30.0, lng: -97.0, tier: "nearby", ageDays: null },
+        { id: "f2", dealId: null, name: "Fill Two", lat: 30.0, lng: -97.0, tier: "nearby", ageDays: null },
+      ] as FlexibleStop[];
+      renderView({ proposal, overflow, origin, remainingMin: 300 });
+
+      fireEvent.click(screen.getByRole("button", { name: /add more stops/i }));
+      expect(screen.getByText(/added 2 stops to your day\./i)).toBeInTheDocument();
+
+      // Drop ONE filled stop via its existing per-row Trash -> notice recounts.
+      fireEvent.click(screen.getByRole("button", { name: /remove fill one/i }));
+      expect(screen.getByText(/added 1 stop to your day\./i)).toBeInTheDocument();
+      expect(screen.queryByText("Fill One")).not.toBeInTheDocument();
+      // The remaining filled row is still marked.
+      const remaining = screen.getByText("Fill Two").closest("li")!;
+      expect(within(remaining).getByTestId("fill-marker-f2")).toBeInTheDocument();
+
+      // Dropping the last filled stop clears the notice entirely.
+      fireEvent.click(screen.getByRole("button", { name: /remove fill two/i }));
+      expect(screen.queryByText(/to your day\./i)).not.toBeInTheDocument();
+    });
+
+    it("Undo after an individual drop reverses only the still-attributable remainder (does not resurrect the dropped one)", () => {
+      const origin = { lat: 30.0, lng: -97.0 };
+      const proposal = [
+        { id: "o1", kind: "flexible", tier: "past_due", name: "Owed Co", dealId: "d1", lat: 30.0, lng: -97.0, startAt: null, endAt: null, ageDays: 4 },
+      ] as OrderedStop[];
+      const overflow = [
+        { id: "f1", dealId: null, name: "Fill One", lat: 30.0, lng: -97.0, tier: "nearby", ageDays: null },
+        { id: "f2", dealId: null, name: "Fill Two", lat: 30.0, lng: -97.0, tier: "nearby", ageDays: null },
+      ] as FlexibleStop[];
+      renderView({ proposal, overflow, origin, remainingMin: 300 });
+
+      fireEvent.click(screen.getByRole("button", { name: /add more stops/i }));
+      // Individually drop Fill One first.
+      fireEvent.click(screen.getByRole("button", { name: /remove fill one/i }));
+      expect(screen.getByText(/added 1 stop to your day\./i)).toBeInTheDocument();
+
+      // Undo reverses only the still-attributable remainder (Fill Two). Fill One
+      // stays gone (it was already individually dropped, not resurrected).
+      fireEvent.click(screen.getByRole("button", { name: /^undo$/i }));
+      const items = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
+      expect(items.some((t) => t.includes("Fill Two"))).toBe(false);
+      expect(items.some((t) => t.includes("Fill One"))).toBe(false);
+      expect(screen.queryByText(/to your day\./i)).not.toBeInTheDocument();
+      expect(screen.getByText("Owed Co")).toBeInTheDocument();
+    });
+
+    it("existing remove-any still works on a non-fill stop (unchanged), with no separate Drop control", () => {
+      const origin = { lat: 30.0, lng: -97.0 };
+      const proposal = [
+        { id: "o1", kind: "flexible", tier: "past_due", name: "Owed Co", dealId: "d1", lat: 30.0, lng: -97.0, startAt: null, endAt: null, ageDays: 4 },
+        { id: "due1", kind: "flexible", tier: "due_today", name: "DueToday Co", dealId: "d3", lat: 30.0, lng: -97.0, startAt: null, endAt: null, ageDays: null },
+      ] as OrderedStop[];
+      const overflow = [
+        { id: "f1", dealId: null, name: "Fill One", lat: 30.0, lng: -97.0, tier: "nearby", ageDays: null },
+      ] as FlexibleStop[];
+      renderView({ proposal, overflow, origin, remainingMin: 300 });
+
+      fireEvent.click(screen.getByRole("button", { name: /add more stops/i }));
+      // A non-fill flexible stop is still removable via the existing Trash.
+      fireEvent.click(screen.getByRole("button", { name: /remove duetoday co/i }));
+      expect(screen.queryByText("DueToday Co")).not.toBeInTheDocument();
+      // Removing a non-fill row does not touch the fill count.
+      expect(screen.getByText(/added 1 stop to your day\./i)).toBeInTheDocument();
+      // No separate "Drop" control was introduced.
+      expect(screen.queryByRole("button", { name: /^drop$/i })).not.toBeInTheDocument();
+    });
+
     it("disables the control once the depleted budget drops below a stop's minimum", () => {
       // 35-min budget; three ~15-min near stops. Tap 1 folds in two (30 min),
       // leaving ~5 min: below MIN_STOP_MIN, so the control disables and the

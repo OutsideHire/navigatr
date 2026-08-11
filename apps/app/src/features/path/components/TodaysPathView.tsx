@@ -239,6 +239,35 @@ export function TodaysPathView({
     });
   }, []);
 
+  // Ids of the still-attributable filled stops: appended by THIS session's fills
+  // and still on the day (not individually removed via the existing Trash). This
+  // drives BOTH the notice count (via nearbyFillCount, same set) and the per-row
+  // fill marker, so the marker shows exactly while the notice does and clears the
+  // instant the last filled stop is dropped or the batch is undone (v2.2 4.7.1).
+  const fillMarkerIds = React.useMemo(() => {
+    const visibleIds = new Set(visibleProposal.map((s) => s.id));
+    return new Set(filledStops.filter((s) => visibleIds.has(s.id)).map((s) => s.id));
+  }, [filledStops, visibleProposal]);
+
+  // Batch Undo of the fill (v2.2 4.7 / 4.7.1): reverse the ENTIRE fill the notice
+  // reports. Remove every still-attributable filled stop (in filledStops and not
+  // already individually dropped) from workingProposal; a stop the rep already
+  // removed one-by-one is NOT resurrected (it is already gone). Reset filledStops
+  // so the notice clears, and restore budgetLeft to the pre-fill budget
+  // (remainingMin) + poolCursor to 0 so the reversed candidates are available for
+  // a fresh fill.
+  const handleUndoFill = React.useCallback(() => {
+    const reverse = new Set(
+      filledStops.filter((s) => !removed.has(s.id)).map((s) => s.id),
+    );
+    if (reverse.size > 0) {
+      setWorkingProposal((prev) => prev.filter((s) => !reverse.has(s.id)));
+    }
+    setFilledStops([]);
+    setBudgetLeft(remainingMin);
+    setPoolCursor(0);
+  }, [filledStops, removed, remainingMin]);
+
   const wrap = "mt-6 flex flex-col gap-4 self-stretch md:mx-auto md:w-full md:max-w-2xl";
 
   if (isLoading) {
@@ -336,6 +365,7 @@ export function TodaysPathView({
                 key={`${stop.kind}-${stop.id}`}
                 stop={stop}
                 index={i}
+                isFill={fillMarkerIds.has(stop.id)}
                 onRemove={stop.kind === "flexible" ? () => handleRemove(stop.id) : undefined}
                 onOpenDeal={onOpenDeal}
               />
@@ -403,9 +433,7 @@ export function TodaysPathView({
                 </p>
                 <button
                   type="button"
-                  // TODO(Ticket B): wire the real reversal of the auto-added
-                  // fills. For this ticket the affordance renders as a no-op.
-                  onClick={() => {}}
+                  onClick={handleUndoFill}
                   className="self-start rounded-radius-sm text-caption font-medium text-brand-primary transition-colors hover:text-brand-primary-pressed hover:underline focus-visible:outline-none focus-visible:underline"
                 >
                   Undo
@@ -550,11 +578,17 @@ export function TodaysPathView({
 function ProposalRow({
   stop,
   index,
+  isFill = false,
   onRemove,
   onOpenDeal,
 }: {
   stop: OrderedStop;
   index: number;
+  /** True while this row was auto-added by a fill AND the fill notice still
+   *  refers to it (v2.2 4.7.1): renders an unobtrusive "Added" marker + a
+   *  dashed-accent left treatment so the rep can see what the notice reverses.
+   *  Cleared the moment the stop is dropped or the batch is undone. */
+  isFill?: boolean;
   onRemove?: () => void;
   /** Open the appointment's deal from the landing. */
   onOpenDeal?: (dealId: string) => void;
@@ -585,6 +619,10 @@ function ProposalRow({
       className={cn(
         "flex items-start gap-3 rounded-radius-md border p-3",
         isAppointment ? accent.border : "border-border-subtle bg-surface-default",
+        // Fill marker (v2.2 4.7.1): a subtle dashed-accent left treatment while
+        // the notice still attributes this row to the fill. Unobtrusive, cleared
+        // on drop/Undo. Does not override the appointment accent.
+        isFill && !isAppointment && "border-l-2 border-l-brand-primary border-dashed bg-brand-primary/5",
       )}
     >
       <span
@@ -608,7 +646,19 @@ function ProposalRow({
         </div>
         {/* Left-rail category label (v2.2 B 4.5): a small muted category word.
             Neutral for now; aging COLOUR is B-T6, never encoded in the label. */}
-        <span className="mt-0.5 block text-caption font-medium text-text-muted">{label}</span>
+        <span className="mt-0.5 flex items-center gap-1.5 text-caption font-medium text-text-muted">
+          {label}
+          {/* Fill marker (v2.2 4.7.1): a small unobtrusive "Added" chip present
+              only while the notice attributes this row to the fill. */}
+          {isFill && !isAppointment && (
+            <span
+              data-testid={`fill-marker-${stop.id}`}
+              className="inline-flex items-center rounded-radius-full bg-brand-primary/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-brand-primary"
+            >
+              Added
+            </span>
+          )}
+        </span>
         {/* Detail-only sentence (v2.2 B 4.5.1). Rendered only when non-empty so
             an appointment with no contact does not leave a blank line, and the
             row never collapses (the name above always renders). */}
