@@ -119,8 +119,19 @@ function nearbyMerchant(card: DrivingCard, stops: TodayStop[]): Merchant {
  * successful log (or a skip / mark-done) adds the card id to a LOCAL `resolved`
  * set, so the card leaves `visibleCards` immediately and the clamp shows the
  * next stop. This is uniform across every kind, fixing the case where owed
- * cards linger and appointment cards never left the carousel. The top bar
- * (Pause / End route) and the End-route/Pause flow are unchanged.
+ * cards linger and appointment cards never left the carousel.
+ *
+ * Both the status row and the stop card state ONE authoritative day count
+ * (A10 / 3.4): `dayTotal` = the number of stops in today's FULL ordered roster
+ * (the driving-sequence `cards` before the local resolved-filter, held stable
+ * across a refetch that drops a resolved card). Completions and skips STAY in
+ * that total; they read as progress (`completedCount`) and as the current
+ * stop's 1-based `position`, never as a shrinking denominator.
+ *
+ * The top bar carries a reversible Pause (2.5): Pause swaps to Resume in place
+ * with no confirmation and keeps the day; Resume re-derives the run's `now` so
+ * arrival estimates recompute from the current time. End route opens the
+ * EndRouteSheet confirmation (carry / complete / clear).
  */
 export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: RunningPathProps) {
   const { stops, clear, pathId, pendingCount } = useTodayPath();
@@ -183,8 +194,30 @@ export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: Ru
     [cards, resolved],
   );
 
+  // Persisted-native counts, used ONLY by the end-of-route PathSummary snapshot
+  // (which reports the persisted path_stops). NOT the run status row — see the
+  // authoritative day count below.
   const total = stops.length;
   const visited = stops.filter((s) => s.status === "visited").length;
+
+  // ONE authoritative day count (A10 / 3.4). Both the status row and the stop
+  // card state the SAME total = the number of stops in today's FULL ordered
+  // roster (appointments + past-due + due-today + nearby), which is the
+  // driving-sequence `cards` list BEFORE the local resolved-filter. Completions
+  // and skips STAY in that total: the denominator moves only when a stop is
+  // added or removed, never as stops resolve; resolutions read as PROGRESS.
+  //
+  // `dayTotal` is held stable across a resolve even when a background refetch
+  // drops the just-resolved card from `cards`: a resolved id no longer present
+  // in the live list is added back, so the denominator never shrinks on a
+  // completion. `completedCount` is the number of stops resolved this session.
+  const completedCount = resolved.size;
+  const liveIds = React.useMemo(() => new Set(cards.map((c) => c.id)), [cards]);
+  const droppedResolved = React.useMemo(
+    () => [...resolved].filter((id) => !liveIds.has(id)).length,
+    [resolved, liveIds],
+  );
+  const dayTotal = cards.length + droppedResolved;
 
   // Keep the index in range as cards resolve out of the carousel or the
   // sequence first populates.
@@ -267,6 +300,11 @@ export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: Ru
 
   const clampedIndex = Math.min(index, visibleCards.length - 1);
   const card = visibleCards[clampedIndex]!;
+  // 1-based position of the current stop within the WHOLE day (resolved +
+  // remaining): resolved stops always precede the current window, so it is the
+  // completed count plus the offset into what remains. Reads 1 of 4, 2 of 4, …
+  // against the fixed `dayTotal`.
+  const position = completedCount + clampedIndex + 1;
   const hasCoords = card.lat != null && card.lng != null;
   const isExternal = card.kind === "external";
 
@@ -341,7 +379,7 @@ export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: Ru
             )}
             aria-hidden
           />
-          {paused ? "Path paused" : "Path active"} · {visited}/{total} stops
+          {paused ? "Path paused" : "Path active"} · {completedCount}/{dayTotal} stops
         </span>
         {/* Pause / End route stay one level above the card (2.5). Pause is
             reversible (no confirm) and swaps to Resume in the same position;
@@ -358,7 +396,7 @@ export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: Ru
 
       <div className="flex flex-col gap-4 rounded-radius-md border border-border-default p-4">
         <span className="text-caption font-medium uppercase tracking-wide text-text-muted">
-          Stop {clampedIndex + 1} of {visibleCards.length}
+          Stop {position} of {dayTotal}
         </span>
 
         <div className="flex flex-col gap-1">

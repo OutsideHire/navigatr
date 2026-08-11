@@ -281,10 +281,11 @@ export function PathPage() {
         return startedAt ? v : "entry";
       }
       // Stops exist:
-      //  - startedAt null (Planned / legacy) → the overview ("path" w/ Stops), no
-      //    auto-jump into a run.
-      //  - startedAt set → the two-tab surface (also "path"); the tab is derived
-      //    below.
+      //  - startedAt null (Planned / legacy) → the Stops overview (ActivePathView,
+      //    still "path"), no auto-jump into a run.
+      //  - startedAt set → the card-first active-run surface (RunningPath, also
+      //    "path"; no Run|Stops tabs). Which of the two renders is decided by the
+      //    lifecycle `landing` in the "path" branch below.
       return "path";
     });
   }, [queueStops.length, startedAt]);
@@ -771,11 +772,14 @@ export function PathPage() {
             <>
               <h1 className="text-heading-lg text-text-default">Your day</h1>
               <p className="text-body-md text-text-muted">
-                {/* Stop count is the assembler's proposal length for now (A-T7
-                    unifies the authoritative count); started=false because the
-                    landing is always the pre-run review. The underway "Next at"
-                    state is supported by daySubhead but wired on the run screen
-                    in A-T6. */}
+                {/* One authoritative day count (A10 / 3.4): the landing states
+                    the day's FULL ordered roster = the assembler's proposal
+                    length (appointments + owed + due-today + nearby). This is
+                    the same day-roster concept the run screen counts (there via
+                    useDrivingSequence's dayTotal), expressed here pre-start.
+                    started=false because the landing is always the pre-run
+                    review; the underway "Next at" state is rendered on the run
+                    screen. */}
                 {daySubhead({
                   stopCount: todaysPath.proposal.length,
                   startsAt: todaysPath.startsAt,
@@ -900,8 +904,10 @@ export function PathPage() {
              of pathView so a rep without a location still sees the right empty state.
           2. Origin set → switch on pathView:
              - "entry":    two-card prompt (create / plan a path)
-             - "path":     the active path — two-tab Run | Stops surface when
-                           started (started_at set), else the Stops overview
+             - "path":     the active path. When started (started_at set), the
+                           card-first RunningPath (current-stop card + an
+                           expandable list/map of what remains, no tabs); else
+                           the planned Stops overview (ActivePathView)
              - "discover": filter controls + map+list discovery ladder
           Filter chips, radius/sort controls are discovery-only and live
           exclusively inside the "discover" branch. Header + location bar are always above. */}

@@ -234,8 +234,10 @@ describe("RunningPath — driving carousel", () => {
     expect(screen.queryByRole("button", { name: /^i'm here$/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /mark done/i }));
     // The external card resolves out; the next card takes its place, no sheet.
+    // The denominator stays the full day roster (2) — the resolved card stays IN
+    // the total; only the position advances (A10/3.4).
     expect(screen.getByRole("heading", { name: "Bravo" })).toBeInTheDocument();
-    expect(screen.getByText(/stop 1 of 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/stop 2 of 2/i)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Team sync" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("dropin")).not.toBeInTheDocument();
     expect(screen.queryByTestId("appt-sheet")).not.toBeInTheDocument();
@@ -251,7 +253,7 @@ describe("RunningPath — driving carousel", () => {
     expect(screen.getByText(/stop 1 of 2/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /skip for now/i }));
     expect(screen.getByRole("heading", { name: "Bravo" })).toBeInTheDocument();
-    expect(screen.getByText(/stop 1 of 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/stop 2 of 2/i)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Alpha" })).not.toBeInTheDocument();
   });
 
@@ -263,9 +265,10 @@ describe("RunningPath — driving carousel", () => {
     render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
     fireEvent.click(screen.getByText("save-log"));
-    // Alpha is gone locally (via the resolved set); Bravo is now the only stop.
+    // Alpha is gone locally (via the resolved set); Bravo is now the current stop.
+    // The denominator holds at the full roster (2); position advances to 2.
     expect(screen.getByRole("heading", { name: "Bravo" })).toBeInTheDocument();
-    expect(screen.getByText(/stop 1 of 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/stop 2 of 2/i)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Alpha" })).not.toBeInTheDocument();
   });
 
@@ -282,7 +285,7 @@ describe("RunningPath — driving carousel", () => {
     fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
     fireEvent.click(screen.getByText("save-activity"));
     expect(screen.getByRole("heading", { name: "Bravo" })).toBeInTheDocument();
-    expect(screen.getByText(/stop 1 of 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/stop 2 of 2/i)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Owed Co" })).not.toBeInTheDocument();
     // Belt and suspenders: the owed / due-today reads are invalidated so other
     // surfaces (Stops tab) drop the resolved stop too.
@@ -303,7 +306,7 @@ describe("RunningPath — driving carousel", () => {
     fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
     fireEvent.click(screen.getByText("record-appt"));
     expect(screen.getByRole("heading", { name: "Bravo" })).toBeInTheDocument();
-    expect(screen.getByText(/stop 1 of 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/stop 2 of 2/i)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Renewal review" })).not.toBeInTheDocument();
   });
 
@@ -319,6 +322,69 @@ describe("RunningPath — driving carousel", () => {
     render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
     expect(screen.getByTestId("summary")).toBeInTheDocument();
     expect(screen.getByText("new-path")).toBeInTheDocument();
+  });
+});
+
+// ─── One authoritative day count (A10 / 3.4) ─────────────────────────────────
+
+describe("RunningPath — one authoritative day count", () => {
+  // A day of 2 appointments + 1 owed + 1 nearby: the run's status row and the
+  // stop card must state the SAME total (4) = the full driving-sequence roster,
+  // and that total must NOT move as stops resolve — only progress advances.
+  const fourStopDay: DrivingCard[] = [
+    drivingCard({ id: "appt-1", kind: "appointment", name: "Renewal review", appointmentId: "a1", dealId: "d1", merchantId: null }),
+    drivingCard({ id: "appt-2", kind: "appointment", name: "Kickoff", appointmentId: "a2", dealId: "d2", merchantId: null }),
+    drivingCard({ id: "owed-1", kind: "owed", name: "Owed Co", dealId: "deal-owed-1", merchantId: null }),
+    drivingCard({ id: "near-1", kind: "nearby", name: "Corner Cafe", merchantId: "m1" }),
+  ];
+
+  it("status row and card state the SAME total (the full roster), not the native-only count", () => {
+    seqState.current = { cards: fourStopDay, isLoading: false };
+    // Persisted path_stops holds ONLY the nearby tier (1) — the OLD status-row
+    // source. The authoritative total must be 4, not this under-count.
+    stops = [stop("m1")];
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    // Status row: 0 of 4 (progress / authoritative total), NOT 0/1.
+    expect(screen.getByText(/0\/4 stops/i)).toBeInTheDocument();
+    expect(screen.queryByText(/0\/1 stops/i)).not.toBeInTheDocument();
+    // Card: Stop 1 of 4 — same denominator as the status row.
+    expect(screen.getByText(/stop 1 of 4/i)).toBeInTheDocument();
+  });
+
+  it("the denominator stays fixed at the full roster after a resolve; progress advances", () => {
+    seqState.current = { cards: fourStopDay, isLoading: false };
+    stops = [stop("m1")];
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    expect(screen.getByText(/0\/4 stops/i)).toBeInTheDocument();
+    expect(screen.getByText(/stop 1 of 4/i)).toBeInTheDocument();
+
+    // Skip the first appointment. It STAYS in the total (still "of 4"); the
+    // status row now reads 1 of 4 and the card advances to Stop 2 of 4.
+    fireEvent.click(screen.getByRole("button", { name: /skip for now/i }));
+    expect(screen.getByText(/1\/4 stops/i)).toBeInTheDocument();
+    expect(screen.getByText(/stop 2 of 4/i)).toBeInTheDocument();
+    // The denominator did not shrink to 3.
+    expect(screen.queryByText(/stop 1 of 3/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/of 3\b/i)).not.toBeInTheDocument();
+  });
+
+  it("holds the denominator fixed even when a background refetch drops the resolved card", () => {
+    seqState.current = { cards: fourStopDay, isLoading: false };
+    stops = [stop("m1")];
+    const { rerender } = render(
+      <RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />,
+    );
+    // Resolve the first appointment locally.
+    fireEvent.click(screen.getByRole("button", { name: /skip for now/i }));
+    expect(screen.getByText(/stop 2 of 4/i)).toBeInTheDocument();
+
+    // Simulate a refetch that drops the just-resolved card from the live
+    // sequence. The denominator must STILL be 4 (the resolved stop stays in the
+    // total), and progress stays at 1 of 4.
+    seqState.current = { cards: fourStopDay.slice(1), isLoading: false };
+    rerender(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    expect(screen.getByText(/1\/4 stops/i)).toBeInTheDocument();
+    expect(screen.getByText(/stop 2 of 4/i)).toBeInTheDocument();
   });
 });
 
