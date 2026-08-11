@@ -18,6 +18,7 @@ import { LogActivitySheet } from "@/features/activities/components/LogActivitySh
 import { AppointmentOutcomeSheet } from "@/features/appointments/components/AppointmentOutcomeSheet";
 import { usePathMutations } from "../hooks/usePathMutations";
 import { useDrivingSequence } from "../hooks/useDrivingSequence";
+import { useLogStopDwell, type StopDwellType } from "../hooks/useLogStopDwell";
 import type { DrivingCard, DrivingCardKind } from "../lib/drivingSequence";
 import type { OrderedStop, StopKind, StopTier } from "../lib/todaysPath";
 import { todayISO } from "../lib/today";
@@ -43,6 +44,15 @@ function cardStopKind(kind: DrivingCardKind): StopKind {
 function cardStopTier(kind: DrivingCardKind): StopTier {
   if (kind === "appointment" || kind === "external") return "appointment";
   return kind === "owed" ? "past_due" : "nearby";
+}
+
+/** Normalize a driving-card kind onto the two dwell buckets the estimates use
+ *  (v2.2 B 4.3.2): scheduled meetings (appointment / external) accumulate as
+ *  "appointment"; owed / nearby / due drop-ins accumulate as "discovery". Keeps
+ *  measured appointment and drop-in dwell separate so each estimate can later be
+ *  replaced with its own measured per-rep average. */
+function kindToStopType(kind: DrivingCardKind): StopDwellType {
+  return kind === "appointment" || kind === "external" ? "appointment" : "discovery";
 }
 
 type PathSummaryStats = {
@@ -138,6 +148,31 @@ export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: Ru
   const { stops, clear, pathId, pendingCount } = useTodayPath();
   const { carryToTomorrow, finalizeCurrentPath } = usePathMutations();
   const queryClient = useQueryClient();
+  const { logStopDwell } = useLogStopDwell();
+
+  // Real per-stop dwell (v2.2 B 4.3.2). Invisible, best-effort analytics: the
+  // arrival timestamp is stamped by card id when the rep taps "I'm here", and
+  // consumed on close-out to log the measured minutes against the stop type.
+  // A ref (not state) so stamping never re-renders the run.
+  const arrivedAtRef = React.useRef<Map<string, string>>(new Map());
+  const captureDwell = React.useCallback(
+    (cardId: string, kind: DrivingCardKind, dealId: string | null) => {
+      const arrivedAt = arrivedAtRef.current.get(cardId);
+      // No arrival stamped (logged without "I'm here"): nothing measured, so do
+      // not fabricate a dwell. Otherwise log and clear the stamp.
+      if (!arrivedAt) return;
+      arrivedAtRef.current.delete(cardId);
+      // Fire-and-forget; the hook is already best-effort, and the .catch here
+      // guarantees a rejected promise can never bubble into the run flow.
+      logStopDwell({
+        stopType: kindToStopType(kind),
+        dealId,
+        arrivedAt,
+        closedAt: new Date().toISOString(),
+      }).catch(() => {});
+    },
+    [logStopDwell],
+  );
 
   // The arrival clock's basis. Captured once on mount, then RE-DERIVED on Resume
   // (a paused hour is a lost hour, Path v2.2 2.5): moving `nowIso` forward re-runs
@@ -310,6 +345,10 @@ export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: Ru
   const isExternal = card.kind === "external";
 
   const handleImHere = () => {
+    // Stamp the arrival moment for this card (v2.2 B 4.3.2). "Navigate then I'm
+    // here" still lands here on the "I'm here" tap, which is the arrival. The
+    // matching close-out (the outcome sheet's success) reads and clears it.
+    arrivedAtRef.current.set(card.id, new Date().toISOString());
     switch (card.kind) {
       case "appointment":
         if (card.appointmentId && card.dealId) {
@@ -553,7 +592,10 @@ export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: Ru
           dealId={apptSheet.dealId}
           merchantName={apptSheet.name}
           hasFutureAppointment={false}
-          onRecorded={() => resolve(apptSheet.id)}
+          onRecorded={() => {
+            captureDwell(apptSheet.id, "appointment", apptSheet.dealId);
+            resolve(apptSheet.id);
+          }}
         />
       )}
       {owedCard && (
@@ -563,6 +605,7 @@ export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: Ru
           dealId={owedCard.dealId}
           defaultType="drop_in"
           onLogged={() => {
+            captureDwell(owedCard.id, "owed", owedCard.dealId);
             resolve(owedCard.id);
             // Belt and suspenders: also invalidate the owed / due-today reads so
             // the other surfaces (Stops tab) drop the resolved stop too.
@@ -575,7 +618,12 @@ export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: Ru
         merchant={nearby?.merchant ?? null}
         open={nearby != null}
         onOpenChange={(o) => { if (!o) setNearby(null); }}
-        onLogged={() => { if (nearby) resolve(nearby.id); }}
+        onLogged={() => {
+          if (nearby) {
+            captureDwell(nearby.id, "nearby", null);
+            resolve(nearby.id);
+          }
+        }}
       />
     </div>
   );

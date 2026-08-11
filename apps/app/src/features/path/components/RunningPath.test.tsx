@@ -38,6 +38,14 @@ vi.mock("../hooks/useDrivingSequence", () => ({
   },
 }));
 
+// Real per-stop dwell logging (v2.2 B 4.3.2) — invisible, best-effort. Mock the
+// hook so we can assert what the close-out captures without touching supabase.
+type DwellArg = { stopType: string; dealId: string | null; arrivedAt: string; closedAt: string };
+const logStopDwell = vi.fn((_input: DwellArg) => Promise.resolve());
+vi.mock("../hooks/useLogStopDwell", () => ({
+  useLogStopDwell: () => ({ logStopDwell }),
+}));
+
 // Live rep position (watch mode) — fixed coords so the run map has an origin
 // and the hook never touches real geolocation in jsdom.
 vi.mock("../hooks/useGeolocation", () => ({
@@ -142,6 +150,8 @@ beforeEach(() => {
   carryMutate.mockReset();
   finalizeMutate.mockReset();
   invalidateQueries.mockClear();
+  logStopDwell.mockClear();
+  logStopDwell.mockImplementation(() => Promise.resolve());
   stops = [];
   pathId = "today-1";
   pendingCount = () => stops.filter((s) => s.status === "pending").length;
@@ -594,5 +604,71 @@ describe("RunningPath — End route / Pause flow", () => {
     expect(carryMutate).not.toHaveBeenCalled();
     expect(clear).not.toHaveBeenCalled();
     expect(onExitSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Real per-stop dwell logging (v2.2 B 4.3.2) ──────────────────────────────
+
+describe("RunningPath — real dwell logging (arrival to close-out)", () => {
+  it("logs a dwell with the right stopType, dealId, and a positive interval when an APPOINTMENT is closed out after I'm here", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-08-11T15:00:00.000Z"));
+      seqState.current = {
+        cards: [drivingCard({ id: "appt-1", kind: "appointment", name: "Renewal review", appointmentId: "a1", dealId: "d1", merchantId: null })],
+        isLoading: false,
+      };
+      render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+      // Arrival stamped at 15:00.
+      fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
+      // 20 minutes later the rep closes the stop out.
+      vi.setSystemTime(new Date("2026-08-11T15:20:00.000Z"));
+      fireEvent.click(screen.getByText("record-appt"));
+
+      expect(logStopDwell).toHaveBeenCalledTimes(1);
+      const arg = logStopDwell.mock.calls[0]![0];
+      expect(arg.stopType).toBe("appointment");
+      expect(arg.dealId).toBe("d1");
+      expect(new Date(arg.closedAt).getTime()).toBeGreaterThan(new Date(arg.arrivedAt).getTime());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("logs a NEARBY drop-in close-out as stop_type 'discovery' with a null deal", () => {
+    seqState.current = { cards: [drivingCard({ id: "near-1", kind: "nearby", name: "Corner Cafe", merchantId: "m1", dealId: null })], isLoading: false };
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
+    fireEvent.click(screen.getByText("save-log"));
+
+    expect(logStopDwell).toHaveBeenCalledTimes(1);
+    const arg = logStopDwell.mock.calls[0]![0];
+    expect(arg.stopType).toBe("discovery");
+    expect(arg.dealId).toBeNull();
+  });
+
+  it("does NOT log a dwell when a stop is skipped (no I'm here arrival)", () => {
+    seqState.current = {
+      cards: [drivingCard({ id: "c1", name: "Alpha", merchantId: "m1" }), drivingCard({ id: "c2", name: "Bravo", merchantId: "m2" })],
+      isLoading: false,
+    };
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /skip for now/i }));
+    expect(logStopDwell).not.toHaveBeenCalled();
+  });
+
+  it("the run flow is unaffected when the dwell write rejects (best-effort): the card still resolves out", () => {
+    logStopDwell.mockImplementation(() => Promise.reject(new Error("insert failed")));
+    seqState.current = {
+      cards: [drivingCard({ id: "near-1", kind: "nearby", name: "Corner Cafe", merchantId: "m1" }), drivingCard({ id: "c2", name: "Bravo", merchantId: "m2" })],
+      isLoading: false,
+    };
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
+    fireEvent.click(screen.getByText("save-log"));
+    // The dwell write was attempted, and the run advanced normally despite it failing.
+    expect(logStopDwell).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("heading", { name: "Bravo" })).toBeInTheDocument();
+    expect(screen.getByText(/stop 2 of 2/i)).toBeInTheDocument();
   });
 });
