@@ -66,6 +66,7 @@ import { planQueueMigration } from "../lib/migrateLocalQueue";
 import { useMerchants } from "../hooks/useMerchants";
 import { discoveryShortfallHint } from "../lib/discoveryHint";
 import { sortMerchants, type PathSortMode } from "../lib/sortMerchants";
+import { daySubhead } from "../lib/daySubhead";
 import { useCalendarEvents } from "../hooks/useCalendarEvents";
 import { computeFreeWindows } from "../lib/freeWindows";
 import { pickNextMeeting, fitsBeforeMeeting } from "../lib/discoverFit";
@@ -774,14 +775,45 @@ export function PathPage() {
     <div className="mx-auto flex h-[calc(100dvh-4rem)] w-full flex-col px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
       {/* Header */}
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        {/* Header title + subhead. The ENTRY landing reads "Your day" with a
+            four-state day subhead (v2.2 A6). Every other view (active run,
+            discover) keeps the "Path" title and the "{N} merchants nearby"
+            count. Discover additionally gets one quiet muted line clarifying
+            those are nearby businesses, not stops on the day — the vocabulary
+            rule's only count-difference explainer. */}
         <div className="flex flex-col gap-1">
-          <h1 className="text-heading-lg text-text-default">Path</h1>
-          <p className="text-body-md text-text-muted">
-            {sorted.length} {sorted.length === 1 ? "merchant" : "merchants"}
-            {anyGeocoded
-              ? ` nearby · ${originSource === "manual" ? originLabel : "from your location"}`
-              : " · sorted by recent activity"}
-          </p>
+          {pathView === "entry" ? (
+            <>
+              <h1 className="text-heading-lg text-text-default">Your day</h1>
+              <p className="text-body-md text-text-muted">
+                {/* Stop count is the assembler's proposal length for now (A-T7
+                    unifies the authoritative count); started=false because the
+                    landing is always the pre-run review. The underway "Next at"
+                    state is supported by daySubhead but wired on the run screen
+                    in A-T6. */}
+                {daySubhead({
+                  stopCount: todaysPath.proposal.length,
+                  startsAt: todaysPath.startsAt,
+                  started: false,
+                })}
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-heading-lg text-text-default">Path</h1>
+              <p className="text-body-md text-text-muted">
+                {sorted.length} {sorted.length === 1 ? "merchant" : "merchants"}
+                {anyGeocoded
+                  ? ` nearby · ${originSource === "manual" ? originLabel : "from your location"}`
+                  : " · sorted by recent activity"}
+              </p>
+              {pathView === "discover" && (
+                <p className="text-caption text-text-subtle">
+                  These are businesses near you, not stops on your day.
+                </p>
+              )}
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {/* Start-a-path actions + the location control live in the header ONLY

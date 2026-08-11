@@ -195,15 +195,9 @@ export function TodaysPathView({
         </div>
       )}
 
-      <div className="flex flex-col gap-1">
-        <h2 className="text-heading-md text-text-default">Today&apos;s path</h2>
-        <p className="text-body-md text-text-muted">
-          {empty
-            ? "Nothing owed, due, or nearby yet."
-            : "Your day, prioritized. Review it, then start."}
-        </p>
-      </div>
-
+      {/* The landing title + day subhead now live in the page header ("Your day",
+          v2.2 A6), so this view no longer repeats a heading — it goes straight to
+          the plan (or the caught-up empty card). */}
       {empty ? (
         <Card padding="lg" className="flex flex-col items-center gap-3 text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-surface-sunken text-text-muted">

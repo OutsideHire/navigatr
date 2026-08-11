@@ -61,6 +61,10 @@ export interface UseTodaysPathResult {
   remainingMin: number;
   /** Working-window close hour (0..24), for the full-day sentence. */
   windowEndHour: number;
+  /** Preformatted clock (e.g. "9:15") of the day's effective start, for the
+   *  "Your day" landing subhead's "Starts at" clause (v2.2 A6). Null when there
+   *  is no origin / nothing assembled yet. */
+  startsAt: string | null;
   status: TodaysPathStatus;
   isLoading: boolean;
 }
@@ -78,6 +82,17 @@ function localDateOf(iso: string): string {
   const d = new Date(iso);
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** Local-tz 12-hour clock with no am/pm, e.g. "9:15", "11:40" (v2.2 A6 subhead
+ *  style, matching the day-capacity sentences). Returns null for an unparseable
+ *  instant so the subhead falls back to the count alone. */
+function fmtClock(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const h = d.getHours();
+  const hr12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hr12}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 /** Whole days between an ISO timestamp and now (floored, never negative). Used
@@ -156,6 +171,7 @@ export function useTodaysPath(
         noLocation,
         remainingMin: 0,
         windowEndHour: DEFAULT_WINDOW_END_HOUR,
+        startsAt: null,
         status,
         isLoading: false,
       };
@@ -217,11 +233,20 @@ export function useTodaysPath(
       dealId: null,
     }));
 
-    const { proposal, overflow, remainingMin, windowEndHour } = assembleTodaysPath(
+    const { proposal, overflow, remainingMin, windowEndHour, startsAtIso } = assembleTodaysPath(
       { appointments, owed: owedCandidates, dueToday, nearbyPool, origin },
       now,
     );
 
-    return { proposal, overflow, noLocation, remainingMin, windowEndHour, status, isLoading };
+    return {
+      proposal,
+      overflow,
+      noLocation,
+      remainingMin,
+      windowEndHour,
+      startsAt: fmtClock(startsAtIso),
+      status,
+      isLoading,
+    };
   }, [origin, now, pathDate, meetings.stops, meetings.status, meetings.isLoading, owed.owed, owed.noLocation, owed.isLoading, dueTodayVisits.dueToday, dueTodayVisits.noLocation, dueTodayVisits.isLoading, nearby.merchants, nearby.isLoading]);
 }

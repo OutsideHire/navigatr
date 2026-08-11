@@ -140,6 +140,10 @@ export interface TodaysPathResult {
   remainingMin: number;
   /** The working-window close hour (0..24) so the UI can say "before 6:00". */
   windowEndHour: number;
+  /** Effective day start = max(now, window open), as ISO. Drives the landing
+   *  subhead's "Starts at" clause (v2.2 A6). Always the current instant once the
+   *  window is open; the window-open time earlier in the morning. */
+  startsAtIso: string;
 }
 
 // --- helpers -----------------------------------------------------------------
@@ -305,5 +309,11 @@ export function assembleTodaysPath(
     e.kind === "anchor" ? appointmentToOrdered(e.item) : flexibleToOrdered(e.item),
   );
 
-  return { proposal, overflow, remainingMin, windowEndHour: window.endHour };
+  return {
+    proposal,
+    overflow,
+    remainingMin,
+    windowEndHour: window.endHour,
+    startsAtIso: new Date(effectiveStartMs).toISOString(),
+  };
 }

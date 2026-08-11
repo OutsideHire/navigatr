@@ -137,6 +137,7 @@ const todaysPathState = {
     proposal: [] as unknown[],
     overflow: [] as unknown[],
     noLocation: [] as unknown[],
+    startsAt: null as string | null,
     status: "ok" as string,
     isLoading: false,
   },
@@ -217,7 +218,7 @@ beforeEach(() => {
   nearestNeighborSpy.mockClear();
   useMerchantsSpy.mockClear();
   prevUnfinishedState.current = { data: null };
-  todaysPathState.current = { proposal: [], overflow: [], noLocation: [], status: "ok", isLoading: false };
+  todaysPathState.current = { proposal: [], overflow: [], noLocation: [], startsAt: null, status: "ok", isLoading: false };
   continueMutate.mockReset();
   closeMutate.mockReset();
   capturedOnFindNearby = null;
@@ -782,7 +783,7 @@ describe("PathPage handleStartTodaysPath (only nearby tier persists)", () => {
         flexible({ id: "task-2", tier: "due_today", name: "Due Today Co", dealId: "deal-2", lat: 30.06, lng: -97.06 }),
         flexible({ id: "prospect-1", tier: "nearby", name: "Nearby Co", lat: 30.1, lng: -97.1 }),
       ] as unknown[],
-      overflow: [], noLocation: [], status: "ok", isLoading: false,
+      overflow: [], noLocation: [], startsAt: null, status: "ok", isLoading: false,
     };
     render(<PathPage />, { wrapper });
     await act(async () => {
@@ -810,7 +811,7 @@ describe("PathPage handleStartTodaysPath (only nearby tier persists)", () => {
         flexible({ id: "task-1", tier: "past_due", name: "Owed Co", dealId: "deal-1", lat: 30.05, lng: -97.05, ageDays: 5 }),
         flexible({ id: "task-2", tier: "due_today", name: "Due Today Co", dealId: "deal-2", lat: 30.06, lng: -97.06 }),
       ] as unknown[],
-      overflow: [], noLocation: [], status: "ok", isLoading: false,
+      overflow: [], noLocation: [], startsAt: null, status: "ok", isLoading: false,
     };
     render(<PathPage />, { wrapper });
     await act(async () => {
@@ -835,7 +836,7 @@ describe("PathPage handleStartTodaysPath (only nearby tier persists)", () => {
     };
     todaysPathState.current = {
       proposal: [appt] as unknown[],
-      overflow: [], noLocation: [], status: "ok", isLoading: false,
+      overflow: [], noLocation: [], startsAt: null, status: "ok", isLoading: false,
     };
     // start() stamps started_at so the view-transition + landing derive the run.
     todayState.current.start = vi.fn(() => {
@@ -1144,5 +1145,76 @@ describe("PathPage discover — Show/Hide map + Next label (Path QA R4)", () => 
     expect(screen.getByRole("button", { name: /^start path$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^next$/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /back to path/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("PathPage 'Your day' landing header (v2.2 A6)", () => {
+  const readyOrigin: PathOrigin = {
+    ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
+  };
+  // Minimal routable stops so the entry landing renders (pathView "entry") and
+  // proposal.length drives the subhead count.
+  const nearbyStop = (i: number) => ({
+    id: `n${i}`, kind: "flexible", tier: "nearby", name: `Near ${i}`,
+    dealId: null, lat: 30 + i * 0.01, lng: -97, startAt: null, endAt: null, ageDays: null,
+  });
+
+  beforeEach(() => {
+    originState.current = readyOrigin;
+    todayState.current = { ...todayState.current, stops: [], startedAt: null };
+  });
+
+  it("titles the entry landing 'Your day' and renders the planned subhead state", () => {
+    todaysPathState.current = {
+      ...todaysPathState.current,
+      proposal: Array.from({ length: 8 }, (_, i) => nearbyStop(i)) as unknown[],
+      startsAt: "9:15",
+    };
+    render(<PathPage />, { wrapper });
+    expect(screen.getByRole("heading", { name: /^your day$/i })).toBeInTheDocument();
+    expect(screen.getByText("8 stops. Starts at 9:15.")).toBeInTheDocument();
+    // The old "Path" title is gone from the landing.
+    expect(screen.queryByRole("heading", { name: /^path$/i })).not.toBeInTheDocument();
+  });
+
+  it("uses the singular 'stop' for a one-stop day", () => {
+    todaysPathState.current = {
+      ...todaysPathState.current,
+      proposal: [nearbyStop(0)] as unknown[],
+      startsAt: "9:15",
+    };
+    render(<PathPage />, { wrapper });
+    expect(screen.getByText("1 stop. Starts at 9:15.")).toBeInTheDocument();
+  });
+
+  it("shows the nothing-planned subhead when the day is empty", () => {
+    todaysPathState.current = { ...todaysPathState.current, proposal: [], startsAt: null };
+    render(<PathPage />, { wrapper });
+    expect(screen.getByRole("heading", { name: /^your day$/i })).toBeInTheDocument();
+    expect(screen.getByText("No stops yet. Build one to get going.")).toBeInTheDocument();
+  });
+
+  it("keeps the discover header as '{N} merchants nearby' with the nearby-vocabulary explainer (not 'Your day')", () => {
+    // A geocoded live merchant so the discover branch renders, plus an active path
+    // whose "Add stops" enters discover.
+    merchantsState.current = {
+      merchants: [
+        { id: "x", name: "Xray", address: "9 X St", phone: null, lat: 30.04, lng: -97.04, category: "retail", primaryType: null },
+      ] as unknown as typeof merchantsState.current.merchants,
+      isLoading: false, isError: false, refetch: vi.fn(),
+    } as typeof merchantsState.current;
+    todayState.current = {
+      ...todayState.current,
+      stops: [
+        { merchantId: "a", name: "Alpha", address: "1 A St", lat: 30.05, lng: -97.05, category: "retail", status: "pending" },
+      ] as unknown as typeof todayState.current.stops,
+    };
+    render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /add stops/i }));
+    // Discover keeps the merchant count wording, NOT "Your day".
+    expect(screen.getByText(/merchants? nearby/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^your day$/i })).not.toBeInTheDocument();
+    // The one quiet muted explainer line for the count difference.
+    expect(screen.getByText(/businesses near you, not stops on your day/i)).toBeInTheDocument();
   });
 });
