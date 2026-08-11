@@ -280,6 +280,25 @@ describe("TodaysPathView", () => {
     expect(screen.getByText(/Appointments go where they are booked/i)).toBeInTheDocument();
   });
 
+  it("renders Start driving at the bottom, after the stop list and the add-stops control, with 'Why this order?' beneath it", () => {
+    renderView();
+    const start = screen.getByRole("button", { name: /start driving/i });
+    const addNearby = screen.getByRole("button", { name: /add more nearby/i });
+    const listItems = screen.getAllByRole("listitem");
+    const lastRow = listItems[listItems.length - 1]!;
+    const why = screen.getByText(/why this order/i);
+
+    const follows = (a: Node, b: Node) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+    // Start driving now comes AFTER the last stop row (not before the list).
+    expect(follows(lastRow, start)).toBe(true);
+    // Start driving comes AFTER the "Add more nearby" add-stops control.
+    expect(follows(addNearby, start)).toBe(true);
+    // "Why this order?" sits directly beneath the Start button.
+    expect(follows(start, why)).toBe(true);
+  });
+
   it("states how many nearby stops were auto-added when the day has commitments", () => {
     // the default `proposal` fixture has committed stops (appointment/owed/due) + 1 nearby
     renderView();

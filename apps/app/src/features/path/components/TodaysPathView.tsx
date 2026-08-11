@@ -224,56 +224,6 @@ export function TodaysPathView({
         <>
           {hasRoutable && (
           <>
-          {/* Hero Start: the rep's single most important daily action. Rendered
-              whenever the day has ANY stop (visibleProposal), so an
-              appointment-only day can still start the driving view (which drives
-              the appointments live). onStart still receives only the FLEXIBLE
-              stops — appointments are calendar anchors, never created as merchant
-              stops — so the flexible array may be empty on an appointment-only
-              day. The subline counts the whole drivable day. */}
-          {visibleProposal.length > 0 && (
-            <button
-              type="button"
-              onClick={() => onStart(flexibleStops)}
-              disabled={isStarting}
-              aria-label={`Start driving, ${visibleProposal.length} stop${visibleProposal.length === 1 ? "" : "s"}`}
-              className={cn(
-                "group flex w-full items-center gap-3 rounded-radius-lg px-4 py-3.5 text-left",
-                "bg-brand-primary text-brand-primary-foreground shadow-sm",
-                "transition-colors hover:bg-brand-primary-hover active:bg-brand-primary-pressed",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas",
-                "disabled:cursor-not-allowed disabled:opacity-70",
-              )}
-            >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-radius-full bg-brand-primary-foreground/20">
-                {isStarting ? (
-                  <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-                ) : (
-                  <Navigation className="h-5 w-5" aria-hidden />
-                )}
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="text-body-lg font-semibold leading-tight">Start driving</span>
-                <span className="text-caption text-brand-primary-foreground/75">
-                  {visibleProposal.length} stop{visibleProposal.length === 1 ? "" : "s"} to run
-                </span>
-              </span>
-              <ArrowRight
-                className="h-5 w-5 shrink-0 transition-transform group-hover:translate-x-0.5"
-                aria-hidden
-              />
-            </button>
-          )}
-
-          {/* One-sentence rationale for the order, on demand (FR-PATH-UX-14). */}
-          <details className="text-caption text-text-subtle">
-            <summary className="cursor-pointer select-none">Why this order?</summary>
-            <p className="mt-1 text-text-muted">
-              Appointments go where they are booked. Everything else is ordered by how long it has been,
-              unless a place is well out of your way.
-            </p>
-          </details>
-
           {/* The proposal, in run order, each stop showing its plain reason line. */}
           <ol className="flex flex-col gap-1.5">
             {visibleProposal.map((stop, i) => (
@@ -409,6 +359,65 @@ export function TodaysPathView({
                 </div>
               ))}
             </div>
+          )}
+
+          {hasRoutable && (
+          <>
+          {/* Hero Start: the rep's single most important daily action, now at the
+              BOTTOM of the content flow (after the plan, add-stops, and any
+              overflow / no-location groups) so the rep reviews the day first,
+              then starts. It stays in normal document flow and scrolls with the
+              page (not pinned/sticky). Rendered whenever the day has ANY stop
+              (visibleProposal), so an appointment-only day can still start the
+              driving view (which drives the appointments live). onStart still
+              receives only the FLEXIBLE stops — appointments are calendar
+              anchors, never created as merchant stops — so the flexible array may
+              be empty on an appointment-only day. The subline counts the whole
+              drivable day. */}
+          {visibleProposal.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onStart(flexibleStops)}
+              disabled={isStarting}
+              aria-label={`Start driving, ${visibleProposal.length} stop${visibleProposal.length === 1 ? "" : "s"}`}
+              className={cn(
+                "group flex w-full items-center gap-3 rounded-radius-lg px-4 py-3.5 text-left",
+                "bg-brand-primary text-brand-primary-foreground shadow-sm",
+                "transition-colors hover:bg-brand-primary-hover active:bg-brand-primary-pressed",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas",
+                "disabled:cursor-not-allowed disabled:opacity-70",
+              )}
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-radius-full bg-brand-primary-foreground/20">
+                {isStarting ? (
+                  <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+                ) : (
+                  <Navigation className="h-5 w-5" aria-hidden />
+                )}
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="text-body-lg font-semibold leading-tight">Start driving</span>
+                <span className="text-caption text-brand-primary-foreground/75">
+                  {visibleProposal.length} stop{visibleProposal.length === 1 ? "" : "s"} to run
+                </span>
+              </span>
+              <ArrowRight
+                className="h-5 w-5 shrink-0 transition-transform group-hover:translate-x-0.5"
+                aria-hidden
+              />
+            </button>
+          )}
+
+          {/* One-sentence rationale for the order, on demand (FR-PATH-UX-14),
+              sitting directly beneath the Start button. */}
+          <details className="text-caption text-text-subtle">
+            <summary className="cursor-pointer select-none">Why this order?</summary>
+            <p className="mt-1 text-text-muted">
+              Appointments go where they are booked. Everything else is ordered by how long it has been,
+              unless a place is well out of your way.
+            </p>
+          </details>
+          </>
           )}
         </>
       )}
