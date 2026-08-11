@@ -28,6 +28,7 @@
 import { nearestNeighborOrder, type LatLng } from "@/lib/distance";
 import { driveMinutesBetween } from "./driveTime";
 import { interleaveAroundAnchors } from "./interleaveAroundAnchors";
+import { dwellMinutesForKind } from "./pathCapacityDefaults";
 
 // --- inputs ------------------------------------------------------------------
 
@@ -92,7 +93,9 @@ export interface AssembleTodaysPathInput {
   origin: LatLng;
   /** Working hours. Defaults to 9..17. */
   dayWindow?: DayWindow;
-  /** Minutes spent at each flexible stop. Defaults to 20. */
+  /** Fixed dwell override for EVERY stop. When omitted, dwell is derived per
+   *  kind: 30 min for an appointment, 15 min for a flexible stop
+   *  (`dwellMinutesForKind`). Pass a number only to force one flat value. */
   dwellMin?: number;
 }
 
@@ -149,7 +152,6 @@ export interface TodaysPathResult {
 // --- helpers -----------------------------------------------------------------
 
 const DEFAULT_WINDOW: DayWindow = { startHour: 9, endHour: 17 };
-const DEFAULT_DWELL_MIN = 20;
 
 const toMs = (now: string | number): number =>
   typeof now === "number" ? now : Date.parse(now);
@@ -235,7 +237,12 @@ export function assembleTodaysPath(
   now: string | number,
 ): TodaysPathResult {
   const window = input.dayWindow ?? DEFAULT_WINDOW;
-  const dwellMin = input.dwellMin ?? DEFAULT_DWELL_MIN;
+  // Per-kind dwell (v2.2 B default 3), with an optional flat override. When
+  // `dwellMin` is given every stop uses it; otherwise appointments hold 30 and
+  // flexible stops hold 15 via `dwellMinutesForKind`.
+  const dwellOverride = input.dwellMin;
+  const dwellFor = (kindOrTier: string): number =>
+    dwellOverride ?? dwellMinutesForKind(kindOrTier);
   const origin = input.origin;
 
   const nowMs = toMs(now);
@@ -262,8 +269,8 @@ export function assembleTodaysPath(
   let apptOccupiedMin = 0;
   for (const a of anchors) {
     const s = parseMs(a.startAt);
-    // No end -> assume a dwell-length hold so it still consumes some budget.
-    const e = a.endAt ? parseMs(a.endAt) : s + dwellMin * 60000;
+    // No end -> assume an appointment-dwell hold so it still consumes budget.
+    const e = a.endAt ? parseMs(a.endAt) : s + dwellFor("appointment") * 60000;
     apptOccupiedMin += overlapMinutes(s, e, effectiveStartMs, windowEndMs);
   }
 
@@ -285,7 +292,7 @@ export function assembleTodaysPath(
       overflow.push(stop);
       continue;
     }
-    const cost = driveMinutesBetween(origin, { lat: stop.lat, lng: stop.lng }) + dwellMin;
+    const cost = driveMinutesBetween(origin, { lat: stop.lat, lng: stop.lng }) + dwellFor(stop.tier);
     if (cost <= remainingMin) {
       selected.push(stop);
       remainingMin -= cost;
@@ -304,7 +311,13 @@ export function assembleTodaysPath(
   const order = nearestNeighborOrder(origin, selected.map((s) => ({ lat: s.lat, lng: s.lng })));
   const queue = order.map((i) => selected[i]!);
 
-  const interleaved = interleaveAroundAnchors(anchors, queue, { origin, dwellMin, effectiveStartMs });
+  // The interleave queue is entirely flexible stops, so it holds the flexible
+  // dwell (anchors carry their own start/end occupancy inside the helper).
+  const interleaved = interleaveAroundAnchors(anchors, queue, {
+    origin,
+    dwellMin: dwellFor("flexible"),
+    effectiveStartMs,
+  });
   const proposal: OrderedStop[] = interleaved.map((e) =>
     e.kind === "anchor" ? appointmentToOrdered(e.item) : flexibleToOrdered(e.item),
   );

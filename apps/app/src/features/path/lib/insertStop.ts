@@ -14,11 +14,14 @@
 
 import type { LatLng } from "@/lib/distance";
 import { driveMinutesBetween } from "./driveTime";
+import { dwellMinutesForKind } from "./pathCapacityDefaults";
 import type { OrderedStop, FlexibleStop } from "./todaysPath";
 
 export interface InsertStopOptions {
   origin: LatLng;
-  /** Minutes spent at each flexible stop. Default 20. */
+  /** Fixed dwell override for EVERY stop. When omitted, dwell is derived per
+   *  kind: 30 min for an appointment, 15 min for a flexible stop
+   *  (`dwellMinutesForKind`). Pass a number only to force one flat value. */
   dwellMin?: number;
   /** Working-window end hour (0..24). The tail after the last stop must still
    *  finish by this hour on `now`'s UTC date. */
@@ -26,8 +29,6 @@ export interface InsertStopOptions {
   /** ISO/epoch clock start (callers pass an explicit now; pure, no Date.now()). */
   now: string | number;
 }
-
-const DEFAULT_DWELL_MIN = 20;
 
 const toMs = (now: string | number): number =>
   typeof now === "number" ? now : Date.parse(now);
@@ -59,18 +60,24 @@ const candidateToOrdered = (s: FlexibleStop): OrderedStop => ({
 
 /**
  * Walk a trial list from `origin` at `now`, driving between consecutive stops
- * and holding `dwellMin` at each. Returns whether the trial is feasible:
+ * and holding a per-kind dwell at each. Returns whether the trial is feasible:
  *   1. every appointment (kind !== "flexible", has startAt) is reached at or
  *      before its startAt, and
  *   2. the final departure is at or before the window end.
+ *
+ * Dwell is per-kind (v2.2 B default 3): a flexible stop holds 15 min, an
+ * appointment 30. `dwellOverride`, when set, forces that flat value for every
+ * stop instead.
  */
 function isFeasible(
   trial: OrderedStop[],
   origin: LatLng,
-  dwellMin: number,
+  dwellOverride: number | undefined,
   windowEndMs: number,
   nowMs: number,
 ): boolean {
+  const dwellFor = (kind: string): number =>
+    dwellOverride ?? dwellMinutesForKind(kind);
   let cursorMs = nowMs;
   let cursorLoc: LatLng = origin;
   for (const stop of trial) {
@@ -79,17 +86,20 @@ function isFeasible(
       : 0;
     const arriveMs = cursorMs + driveMin * 60000;
     if (stop.kind === "flexible") {
-      // A flexible stop occupies a flat dwell.
-      cursorMs = arriveMs + dwellMin * 60000;
+      // A flexible stop occupies its dwell (15 min by default).
+      cursorMs = arriveMs + dwellFor(stop.kind) * 60000;
     } else {
       // A fixed appointment must be reached at or before it starts, and it holds
-      // the rep until its endAt (mirroring the assembler, todaysPath.ts:322-323):
-      // arriving early means waiting for the window, then departing at endAt, not
-      // after a flat dwell. Under-modeling this (a flat 20 min) is what let a
+      // the rep until its endAt (mirroring the assembler): arriving early means
+      // waiting for the window, then departing at endAt. With no endAt it holds
+      // the appointment dwell (30 min). Under-modeling this is what let a
       // candidate wedge between two close appointments and make the later one late.
       const startMs = parseMs(stop.startAt);
       if (Number.isFinite(startMs) && arriveMs > startMs) return false;
-      const apptEndMs = stop.endAt ? parseMs(stop.endAt) : startMs;
+      const fallbackEndMs = Number.isFinite(startMs)
+        ? startMs + dwellFor(stop.kind) * 60000
+        : NaN;
+      const apptEndMs = stop.endAt ? parseMs(stop.endAt) : fallbackEndMs;
       cursorMs = Math.max(arriveMs, Number.isFinite(apptEndMs) ? apptEndMs : startMs);
     }
     if (hasCoords(stop)) cursorLoc = { lat: stop.lat, lng: stop.lng };
@@ -110,7 +120,7 @@ export function insertStop(
 ): OrderedStop[] | null {
   if (!hasCoords(candidate)) return null;
 
-  const dwellMin = opts.dwellMin ?? DEFAULT_DWELL_MIN;
+  const dwellOverride = opts.dwellMin;
   const nowMs = toMs(opts.now);
   if (!Number.isFinite(nowMs)) return null;
 
@@ -129,7 +139,7 @@ export function insertStop(
 
   for (let i = 0; i <= ordered.length; i++) {
     const trial = [...ordered.slice(0, i), candidateStop, ...ordered.slice(i)];
-    if (isFeasible(trial, opts.origin, dwellMin, windowEndMs, nowMs)) {
+    if (isFeasible(trial, opts.origin, dwellOverride, windowEndMs, nowMs)) {
       return trial;
     }
   }

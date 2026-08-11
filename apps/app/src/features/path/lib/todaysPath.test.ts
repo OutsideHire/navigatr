@@ -205,6 +205,20 @@ describe("assembleTodaysPath", () => {
     expect(r.overflow.map((s) => s.id)).toEqual(["o-2"]);
   });
 
+  it("uses per-kind dwell when no override: an end-less appointment holds 30, a flexible stop holds 15", () => {
+    // No dwellMin override -> derive per kind. An appointment with no endAt
+    // consumes the 30-min appointment dwell; a flexible owed stop at the origin
+    // (zero drive) consumes the 15-min flexible dwell. Budget is the full 480min.
+    const apptOnly = assembleTodaysPath(
+      base({ appointments: [appt({ id: "a-noend", startAt: "2026-08-09T11:00:00.000Z", endAt: null })] }),
+      NOW,
+    );
+    expect(apptOnly.remainingMin).toBe(480 - 30);
+
+    const flexOnly = assembleTodaysPath(base({ owed: [owed({ id: "o-1" })] }), NOW);
+    expect(flexOnly.remainingMin).toBe(480 - 15);
+  });
+
   it("is deterministic and pure (same inputs -> identical output)", () => {
     const input = base({
       appointments: [appt()],

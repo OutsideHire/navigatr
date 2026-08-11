@@ -176,8 +176,8 @@ export function TodaysPathView({
     const candidate = overflow[poolCursor];
     if (!candidate) return;
     const next = insertStop(workingProposal, candidate, {
+      // No dwellMin: insertStop derives per-kind dwell (15 flexible / 30 appt).
       origin,
-      dwellMin: 20,
       windowEndHour,
       now,
     });

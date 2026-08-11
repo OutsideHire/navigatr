@@ -1,5 +1,6 @@
 import type { LatLng } from "@/lib/distance";
 import { driveMinutesBetween } from "./driveTime";
+import { dwellMinutesForKind } from "./pathCapacityDefaults";
 import { reasonLine, lastVisitContext } from "./reasonLine";
 import {
   interleaveAroundAnchors,
@@ -80,13 +81,14 @@ export interface DrivingSequenceInput {
   dueToday: DrivingDueTodayInput[];
   native: DrivingNativeInput[];
   origin: LatLng;
-  /** Minutes spent at each stop. Default 20. */
+  /** Fixed dwell override for EVERY stop. When omitted, dwell is derived per
+   *  kind: 30 min for an appointment/external meeting, 15 min for a flexible
+   *  drop-in (`dwellMinutesForKind`). Pass a number only to force one value. */
   dwellMin?: number;
   /** Optional map of dealId -> previous outcome label, for the last-visit line. */
   lastOutcomeByDealId?: Record<string, string>;
 }
 
-const DEFAULT_DWELL_MIN = 20;
 const MS_PER_MIN = 60_000;
 
 /** Local-tz clock time, e.g. "3:00 PM". Matches reasonLine's own formatter. */
@@ -108,7 +110,12 @@ export function drivingSequence(
   input: DrivingSequenceInput,
   now: string | number,
 ): DrivingCard[] {
-  const dwellMin = input.dwellMin ?? DEFAULT_DWELL_MIN;
+  // Per-kind dwell (v2.2 B default 3), with an optional flat override. When
+  // `dwellMin` is given every stop uses it; otherwise a meeting holds 30 and a
+  // flexible drop-in holds 15 via `dwellMinutesForKind`.
+  const dwellOverride = input.dwellMin;
+  const dwellFor = (kind: string): number =>
+    dwellOverride ?? dwellMinutesForKind(kind);
   const lastOutcome = input.lastOutcomeByDealId ?? {};
 
   // Ordering rule (matches the landing's `drivingSequence` order): weave the
@@ -241,9 +248,11 @@ export function drivingSequence(
   }
 
   const effectiveStartMs = new Date(now).getTime();
+  // The interleave queue is entirely flexible drop-ins, so it holds the flexible
+  // dwell (anchors carry their own start/end occupancy inside the helper).
   const interleaved = interleaveAroundAnchors(anchors, flexibleQueue, {
     origin: input.origin,
-    dwellMin,
+    dwellMin: dwellFor("flexible"),
     effectiveStartMs,
   });
   const ordered: Pending[] = interleaved.map((x) => x.item.pending);
@@ -289,8 +298,8 @@ export function drivingSequence(
       driveMinLabel,
     });
 
-    // Dwell after visiting advances the clock for the next card.
-    clockMs += dwellMin * MS_PER_MIN;
+    // Dwell after visiting advances the clock for the next card, per kind.
+    clockMs += dwellFor(p.card.kind) * MS_PER_MIN;
   }
 
   return out;

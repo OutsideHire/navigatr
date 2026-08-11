@@ -67,17 +67,18 @@ function baseInput(): DrivingSequenceInput {
 
 describe("drivingSequence", () => {
   it("interleaves flexible drop-ins around the appointment anchor by time (kinds + ids)", () => {
-    // now 2pm, appointment 3pm: a full hour of gap, so the flexible drop-ins
-    // that fit before the 3pm anchor are woven in ahead of it; the last one
-    // that no longer fits falls after. Order is time-aware, not meetings-first.
+    // now 2pm, appointment 3pm: a full hour of gap. With the per-kind flexible
+    // dwell of 15 min (down from the old flat 20), all three flexible drop-ins
+    // now fit before the 3pm anchor, so the anchor lands last. Order is
+    // time-aware, not meetings-first.
     const cards = drivingSequence(baseInput(), NOW);
     expect(cards.map((c) => c.kind)).toEqual([
       "owed",
       "owed",
-      "appointment",
       "nearby",
+      "appointment",
     ]);
-    expect(cards.map((c) => c.id)).toEqual(["owed-1", "due-1", "m1", "merch-1"]);
+    expect(cards.map((c) => c.id)).toEqual(["owed-1", "due-1", "merch-1", "m1"]);
     // Past-due vs due-today share the "owed" kind; their reason line differs.
     expect(cards[0]!.reason).toBe("You have not stopped by in 9 days.");
     expect(cards[1]!.reason).toBe("You have not stopped by in 0 days.");
@@ -271,6 +272,57 @@ describe("drivingSequence", () => {
     expect(cards.map((c) => c.kind)).toEqual(["appointment", "owed"]);
     const owed = cards.find((c) => c.kind === "owed")!;
     expect(owed.arriveLabel).toBe(expected);
+  });
+
+  it("holds a meeting for the 30-min appointment dwell before a trailing flexible card (per-kind, no override)", () => {
+    // Same shape as the override test above, but WITHOUT dwellMin, so dwell is
+    // derived per kind. The owed card cannot fit before the 3pm appointment
+    // (tight start), so it follows the meeting. Its arrival threads the 30-min
+    // appointment dwell (not 15): now + drive(origin->meeting) + 30 +
+    // drive(meeting->owed).
+    const origin = { lat: 39.99, lng: -73.99 };
+    const meetingPoint = { lat: 40.0, lng: -74.0 };
+    const owedPoint = { lat: 40.01, lng: -74.01 };
+    const tightNow = "2026-08-10T14:56:00Z";
+
+    const input: DrivingSequenceInput = {
+      meetings: [
+        {
+          id: "m1",
+          kind: "appointment",
+          title: "Acme",
+          startAt: APPT_START,
+          lat: meetingPoint.lat,
+          lng: meetingPoint.lng,
+        },
+      ],
+      pastDue: [
+        {
+          taskId: "owed-1",
+          dealId: "deal-owed",
+          name: "Bob's Diner",
+          ageDays: 3,
+          lat: owedPoint.lat,
+          lng: owedPoint.lng,
+        },
+      ],
+      dueToday: [],
+      native: [],
+      origin,
+    };
+
+    const leg1 = driveMinutesBetween(origin, meetingPoint);
+    const leg2 = driveMinutesBetween(meetingPoint, owedPoint);
+    const arriveMs =
+      new Date(tightNow).getTime() + (leg1 + 30 + leg2) * 60_000; // 30 = appt dwell
+    const expected = `around ${new Date(arriveMs).toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    })}`;
+
+    const cards = drivingSequence(input, tightNow);
+    expect(cards.map((c) => c.kind)).toEqual(["appointment", "owed"]);
+    expect(cards.find((c) => c.kind === "owed")!.arriveLabel).toBe(expected);
   });
 
   it("floors a sub-minute-but-nonzero leg to '1 min'", () => {

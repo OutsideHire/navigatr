@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { usePathPreferences, useUpdateDefaultIndustries } from "./usePathPreferences";
+import { usePathPreferences, useUpdateDefaultIndustries, type PathPreferencesRow } from "./usePathPreferences";
 import { RECOMMENDED_SELECTION } from "../lib/industrySelection";
 
 const maybeSingle = vi.fn();
@@ -48,6 +48,20 @@ describe("usePathPreferences", () => {
     const { result } = renderHook(() => usePathPreferences(), { wrapper: wrap(makeClient()) });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(RECOMMENDED_SELECTION);
+  });
+});
+
+describe("PathPreferencesRow type", () => {
+  it("includes the nullable per-rep end_of_day_minutes field", () => {
+    const row: PathPreferencesRow = {
+      user_id: "user-1",
+      default_industries: { retail: ["clothing_store"] },
+      end_of_day_minutes: null,
+      updated_at: "2026-08-11T00:00:00.000Z",
+    };
+    expect(row.end_of_day_minutes).toBeNull();
+    const withOverride: PathPreferencesRow = { ...row, end_of_day_minutes: 18 * 60 };
+    expect(withOverride.end_of_day_minutes).toBe(1080);
   });
 });
 

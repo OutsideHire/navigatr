@@ -10,6 +10,20 @@ import { RECOMMENDED_SELECTION, selectedCategories, pruneToKnownCategories, type
 
 export const PATH_PREFS_QUERY_KEY = ["path", "preferences"] as const;
 
+/**
+ * The persisted per-rep Path preferences row. `end_of_day_minutes` is the
+ * per-rep end-of-day override (minutes from local midnight; null = use
+ * DEFAULT_END_OF_DAY_MINUTES). Defined here so the field is available to the
+ * types; B-T2 will actually read it. This task does not query the column, so the
+ * hook's runtime behavior is unchanged.
+ */
+export interface PathPreferencesRow {
+  user_id: string;
+  default_industries: IndustrySelection;
+  end_of_day_minutes: number | null;
+  updated_at: string;
+}
+
 export function usePathPreferences() {
   const userId = useAuth((s) => s.user?.id);
   return useQuery({

@@ -74,17 +74,53 @@ describe("insertStop", () => {
   });
 
   it("returns null when the day is full (no index keeps within the window)", () => {
-    // 60-minute window: two placed stops already consume most of it, and a
-    // third stop (drive + dwell) cannot fit at any position.
+    // 35-minute window: with the per-kind flexible dwell of 15, three flexible
+    // stops need at least 45 min of dwell alone, so a third stop cannot fit at
+    // any position.
     const ordered = [orderedFlex("a", 0, 0.01), orderedFlex("b", 0, 0.02)];
     const candidate = flex("c", 0, 0.03);
     const opts: InsertStopOptions = {
       origin: ORIGIN,
       windowEndHour: 17,
-      now: "2026-08-10T16:00:00Z", // only 60 minutes to 17:00
+      now: "2026-08-10T16:25:00Z", // only 35 minutes to 17:00
     };
 
     expect(insertStop(ordered, candidate, opts)).toBeNull();
+  });
+
+  it("a flexible candidate holds 15 minutes, not the old flat 20 (per-kind dwell)", () => {
+    // Empty run, candidate at the origin (zero drive). Only 16 minutes remain to
+    // 17:00: 15 <= 16 fits, so the day holds it. Under the old flat 20-min dwell
+    // this would not have fit and insertStop would return null.
+    const ordered: OrderedStop[] = [];
+    const candidate = flex("c", 0, 0);
+    const opts: InsertStopOptions = {
+      origin: ORIGIN,
+      windowEndHour: 17,
+      now: "2026-08-10T16:44:00Z", // 16 minutes to 17:00
+    };
+
+    const result = insertStop(ordered, candidate, opts);
+    expect(result).not.toBeNull();
+    expect(ids(result!)).toEqual(["c"]);
+  });
+
+  it("holds an end-less appointment for the 30-min appointment dwell (per-kind)", () => {
+    // A pre-placed appointment with no endAt at 16:30, and a flexible candidate,
+    // starting 16:00 with the window closing at 17:00. The appointment is held
+    // for its 30-min dwell (through 17:00), leaving no room for the flexible to
+    // follow it, so the candidate must be placed before the appointment.
+    const a = appt("a", 0, 0, "2026-08-10T16:30:00Z", null);
+    const candidate = flex("c", 0, 0);
+    const opts: InsertStopOptions = {
+      origin: ORIGIN,
+      windowEndHour: 17,
+      now: "2026-08-10T16:00:00Z",
+    };
+
+    const result = insertStop([a], candidate, opts);
+    expect(result).not.toBeNull();
+    expect(ids(result!)).toEqual(["c", "a"]);
   });
 
   it("never reorders the placed stops", () => {
