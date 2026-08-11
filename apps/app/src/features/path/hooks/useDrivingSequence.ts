@@ -73,6 +73,7 @@ export function useDrivingSequence(
           ageDays: ageDaysSince(v.createdAt),
           lat: v.lat,
           lng: v.lng,
+          datePromised: v.dateSource === "asserted",
         })),
         dueToday: dueToday.map((v) => ({
           taskId: v.taskId,
@@ -81,6 +82,7 @@ export function useDrivingSequence(
           address: v.address,
           lat: v.lat,
           lng: v.lng,
+          datePromised: v.dateSource === "asserted",
         })),
         native: nativeStops
           .filter((s) => s.status === "pending")

@@ -351,6 +351,7 @@ export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: Ru
     external: c.kind === "external",
     name: c.name,
     index: i + 1,
+    label: c.label,
     reason: c.reason,
     detail: c.address ?? undefined,
     timeLabel: c.kind === "appointment" || c.kind === "external" ? c.arriveLabel : undefined,
@@ -417,7 +418,11 @@ export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: Ru
         </div>
 
         <div className="flex flex-col gap-1">
-          <p className="text-body-md text-text-default">{card.reason}</p>
+          {/* Left-rail category label (v2.2 B 4.5) + the detail-only sentence
+              (4.5.1). The sentence can be empty (an appointment with no contact);
+              the arrival card above already carries the appointment time. */}
+          <span className="text-caption font-medium text-text-muted">{card.label}</span>
+          {card.reason && <p className="text-body-md text-text-default">{card.reason}</p>}
           {card.lastVisit && <p className="text-caption text-text-muted">{card.lastVisit}</p>}
         </div>
 

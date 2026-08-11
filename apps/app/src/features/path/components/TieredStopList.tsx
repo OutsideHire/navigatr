@@ -36,8 +36,12 @@ export interface TieredStopRow {
   /** Full badge node replacing the default tier circle (native stops pass their
    *  status-colored badge here). */
   badge?: React.ReactNode;
-  /** One plain reason sentence (spec 6.1) shown under the name. Required: every
-   *  row renders this single line (no tier chips / overdue ages). */
+  /** Left-rail category label (v2.2 B 4.5): "appointment" | "you promised" |
+   *  "anytime" | "on the way". Rendered as a small muted category word beneath
+   *  the name. Optional so callers that predate the taxonomy still render. */
+  label?: string;
+  /** One plain DETAIL sentence (v2.2 B 4.5.1) shown under the name/label. May be
+   *  empty (an appointment with no contact); an empty string renders no line. */
   reason: string;
   /** Warning-color the reason line (a place is aging). Colour is the only signal. */
   aging?: boolean;
@@ -105,14 +109,26 @@ function Row({ row }: { row: TieredStopRow }) {
             <div className="mt-0.5 text-caption text-text-muted">{row.detail}</div>
           )}
 
-          <p
-            className={cn(
-              "mt-0.5 text-caption",
-              row.aging ? "text-status-warning" : "text-text-muted",
-            )}
-          >
-            {row.reason}
-          </p>
+          {/* Left-rail category label (v2.2 B 4.5): neutral muted category word;
+              aging COLOUR (below) is B-T6 and lives on the sentence, not here. */}
+          {row.label && (
+            <span className="mt-0.5 block text-caption font-medium text-text-muted">
+              {row.label}
+            </span>
+          )}
+
+          {/* Detail-only sentence (v2.2 B 4.5.1). Rendered only when non-empty so
+              an appointment with no contact keeps its layout without a blank line. */}
+          {row.reason && (
+            <p
+              className={cn(
+                "mt-0.5 text-caption",
+                row.aging ? "text-status-warning" : "text-text-muted",
+              )}
+            >
+              {row.reason}
+            </p>
+          )}
         </div>
       </div>
 

@@ -30,7 +30,7 @@ import type { OrderedStop, FlexibleStop } from "../lib/todaysPath";
 import type { OwedVisitNoCoords } from "../lib/owedVisits";
 import type { TodaysPathStatus } from "../hooks/useTodaysPath";
 import { tierAccent } from "../lib/tierStyles";
-import { reasonLine } from "../lib/reasonLine";
+import { reasonLine, stopLabel } from "../lib/reasonLine";
 import { capacitySentence, fullDaySentence } from "../lib/dayCapacity";
 import { fillToCapacity } from "../lib/fillToCapacity";
 import { DayStopsMap } from "./DayStopsMap";
@@ -565,6 +565,20 @@ function ProposalRow({
   // no dealId, so they show nothing). Flexible rows keep the remove control.
   const appointmentDealId = isAppointment ? stop.dealId : null;
 
+  // Left-rail label (the category) + the detail-only sentence beneath the name
+  // (v2.2 B 4.5 / 4.5.1). The sentence NEVER repeats the category word and may
+  // be empty (an appointment with no contact) - the row still renders its name.
+  const rstop = {
+    kind: stop.kind,
+    tier: stop.tier,
+    startAt: stop.startAt,
+    ageDays: stop.ageDays,
+    datePromisedToday: stop.datePromised ?? false,
+    hasPriorActivity: stop.tier !== "nearby",
+  };
+  const label = stopLabel(rstop);
+  const reason = reasonLine(rstop);
+
   return (
     <li
       className={cn(
@@ -591,17 +605,17 @@ function ProposalRow({
             </span>
           )}
         </div>
-        {/* One plain reason line per row (FR-PATH-UX-05), appointments included. */}
-        <p className={cn("mt-0.5 text-caption", stop.tier === "past_due" && stop.ageDays != null && stop.ageDays > 0 ? "text-status-warning" : "text-text-muted")}>
-          {reasonLine({
-            kind: stop.kind,
-            tier: stop.tier,
-            startAt: stop.startAt,
-            ageDays: stop.ageDays,
-            datePromisedToday: false,
-            hasPriorActivity: stop.tier !== "nearby",
-          })}
-        </p>
+        {/* Left-rail category label (v2.2 B 4.5): a small muted category word.
+            Neutral for now; aging COLOUR is B-T6, never encoded in the label. */}
+        <span className="mt-0.5 block text-caption font-medium text-text-muted">{label}</span>
+        {/* Detail-only sentence (v2.2 B 4.5.1). Rendered only when non-empty so
+            an appointment with no contact does not leave a blank line, and the
+            row never collapses (the name above always renders). */}
+        {reason && (
+          <p className={cn("mt-0.5 text-caption", stop.tier === "past_due" && stop.ageDays != null && stop.ageDays > 0 ? "text-status-warning" : "text-text-muted")}>
+            {reason}
+          </p>
+        )}
       </div>
 
       {onRemove && (

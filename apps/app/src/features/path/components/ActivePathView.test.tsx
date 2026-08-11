@@ -315,8 +315,9 @@ describe("ActivePathView", () => {
     // The appointment shows its joined deal name.
     expect(screen.getByText("Acme Payments")).toBeInTheDocument();
 
-    // Each meeting now carries a plain reason line, not a tier / Ended chip.
-    expect(screen.getAllByText(/^You have a .+ here\.$/).length).toBe(2);
+    // Each meeting now carries the "appointment" left-rail label, not a tier /
+    // Ended chip (the time lives in its own column; the contact sentence is empty).
+    expect(screen.getAllByText("appointment").length).toBe(2);
     expect(screen.queryByText("Appointment")).not.toBeInTheDocument();
     expect(screen.queryByText("Ended")).not.toBeInTheDocument();
 
@@ -412,11 +413,12 @@ describe("ActivePathView", () => {
     expect(screen.getByText("Due Today Co")).toBeInTheDocument(); // due-today
     expect(screen.getByText("Uratex")).toBeInTheDocument(); // native
 
-    // Reason lines replace the chips: appointment sentence, owed/due-today age,
-    // and the native "new" line.
-    expect(screen.getByText(/^You have a .+ here\.$/)).toBeInTheDocument();
-    expect(screen.getAllByText("You have not stopped by in 5 days.").length).toBe(2);
-    expect(screen.getAllByText("New. You have not been in.").length).toBe(2); // both native stops
+    // Category labels + detail-only sentences replace the chips: the appointment
+    // label, the owed/due-today "anytime" days line, and the native "on the way"
+    // never-been-in line.
+    expect(screen.getByText("appointment")).toBeInTheDocument();
+    expect(screen.getAllByText("5 days since your last stop.").length).toBe(2);
+    expect(screen.getAllByText("Nobody's been in yet.").length).toBe(2); // both native stops
 
     // Appointment time still renders.
     expect(screen.getAllByText(/\d{1,2}:\d{2}/).length).toBeGreaterThanOrEqual(1);
@@ -448,9 +450,9 @@ describe("ActivePathView", () => {
       dueToday: [owedVisit({ taskId: "t2", dealId: "deal-due-1", name: "Due Today Co", earliestAt: "2026-08-08" })],
     };
     renderView();
-    // No tier chip; a plain reason line renders instead.
+    // No tier chip; the "anytime" label + a plain detail sentence render instead.
     expect(screen.queryByText("Due today")).not.toBeInTheDocument();
-    expect(screen.getByText("You have not stopped by in 5 days.")).toBeInTheDocument();
+    expect(screen.getByText("5 days since your last stop.")).toBeInTheDocument();
     // Due-today is not overdue.
     expect(screen.queryByText(/overdue/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /log drop-in/i }));

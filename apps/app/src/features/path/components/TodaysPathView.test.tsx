@@ -105,16 +105,54 @@ describe("TodaysPathView", () => {
     expect(orderOf("Renewal review")).toBeLessThan(orderOf("DueToday Co"));
     expect(orderOf("DueToday Co")).toBeLessThan(orderOf("Nearby Co"));
 
-    // The past-due stop shows a plain reason line, not a tier chip or age.
-    expect(screen.getByText("You have not stopped by in 12 days.")).toBeInTheDocument();
+    // The past-due stop shows the detail-only sentence (v2.2 B 4.5.1), not a
+    // tier chip or "overdue"/"past due" text.
+    expect(screen.getByText("12 days since your last stop.")).toBeInTheDocument();
     expect(screen.queryByText(/overdue/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/past due/i)).not.toBeInTheDocument();
 
-    // The appointment carries its own reason line (FR-PATH-UX-05, every row).
+    // The appointment carries the "appointment" left-rail label; the sentence is
+    // the contact (not plumbed) so it is empty, and the time lives in its column.
     const apptRow = items[orderOf("Renewal review")]!;
-    expect(within(apptRow).getByText(/^You have a .+ here\.$/)).toBeInTheDocument();
+    expect(within(apptRow).getByText("appointment")).toBeInTheDocument();
     // The dedicated time column still renders the formatted clock time.
     expect(within(apptRow).getByText(fmtLocalTime("2026-08-09T17:30:00Z"))).toBeInTheDocument();
+  });
+
+  it("renders the left-rail category label on landing rows (v2.2 B 4.5)", () => {
+    renderView();
+    const items = screen.getAllByRole("listitem");
+    const orderOf = (n: string) => items.findIndex((li) => (li.textContent ?? "").includes(n));
+    // Owed drop-in -> "anytime"; discovery fill -> "on the way"; appointment -> "appointment".
+    expect(within(items[orderOf("Owed Co")]!).getByText("anytime")).toBeInTheDocument();
+    expect(within(items[orderOf("Nearby Co")]!).getByText("on the way")).toBeInTheDocument();
+    expect(within(items[orderOf("Renewal review")]!).getByText("appointment")).toBeInTheDocument();
+    // The discovery fill's detail-only sentence.
+    expect(within(items[orderOf("Nearby Co")]!).getByText("Nobody's been in yet.")).toBeInTheDocument();
+  });
+
+  it("a 'you promised' row shows the label + owner sentence when the date was asserted", () => {
+    const promised: OrderedStop[] = [
+      {
+        id: "p1", kind: "flexible", tier: "past_due", name: "Promised Co",
+        dealId: "d9", lat: 30.1, lng: -97.1, startAt: null, endAt: null, ageDays: 3,
+        datePromised: true,
+      },
+    ];
+    renderView({ proposal: promised, overflow: [] });
+    const row = screen.getByText("Promised Co").closest("li")!;
+    expect(within(row).getByText("you promised")).toBeInTheDocument();
+    expect(within(row).getByText("The owner is expecting you.")).toBeInTheDocument();
+  });
+
+  it("an appointment row with no contact renders no detail sentence and does not break layout", () => {
+    const apptOnly: OrderedStop[] = [proposal[1]!];
+    renderView({ proposal: apptOnly, overflow: [] });
+    const row = screen.getByText("Renewal review").closest("li")!;
+    // The label + name + time all render; there is no empty detail sentence.
+    expect(within(row).getByText("appointment")).toBeInTheDocument();
+    expect(within(row).getByText("Renewal review")).toBeInTheDocument();
+    expect(within(row).getByText(fmtLocalTime("2026-08-09T17:30:00Z"))).toBeInTheDocument();
   });
 
   it("removing a flexible stop drops it from the plan", () => {

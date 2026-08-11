@@ -1,7 +1,7 @@
 import type { LatLng } from "@/lib/distance";
 import { driveMinutesBetween } from "./driveTime";
 import { dwellMinutesForKind } from "./pathCapacityDefaults";
-import { reasonLine, lastVisitContext } from "./reasonLine";
+import { reasonLine, stopLabel, lastVisitContext } from "./reasonLine";
 import {
   interleaveAroundAnchors,
   type AnchorLike,
@@ -23,7 +23,11 @@ export interface DrivingCard {
   kind: DrivingCardKind;
   name: string;
   address: string | null;
-  /** One plain reason sentence (spec 6.1), via reasonLine. */
+  /** Left-rail category label (v2.2 B 4.5): "appointment" | "you promised" |
+   *  "anytime" | "on the way", via stopLabel. */
+  label: string;
+  /** One plain DETAIL sentence (v2.2 B 4.5.1), via reasonLine. May be empty
+   *  (an appointment with no contact). */
   reason: string;
   /** "Last time, {outcome}." or null when no prior outcome is known. */
   lastVisit: string | null;
@@ -50,6 +54,9 @@ export interface DrivingMeetingInput {
   endAt?: string | null;
   lat?: number | null;
   lng?: number | null;
+  /** Appointment contact for the detail sentence (v2.2 B 4.5.1). Not plumbed on
+   *  every surface yet -> empty sentence when absent. */
+  contactName?: string | null;
 }
 export interface DrivingOwedInput {
   taskId: string;
@@ -59,6 +66,8 @@ export interface DrivingOwedInput {
   ageDays: number;
   lat?: number | null;
   lng?: number | null;
+  /** Asserted follow-up date (date_source "asserted") -> "you promised". */
+  datePromised?: boolean;
 }
 export interface DrivingDueTodayInput {
   taskId: string;
@@ -67,6 +76,8 @@ export interface DrivingDueTodayInput {
   address?: string | null;
   lat?: number | null;
   lng?: number | null;
+  /** Asserted follow-up date (date_source "asserted") -> "you promised". */
+  datePromised?: boolean;
 }
 export interface DrivingNativeInput {
   merchantId: string;
@@ -101,7 +112,8 @@ function fmtClock(ms: number): string {
 
 /** A stop that still knows its own coords (or lacks them). */
 interface Pending {
-  card: Omit<DrivingCard, "reason" | "lastVisit" | "arriveLabel" | "driveMinLabel">;
+  card: Omit<DrivingCard, "label" | "reason" | "lastVisit" | "arriveLabel" | "driveMinLabel">;
+  label: string;
   reason: string;
   startAt: string | null;
 }
@@ -148,6 +160,14 @@ export function drivingSequence(
         lat: m.lat ?? null,
         lng: m.lng ?? null,
       },
+      label: stopLabel({
+        kind: m.kind,
+        tier: "appointment",
+        startAt: m.startAt,
+        ageDays: null,
+        datePromisedToday: false,
+        hasPriorActivity: true,
+      }),
       reason: reasonLine({
         kind: m.kind,
         tier: "appointment",
@@ -155,6 +175,7 @@ export function drivingSequence(
         ageDays: null,
         datePromisedToday: false,
         hasPriorActivity: true,
+        contactName: m.contactName,
       }),
       startAt: m.startAt,
     };
@@ -182,12 +203,20 @@ export function drivingSequence(
         lat: o.lat ?? null,
         lng: o.lng ?? null,
       },
+      label: stopLabel({
+        kind: "flexible",
+        tier: "past_due",
+        startAt: null,
+        ageDays: o.ageDays,
+        datePromisedToday: o.datePromised ?? false,
+        hasPriorActivity: true,
+      }),
       reason: reasonLine({
         kind: "flexible",
         tier: "past_due",
         startAt: null,
         ageDays: o.ageDays,
-        datePromisedToday: false,
+        datePromisedToday: o.datePromised ?? false,
         hasPriorActivity: true,
       }),
       startAt: null,
@@ -208,12 +237,20 @@ export function drivingSequence(
         lat: d.lat ?? null,
         lng: d.lng ?? null,
       },
+      label: stopLabel({
+        kind: "flexible",
+        tier: "due_today",
+        startAt: null,
+        ageDays: 0,
+        datePromisedToday: d.datePromised ?? false,
+        hasPriorActivity: true,
+      }),
       reason: reasonLine({
         kind: "flexible",
         tier: "due_today",
         startAt: null,
         ageDays: 0,
-        datePromisedToday: false,
+        datePromisedToday: d.datePromised ?? false,
         hasPriorActivity: true,
       }),
       startAt: null,
@@ -234,6 +271,14 @@ export function drivingSequence(
         lat: n.lat,
         lng: n.lng,
       },
+      label: stopLabel({
+        kind: "flexible",
+        tier: "nearby",
+        startAt: null,
+        ageDays: null,
+        datePromisedToday: false,
+        hasPriorActivity: false,
+      }),
       reason: reasonLine({
         kind: "flexible",
         tier: "nearby",
@@ -292,6 +337,7 @@ export function drivingSequence(
 
     out.push({
       ...p.card,
+      label: p.label,
       reason: p.reason,
       lastVisit,
       arriveLabel,

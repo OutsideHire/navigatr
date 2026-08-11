@@ -138,15 +138,17 @@ describe("useLiveDayTiers", () => {
     // The tier chip + "Nd overdue" age are replaced by a plain reason line.
     expect(screen.queryByText("Past due")).not.toBeInTheDocument();
     expect(screen.queryByText(/overdue/)).not.toBeInTheDocument();
-    // createdAt is 5 days ago in the fixture.
-    expect(screen.getByText("You have not stopped by in 5 days.")).toBeInTheDocument();
+    // createdAt is 5 days ago in the fixture -> the "anytime" detail sentence.
+    expect(screen.getByText("5 days since your last stop.")).toBeInTheDocument();
+    expect(screen.getByText("anytime")).toBeInTheDocument();
   });
 
-  it("an appointment row shows a reason line instead of any tier / Ended chip", () => {
+  it("an appointment row shows its category label instead of any tier / Ended chip", () => {
     meetingState.current = { stops: [pastAppointment] };
     renderHarness();
-    // The reason sentence renders (exact clock time is tz-dependent).
-    expect(screen.getByText(/^You have a .+ here\.$/)).toBeInTheDocument();
+    // The "appointment" left-rail label renders; the sentence (contact) is empty
+    // since it is not plumbed here, and the rail carries the time.
+    expect(screen.getByText("appointment")).toBeInTheDocument();
     // No tier chip and no "Ended" chip on the row.
     expect(screen.queryByText("Appointment")).not.toBeInTheDocument();
     expect(screen.queryByText("From calendar")).not.toBeInTheDocument();
@@ -164,8 +166,22 @@ describe("useLiveDayTiers", () => {
     expect(screen.getByTestId("counts")).toHaveTextContent("0/0/1/0");
     expect(screen.getByText("Due Today Co")).toBeInTheDocument();
     expect(screen.queryByText("Due today")).not.toBeInTheDocument();
-    // createdAt is 5 days ago in the fixture; datePromisedToday stays false.
-    expect(screen.getByText("You have not stopped by in 5 days.")).toBeInTheDocument();
+    // createdAt is 5 days ago in the fixture; date_source "interval" -> "anytime".
+    expect(screen.getByText("5 days since your last stop.")).toBeInTheDocument();
+    expect(screen.getByText("anytime")).toBeInTheDocument();
+  });
+
+  it("an asserted owed follow-up (date_source 'asserted') reads 'you promised' + the owner sentence", () => {
+    owedState.current = {
+      owed: [owedVisit({ dateSource: "asserted" })],
+      noLocation: [],
+    };
+    renderHarness();
+    // date_source plumbed: the label switches to "you promised" and the sentence
+    // to the owner line (never the days-since line).
+    expect(screen.getByText("you promised")).toBeInTheDocument();
+    expect(screen.getByText("The owner is expecting you.")).toBeInTheDocument();
+    expect(screen.queryByText(/since your last stop/)).not.toBeInTheDocument();
   });
 
   it("orders appointments, then past-due, then due-today", () => {

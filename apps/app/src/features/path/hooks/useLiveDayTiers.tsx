@@ -37,7 +37,7 @@ import { useDueTodayVisits } from "./useDueTodayVisits";
 import type { MeetingStop } from "../lib/meetingStops";
 import type { OwedVisit, OwedVisitNoCoords } from "../lib/owedVisits";
 import { directionsUrl } from "../lib/directionsUrl";
-import { reasonLine } from "../lib/reasonLine";
+import { reasonLine, stopLabel } from "../lib/reasonLine";
 import type { TieredStopRow } from "../components/TieredStopList";
 
 /** Local-tz clock time, e.g. "10:30 AM". */
@@ -143,7 +143,25 @@ export function useLiveDayTiers(pathDate: string): LiveDayTiers {
         external: m.kind === "external",
         name: m.title,
         timeLabel: fmtTime(m.startAt),
-        reason: `You have a ${fmtTime(m.startAt)} here.`,
+        // v2.2 B 4.5: the rail carries the TIME (timeLabel); the label is the
+        // category and the sentence names the contact if there is one (not
+        // plumbed here yet -> empty). See reasonLine's 4.5.1 TODO.
+        label: stopLabel({
+          kind: m.kind,
+          tier: "appointment",
+          startAt: m.startAt,
+          ageDays: null,
+          datePromisedToday: false,
+          hasPriorActivity: true,
+        }),
+        reason: reasonLine({
+          kind: m.kind,
+          tier: "appointment",
+          startAt: m.startAt,
+          ageDays: null,
+          datePromisedToday: false,
+          hasPriorActivity: true,
+        }),
         dimmed,
         strikethrough: dimmed,
         detail:
@@ -206,19 +224,24 @@ export function useLiveDayTiers(pathDate: string): LiveDayTiers {
     // drop-in against that deal.
     const dealRow = (v: OwedVisit, tier: "past_due" | "due_today"): TieredStopRow => {
       const age = ageDaysSince(v.createdAt);
+      // v2.2 B 4.5: date_source is now plumbed, so an asserted follow-up gets the
+      // "you promised" label + "The owner is expecting you." sentence.
+      const datePromised = v.dateSource === "asserted";
+      const rstop = {
+        kind: "flexible" as const,
+        tier,
+        startAt: null,
+        ageDays: age,
+        datePromisedToday: datePromised,
+        hasPriorActivity: true,
+      };
       return {
       key: `owed-${v.taskId}`,
       tier,
       name: v.name,
       detail: v.address ?? undefined,
-      reason: reasonLine({
-        kind: "flexible",
-        tier,
-        startAt: null,
-        ageDays: age,
-        datePromisedToday: false, // TODO(Robert): plumb date_source for the "promised" line
-        hasPriorActivity: true,
-      }),
+      label: stopLabel(rstop),
+      reason: reasonLine(rstop),
       aging: tier === "past_due" && age > 0,
       actions: (
         <>

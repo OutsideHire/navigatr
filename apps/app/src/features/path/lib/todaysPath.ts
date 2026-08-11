@@ -61,6 +61,10 @@ export interface OwedCandidate {
   lat: number | null;
   lng: number | null;
   ageDays: number;
+  /** True when the follow-up date was asserted by the rep/merchant
+   *  (date_source "asserted"). Drives the "you promised" label (v2.2 B 4.5).
+   *  Defaults to false when absent. */
+  datePromised?: boolean;
 }
 
 /** A drop-in / follow-up due today. */
@@ -70,6 +74,8 @@ export interface DueTodayCandidate {
   name: string;
   lat: number | null;
   lng: number | null;
+  /** True when the follow-up date was asserted (date_source "asserted"). */
+  datePromised?: boolean;
 }
 
 /** A discovered candidate used to fill the day. Extra fields are ignored. */
@@ -119,6 +125,9 @@ export interface FlexibleStop {
   tier: FlexibleTier;
   /** Present only for past_due stops (from OwedCandidate.ageDays). */
   ageDays: number | null;
+  /** Asserted follow-up date (date_source "asserted") -> "you promised" label
+   *  (v2.2 B 4.5). Carried from the owed / due-today candidate; false for nearby. */
+  datePromised?: boolean;
 }
 
 export type StopKind = AppointmentKind | "flexible";
@@ -140,6 +149,9 @@ export interface OrderedStop {
   endAt: string | null;
   /** past_due staleness age; null otherwise. */
   ageDays: number | null;
+  /** Asserted follow-up date (date_source "asserted") -> "you promised" label
+   *  (v2.2 B 4.5). Threaded from the flexible stop; false for appointments. */
+  datePromised?: boolean;
 }
 
 export interface TodaysPathResult {
@@ -193,15 +205,15 @@ function prioritizedFlexible(input: AssembleTodaysPathInput): FlexibleStop[] {
     .map((x) => x.o);
   for (const o of owedOldestFirst) {
     if (!hasCoords(o)) continue;
-    out.push({ id: o.id, dealId: o.dealId, name: o.name, lat: o.lat, lng: o.lng, tier: "past_due", ageDays: o.ageDays });
+    out.push({ id: o.id, dealId: o.dealId, name: o.name, lat: o.lat, lng: o.lng, tier: "past_due", ageDays: o.ageDays, datePromised: o.datePromised ?? false });
   }
   for (const d of input.dueToday) {
     if (!hasCoords(d)) continue;
-    out.push({ id: d.id, dealId: d.dealId, name: d.name, lat: d.lat, lng: d.lng, tier: "due_today", ageDays: null });
+    out.push({ id: d.id, dealId: d.dealId, name: d.name, lat: d.lat, lng: d.lng, tier: "due_today", ageDays: null, datePromised: d.datePromised ?? false });
   }
   for (const n of input.nearbyPool) {
     if (!hasCoords(n)) continue;
-    out.push({ id: n.id, dealId: n.dealId ?? null, name: n.name, lat: n.lat, lng: n.lng, tier: "nearby", ageDays: null });
+    out.push({ id: n.id, dealId: n.dealId ?? null, name: n.name, lat: n.lat, lng: n.lng, tier: "nearby", ageDays: null, datePromised: false });
   }
   return out;
 }
@@ -217,6 +229,7 @@ const flexibleToOrdered = (s: FlexibleStop): OrderedStop => ({
   startAt: null,
   endAt: null,
   ageDays: s.ageDays,
+  datePromised: s.datePromised ?? false,
 });
 
 const appointmentToOrdered = (a: PathAppointment): OrderedStop => ({
@@ -230,6 +243,7 @@ const appointmentToOrdered = (a: PathAppointment): OrderedStop => ({
   startAt: a.startAt,
   endAt: a.endAt,
   ageDays: null,
+  datePromised: false,
 });
 
 // --- main --------------------------------------------------------------------

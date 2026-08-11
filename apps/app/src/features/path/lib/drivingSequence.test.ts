@@ -80,8 +80,11 @@ describe("drivingSequence", () => {
     ]);
     expect(cards.map((c) => c.id)).toEqual(["owed-1", "due-1", "merch-1", "m1"]);
     // Past-due vs due-today share the "owed" kind; their reason line differs.
-    expect(cards[0]!.reason).toBe("You have not stopped by in 9 days.");
-    expect(cards[1]!.reason).toBe("You have not stopped by in 0 days.");
+    expect(cards[0]!.reason).toBe("9 days since your last stop.");
+    expect(cards[1]!.reason).toBe("0 days since your last stop.");
+    // Both owed/due drop-ins carry the "anytime" left-rail label (v2.2 B 4.5).
+    expect(cards[0]!.label).toBe("anytime");
+    expect(cards[1]!.label).toBe("anytime");
   });
 
   it("places a flexible drop-in BEFORE an appointment when it fits in the gap", () => {
@@ -183,14 +186,30 @@ describe("drivingSequence", () => {
     expect(cards.map((c) => c.kind)).toEqual(["external", "appointment"]);
   });
 
-  it("builds reason strings per kind", () => {
+  it("builds label + detail-only reason strings per kind (v2.2 B 4.5/4.5.1)", () => {
     const cards = drivingSequence(baseInput(), NOW);
     const appt = cards.find((c) => c.kind === "appointment")!;
     const owed = cards.find((c) => c.id === "owed-1")!;
     const native = cards.find((c) => c.kind === "nearby")!;
-    expect(appt.reason).toMatch(/^You have a .+ here\.$/);
-    expect(owed.reason).toBe("You have not stopped by in 9 days.");
-    expect(native.reason).toBe("New. You have not been in.");
+    // Appointment: label carries the category; the rail carries the time, so the
+    // sentence is the contact (not plumbed here) -> empty.
+    expect(appt.label).toBe("appointment");
+    expect(appt.reason).toBe("");
+    // Owed drop-in: "anytime" + days-since sentence.
+    expect(owed.label).toBe("anytime");
+    expect(owed.reason).toBe("9 days since your last stop.");
+    // Discovery fill: "on the way" + the never-been-in sentence.
+    expect(native.label).toBe("on the way");
+    expect(native.reason).toBe("Nobody's been in yet.");
+  });
+
+  it("an asserted owed follow-up reads 'you promised' + the owner sentence", () => {
+    const input = baseInput();
+    input.pastDue = [{ ...input.pastDue[0]!, datePromised: true }];
+    const cards = drivingSequence(input, NOW);
+    const owed = cards.find((c) => c.id === "owed-1")!;
+    expect(owed.label).toBe("you promised");
+    expect(owed.reason).toBe("The owner is expecting you.");
   });
 
   it("uses the exact clock time for appointment arriveLabel and 'around' for flexible", () => {

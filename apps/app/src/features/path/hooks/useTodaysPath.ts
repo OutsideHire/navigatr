@@ -217,6 +217,7 @@ export function useTodaysPath(
         lat: v.lat,
         lng: v.lng,
         ageDays: ageDaysSince(v.createdAt, nowMs),
+        datePromised: v.dateSource === "asserted",
       }));
 
     // Tier 3 → DueTodayCandidate[]. Drop-ins whose window opens TODAY, sourced
@@ -229,6 +230,7 @@ export function useTodaysPath(
       name: v.name,
       lat: v.lat,
       lng: v.lng,
+      datePromised: v.dateSource === "asserted",
     }));
 
     // Tier 4 → NearbyCandidate[]. Discovered prospects are cold leads with no

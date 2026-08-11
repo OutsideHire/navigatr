@@ -135,6 +135,7 @@ describe("useDrivingSequence", () => {
     };
     const { result } = renderHook(() => useDrivingSequence(PATH_DATE, ORIGIN, NOW));
     expect(result.current.cards).toHaveLength(1);
-    expect(result.current.cards[0].reason).toBe("You have not stopped by in 5 days.");
+    expect(result.current.cards[0].reason).toBe("5 days since your last stop.");
+    expect(result.current.cards[0].label).toBe("anytime");
   });
 });

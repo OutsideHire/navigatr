@@ -2,40 +2,40 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { TieredStopList, type TieredStopRow } from "./TieredStopList";
 
-// Rows that carry a reason line (the new path).
+// Rows that carry a left-rail label (v2.2 B 4.5) + a detail-only sentence (4.5.1).
 const reasonRows: TieredStopRow[] = [
-  { key: "a", tier: "appointment", name: "Renewal review", timeLabel: "3:00 PM", reason: "You have a 3:00 PM here." },
-  { key: "b", tier: "past_due", name: "Owed Co", reason: "You have not stopped by in 9 days.", aging: true },
-  { key: "c", tier: "nearby", name: "New Co", reason: "New. Nobody has been in." },
+  { key: "a", tier: "appointment", name: "Renewal review", timeLabel: "3:00 PM", label: "appointment", reason: "" },
+  { key: "b", tier: "past_due", name: "Owed Co", label: "anytime", reason: "9 days since your last stop.", aging: true },
+  { key: "c", tier: "nearby", name: "New Co", label: "on the way", reason: "Nobody's been in yet." },
 ];
 
-describe("TieredStopList reason lines", () => {
-  it("renders one reason line per row when reason is provided", () => {
+describe("TieredStopList label + reason lines (v2.2 B 4.5/4.5.1)", () => {
+  it("renders the left-rail category label per row", () => {
     render(<TieredStopList rows={reasonRows} />);
-    expect(screen.getByText("You have a 3:00 PM here.")).toBeInTheDocument();
-    expect(screen.getByText("You have not stopped by in 9 days.")).toBeInTheDocument();
-    expect(screen.getByText("New. Nobody has been in.")).toBeInTheDocument();
+    expect(screen.getByText("appointment")).toBeInTheDocument();
+    expect(screen.getByText("anytime")).toBeInTheDocument();
+    expect(screen.getByText("on the way")).toBeInTheDocument();
   });
-  it("suppresses tier chip and overdue-age text on reason rows (FR-PATH-UX-04)", () => {
+  it("renders the detail-only sentence when the reason is non-empty", () => {
     render(<TieredStopList rows={reasonRows} />);
-    for (const forbidden of [/past due/i, /due today/i, /\bnearby\b/i, /overdue/i, /appointment/i, /from calendar/i]) {
-      expect(screen.queryByText(forbidden)).not.toBeInTheDocument();
-    }
+    expect(screen.getByText("9 days since your last stop.")).toBeInTheDocument();
+    expect(screen.getByText("Nobody's been in yet.")).toBeInTheDocument();
   });
-  it("colors the reason line as a warning when aging", () => {
+  it("renders no detail sentence for an appointment with an empty reason (no contact)", () => {
+    render(<TieredStopList rows={[reasonRows[0]!]} />);
+    // The label + name + time render; there is no empty-string paragraph.
+    expect(screen.getByText("appointment")).toBeInTheDocument();
+    expect(screen.getByText("Renewal review")).toBeInTheDocument();
+    expect(screen.getByText("3:00 PM")).toBeInTheDocument();
+  });
+  it("colors the sentence as a warning when aging", () => {
     render(<TieredStopList rows={reasonRows} />);
-    const aging = screen.getByText("You have not stopped by in 9 days.");
+    const aging = screen.getByText("9 days since your last stop.");
     expect(aging.className).toMatch(/status-warning/);
   });
-  it("never renders tier chips, ages, or scores on any row (FR-PATH-UX-04)", () => {
-    const rows: TieredStopRow[] = [
-      { key: "a", tier: "appointment", name: "Appt", timeLabel: "3:00 PM", reason: "You have a 3:00 PM here." },
-      { key: "b", tier: "past_due", name: "Owed", reason: "You have not stopped by in 9 days.", aging: true },
-      { key: "c", tier: "due_today", name: "Due", reason: "You have not stopped by in 0 days." },
-      { key: "d", tier: "nearby", name: "New", reason: "New. Nobody has been in." },
-    ];
-    render(<TieredStopList rows={rows} />);
-    for (const forbidden of [/past due/i, /due today/i, /\bnearby\b/i, /\bappointment\b/i, /overdue/i, /from calendar/i, /\bscore\b/i, /\bmi\b/, /detour/i]) {
+  it("never renders capitalized tier chips, ages, or scores on any row (FR-PATH-UX-04)", () => {
+    render(<TieredStopList rows={reasonRows} />);
+    for (const forbidden of [/Past due/, /Due today/, /overdue/i, /From calendar/, /\bscore\b/i, /detour/i]) {
       expect(screen.queryByText(forbidden)).not.toBeInTheDocument();
     }
   });

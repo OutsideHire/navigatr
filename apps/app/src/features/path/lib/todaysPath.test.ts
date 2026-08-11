@@ -145,6 +145,21 @@ describe("assembleTodaysPath", () => {
     expect(r.overflow[0]!.tier).toBe("nearby");
   });
 
+  it("threads datePromised from owed / due-today candidates onto the ordered stops (v2.2 B 4.5)", () => {
+    const input = base({
+      owed: [owed({ id: "o-promised", ageDays: 5, datePromised: true }), owed({ id: "o-plain", ageDays: 3 })],
+      dueToday: [due({ id: "d-promised", datePromised: true })],
+      nearbyPool: [nearby({ id: "n-1" })],
+    });
+    const r = assembleTodaysPath(input, NOW);
+    const byId = (id: string) => [...r.proposal, ...r.overflow].find((s) => s.id === id)!;
+    expect(byId("o-promised").datePromised).toBe(true);
+    expect(byId("o-plain").datePromised).toBe(false);
+    expect(byId("d-promised").datePromised).toBe(true);
+    // A nearby fill is never a promise.
+    expect(byId("n-1").datePromised).toBe(false);
+  });
+
   it("oldest past_due first (preserves the input order of pre-sorted owed)", () => {
     const input = base({
       owed: [owed({ id: "o-old", ageDays: 12 }), owed({ id: "o-mid", ageDays: 7 }), owed({ id: "o-new", ageDays: 2 })],
