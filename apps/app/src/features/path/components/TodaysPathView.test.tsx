@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { afterEach, describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { TodaysPathView } from "./TodaysPathView";
 import type { OrderedStop, FlexibleStop } from "../lib/todaysPath";
@@ -368,11 +368,25 @@ describe("TodaysPathView", () => {
     expect(screen.queryByText(/that's a full day/i)).not.toBeInTheDocument();
   });
 
-  // ─── A9: tinted fill-notice panel ────────────────────────────────────
+  // ─── A9 + B 4.4: tinted fill-notice panel (count reflects THIS fill) ──
 
-  it("renders the fill notice as a panel with the new copy, an Undo affordance, and a dismiss that hides it", () => {
-    // the default `proposal` fixture has committed stops (appointment/owed/due) + 1 nearby
-    renderView();
+  it("shows the fill notice after a fill, with the new copy, an Undo affordance, and a dismiss that hides it", () => {
+    // A committed day (owed) with one fitting pool candidate. The notice count
+    // now reflects the stops the fill APPENDED (B 4.4), not nearby-in-proposal:
+    // before a tap there is nothing to announce.
+    const proposal = [
+      { id: "o1", kind: "flexible", tier: "past_due", name: "Owed", dealId: "d", lat: 30.0, lng: -97.0, startAt: null, endAt: null, ageDays: 5 },
+    ] as OrderedStop[];
+    const overflow = [
+      { id: "f1", dealId: null, name: "Fill One", lat: 30.0, lng: -97.0, tier: "nearby", ageDays: null },
+    ] as FlexibleStop[];
+    renderView({ proposal, overflow, remainingMin: 120, origin: { lat: 30.0, lng: -97.0 } });
+
+    // No fill yet -> no notice.
+    expect(screen.queryByText(/to your day\./i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /add more stops/i }));
+
     expect(screen.getByText(/added 1 stop to your day\./i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^undo$/i })).toBeInTheDocument();
     const dismiss = screen.getByRole("button", { name: /dismiss/i });
@@ -380,13 +394,19 @@ describe("TodaysPathView", () => {
     expect(screen.queryByText(/added 1 stop to your day\./i)).not.toBeInTheDocument();
   });
 
-  it("pluralizes the fill-notice count", () => {
+  it("pluralizes the fill-notice count from the number of stops the fill appended", () => {
     const proposal = [
-      { id: "ap", kind: "appointment", tier: "appointment", name: "Appt", dealId: "d", lat: 1, lng: 1, startAt: "2026-08-10T17:00:00Z", endAt: null, ageDays: null },
-      { id: "n1", kind: "flexible", tier: "nearby", name: "N1", dealId: null, lat: 1, lng: 1, startAt: null, endAt: null, ageDays: null },
-      { id: "n2", kind: "flexible", tier: "nearby", name: "N2", dealId: null, lat: 1, lng: 1, startAt: null, endAt: null, ageDays: null },
+      { id: "o1", kind: "flexible", tier: "past_due", name: "Owed", dealId: "d", lat: 30.0, lng: -97.0, startAt: null, endAt: null, ageDays: 5 },
     ] as OrderedStop[];
-    renderView({ proposal, overflow: [] });
+    const overflow = [
+      { id: "f1", dealId: null, name: "Fill One", lat: 30.0, lng: -97.0, tier: "nearby", ageDays: null },
+      { id: "f2", dealId: null, name: "Fill Two", lat: 30.0, lng: -97.0, tier: "nearby", ageDays: null },
+    ] as FlexibleStop[];
+    // A wide-open budget: one tap folds BOTH candidates in (fill to capacity).
+    renderView({ proposal, overflow, remainingMin: 300, origin: { lat: 30.0, lng: -97.0 } });
+
+    fireEvent.click(screen.getByRole("button", { name: /add more stops/i }));
+
     expect(screen.getByText(/added 2 stops to your day\./i)).toBeInTheDocument();
   });
 
@@ -395,7 +415,7 @@ describe("TodaysPathView", () => {
     expect(screen.queryByText(/to your day\./i)).not.toBeInTheDocument();
   });
 
-  it("does not show the fill notice when the day has no nearby fill", () => {
+  it("does not show the fill notice before any fill is made", () => {
     const proposal = [
       { id: "o1", kind: "flexible", tier: "past_due", name: "Owed", dealId: "d", lat: 1, lng: 1, startAt: null, endAt: null, ageDays: 5 },
     ] as OrderedStop[];
@@ -500,21 +520,8 @@ describe("TodaysPathView", () => {
     });
   });
 
-  describe("one-tap 'Add more stops' (FR-PATH-UX-11 incremental insert)", () => {
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    // Freeze the clock so the component's captured `now` is deterministic and
-    // the insertStop feasibility math does not depend on when the suite runs.
-    // Fake only Date so React Testing Library timers are untouched.
-    function freezeAt(iso: string) {
-      vi.useFakeTimers({ toFake: ["Date"] });
-      vi.setSystemTime(new Date(iso));
-    }
-
-    // No appointments, an origin next to the candidate, and a wide-open window:
-    // the overflow candidate has an obvious gap and folds into the plan.
+  describe("one-tap 'Add more stops' (v2.2 B 4.4 fill to capacity)", () => {
+    // A committed day (owed) with an origin next to the candidates.
     const appointmentFreeProposal: OrderedStop[] = [
       { id: "o1", kind: "flexible", tier: "past_due", name: "Owed Co", dealId: "d1", lat: 30.01, lng: -97.01, startAt: null, endAt: null, ageDays: 4 },
     ];
@@ -522,46 +529,134 @@ describe("TodaysPathView", () => {
       { id: "fit1", dealId: null, name: "Fits Co", lat: 30.0, lng: -97.0, tier: "nearby", ageDays: null },
     ];
 
-    it("inserts the next candidate into the plan when it fits", () => {
-      freezeAt("2026-08-10T09:00:00Z");
+    it("folds the fitting candidate into the plan when it fits", () => {
       renderView({
         proposal: appointmentFreeProposal,
         overflow: fittingOverflow,
         origin: { lat: 30.0, lng: -97.0 },
-        windowEndHour: 17,
+        remainingMin: 120,
       });
 
-      // Before the tap the candidate lives only in the "won't fit" list.
+      // Before the tap the candidate is not a placed stop.
       const beforeItems = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
       expect(beforeItems.some((t) => t.includes("Fits Co"))).toBe(false);
 
       fireEvent.click(screen.getByRole("button", { name: /add more stops/i }));
 
-      // Now it is a real stop in the plan (a list item), not just overflow.
+      // Now it is a real stop in the plan (a list item), appended after Owed Co.
       const afterItems = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
       expect(afterItems.some((t) => t.includes("Fits Co"))).toBe(true);
-      // The originally placed stop is still present (insertStop splices the
-      // candidate in without dropping the stop already placed).
+      // The originally placed stop is still present and still first (append in place).
       expect(afterItems.some((t) => t.includes("Owed Co"))).toBe(true);
+      const idxOwed = afterItems.findIndex((t) => t.includes("Owed Co"));
+      const idxFit = afterItems.findIndex((t) => t.includes("Fits Co"));
+      expect(idxOwed).toBeLessThan(idxFit);
     });
 
-    it("leaves the plan unchanged when the candidate cannot be placed", () => {
-      // windowEndHour == now's hour leaves zero minutes, so nothing new fits.
-      freezeAt("2026-08-10T17:00:00Z");
+    it("one tap appends MULTIPLE stops, filling the remaining capacity", () => {
+      const overflow = [
+        { id: "f1", dealId: null, name: "Fill One", lat: 30.0, lng: -97.0, tier: "nearby", ageDays: null },
+        { id: "f2", dealId: null, name: "Fill Two", lat: 30.0, lng: -97.0, tier: "nearby", ageDays: null },
+        { id: "f3", dealId: null, name: "Fill Three", lat: 30.0, lng: -97.0, tier: "nearby", ageDays: null },
+      ] as FlexibleStop[];
       renderView({
         proposal: appointmentFreeProposal,
-        overflow: fittingOverflow,
+        overflow,
         origin: { lat: 30.0, lng: -97.0 },
-        windowEndHour: 17,
+        remainingMin: 300, // wide open: all three (45 min dwell) fit in one tap
       });
 
       fireEvent.click(screen.getByRole("button", { name: /add more stops/i }));
 
-      // The candidate did not join the plan (still no matching list item).
       const items = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
-      expect(items.some((t) => t.includes("Fits Co"))).toBe(false);
-      // The placed stop is untouched.
+      expect(items.some((t) => t.includes("Fill One"))).toBe(true);
+      expect(items.some((t) => t.includes("Fill Two"))).toBe(true);
+      expect(items.some((t) => t.includes("Fill Three"))).toBe(true);
+      // The notice count reflects all three the fill appended.
+      expect(screen.getByText(/added 3 stops to your day\./i)).toBeInTheDocument();
+    });
+
+    it("leaves the plan unchanged when the closest candidate does not fit the budget", () => {
+      // Budget clears the disable gate (>= 20) but the only candidate is far
+      // enough that drive + dwell exceeds it, so the fill appends nothing.
+      const farOverflow = [
+        { id: "far", dealId: null, name: "Far Co", lat: 31.0, lng: -97.0, tier: "nearby", ageDays: null },
+      ] as FlexibleStop[];
+      renderView({
+        proposal: appointmentFreeProposal,
+        overflow: farOverflow,
+        origin: { lat: 30.0, lng: -97.0 },
+        remainingMin: 30,
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: /add more stops/i }));
+
+      const items = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
+      expect(items.some((t) => t.includes("Far Co"))).toBe(false);
+      // The placed stop is untouched, and nothing is announced.
       expect(screen.getByText("Owed Co")).toBeInTheDocument();
+      expect(screen.queryByText(/to your day\./i)).not.toBeInTheDocument();
+    });
+
+    it("disables the control when the pool is exhausted (no overflow)", () => {
+      renderView({ proposal: appointmentFreeProposal, overflow: [], remainingMin: 120 });
+      expect(screen.getByRole("button", { name: /add more stops/i })).toBeDisabled();
+    });
+
+    it("repeated taps deplete a single budget and never overcommit the day (no cross-tap double-spend)", () => {
+      // 60-min budget; pool = two ~15-min near stops + one ~40-min far stop.
+      // Tap 1 folds in the two near stops (30 min) and stops on the 40. Tap 2
+      // must see the DEPLETED budget (~30) and refuse the far stop, not re-spend
+      // the full 60 (which would push the day ~70 min over capacity).
+      const origin = { lat: 30, lng: -97 };
+      const proposal = [
+        { id: "o1", kind: "flexible", tier: "past_due", name: "Owed Co", dealId: "d1", lat: 30, lng: -97, startAt: null, endAt: null, ageDays: 4 },
+      ] as OrderedStop[];
+      const overflow = [
+        { id: "n1", dealId: null, name: "Near One", lat: 30.0001, lng: -97, tier: "nearby", ageDays: null },
+        { id: "n2", dealId: null, name: "Near Two", lat: 30.0002, lng: -97, tier: "nearby", ageDays: null },
+        { id: "far", dealId: null, name: "Far Co", lat: 30.181, lng: -97, tier: "nearby", ageDays: null },
+      ] as FlexibleStop[];
+      renderView({ proposal, overflow, origin, remainingMin: 60 });
+
+      const addBtn = () => screen.getByRole("button", { name: /add more stops/i });
+
+      fireEvent.click(addBtn());
+      let items = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
+      expect(items.some((t) => t.includes("Near One"))).toBe(true);
+      expect(items.some((t) => t.includes("Near Two"))).toBe(true);
+      expect(items.some((t) => t.includes("Far Co"))).toBe(false);
+
+      // Second tap: the far (40-min) stop still cannot fit the depleted budget.
+      fireEvent.click(addBtn());
+      items = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
+      expect(items.some((t) => t.includes("Far Co"))).toBe(false);
+      // Only the two near stops were ever appended.
+      expect(screen.getByText(/added 2 stops to your day\./i)).toBeInTheDocument();
+    });
+
+    it("disables the control once the depleted budget drops below a stop's minimum", () => {
+      // 35-min budget; three ~15-min near stops. Tap 1 folds in two (30 min),
+      // leaving ~5 min: below MIN_STOP_MIN, so the control disables and the
+      // third stop never joins.
+      const origin = { lat: 30, lng: -97 };
+      const proposal = [
+        { id: "o1", kind: "flexible", tier: "past_due", name: "Owed Co", dealId: "d1", lat: 30, lng: -97, startAt: null, endAt: null, ageDays: 4 },
+      ] as OrderedStop[];
+      const overflow = [
+        { id: "n1", dealId: null, name: "Near One", lat: 30.0001, lng: -97, tier: "nearby", ageDays: null },
+        { id: "n2", dealId: null, name: "Near Two", lat: 30.0002, lng: -97, tier: "nearby", ageDays: null },
+        { id: "n3", dealId: null, name: "Near Three", lat: 30.0003, lng: -97, tier: "nearby", ageDays: null },
+      ] as FlexibleStop[];
+      renderView({ proposal, overflow, origin, remainingMin: 35 });
+
+      fireEvent.click(screen.getByRole("button", { name: /add more stops/i }));
+
+      const addStops = screen.getByRole("button", { name: /add more stops/i });
+      expect(addStops).toBeDisabled();
+      const items = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
+      expect(items.some((t) => t.includes("Near Three"))).toBe(false);
+      expect(screen.getByText(/added 2 stops to your day\./i)).toBeInTheDocument();
     });
   });
 });

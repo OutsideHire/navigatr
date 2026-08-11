@@ -32,7 +32,7 @@ import type { TodaysPathStatus } from "../hooks/useTodaysPath";
 import { tierAccent } from "../lib/tierStyles";
 import { reasonLine } from "../lib/reasonLine";
 import { capacitySentence, fullDaySentence } from "../lib/dayCapacity";
-import { insertStop } from "../lib/insertStop";
+import { fillToCapacity } from "../lib/fillToCapacity";
 import { DayStopsMap } from "./DayStopsMap";
 
 /** Below this many open minutes, no further stop can fit (a stop needs at least
@@ -107,19 +107,28 @@ export function TodaysPathView({
   // untouched. This is a view-only override.
   const [removed, setRemoved] = React.useState<ReadonlySet<string>>(() => new Set());
 
-  // One-tap incremental insert (FR-PATH-UX-11): fold the next ranked overflow
-  // candidate into the day at the first position that still holds, WITHOUT
-  // rebuilding or re-sequencing the placed stops. `workingProposal` is the
-  // assembler's proposal plus any locally inserted stops; `poolCursor` walks the
-  // ranked overflow pool. Both reset whenever a real refetch delivers a fresh
-  // `proposal`, so local inserts never fight incoming data.
+  // One-tap fill to remaining capacity (v2.2 B 4.4): a single tap folds pool
+  // candidates onto the END of the day, closest-to-the-last-stop first, until
+  // the remaining budget cannot hold the closest remaining candidate (or the
+  // pool is drained), NOT one stop per tap. It appends in place: the placed
+  // stops are never re-sequenced and the optimizer never re-runs.
+  // `workingProposal` is the assembler's proposal plus any appended fills;
+  // `poolCursor` walks the ranked fill pool. `filledStops` records the stops
+  // THIS session's fills appended (for the notice count; batch Undo attribution
+  // is B-T7). `budgetLeft` is the LOCAL remaining budget: it starts from the
+  // assembler's `remainingMin` prop and DEPLETES on each fill, so repeated taps
+  // draw down one shared budget instead of each re-spending the full amount.
+  // All four reset whenever a real refetch delivers a fresh `proposal`, so local
+  // fills never fight incoming data.
   const [workingProposal, setWorkingProposal] = React.useState<OrderedStop[]>(proposal);
   const [poolCursor, setPoolCursor] = React.useState(0);
+  const [filledStops, setFilledStops] = React.useState<OrderedStop[]>([]);
+  const [budgetLeft, setBudgetLeft] = React.useState(remainingMin);
   // Local dismissal of the fill-notice panel (v2.2 A9). Reset on a fresh
   // proposal so a new day's fills re-announce.
   const [fillNoticeDismissed, setFillNoticeDismissed] = React.useState(false);
-  // Captured once, so insertStop stays deterministic across taps (no Date.now()
-  // read mid-interaction).
+  // Captured once, so the fill stays deterministic across taps (fillToCapacity
+  // takes `now` as a param; no Date.now() read mid-interaction).
   const [now] = React.useState(() => new Date().toISOString());
   // List | Map segmented view (v2.2 A5 / 3.2). List is the DEFAULT. Both views
   // render the SAME stop set (`visibleProposal`); toggling only switches which
@@ -131,7 +140,13 @@ export function TodaysPathView({
   React.useEffect(() => {
     setWorkingProposal(proposal);
     setPoolCursor(0);
+    setFilledStops([]);
+    setBudgetLeft(remainingMin);
     setFillNoticeDismissed(false);
+    // `remainingMin` is intentionally excluded: budgetLeft resets on a fresh
+    // proposal (a real refetch), not on every prop tick. The refetch that moves
+    // remainingMin also delivers a new proposal, so this fires together.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proposal]);
 
   const visibleProposal = React.useMemo(
@@ -169,34 +184,47 @@ export function TodaysPathView({
     () => overflow.filter((s) => !removed.has(s.id) && !placedIds.has(s.id)),
     [overflow, removed, placedIds],
   );
-  // Whether there is still a ranked candidate to try folding in.
+  // Whether there is still a ranked candidate to try folding in. The budget gate
+  // (budgetLeft < MIN_STOP_MIN) is applied at the control alongside this.
+  // TODO(B 4.1): live Places refill when the retained pool is exhausted, with
+  // cost logging (never per interaction). Until then, an exhausted pool leaves
+  // the control disabled (below), not hidden.
   const canAddStop = poolCursor < overflow.length;
 
   const handleAddStop = React.useCallback(() => {
-    const candidate = overflow[poolCursor];
-    if (!candidate) return;
-    const next = insertStop(workingProposal, candidate, {
-      // No dwellMin: insertStop derives per-kind dwell (15 flexible / 30 appt).
+    // One tap fills the REMAINING CAPACITY (v2.2 B 4.4): append pool candidates
+    // closest-to-the-last-stop first until the budget cannot hold the closest
+    // remaining one (or the pool drains). No re-sequencing, no optimizer re-run.
+    // The LOCAL budgetLeft (not the static prop) is spent, so a follow-up tap
+    // draws down the same budget instead of re-spending the full amount.
+    const res = fillToCapacity(workingProposal, overflow, poolCursor, {
+      // No dwellMin: fillToCapacity derives per-kind dwell (15 for a fill).
       origin,
-      windowEndHour,
+      remainingMin: budgetLeft,
       now,
     });
-    if (next) setWorkingProposal(next);
-    // Advance regardless: a null means this candidate has no gap today, so the
-    // next tap moves on to the next-ranked one rather than retrying a dead pick.
-    setPoolCursor((c) => c + 1);
-  }, [overflow, poolCursor, workingProposal, origin, windowEndHour, now]);
+    if (res.added.length > 0) {
+      setWorkingProposal(res.proposal);
+      // TODO(B-T7): batch Undo attribution reverses exactly THIS fill's `added`.
+      setFilledStops((prev) => [...prev, ...res.added]);
+    }
+    setPoolCursor(res.poolCursor);
+    setBudgetLeft(res.remainingMin);
+  }, [overflow, poolCursor, workingProposal, origin, budgetLeft, now]);
   const flexibleStops = React.useMemo(
     () => visibleProposal.filter((s) => s.kind === "flexible"),
     [visibleProposal],
   );
-  // How many auto-added "nearby" fills sit in the plan, and whether the day has
+  // How many stops THIS session's fills appended and are still on the day (a
+  // filled stop the rep then removed no longer counts), plus whether the day has
   // any committed stop (appointment/owed/due) at all. On a truly empty day the
   // "Build my day" button owns the messaging, so the count line is suppressed.
-  const nearbyFillCount = React.useMemo(
-    () => visibleProposal.filter((s) => s.tier === "nearby").length,
-    [visibleProposal],
-  );
+  // Drives the fill-notice count off `added` (v2.2 B 4.4); the batch Undo
+  // attribution is finished in B-T7.
+  const nearbyFillCount = React.useMemo(() => {
+    const visibleIds = new Set(visibleProposal.map((s) => s.id));
+    return filledStops.filter((s) => visibleIds.has(s.id)).length;
+  }, [filledStops, visibleProposal]);
   const hasCommitment = React.useMemo(
     () => visibleProposal.some((s) => s.tier !== "nearby"),
     [visibleProposal],
@@ -325,7 +353,7 @@ export function TodaysPathView({
             <button
               type="button"
               onClick={handleAddStop}
-              disabled={!canAddStop || remainingMin < MIN_STOP_MIN}
+              disabled={!canAddStop || budgetLeft < MIN_STOP_MIN}
               className={cn(
                 "flex w-full items-center gap-2 rounded-radius-md border border-dashed border-border-default bg-transparent px-3 py-3 text-left",
                 "transition-colors hover:border-border-strong hover:bg-surface-sunken/40 active:bg-surface-sunken",
@@ -338,9 +366,9 @@ export function TodaysPathView({
               {/* Capacity string: advisory, same line, muted + smaller (not part
                   of the label). Full-day sentence when nothing more fits. */}
               <span className="ml-auto shrink-0 text-caption text-text-subtle">
-                {remainingMin < MIN_STOP_MIN
+                {budgetLeft < MIN_STOP_MIN
                   ? fullDaySentence(windowEndHour)
-                  : capacitySentence(remainingMin)}
+                  : capacitySentence(budgetLeft)}
               </span>
             </button>
 
