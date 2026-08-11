@@ -49,7 +49,7 @@ import { MerchantList, type MerchantWithDistance } from "../components/MerchantL
 import { MerchantDetailSheet } from "../components/MerchantDetailSheet";
 import { CreatePathWizard } from "../components/CreatePathWizard";
 import { PlanPathWizard } from "./PlanPathWizard";
-import { TodaysPathView } from "../components/TodaysPathView";
+import { TodaysPathView, ADD_NEARBY_ENABLED } from "../components/TodaysPathView";
 import { PathOverflowSheet } from "../components/PathOverflowSheet";
 import { UpcomingPaths } from "../components/UpcomingPaths";
 import { PathSettings } from "../components/PathSettings";
@@ -1000,6 +1000,7 @@ export function PathPage() {
             remainingMin={todaysPath.remainingMin}
             windowEndHour={todaysPath.windowEndHour}
             origin={origin}
+            showAddNearby={ADD_NEARBY_ENABLED}
           />
           {/* Upcoming (future-dated planned) paths — launch navigates to /path,
               where the today-path/discover flow takes over. */}

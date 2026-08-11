@@ -6,6 +6,7 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string;
   readonly VITE_SUPABASE_ANON_KEY?: string;
   readonly VITE_INTERCOM_APP_ID?: string;
+  readonly VITE_PATH_ADD_NEARBY?: string;
 }
 
 interface ImportMeta {

@@ -53,6 +53,7 @@ function renderView(props?: Partial<ComponentProps<typeof TodaysPathView>>) {
       remainingMin={props?.remainingMin ?? 120}
       windowEndHour={props?.windowEndHour ?? 17}
       origin={props?.origin ?? { lat: 30, lng: -97 }}
+      showAddNearby={props?.showAddNearby}
     />,
   );
 }
@@ -134,10 +135,39 @@ describe("TodaysPathView", () => {
     expect(addStops).not.toBeDisabled();
   });
 
-  it("Add more nearby opens the discovery", () => {
+  it("Add more nearby opens the discovery (when the flag is on)", () => {
     const onAddNearby = vi.fn();
-    renderView({ onAddNearby });
+    renderView({ onAddNearby, showAddNearby: true });
     fireEvent.click(screen.getByRole("button", { name: /add more nearby/i }));
+    expect(onAddNearby).toHaveBeenCalledTimes(1);
+  });
+
+  // ─── A3: single global flag-gate on the "Add more nearby" entry point ─
+
+  it("hides the 'Add more nearby' entry point when the flag is off (default)", () => {
+    renderView({ showAddNearby: false });
+    // The demoted text link is gone...
+    expect(screen.queryByRole("button", { name: /add more nearby/i })).not.toBeInTheDocument();
+    // ...but the flag gates ONLY that control: the "+" dashed add-stops row and
+    // Start driving are untouched.
+    expect(screen.getByRole("button", { name: /add more stops/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /start driving/i })).toBeInTheDocument();
+  });
+
+  it("renders the 'Add more nearby' entry point only when the flag is on", () => {
+    renderView({ showAddNearby: true });
+    expect(screen.getByRole("button", { name: /add more nearby/i })).toBeInTheDocument();
+  });
+
+  it("keeps 'Build my day' working on an empty day regardless of the flag", () => {
+    // The empty-state primary action shares onAddNearby but is NOT flag-gated:
+    // it renders and fires even when the "Add more nearby" link is hidden.
+    const onAddNearby = vi.fn();
+    renderView({ proposal: [], overflow: [], onAddNearby, showAddNearby: false });
+    const build = screen.getByRole("button", { name: /build my day/i });
+    expect(build).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /add more nearby/i })).not.toBeInTheDocument();
+    fireEvent.click(build);
     expect(onAddNearby).toHaveBeenCalledTimes(1);
   });
 
@@ -189,14 +219,14 @@ describe("TodaysPathView", () => {
     // hands back an empty flexible array (appointments are never created as stops).
     const onStart = vi.fn();
     const apptOnly: OrderedStop[] = [proposal[1]!];
-    renderView({ proposal: apptOnly, overflow: [], onStart });
+    renderView({ proposal: apptOnly, overflow: [], onStart, showAddNearby: true });
     expect(screen.getByText("Renewal review")).toBeInTheDocument();
     const start = screen.getByRole("button", { name: /start driving/i });
     expect(start).toBeInTheDocument();
     fireEvent.click(start);
     expect(onStart).toHaveBeenCalledTimes(1);
     expect(onStart.mock.calls[0]![0]).toEqual([]);
-    // Add more nearby is still available so the rep can fill an empty run.
+    // Add more nearby is still available (flag on) so the rep can fill an empty run.
     expect(screen.getByRole("button", { name: /add more nearby/i })).toBeInTheDocument();
   });
 
@@ -255,7 +285,7 @@ describe("TodaysPathView", () => {
   });
 
   it("renders Start driving at the bottom, after the stop list and the add-stops control, with 'Why this order?' beneath it", () => {
-    renderView();
+    renderView({ showAddNearby: true });
     const start = screen.getByRole("button", { name: /start driving/i });
     const addNearby = screen.getByRole("button", { name: /add more nearby/i });
     const listItems = screen.getAllByRole("listitem");

@@ -38,6 +38,15 @@ import { insertStop } from "../lib/insertStop";
  *  a minimum dwell). At/above it, capacity is stated; below it, the day is full. */
 const MIN_STOP_MIN = 20;
 
+/** Single build-time global flag (v2.2 A3): the "Add more nearby" entry point on
+ *  the landing renders ONLY when VITE_PATH_ADD_NEARBY === "true". Default
+ *  (unset / anything else) hides it, per Robert's request to remove the control
+ *  while leaving it re-enable-able without a code change. This gates ONLY that
+ *  one link — the "+" overflow menu, "Build my day", and every shared handler
+ *  (onAddNearby/enterDiscover, useMerchants, the discover view) are untouched.
+ *  The env read lives here, in one place; PathPage threads it as a prop. */
+export const ADD_NEARBY_ENABLED = import.meta.env.VITE_PATH_ADD_NEARBY === "true";
+
 interface TodaysPathViewProps {
   /** Ordered run list (appointments interleaved with flexible stops) from useTodaysPath. */
   proposal: OrderedStop[];
@@ -65,6 +74,10 @@ interface TodaysPathViewProps {
   windowEndHour: number;
   /** Rep origin, for the one-tap incremental insert (FR-PATH-UX-11). */
   origin: { lat: number; lng: number };
+  /** Whether the demoted "Add more nearby" entry point renders (v2.2 A3).
+   *  Defaults to the build-time VITE_PATH_ADD_NEARBY flag; threaded as a prop so
+   *  it can be toggled in tests. This gates ONLY that one link. */
+  showAddNearby?: boolean;
 }
 
 /** Local-tz clock time, e.g. "10:30 AM". */
@@ -85,6 +98,7 @@ export function TodaysPathView({
   remainingMin,
   windowEndHour,
   origin,
+  showAddNearby = ADD_NEARBY_ENABLED,
 }: TodaysPathViewProps) {
   // Local, pre-start removals: the rep can drop a flexible stop from the plan
   // before starting. Keyed by stop id; appointments can't be removed (they're
@@ -268,15 +282,18 @@ export function TodaysPathView({
             </button>
 
             {/* "Add more nearby" opens Find-near-me. Demoted to a small secondary
-                text link so the dashed row reads as the primary add affordance
-                (v2.2 A8); this link is flag-gated for removal in A-T4. */}
-            <button
-              type="button"
-              onClick={onAddNearby}
-              className="self-start rounded-radius-sm text-caption font-medium text-brand-primary transition-colors hover:text-brand-primary-pressed hover:underline focus-visible:outline-none focus-visible:underline"
-            >
-              Add more nearby
-            </button>
+                text link (v2.2 A8), and flag-gated behind VITE_PATH_ADD_NEARBY
+                (v2.2 A3): hidden by default, rendered only when the flag is on.
+                onAddNearby stays wired (Build my day still uses it). */}
+            {showAddNearby && (
+              <button
+                type="button"
+                onClick={onAddNearby}
+                className="self-start rounded-radius-sm text-caption font-medium text-brand-primary transition-colors hover:text-brand-primary-pressed hover:underline focus-visible:outline-none focus-visible:underline"
+              >
+                Add more nearby
+              </button>
+            )}
           </div>
 
           {/* Fill notice (v2.2 A9): a tinted inline PANEL (not a toast, in
