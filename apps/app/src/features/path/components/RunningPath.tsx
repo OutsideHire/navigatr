@@ -1,31 +1,47 @@
 import * as React from "react";
-import { Loader2, Navigation, Pause } from "lucide-react";
+import { ChevronDown, ChevronUp, List, Loader2, Map as MapIcon, Navigation, Pause, Play } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/navigatr";
 import { useTodayPath, type TodayStop } from "../hooks/useTodayPath";
+import { useGeolocation } from "../hooks/useGeolocation";
 import { routeStats } from "../lib/routeStats";
 import { directionsUrl } from "../lib/directionsUrl";
 import { merchantFromStop } from "../lib/merchantFromStop";
 import { DropInSheet } from "./DropInSheet";
 import { EndRouteSheet } from "./EndRouteSheet";
 import { PathSummary } from "./PathSummary";
+import { DayStopsMap } from "./DayStopsMap";
+import { TieredStopList, type TieredStopRow } from "./TieredStopList";
 import { LogActivitySheet } from "@/features/activities/components/LogActivitySheet";
 import { AppointmentOutcomeSheet } from "@/features/appointments/components/AppointmentOutcomeSheet";
 import { usePathMutations } from "../hooks/usePathMutations";
 import { useDrivingSequence } from "../hooks/useDrivingSequence";
-import type { DrivingCard } from "../lib/drivingSequence";
+import type { DrivingCard, DrivingCardKind } from "../lib/drivingSequence";
+import type { OrderedStop, StopKind, StopTier } from "../lib/todaysPath";
 import { todayISO } from "../lib/today";
 import { type Disposition } from "@/lib/followUpScheduling";
 import type { Merchant, MerchantCategory } from "../mockData";
 
 export interface RunningPathProps {
   origin: { lat: number; lng: number };
-  onPause: () => void;
   onViewPipeline: () => void;
   onExit: () => void;
   /** Open the "find near me" discovery surface (PathPage's enterDiscover). */
   onFindNearby: () => void;
+}
+
+/** Map a driving-card kind onto the OrderedStop kind/tier the shared list + map
+ *  components consume, so the "what remains" section speaks the same vocabulary
+ *  as the landing. Owed cards read as past_due (the aging colour the run map
+ *  uses); nearby stays nearby; meetings stay appointment. */
+function cardStopKind(kind: DrivingCardKind): StopKind {
+  return kind === "appointment" ? "appointment" : kind === "external" ? "external" : "flexible";
+}
+function cardStopTier(kind: DrivingCardKind): StopTier {
+  if (kind === "appointment" || kind === "external") return "appointment";
+  return kind === "owed" ? "past_due" : "nearby";
 }
 
 type PathSummaryStats = {
@@ -106,21 +122,34 @@ function nearbyMerchant(card: DrivingCard, stops: TodayStop[]): Merchant {
  * cards linger and appointment cards never left the carousel. The top bar
  * (Pause / End route) and the End-route/Pause flow are unchanged.
  */
-export function RunningPath({ origin, onPause, onViewPipeline, onExit, onFindNearby }: RunningPathProps) {
+export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: RunningPathProps) {
   const { stops, clear, pathId, pendingCount } = useTodayPath();
   const { carryToTomorrow, finalizeCurrentPath } = usePathMutations();
   const queryClient = useQueryClient();
 
-  // A STABLE `now` captured once on mount (the arrival clock threads forward
-  // from here) and a reference-stable origin so useDrivingSequence's memo does
-  // not churn every render.
-  const [nowIso] = React.useState(() => new Date().toISOString());
+  // The arrival clock's basis. Captured once on mount, then RE-DERIVED on Resume
+  // (a paused hour is a lost hour, Path v2.2 2.5): moving `nowIso` forward re-runs
+  // useDrivingSequence so every arrival estimate recomputes from the current time.
+  const [nowIso, setNowIso] = React.useState(() => new Date().toISOString());
   const stableOrigin = React.useMemo(() => ({ lat: origin.lat, lng: origin.lng }), [origin.lat, origin.lng]);
   const { cards, isLoading } = useDrivingSequence(todayISO(), stableOrigin, nowIso);
+
+  // Live rep position for the run map (Path v2.2 3.3): a continuous watch so the
+  // "You" marker tracks the rep as they drive. Falls back to the passed origin
+  // until the first fix (or if geolocation is unavailable).
+  const live = useGeolocation({ watch: true });
+  const livePosition = live.coords ?? origin;
 
   const [index, setIndex] = React.useState(0);
   const [endOpen, setEndOpen] = React.useState(false);
   const [completed, setCompleted] = React.useState<PathSummaryStats | null>(null);
+  // Pause is reversible (no confirmation): the day is not discarded, the card
+  // stays visible, and the status row swaps Pause -> Resume in place (2.5).
+  const [paused, setPaused] = React.useState(false);
+  // The "what remains" section (A7/3.3): collapsed by default, expands to a
+  // List | Map of the upcoming stops, and AUTO-COLLAPSES on any resolution.
+  const [expanded, setExpanded] = React.useState(false);
+  const [remainingView, setRemainingView] = React.useState<"list" | "map">("list");
   // Cards the rep has resolved this session (logged, skipped, or marked done).
   // Drives advancement locally so the carousel never waits on a refetch.
   const [resolved, setResolved] = React.useState<ReadonlySet<string>>(() => new Set());
@@ -130,6 +159,19 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit, onFindNea
       next.add(id);
       return next;
     });
+    // Any state change (arrive / skip / complete) returns the rep to the card:
+    // this is the single chokepoint every resolution funnels through (A7/3.3).
+    setExpanded(false);
+  }, []);
+
+  const handlePause = React.useCallback(() => setPaused(true), []);
+  const handleResume = React.useCallback(() => {
+    setPaused(false);
+    // Re-derive the run's "now" so arrival estimates recompute from the current
+    // time. TODO(Ticket B): remaining CAPACITY (the stop cap) should also be
+    // recomputed against the shortened remaining window; that budget math is not
+    // available in the run surface yet, so only the arrival basis moves here.
+    setNowIso(new Date().toISOString());
   }, []);
   // Open outcome-sheet state, keyed by card kind. Only one is ever open.
   const [apptSheet, setApptSheet] = React.useState<{ id: string; appointmentId: string; dealId: string; name: string } | null>(null);
@@ -260,15 +302,56 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit, onFindNea
     resolve(card.id);
   };
 
+  // "What remains" = the still-unresolved stops AFTER the current card, drawn
+  // from the SAME driving carousel the card comes from so the card and this
+  // section always agree (A7/3.3). List + map both render this set; the map also
+  // gets the live rep position.
+  const remainingCards = visibleCards.slice(clampedIndex + 1);
+  const remainingRows: TieredStopRow[] = remainingCards.map((c, i) => ({
+    key: c.id,
+    tier: cardStopTier(c.kind),
+    external: c.kind === "external",
+    name: c.name,
+    index: i + 1,
+    reason: c.reason,
+    detail: c.address ?? undefined,
+    timeLabel: c.kind === "appointment" || c.kind === "external" ? c.arriveLabel : undefined,
+  }));
+  const remainingStops: OrderedStop[] = remainingCards.map((c) => ({
+    id: c.id,
+    kind: cardStopKind(c.kind),
+    tier: cardStopTier(c.kind),
+    name: c.name,
+    dealId: c.dealId,
+    lat: c.lat,
+    lng: c.lng,
+    startAt: null,
+    endAt: null,
+    ageDays: null,
+  }));
+
   return (
     <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4">
       <div className="flex items-center justify-between rounded-radius-md bg-surface-sunken px-4 py-2.5">
         <span className="text-body-md font-medium text-text-default">
-          <span className="mr-2 inline-block h-2 w-2 rounded-radius-full bg-status-success align-middle" aria-hidden />
-          Path active · {visited}/{total} stops
+          <span
+            className={cn(
+              "mr-2 inline-block h-2 w-2 rounded-radius-full align-middle",
+              paused ? "bg-status-warning" : "bg-status-success",
+            )}
+            aria-hidden
+          />
+          {paused ? "Path paused" : "Path active"} · {visited}/{total} stops
         </span>
+        {/* Pause / End route stay one level above the card (2.5). Pause is
+            reversible (no confirm) and swaps to Resume in the same position;
+            End route carries the EndRouteSheet confirmation. */}
         <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" leadingIcon={Pause} onClick={onPause}>Pause</Button>
+          {paused ? (
+            <Button variant="primary" size="sm" leadingIcon={Play} onClick={handleResume}>Resume</Button>
+          ) : (
+            <Button variant="secondary" size="sm" leadingIcon={Pause} onClick={handlePause}>Pause</Button>
+          )}
           <Button variant="tertiary" size="sm" onClick={handleEndRoute}>End route</Button>
         </div>
       </div>
@@ -328,6 +411,79 @@ export function RunningPath({ origin, onPause, onViewPipeline, onExit, onFindNea
           Who's near me right now
         </button>
       </div>
+
+      {/* "What remains" (A7/3.3): a single collapsed row beneath the permanent
+          card. Tapping expands into a List | Map of the upcoming stops (the map
+          carries the live rep position). Nothing is hidden behind a tab; any
+          resolution auto-collapses this back to the card (see `resolve`). The
+          current stop is already the card, so this counts only the stops after
+          it — on the last stop the section simply isn't shown. */}
+      {remainingCards.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <button
+            type="button"
+            onClick={() => setExpanded((e) => !e)}
+            aria-expanded={expanded}
+            className="flex w-full items-center justify-between gap-2 rounded-radius-md border border-border-default px-4 py-2.5 text-left text-body-md font-medium text-text-default transition-colors hover:bg-surface-sunken"
+          >
+            <span>
+              {remainingCards.length} stop{remainingCards.length === 1 ? "" : "s"} remaining
+            </span>
+            {expanded ? (
+              <ChevronUp className="h-4 w-4 shrink-0 text-text-muted" aria-hidden />
+            ) : (
+              <ChevronDown className="h-4 w-4 shrink-0 text-text-muted" aria-hidden />
+            )}
+          </button>
+
+          {expanded && (
+            <div className="flex flex-col gap-3">
+              {/* List | Map segmented toggle, mirroring the landing (A5). Both
+                  views stay mounted while expanded (the inactive one is
+                  CSS-hidden) so the MapLibre instance is retained across flips. */}
+              <div
+                role="tablist"
+                aria-label="Remaining stops view"
+                className="flex gap-1 self-start rounded-radius-md bg-surface-sunken p-0.5"
+              >
+                {([["list", "List", List], ["map", "Map", MapIcon]] as const).map(([key, label, Icon]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={remainingView === key}
+                    onClick={() => setRemainingView(key)}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-radius-sm px-4 py-1.5 text-caption font-medium transition-colors",
+                      remainingView === key
+                        ? "bg-surface-default text-text-default shadow-sm"
+                        : "text-text-muted hover:text-text-default",
+                    )}
+                  >
+                    <Icon className="size-4" aria-hidden />
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* LIST view — the upcoming stops, same source as the card. */}
+              <div className={cn(remainingView === "map" && "hidden")}>
+                <TieredStopList rows={remainingRows} />
+              </div>
+
+              {/* MAP view — the upcoming stops plus the rep's LIVE position. */}
+              <div className={cn("h-[50vh] min-h-[320px]", remainingView === "list" && "hidden")}>
+                <DayStopsMap
+                  stops={remainingStops}
+                  origin={livePosition}
+                  onStopClick={() => {}}
+                  active={remainingView === "map"}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <EndRouteSheet
         open={endOpen}

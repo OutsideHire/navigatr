@@ -31,7 +31,7 @@
 
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import { ListChecks, Loader2, LocateFixed, Lock, Map as MapIcon, MapPinned, MapPinOff, Navigation, Plus, Route as RouteIcon, Settings } from "lucide-react";
+import { Loader2, LocateFixed, Lock, Map as MapIcon, MapPinned, MapPinOff, Navigation, Plus, Route as RouteIcon, Settings } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button, Card, Chip } from "@/components/navigatr";
@@ -205,16 +205,11 @@ export function PathPage() {
 
   // Path-first view state machine:
   //   "entry"    — no active path, show two-card prompt (create / plan)
-  //   "path"     — a path with stops: the two-tab (Run | Stops) surface when it's
+  //   "path"     — a path with stops: the card-first active-RUN surface when it's
   //                in progress/completed (started_at set), or the Stops overview
   //                when it's Planned (started_at null — legacy or not-yet-started).
   //   "discover" — add-stops mode: map+list discovery, demoted from default
   const [pathView, setPathView] = React.useState<"entry" | "path" | "discover">("entry");
-  // Which tab of the two-tab active-path surface is showing. TRANSIENT UI state —
-  // deliberately NOT persisted across reload/return: re-entry always re-derives
-  // Run @ first pending (resume-in-place). Within a session a manual switch to
-  // Stops sticks until the rep leaves the Path tab.
-  const [activeTab, setActiveTab] = React.useState<"run" | "stops">("run");
 
   // Server-backed today's path. queueStops keeps the same name so all
   // downstream route math, badge counts, etc. keep working unchanged.
@@ -293,15 +288,6 @@ export function PathPage() {
       return "path";
     });
   }, [queueStops.length, startedAt]);
-
-  // Resume-in-place: whenever we're on the path surface for a STARTED path, the
-  // default tab is Run (RunningPath seeks the first pending stop itself; Summary
-  // when complete). This effect only sets the default on entry to the surface and
-  // when the lifecycle materially changes — a manual switch to Stops (setActiveTab)
-  // is not clobbered because we key it on startedAt + landing, not every render.
-  React.useEffect(() => {
-    if (startedAt) setActiveTab("run");
-  }, [startedAt, pathView === "path"]);
 
   // Handlers for transitioning between views.
   const enterDiscover = React.useCallback(() => setPathView("discover"), []);
@@ -749,7 +735,6 @@ export function PathPage() {
           // view directly to the running surface (the effect preserves it once
           // started_at is stamped).
           setPathView("path");
-          setActiveTab("run");
         } catch {
           toast.error("Couldn't start the path. Please try again.");
         } finally {
@@ -1009,62 +994,27 @@ export function PathPage() {
       ) : pathView === "path" ? (
         landing === "entry" ? (
           /* Planned / legacy (started_at null): the Stops overview only — no
-             auto-run. "Start route" stamps started_at and flips to the Run tab
-             (same landing as Create's auto-start). */
+             auto-run. "Start route" stamps started_at, which flips the lifecycle
+             landing to the active-run surface below (same as Create's auto-start). */
           <>
             <ActivePathView
               origin={origin}
               onAddStops={enterDiscover}
-              onStartRoute={() => { void todayPath.start(); setActiveTab("run"); }}
+              onStartRoute={() => { void todayPath.start(); }}
             />
             <UpcomingPaths onLaunch={() => navigate("/path")} />
           </>
         ) : (
-          /* In progress / completed (started_at set): the two-tab Run | Stops
-             surface. Default tab is Run (resume-in-place); a manual switch to
-             Stops sticks until the rep leaves the Path tab. */
-          <>
-            <div
-              role="tablist"
-              aria-label="Path view"
-              className="mt-3 flex gap-1 self-start rounded-radius-md bg-surface-sunken p-0.5"
-            >
-              {([["run", "Run", Navigation], ["stops", "Stops", ListChecks]] as const).map(
-                ([key, label, Icon]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    role="tab"
-                    aria-selected={activeTab === key}
-                    onClick={() => setActiveTab(key)}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-radius-sm px-4 py-1.5 text-caption font-medium transition-colors",
-                      activeTab === key
-                        ? "bg-surface-default text-text-default shadow-sm"
-                        : "text-text-muted hover:text-text-default",
-                    )}
-                  >
-                    <Icon className="size-4" />
-                    {label}
-                  </button>
-                ),
-              )}
-            </div>
-            {activeTab === "run" ? (
-              <RunningPath
-                origin={origin}
-                onPause={() => setActiveTab("stops")}
-                onViewPipeline={() => navigate("/pipeline")}
-                onExit={() => setPathView("entry")}
-                onFindNearby={enterDiscover}
-              />
-            ) : (
-              <>
-                <ActivePathView origin={origin} onAddStops={enterDiscover} onStartRoute={() => setActiveTab("run")} />
-                <UpcomingPaths onLaunch={() => navigate("/path")} />
-              </>
-            )}
-          </>
+          /* In progress / completed (started_at set): the card-first active-run
+             surface (v2.2 A7). No Run|Stops tabs — RunningPath owns the permanent
+             stop card plus a "what remains" expandable (List | Map); nothing is
+             hidden behind a tab. */
+          <RunningPath
+            origin={origin}
+            onViewPipeline={() => navigate("/pipeline")}
+            onExit={() => setPathView("entry")}
+            onFindNearby={enterDiscover}
+          />
         )
       ) : (
         /* pathView === "discover": filter controls + map+list discovery ladder */

@@ -26,10 +26,30 @@ vi.mock("../hooks/usePathMutations", () => ({
 
 // The single-card carousel reads the whole day from useDrivingSequence — mock
 // it with a mutable `.current` so each test supplies its own cards array (and a
-// rerender can simulate a logged card leaving the sequence on refetch).
+// rerender can simulate a logged card leaving the sequence on refetch). We also
+// record the `now` basis each call receives so the Resume test can assert it is
+// re-derived (arrival estimates recompute from the current time on resume).
 const seqState = { current: { cards: [] as DrivingCard[], isLoading: false } };
+const seqNowCalls: Array<string | number> = [];
 vi.mock("../hooks/useDrivingSequence", () => ({
-  useDrivingSequence: () => seqState.current,
+  useDrivingSequence: (_pathDate: string, _origin: unknown, now: string | number) => {
+    seqNowCalls.push(now);
+    return seqState.current;
+  },
+}));
+
+// Live rep position (watch mode) — fixed coords so the run map has an origin
+// and the hook never touches real geolocation in jsdom.
+vi.mock("../hooks/useGeolocation", () => ({
+  useGeolocation: () => ({ coords: { lat: 35, lng: -97 }, status: "ready", error: null, retry: vi.fn() }),
+}));
+
+// DayStopsMap is MapLibre — stub it so the Map view renders in jsdom. Exposes
+// how many remaining stops it was handed.
+vi.mock("./DayStopsMap", () => ({
+  DayStopsMap: (props: { stops?: unknown[] }) => (
+    <div data-testid="day-stops-map" data-stops={props.stops?.length ?? 0} />
+  ),
 }));
 
 // RunningPath invalidates the owed / due-today path keys after an owed log. No
@@ -125,6 +145,7 @@ beforeEach(() => {
   pathId = "today-1";
   pendingCount = () => stops.filter((s) => s.status === "pending").length;
   seqState.current = { cards: [], isLoading: false };
+  seqNowCalls.length = 0;
 });
 
 describe("RunningPath — driving carousel", () => {
@@ -136,7 +157,7 @@ describe("RunningPath — driving carousel", () => {
       ],
       isLoading: false,
     };
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
 
     expect(screen.getByText(/stop 1 of 2/i)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
@@ -152,7 +173,7 @@ describe("RunningPath — driving carousel", () => {
   it("renders exactly three actions plus the Who's-near-me link, which calls onFindNearby", () => {
     seqState.current = { cards: [drivingCard()], isLoading: false };
     const onFindNearby = vi.fn();
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={onFindNearby} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={onFindNearby} />);
 
     expect(screen.getByRole("button", { name: /i'm here/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /navigate/i })).toBeInTheDocument();
@@ -166,18 +187,18 @@ describe("RunningPath — driving carousel", () => {
   it("Navigate is an anchor to directionsUrl(lat,lng); hidden when coords are null", () => {
     seqState.current = { cards: [drivingCard({ lat: 30, lng: -97 })], isLoading: false };
     const { rerender } = render(
-      <RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />,
+      <RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />,
     );
     expect(screen.getByRole("link", { name: /navigate/i })).toHaveAttribute("href", directionsUrl(30, -97));
 
     seqState.current = { cards: [drivingCard({ lat: null, lng: null })], isLoading: false };
-    rerender(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    rerender(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
     expect(screen.queryByRole("link", { name: /navigate/i })).not.toBeInTheDocument();
   });
 
   it("I'm here opens the AppointmentOutcomeSheet for an appointment card", () => {
     seqState.current = { cards: [drivingCard({ kind: "appointment", appointmentId: "a1", dealId: "d1", merchantId: null })], isLoading: false };
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
     const sheet = screen.getByTestId("appt-sheet");
     expect(sheet).toHaveAttribute("data-appt", "a1");
@@ -186,7 +207,7 @@ describe("RunningPath — driving carousel", () => {
 
   it("I'm here opens the LogActivitySheet (drop_in) for an owed card", () => {
     seqState.current = { cards: [drivingCard({ kind: "owed", dealId: "deal-owed-1", merchantId: null })], isLoading: false };
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
     const sheet = screen.getByTestId("log-activity-sheet");
     expect(sheet).toHaveAttribute("data-deal", "deal-owed-1");
@@ -195,7 +216,7 @@ describe("RunningPath — driving carousel", () => {
 
   it("I'm here opens the DropInSheet for a nearby card", () => {
     seqState.current = { cards: [drivingCard({ kind: "nearby", name: "Alpha", merchantId: "m1" })], isLoading: false };
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
     expect(screen.getByTestId("dropin")).toBeInTheDocument();
     expect(screen.getByText("sheet:Alpha")).toBeInTheDocument();
@@ -209,7 +230,7 @@ describe("RunningPath — driving carousel", () => {
       ],
       isLoading: false,
     };
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
     expect(screen.queryByRole("button", { name: /^i'm here$/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /mark done/i }));
     // The external card resolves out; the next card takes its place, no sheet.
@@ -226,7 +247,7 @@ describe("RunningPath — driving carousel", () => {
       cards: [drivingCard({ name: "Alpha", merchantId: "m1" }), drivingCard({ id: "c2", name: "Bravo", merchantId: "m2" })],
       isLoading: false,
     };
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
     expect(screen.getByText(/stop 1 of 2/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /skip for now/i }));
     expect(screen.getByRole("heading", { name: "Bravo" })).toBeInTheDocument();
@@ -239,7 +260,7 @@ describe("RunningPath — driving carousel", () => {
       cards: [drivingCard({ name: "Alpha", merchantId: "m1" }), drivingCard({ id: "c2", name: "Bravo", merchantId: "m2" })],
       isLoading: false,
     };
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
     fireEvent.click(screen.getByText("save-log"));
     // Alpha is gone locally (via the resolved set); Bravo is now the only stop.
@@ -256,7 +277,7 @@ describe("RunningPath — driving carousel", () => {
       ],
       isLoading: false,
     };
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
     expect(screen.getByRole("heading", { name: "Owed Co" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
     fireEvent.click(screen.getByText("save-activity"));
@@ -277,7 +298,7 @@ describe("RunningPath — driving carousel", () => {
       ],
       isLoading: false,
     };
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
     expect(screen.getByRole("heading", { name: "Renewal review" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /i'm here/i }));
     fireEvent.click(screen.getByText("record-appt"));
@@ -288,38 +309,129 @@ describe("RunningPath — driving carousel", () => {
 
   it("shows a loading state while the sources load", () => {
     seqState.current = { cards: [], isLoading: true };
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
     expect(screen.getByText(/loading your day/i)).toBeInTheDocument();
   });
 
   it("shows the done state (with a start-again affordance) when no cards remain", () => {
     seqState.current = { cards: [], isLoading: false };
     stops = [stop("A", { status: "visited" }), stop("B", { status: "skipped" })];
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
     expect(screen.getByTestId("summary")).toBeInTheDocument();
     expect(screen.getByText("new-path")).toBeInTheDocument();
   });
 });
 
-// ─── End-route / Pause flow (unchanged; still driven from the top bar) ───────
+// ─── "What remains" expandable (A7/3.3) ──────────────────────────────────────
+
+describe("RunningPath — what-remains expandable (card-first, no tabs)", () => {
+  it("collapses by default and expands into a List | Map of the upcoming stops", () => {
+    seqState.current = {
+      cards: [
+        drivingCard({ id: "c1", name: "Alpha", merchantId: "m1" }),
+        drivingCard({ id: "c2", name: "Bravo", merchantId: "m2" }),
+        drivingCard({ id: "c3", name: "Charlie", merchantId: "m3" }),
+      ],
+      isLoading: false,
+    };
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    // The current stop is the card; the remaining count is the two AFTER it.
+    const remainingRow = screen.getByRole("button", { name: /2 stops remaining/i });
+    expect(remainingRow).toHaveAttribute("aria-expanded", "false");
+    // Collapsed: no List | Map toggle, no map.
+    expect(screen.queryByRole("tab", { name: /^list$/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("day-stops-map")).not.toBeInTheDocument();
+
+    // Expand -> List (default) shows the upcoming stop names; Map is hidden-but-mounted.
+    fireEvent.click(remainingRow);
+    expect(remainingRow).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("tab", { name: /^list$/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /^map$/i })).toBeInTheDocument();
+    expect(screen.getByText("Bravo")).toBeInTheDocument();
+    expect(screen.getByText("Charlie")).toBeInTheDocument();
+    // Map view carries exactly the two upcoming stops + live rep position.
+    fireEvent.click(screen.getByRole("tab", { name: /^map$/i }));
+    expect(screen.getByTestId("day-stops-map")).toHaveAttribute("data-stops", "2");
+  });
+
+  it("auto-collapses the expanded section on a resolve (skip), returning the rep to the card", () => {
+    seqState.current = {
+      cards: [
+        drivingCard({ id: "c1", name: "Alpha", merchantId: "m1" }),
+        drivingCard({ id: "c2", name: "Bravo", merchantId: "m2" }),
+        drivingCard({ id: "c3", name: "Charlie", merchantId: "m3" }),
+      ],
+      isLoading: false,
+    };
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /2 stops remaining/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /^map$/i }));
+    expect(screen.getByTestId("day-stops-map")).toBeInTheDocument();
+
+    // Skip resolves Alpha; Bravo becomes the card. Still 1 upcoming stop (Charlie),
+    // but the section must have COLLAPSED back to the card (no toggle, no map).
+    fireEvent.click(screen.getByRole("button", { name: /skip for now/i }));
+    expect(screen.getByRole("heading", { name: "Bravo" })).toBeInTheDocument();
+    const collapsedRow = screen.getByRole("button", { name: /1 stop remaining/i });
+    expect(collapsedRow).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByTestId("day-stops-map")).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /^map$/i })).not.toBeInTheDocument();
+  });
+
+  it("shows no remaining row on the last stop (nothing after the card)", () => {
+    seqState.current = { cards: [drivingCard({ id: "c1", name: "Alpha", merchantId: "m1" })], isLoading: false };
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /remaining/i })).not.toBeInTheDocument();
+  });
+});
+
+// ─── End-route / Pause flow ──────────────────────────────────────────────────
 
 describe("RunningPath — End route / Pause flow", () => {
   beforeEach(() => {
     seqState.current = { cards: [drivingCard()], isLoading: false };
   });
 
-  it("Pause calls onPause", () => {
-    const onPause = vi.fn();
-    render(<RunningPath origin={ORIGIN} onPause={onPause} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: /pause/i }));
-    expect(onPause).toHaveBeenCalled();
+  it("Pause is reversible: it swaps to Resume in place (no confirmation), then back", () => {
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    // Not paused: Pause shown, status reads active.
+    expect(screen.getByText(/path active/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^pause$/i }));
+    // Paused: status flips, Resume replaces Pause in the same row (no confirm dialog).
+    expect(screen.getByText(/path paused/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^resume$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^pause$/i })).not.toBeInTheDocument();
+    // The stop card stays visible while paused (the day is not discarded).
+    expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
+    // Resume returns to Pause.
+    fireEvent.click(screen.getByRole("button", { name: /^resume$/i }));
+    expect(screen.getByText(/path active/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^pause$/i })).toBeInTheDocument();
+  });
+
+  it("Resume re-derives the run's 'now' so arrival estimates recompute from the current time", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-08-11T15:00:00.000Z"));
+      render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+      // Mount captured 15:00 as the arrival basis.
+      expect(seqNowCalls[seqNowCalls.length - 1]).toBe("2026-08-11T15:00:00.000Z");
+      // An hour is lost while paused.
+      fireEvent.click(screen.getByRole("button", { name: /^pause$/i }));
+      vi.setSystemTime(new Date("2026-08-11T16:00:00.000Z"));
+      fireEvent.click(screen.getByRole("button", { name: /^resume$/i }));
+      // The latest useDrivingSequence call uses the NEW now (16:00), not the stale mount time.
+      expect(seqNowCalls[seqNowCalls.length - 1]).toBe("2026-08-11T16:00:00.000Z");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("End route with pending stops opens the sheet", () => {
     stops = [stop("A"), stop("B")];
     pendingCount = () => 2;
     const onExitSpy = vi.fn();
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /end route/i }));
     expect(screen.getByTestId("end-sheet")).toBeInTheDocument();
     expect(onExitSpy).not.toHaveBeenCalled();
@@ -329,7 +441,7 @@ describe("RunningPath — End route / Pause flow", () => {
     stops = [stop("A", { status: "visited" })];
     pendingCount = () => 0;
     const onExitSpy = vi.fn();
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /end route/i }));
     expect(onExitSpy).toHaveBeenCalled();
     expect(screen.queryByTestId("end-sheet")).not.toBeInTheDocument();
@@ -340,7 +452,7 @@ describe("RunningPath — End route / Pause flow", () => {
     pendingCount = () => 2;
     carryMutate.mockResolvedValueOnce(undefined);
     const onExitSpy = vi.fn();
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /end route/i }));
     await act(async () => { fireEvent.click(screen.getByText("carry")); });
     expect(carryMutate).toHaveBeenCalledWith({ pathId: "today-1", pathDate: expect.any(String) });
@@ -354,7 +466,7 @@ describe("RunningPath — End route / Pause flow", () => {
     carryMutate.mockRejectedValueOnce(new Error("network"));
     const onExitSpy = vi.fn();
     const { toast } = await import("sonner");
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /end route/i }));
     await act(async () => { fireEvent.click(screen.getByText("carry")); });
     expect(toast.error).toHaveBeenCalled();
@@ -367,7 +479,7 @@ describe("RunningPath — End route / Pause flow", () => {
     pendingCount = () => 2;
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const onExitSpy = vi.fn();
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /end route/i }));
     await act(async () => { fireEvent.click(screen.getByText("clear")); });
     expect(clear).toHaveBeenCalled();
@@ -379,7 +491,7 @@ describe("RunningPath — End route / Pause flow", () => {
     pendingCount = () => 1;
     finalizeMutate.mockResolvedValueOnce(undefined);
     const onExitSpy = vi.fn();
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /end route/i }));
     await act(async () => { fireEvent.click(screen.getByText("mark-complete")); });
     expect(finalizeMutate).toHaveBeenCalledWith("today-1");
@@ -396,7 +508,7 @@ describe("RunningPath — End route / Pause flow", () => {
     finalizeMutate.mockRejectedValueOnce(new Error("boom"));
     const onExitSpy = vi.fn();
     const { toast } = await import("sonner");
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /end route/i }));
     await act(async () => { fireEvent.click(screen.getByText("mark-complete")); });
     expect(toast.error).toHaveBeenCalled();
@@ -408,7 +520,7 @@ describe("RunningPath — End route / Pause flow", () => {
     stops = [stop("A"), stop("B")];
     pendingCount = () => 2;
     const onExitSpy = vi.fn();
-    render(<RunningPath origin={ORIGIN} onPause={vi.fn()} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /end route/i }));
     fireEvent.click(screen.getByText("cancel"));
     expect(screen.queryByTestId("end-sheet")).not.toBeInTheDocument();

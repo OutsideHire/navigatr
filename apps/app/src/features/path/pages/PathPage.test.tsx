@@ -518,7 +518,7 @@ describe("PathPage discovery fetches — chain-free everywhere", () => {
   });
 });
 
-describe("PathPage active-path surface — Run | Stops tabs", () => {
+describe("PathPage active-run surface — card-first, no tabs (v2.2 A7)", () => {
   const readyOrigin: PathOrigin = {
     ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
   };
@@ -527,7 +527,7 @@ describe("PathPage active-path surface — Run | Stops tabs", () => {
     { merchantId: "b", name: "Bravo", address: "2 B St", lat: 30.06, lng: -97.06, category: "retail", status: "pending" },
   ];
 
-  it("a STARTED path (started_at set) shows Run|Stops tabs and defaults to the Run tab", () => {
+  it("a STARTED path (started_at set) renders the guided run directly with NO Run|Stops tablist", () => {
     originState.current = readyOrigin;
     todayState.current = {
       ...todayState.current,
@@ -535,9 +535,9 @@ describe("PathPage active-path surface — Run | Stops tabs", () => {
       stops: geoStops as unknown as typeof todayState.current.stops,
     };
     render(<PathPage />, { wrapper });
-    expect(screen.getByRole("tab", { name: /run/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /stops/i })).toBeInTheDocument();
-    // Default tab is Run (resume-in-place) → the guided run renders, not the list.
+    // The Run/Stops tablist is gone (A7): the card-first RunningPath is the surface.
+    expect(screen.queryByRole("tab", { name: /^run$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /^stops$/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("running-path")).toBeInTheDocument();
     expect(screen.queryByTestId("active-path")).not.toBeInTheDocument();
   });
@@ -550,7 +550,7 @@ describe("PathPage active-path surface — Run | Stops tabs", () => {
       stops: geoStops as unknown as typeof todayState.current.stops,
     };
     render(<PathPage />, { wrapper });
-    // RunningPath renders on the default Run tab and receives an onFindNearby.
+    // RunningPath is the run surface and receives an onFindNearby.
     expect(screen.getByTestId("running-path")).toBeInTheDocument();
     expect(typeof capturedOnFindNearby).toBe("function");
     // Invoking it opens the discover surface (enterDiscover), replacing the run.
@@ -561,22 +561,7 @@ describe("PathPage active-path surface — Run | Stops tabs", () => {
     expect(screen.getByRole("button", { name: /^next$/i })).toBeInTheDocument();
   });
 
-  it("switching to the Stops tab shows the overview; back to Run shows the guided run", () => {
-    originState.current = readyOrigin;
-    todayState.current = {
-      ...todayState.current,
-      startedAt: "2026-07-02T15:00:00.000Z",
-      stops: geoStops as unknown as typeof todayState.current.stops,
-    };
-    render(<PathPage />, { wrapper });
-    fireEvent.click(screen.getByRole("tab", { name: /stops/i }));
-    expect(screen.getByTestId("active-path")).toBeInTheDocument();
-    expect(screen.queryByTestId("running-path")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: /run/i }));
-    expect(screen.getByTestId("running-path")).toBeInTheDocument();
-  });
-
-  it("a PLANNED path (started_at null) shows the overview only — no tabs, no auto-run", () => {
+  it("a PLANNED path (started_at null) shows the overview only — no run, no tabs", () => {
     originState.current = readyOrigin;
     todayState.current = {
       ...todayState.current,
@@ -584,12 +569,12 @@ describe("PathPage active-path surface — Run | Stops tabs", () => {
       stops: geoStops as unknown as typeof todayState.current.stops,
     };
     render(<PathPage />, { wrapper });
-    expect(screen.queryByRole("tab", { name: /run/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /^run$/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("active-path")).toBeInTheDocument();
     expect(screen.queryByTestId("running-path")).not.toBeInTheDocument();
   });
 
-  it("'Start route' on a planned path stamps started_at (start()) and switches to the Run tab", () => {
+  it("'Start route' on a planned path stamps started_at (start()), which flips to the run surface", () => {
     originState.current = readyOrigin;
     const start = vi.fn();
     todayState.current = {

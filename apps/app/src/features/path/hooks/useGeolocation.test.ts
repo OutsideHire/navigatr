@@ -126,4 +126,52 @@ describe("useGeolocation", () => {
     act(() => result.current.retry());
     await waitFor(() => expect(getCurrentPosition).toHaveBeenCalledTimes(2));
   });
+
+  describe("watch mode (live position for the running map)", () => {
+    it("subscribes via watchPosition (not getCurrentPosition) when watch is true, streaming updates", async () => {
+      let cb: ((p: GeolocationPosition) => void) | null = null;
+      const watchPosition = vi.fn((ok: (p: GeolocationPosition) => void) => {
+        cb = ok;
+        return 7; // a watch id
+      });
+      const getCurrentPosition = vi.fn();
+      mockGeolocation({ watchPosition, getCurrentPosition, clearWatch: vi.fn() });
+
+      const { result } = renderHook(() => useGeolocation({ watch: true }));
+      // Watch mode never calls the one-shot getter.
+      expect(watchPosition).toHaveBeenCalledTimes(1);
+      expect(getCurrentPosition).not.toHaveBeenCalled();
+
+      // First fix.
+      await act(async () => { cb!({ coords: { latitude: 1, longitude: 2 } } as GeolocationPosition); });
+      await waitFor(() => expect(result.current.coords).toEqual({ lat: 1, lng: 2 }));
+
+      // A later movement update flows through the same subscription.
+      await act(async () => { cb!({ coords: { latitude: 3, longitude: 4 } } as GeolocationPosition); });
+      await waitFor(() => expect(result.current.coords).toEqual({ lat: 3, lng: 4 }));
+    });
+
+    it("clears the active watch on unmount", async () => {
+      const clearWatch = vi.fn();
+      mockGeolocation({
+        watchPosition: vi.fn(() => 42),
+        getCurrentPosition: vi.fn(),
+        clearWatch,
+      });
+      const { unmount } = renderHook(() => useGeolocation({ watch: true }));
+      unmount();
+      expect(clearWatch).toHaveBeenCalledWith(42);
+    });
+
+    it("still uses the one-shot getter when watch is false (default)", async () => {
+      const watchPosition = vi.fn(() => 1);
+      const getCurrentPosition = vi.fn((ok: (p: GeolocationPosition) => void) =>
+        ok({ coords: { latitude: 9, longitude: 8 } } as GeolocationPosition),
+      );
+      mockGeolocation({ watchPosition, getCurrentPosition, clearWatch: vi.fn() });
+      const { result } = renderHook(() => useGeolocation());
+      await waitFor(() => expect(result.current.coords).toEqual({ lat: 9, lng: 8 }));
+      expect(watchPosition).not.toHaveBeenCalled();
+    });
+  });
 });
