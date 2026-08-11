@@ -3,9 +3,11 @@
  *
  * Composes a rep's prioritized day into a reviewable, fit-aware proposal:
  * fixed calendar anchors (appointments) plus a tiered, budget-capped selection
- * of flexible stops (owed drop-ins, then due-today, then nearby discovery),
- * ordered into a single run list. SP-B renders this; SP-A never touches React,
- * the network, or the clock, `now` is a parameter and there is no randomness.
+ * of the rep's real commitments (owed drop-ins, then due-today), ordered into a
+ * single run list. Per v2.2 B 4.2 fill is MANUAL: the nearby discovery pool is
+ * NOT auto-selected onto the day, it is held entirely in `overflow` for manual
+ * fill (B-T4). SP-B renders this; SP-A never touches React, the network, or the
+ * clock, `now` is a parameter and there is no randomness.
  *
  * Fit math is deliberately simple (v1):
  *  - Drive time is the shared straight-line heuristic (`driveMinutesBetween`,
@@ -285,19 +287,33 @@ export function assembleTodaysPath(
   }
 
   // 2. Flexible candidates in strict tier order (owed -> dueToday -> nearby),
-  //    geocoded only.
+  //    geocoded only. v2.2 B 4.2 splits this into the rep's real commitments,
+  //    which auto-assemble on load, and the nearby discovery pool, which is held
+  //    entirely for MANUAL fill and never lands on the day automatically.
   const flexible = prioritizedFlexible(input);
+  //    - auto-eligible = owed (past_due) + due_today: these go through the greedy
+  //      budget selection and appear on the day today.
+  //    - pool-only = nearby: NEVER auto-selected. Every nearby candidate routes
+  //      to overflow (the retained fill pool) regardless of remaining budget, so
+  //      it is available for manual fill (B-T4) but is absent from the load-time
+  //      proposal. Both partitions preserve the ranked order from
+  //      prioritizedFlexible, so the pool order stays owed-overflow ->
+  //      due-overflow -> nearby, which is exactly what B-T4 consumes.
+  const autoEligible = flexible.filter((s) => s.tier !== "nearby");
+  const poolOnly = flexible.filter((s) => s.tier === "nearby");
 
-  // 3. Greedy budget selection in tier order. Per-stop cost is an independent
-  //    estimate: drive(origin->stop) + dwell. Break on the first stop that does
-  //    not fit so the un-selected tail stays a contiguous priority-ordered run
-  //    (preserving strict tiering: a nearer, lower-tier stop can never jump a
-  //    higher-tier one that did not fit).
+  // 3. Greedy budget selection over the auto-eligible tiers only. Per-stop cost
+  //    is an independent estimate: drive(origin->stop) + dwell. Break on the
+  //    first stop that does not fit so the un-selected tail stays a contiguous
+  //    priority-ordered run (preserving strict tiering: a nearer, lower-tier stop
+  //    can never jump a higher-tier one that did not fit). The nearby pool is
+  //    appended to overflow AFTER any owed/due-today overflow, preserving the
+  //    ranked pool order for manual fill.
   let remainingMin = Math.max(0, totalWindowMin - apptOccupiedMin);
   const selected: FlexibleStop[] = [];
   const overflow: FlexibleStop[] = [];
   let exhausted = false;
-  for (const stop of flexible) {
+  for (const stop of autoEligible) {
     if (exhausted) {
       overflow.push(stop);
       continue;
@@ -311,6 +327,8 @@ export function assembleTodaysPath(
       overflow.push(stop);
     }
   }
+  // Nearby: held entirely in the pool, after the owed/due overflow tail.
+  overflow.push(...poolOnly);
 
   // 4. Route the selected flexible stops (nearest-neighbor from origin) and
   //    interleave them with the fixed anchors. Non-dropping: every selected stop

@@ -182,12 +182,51 @@ describe("assembleTodaysPath", () => {
     expect(all).not.toContain("d-nogeo");
   });
 
-  it("handles empty tiers (only nearby present)", () => {
+  it("holds nearby entirely in the pool on load (only nearby present -> empty proposal, all in overflow)", () => {
+    // v2.2 B 4.2: fill is manual. Nearby candidates are NEVER auto-selected onto
+    // the day, even when the budget is wide open. They all route to overflow (the
+    // retained fill pool) in ranked order, available for manual fill (B-T4).
     const input = base({ nearbyPool: [nearby({ id: "n-1" }), nearby({ id: "n-2" })], dwellMin: 20 });
     const r = assembleTodaysPath(input, NOW);
-    expect(r.proposal.map((s) => s.id)).toEqual(["n-1", "n-2"]);
-    expect(r.proposal.every((s) => s.tier === "nearby")).toBe(true);
-    expect(r.overflow).toEqual([]);
+    expect(r.proposal).toEqual([]);
+    expect(r.overflow.map((s) => s.id)).toEqual(["n-1", "n-2"]);
+    expect(r.overflow.every((s) => s.tier === "nearby")).toBe(true);
+  });
+
+  it("never auto-selects nearby onto the day: proposal has zero nearby, pool holds them in ranked order", () => {
+    // Wide budget, plenty of room. Owed + due-today (real commitments) still
+    // select onto the day; every nearby stays in the pool regardless of capacity.
+    const input = base({
+      owed: [owed({ id: "o-1", ageDays: 8 })],
+      dueToday: [due({ id: "d-1" })],
+      nearbyPool: [nearby({ id: "n-1" }), nearby({ id: "n-2" }), nearby({ id: "n-3" })],
+      dwellMin: 20,
+    });
+    const r = assembleTodaysPath(input, NOW);
+    // Commitments assemble on load.
+    expect(r.proposal.filter((s) => s.tier !== "appointment").map((s) => s.id)).toEqual(["o-1", "d-1"]);
+    // Zero nearby in the proposal.
+    expect(r.proposal.some((s) => s.tier === "nearby")).toBe(false);
+    // All nearby in overflow, in ranked (input) order.
+    expect(r.overflow.map((s) => s.id)).toEqual(["n-1", "n-2", "n-3"]);
+    expect(r.overflow.every((s) => s.tier === "nearby")).toBe(true);
+  });
+
+  it("owed/due overflow ranks before nearby in the pool: owed-overflow -> due-overflow -> nearby", () => {
+    // dwell 200, budget 480 -> only 2 auto-eligible fit; the rest overflow, and
+    // nearby always trails the owed/due overflow in the pool order (B-T4 consumes
+    // the pool in this rank order).
+    const input = base({
+      owed: [owed({ id: "o-1", ageDays: 8 }), owed({ id: "o-2", ageDays: 4 }), owed({ id: "o-3", ageDays: 2 })],
+      dueToday: [due({ id: "d-1" })],
+      nearbyPool: [nearby({ id: "n-1" }), nearby({ id: "n-2" })],
+      dwellMin: 200,
+    });
+    const r = assembleTodaysPath(input, NOW);
+    expect(r.proposal.filter((s) => s.tier !== "appointment").map((s) => s.id)).toEqual(["o-1", "o-2"]);
+    // Overflow: unselected owed/due first (in rank), then all nearby.
+    expect(r.overflow.map((s) => s.id)).toEqual(["o-3", "d-1", "n-1", "n-2"]);
+    expect(r.overflow.map((s) => s.tier)).toEqual(["past_due", "due_today", "nearby", "nearby"]);
   });
 
   it("past_due carries ageDays; flexible stops have null appointment times", () => {

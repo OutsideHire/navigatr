@@ -132,7 +132,7 @@ beforeEach(() => {
 });
 
 describe("useTodaysPath", () => {
-  it("maps each source into its assembler tier (appointment anchor + owed + nearby)", () => {
+  it("maps each source into its assembler tier (appointment anchor + owed on the day, nearby held in the pool)", () => {
     meetingsRef.stops = [meetingStop()];
     owedRef.owed = [owedVisit()];
     merchantsRef.merchants = [merchant()];
@@ -150,13 +150,15 @@ describe("useTodaysPath", () => {
       startAt: "2026-08-09T16:00:00Z",
     });
 
-    // The owed visit became a past_due flexible stop keyed by its task id.
+    // The owed visit became a past_due flexible stop keyed by its task id, on the day.
     const owedStop = result.current.proposal.find((s) => s.id === "task-1");
     expect(owedStop).toMatchObject({ kind: "flexible", tier: "past_due", name: "Old Prospect Co", dealId: "deal-9" });
 
-    // The merchant became a nearby flexible stop with a null dealId.
-    const nearbyStop = result.current.proposal.find((s) => s.id === "m-1");
-    expect(nearbyStop).toMatchObject({ kind: "flexible", tier: "nearby", name: "Fresh Lead LLC", dealId: null });
+    // v2.2 B 4.2: the merchant became a nearby flexible stop with a null dealId,
+    // held in the fill pool (overflow), NOT auto-added to the day.
+    expect(result.current.proposal.some((s) => s.tier === "nearby")).toBe(false);
+    const nearbyStop = result.current.overflow.find((s) => s.id === "m-1");
+    expect(nearbyStop).toMatchObject({ tier: "nearby", name: "Fresh Lead LLC", dealId: null });
 
     expect(result.current.status).toBe("ok");
     expect(result.current.isLoading).toBe(false);
@@ -238,7 +240,7 @@ describe("useTodaysPath", () => {
     expect(result.current.isLoading).toBe(true);
   });
 
-  it("maps the due-today source into the due_today tier, ordered after past-due and before nearby", () => {
+  it("maps the due-today source into the due_today tier, on the day after past-due; nearby stays in the pool", () => {
     // Collinear coords increasing in distance from ORIGIN in tier-priority order,
     // so nearest-neighbor routing preserves the tier order in the tail (no
     // appointments = the routed selection is the whole proposal).
@@ -252,9 +254,12 @@ describe("useTodaysPath", () => {
     const dueStop = result.current.proposal.find((s) => s.id === "due-1");
     expect(dueStop).toMatchObject({ kind: "flexible", tier: "due_today", name: "Opens Today Co", dealId: "deal-9" });
 
-    // Strict tier priority among the flexible stops: past_due -> due_today -> nearby.
+    // v2.2 B 4.2: the day (proposal) carries only the real commitments in tier
+    // order past_due -> due_today. Nearby is held in the pool (overflow), never
+    // auto-added on load.
     const flexTiers = result.current.proposal.filter((s) => s.kind === "flexible").map((s) => s.tier);
-    expect(flexTiers).toEqual(["past_due", "due_today", "nearby"]);
+    expect(flexTiers).toEqual(["past_due", "due_today"]);
+    expect(result.current.overflow.map((s) => s.tier)).toEqual(["nearby"]);
   });
 
   it("excludes a due-today task with no resolvable coordinates", () => {
