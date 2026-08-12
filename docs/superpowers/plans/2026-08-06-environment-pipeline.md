@@ -1,6 +1,18 @@
 # Environment Pipeline (Plan B) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **SUPERSEDED 2026-08-12. DO NOT EXECUTE.**
+>
+> This plan was written against a checkout 163 commits behind `origin/main` and
+> contains verified factual errors (wrong migration count, wrong table and column
+> names, invalid Supabase CLI flags, a CI job that cannot run, a re-baseline whose
+> verification step is blind to what it loses, and an email-guard rollout that would
+> silently drop all production email). It also assumes production holds real beta
+> data, which it does not; that assumption is load-bearing in a dozen steps.
+>
+> See `docs/superpowers/specs/2026-08-06-environments-design.md` v2, section 19,
+> for the full correction list. A single merged replacement plan is being written.
 
 **Goal:** Make the repository the source of truth for navigatr's database and backend again, and put a staging environment plus real CI gates in front of production, so the code freeze ends onto a pipeline instead of back onto push-to-production.
 
