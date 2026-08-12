@@ -15,19 +15,34 @@
 -- an error. It also meant the cron job definitions carried a full-access,
 -- RLS-bypassing credential purely to answer "is this the scheduler?".
 --
--- PREREQUISITE, must exist before this migration is applied:
---   1. Vault secret `cron_secret` created with a value you generate.
---   2. The identical value set as the CRON_SECRET Edge Function secret.
--- If either is missing the jobs will 401 (or the functions will return 503,
--- "cron credential not configured", which is the fail-closed branch and is
--- distinguishable in the logs from a genuinely unauthorized caller).
-
--- Fail fast rather than silently rescheduling jobs that cannot authenticate.
+-- BOOTSTRAP: on any environment that has no `cron_secret` yet (a fresh local
+-- reset, CI, a new staging project) this generates a random one so the migration
+-- set stays reproducible from zero. Production already has its real value and is
+-- left untouched, since the branch only runs when the secret is absent.
+--
+-- An auto-generated secret is fail-closed, not a backdoor: nobody knows it, and
+-- the schedulers cannot authenticate until an operator sets the matching
+-- CRON_SECRET Edge Function secret to the same value. Until then the functions
+-- return 503 "cron credential not configured", which is distinguishable in the
+-- logs from a genuinely unauthorized caller.
+--
+-- An earlier version raised an exception instead. That was correct for
+-- production safety and wrong for reproducibility: it made `supabase db reset`
+-- fail on every machine that had never been bootstrapped, which defeats the
+-- point of the migration set describing the database. Caught by running the
+-- build from zero for the first time, 2026-08-12.
+--
+-- Per-environment bootstrap (set the function secret to match) is documented in
+-- docs/superpowers/specs/2026-08-06-environments-design.md section 8.2.
 do $$
 begin
   if not exists (select 1 from vault.secrets where name = 'cron_secret') then
-    raise exception
-      'vault secret `cron_secret` does not exist. Create it before applying this migration; see the header.';
+    perform vault.create_secret(
+      encode(gen_random_bytes(32), 'hex'),
+      'cron_secret',
+      'Shared secret the nightly snapshot schedulers send. Auto-generated on first apply; an operator must set the matching CRON_SECRET Edge Function secret before the jobs can authenticate.'
+    );
+    raise notice 'cron_secret did not exist and was generated. Set the matching CRON_SECRET Edge Function secret.';
   end if;
 end;
 $$;

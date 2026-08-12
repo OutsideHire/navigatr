@@ -1,0 +1,4 @@
+-- Local development seed. Runs after migrations during `supabase db reset`.
+-- supabase/config.toml has referenced this path since the project was created,
+-- but the file never existed, so `db reset` could not complete. Intentionally
+-- empty for now; populated as part of the environments pipeline work.
