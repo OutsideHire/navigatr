@@ -6,7 +6,7 @@ function reqWithAuth(value: string | null) {
   return { headers: { get: (name: string) => (name.toLowerCase() === "authorization" ? value : null) } };
 }
 
-const SERVICE_ROLE_KEY = "sbp_service_role_key_abcdefghijklmnopqrstuvwxyz0123456789";
+const CRON_SECRET = "cron_secret_abcdefghijklmnopqrstuvwxyz0123456789";
 
 describe("bearerToken", () => {
   it("extracts the token from a well-formed header", () => {
@@ -40,7 +40,7 @@ describe("bearerToken", () => {
 
 describe("timingSafeEquals", () => {
   it("is true for identical strings", () => {
-    expect(timingSafeEquals(SERVICE_ROLE_KEY, SERVICE_ROLE_KEY)).toBe(true);
+    expect(timingSafeEquals(CRON_SECRET, CRON_SECRET)).toBe(true);
     expect(timingSafeEquals("", "")).toBe(true);
   });
   it("is false for same-length strings differing in one byte", () => {
@@ -61,7 +61,7 @@ describe("timingSafeEquals", () => {
 
 describe("requireCronCaller", () => {
   it("allows the request through when the bearer matches the expected secret", () => {
-    const denied = requireCronCaller(reqWithAuth(`Bearer ${SERVICE_ROLE_KEY}`), SERVICE_ROLE_KEY);
+    const denied = requireCronCaller(reqWithAuth(`Bearer ${CRON_SECRET}`), CRON_SECRET);
     expect(denied).toBeNull();
   });
 
@@ -73,27 +73,27 @@ describe("requireCronCaller", () => {
   // cron credential, so both must now be rejected.
   it("rejects the public anon key", () => {
     const anonKey = "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.publicsignature";
-    const denied = requireCronCaller(reqWithAuth(`Bearer ${anonKey}`), SERVICE_ROLE_KEY);
+    const denied = requireCronCaller(reqWithAuth(`Bearer ${anonKey}`), CRON_SECRET);
     expect(denied?.status).toBe(401);
   });
   it("rejects a logged-in user's JWT", () => {
     const userJwt = "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYXV0aGVudGljYXRlZCIsInN1YiI6InJlcCJ9.sig";
-    const denied = requireCronCaller(reqWithAuth(`Bearer ${userJwt}`), SERVICE_ROLE_KEY);
+    const denied = requireCronCaller(reqWithAuth(`Bearer ${userJwt}`), CRON_SECRET);
     expect(denied?.status).toBe(401);
   });
 
   it("rejects a missing Authorization header", () => {
-    expect(requireCronCaller(reqWithAuth(null), SERVICE_ROLE_KEY)?.status).toBe(401);
+    expect(requireCronCaller(reqWithAuth(null), CRON_SECRET)?.status).toBe(401);
   });
   it("rejects a non-Bearer scheme carrying the right value", () => {
-    expect(requireCronCaller(reqWithAuth(`Basic ${SERVICE_ROLE_KEY}`), SERVICE_ROLE_KEY)?.status).toBe(401);
+    expect(requireCronCaller(reqWithAuth(`Basic ${CRON_SECRET}`), CRON_SECRET)?.status).toBe(401);
   });
   it("rejects a bearer that is a prefix of the secret", () => {
-    const prefix = SERVICE_ROLE_KEY.slice(0, -1);
-    expect(requireCronCaller(reqWithAuth(`Bearer ${prefix}`), SERVICE_ROLE_KEY)?.status).toBe(401);
+    const prefix = CRON_SECRET.slice(0, -1);
+    expect(requireCronCaller(reqWithAuth(`Bearer ${prefix}`), CRON_SECRET)?.status).toBe(401);
   });
   it("rejects an empty bearer token", () => {
-    expect(requireCronCaller(reqWithAuth("Bearer "), SERVICE_ROLE_KEY)?.status).toBe(401);
+    expect(requireCronCaller(reqWithAuth("Bearer "), CRON_SECRET)?.status).toBe(401);
   });
 
   // Fail closed on misconfiguration. The dangerous bug would be an unset env
@@ -109,14 +109,31 @@ describe("requireCronCaller", () => {
   });
 
   it("returns a JSON body on denial", async () => {
-    const denied = requireCronCaller(reqWithAuth(null), SERVICE_ROLE_KEY);
+    const denied = requireCronCaller(reqWithAuth(null), CRON_SECRET);
     expect(denied?.headers.get("Content-Type")).toBe("application/json");
     expect(await denied?.json()).toEqual({ error: "unauthorized" });
   });
   it("does not echo the provided or expected credential in the body", async () => {
-    const denied = requireCronCaller(reqWithAuth("Bearer leaked-attempt"), SERVICE_ROLE_KEY);
+    const denied = requireCronCaller(reqWithAuth("Bearer leaked-attempt"), CRON_SECRET);
     const body = await denied?.text();
     expect(body).not.toContain("leaked-attempt");
-    expect(body).not.toContain(SERVICE_ROLE_KEY);
+    expect(body).not.toContain(CRON_SECRET);
+  });
+
+  // Regression guard for the 2026-08-12 incident. The first version of this
+  // guard compared against SUPABASE_SERVICE_ROLE_KEY. A perfectly valid
+  // service_role JWT for this project was rejected, because Supabase injects a
+  // different-format key into that variable than the one stored in Vault, and
+  // the comparison is byte-exact. The nightly jobs 401'd with no visible error.
+  //
+  // The lesson encoded here: "the caller presented a valid, powerful credential"
+  // is NOT the same question as "the caller presented THE configured secret".
+  // The guard answers only the second, which is why the credential it checks
+  // must be one we own rather than one the platform manages.
+  it("rejects a valid service_role JWT that is not the configured secret", () => {
+    const realServiceRoleJwt =
+      "eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJvbGUiOiJzZXJ2aWNlX3JvbGUifQ.sig";
+    const denied = requireCronCaller(reqWithAuth(`Bearer ${realServiceRoleJwt}`), CRON_SECRET);
+    expect(denied?.status).toBe(401);
   });
 });
