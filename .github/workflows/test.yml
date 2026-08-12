@@ -41,6 +41,13 @@ jobs:
       - name: Destructive migration checker's own tests
         run: node --test tools/check-destructive-migrations.test.mjs
 
+      # Manifest-vs-code only. Checking a live environment needs an access token
+      # and belongs in the deploy workflows; this catches the manifest going
+      # stale, which is the failure that makes the live check report a false
+      # pass.
+      - name: Secrets manifest covers the code
+        run: node tools/check-secrets.mjs --audit
+
   # Builds a database from an empty state using every migration, then runs the
   # RLS regression scripts against it.
   #
