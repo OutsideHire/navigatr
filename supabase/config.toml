@@ -398,11 +398,23 @@ backend = "postgres"
 # read_calendar_events, discover_prospects, geocode), a webhook signature
 # (send_auth_email), or the cron-credential guard in _shared/cronAuth.ts
 # (compute_coverage_snapshots, compute_persistence_snapshots).
+# These two are verify_jwt = FALSE deliberately, and that is stronger here, not
+# weaker. They authenticate with CRON_SECRET, a raw random string rather than a
+# JWT. Platform verify_jwt rejects any non-JWT bearer with
+# UNAUTHORIZED_INVALID_JWT_FORMAT *before* the function runs, so leaving it on
+# would block the schedulers themselves (observed 2026-08-12).
+#
+# Turning it off loses nothing, because verify_jwt was never an authorization
+# boundary for these: it only proves the bearer is signed with the project's JWT
+# secret, which the public anon key in the browser bundle satisfies, as does any
+# logged-in rep's token. The real gate is requireCronCaller in
+# _shared/cronAuth.ts, which demands an exact match on a secret we own. That is
+# strictly narrower than "any valid project JWT".
 [functions.compute_coverage_snapshots]
-verify_jwt = true
+verify_jwt = false
 
 [functions.compute_persistence_snapshots]
-verify_jwt = true
+verify_jwt = false
 
 # Experimental features may be deprecated any time
 [experimental]
