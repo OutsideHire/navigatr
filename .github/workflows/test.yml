@@ -76,8 +76,21 @@ jobs:
         with:
           version: 2.98.2
 
-      - name: Start local Supabase
-        run: supabase start
+      # Database only. A full `supabase start` brings up 12 containers; this job
+      # needs one. On a 7GB runner the full stack starved Postgres badly enough
+      # that it was killed mid-test, producing "connection to server was lost"
+      # followed by "the database system is in recovery mode" and taking the
+      # remaining tests down with it. That reads like a query crashing the
+      # server and is not.
+      #
+      # The seed writes auth.users rows directly in SQL, so it needs the auth
+      # SCHEMA (created by migrations) rather than the gotrue SERVICE. Verified
+      # locally: migrations, seed and all 9 tests pass with only the database.
+      # Also cuts startup from minutes to about 20 seconds.
+      - name: Start Postgres only
+        run: >
+          supabase start
+          -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
 
       # Applies all migrations to an empty database in order, then runs
       # supabase/seed.sql. The seed inserts auth.users rows that fire the real
