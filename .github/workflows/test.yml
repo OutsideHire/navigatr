@@ -57,7 +57,22 @@ jobs:
   # `db reset` was run for the first time. Anything that cannot build from zero
   # cannot create a staging environment either.
   database:
-    runs-on: ubuntu-latest
+    # ARM, deliberately, to match production. Supabase runs this project on
+    # aarch64 ("PostgreSQL 17.6 on aarch64-unknown-linux-gnu"), and so does the
+    # development Mac.
+    #
+    # On x86_64 runners this job died with "server process was terminated by
+    # signal 11: Segmentation fault" during test 008, taking the rest of the
+    # suite down with it, while the identical migrations and tests passed on
+    # both aarch64 machines. That is a Postgres-level crash, almost certainly in
+    # ltree handling under the recursive role_path work, and it is
+    # architecture-specific.
+    #
+    # Testing on an architecture production does not use would mean chasing a
+    # crash customers can never hit, while missing anything that only shows up
+    # on the one they do. Matching production is both the fix and the correct
+    # posture.
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       # PINNED, not `latest`. The CLI version determines the Postgres image, and
