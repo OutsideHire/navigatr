@@ -29,7 +29,7 @@
 
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { useForm, Controller, type SubmitHandler } from "react-hook-form";
+import { useForm, Controller, type SubmitHandler, type SubmitErrorHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "react-router-dom";
 import { REP_SOURCE_OPTIONS, LEAD_SOURCE_LABEL } from "../lib/leadSources";
@@ -534,6 +534,11 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
   // type into the field, stage changes no longer overwrite it.
   const probabilityTouched = React.useRef(false);
 
+  // The dedup interstitial renders at the TOP of a long, scrolled form. Hold a
+  // ref so we can bring it into view when it appears: a rep scrolled down to the
+  // "Add deal" button would otherwise never see why the save was held.
+  const interstitialRef = React.useRef<HTMLDivElement>(null);
+
   const defaultValues = React.useMemo<DealFormValues>(() => {
     const base = {
       companyName: "",
@@ -602,6 +607,17 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
     setInterstitial(null);
     setPlaceMeta(null);
   }, [watchedCompany, watchedAddress]);
+
+  // When a dedup interstitial appears, scroll it into view and echo it as a
+  // toast. Both are needed: the banner sits at the top of the form (invisible to
+  // a rep scrolled to the button), and the toast gives corner feedback near the
+  // action so the held save never reads as a dead button.
+  React.useEffect(() => {
+    if (!interstitial || interstitial.mode === "none") return;
+    interstitialRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    const notify = interstitial.mode === "block" ? toast.error : toast;
+    notify(interstitial.title);
+  }, [interstitial]);
 
   // Reset transient state whenever the sheet closes, and start a fresh Places
   // billing session whenever it opens.
@@ -735,6 +751,20 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
     }
   };
 
+  // Submit blocked by validation. The failing fields (company / contact / phone
+  // up top) render above the button, so a rep scrolled to "Add deal" sees
+  // nothing happen. Surface it: a toast near the action, plus scroll the first
+  // invalid field into view so the red field is never stranded off-screen.
+  const onInvalid: SubmitErrorHandler<DealFormValues> = () => {
+    toast.error("Add the missing details highlighted above to save this deal.");
+    requestAnimationFrame(() => {
+      document
+        .getElementById("add-deal-form")
+        ?.querySelector<HTMLElement>('[aria-invalid="true"]')
+        ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+  };
+
   // Interstitial actions — all operate on the current form values.
   const openExistingDeal = (dealId: string) => {
     navigate(`/pipeline/${dealId}`);
@@ -824,7 +854,7 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
           {/* Scrollable form body */}
           <form
             id="add-deal-form"
-            onSubmit={handleSubmit(onSubmit)}
+            onSubmit={handleSubmit(onSubmit, onInvalid)}
             className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-4"
             noValidate
           >
@@ -832,6 +862,7 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
               {/* Tiered de-dup interstitial — block / soft-confirm / second-location. */}
               {interstitial && interstitial.mode !== "none" && (
                 <div
+                  ref={interstitialRef}
                   role="alert"
                   className={cn(
                     "flex flex-col gap-2 rounded-radius-md border px-4 py-3",
