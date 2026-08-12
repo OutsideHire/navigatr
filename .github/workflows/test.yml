@@ -116,19 +116,6 @@ jobs:
       # Plain psql scripts using `do $$ ... raise exception`, NOT pgTAP, so
       # `supabase test db` cannot run them. 004, 008 and 009 assert the RLS
       # boundaries that keep one ISO's data away from another's.
-      # Test 008 case 6b expects rebuild_role_path_subtree to be un-callable by
-      # `authenticated` and to raise insufficient_privilege. If the revoke from
-      # 20260812000001 is somehow not in effect here, the function runs instead,
-      # and its recursive CTE has no cycle detection. That would explain a
-      # segfault in CI and a pass locally.
-      - name: Diagnostic - who can execute rebuild_role_path_subtree
-        run: |
-          docker exec -i "$(docker ps --format '{{.Names}}' | grep '^supabase_db' | head -1)" \
-            psql -U postgres -d postgres -c \
-            "select coalesce(string_agg(grantee, ', '), '(nobody)') as can_execute
-               from information_schema.role_routine_grants
-              where routine_schema='public' and routine_name='rebuild_role_path_subtree';"
-
       - name: RLS regression tests
         run: ./tools/run-db-tests.sh "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
 

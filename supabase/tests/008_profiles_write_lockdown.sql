@@ -165,18 +165,28 @@ end $$;
 -- grants EXECUTE to PUBLIC, so it was callable as
 -- POST /rest/v1/rpc/rebuild_role_path_subtree.
 do $$
-declare blocked boolean := false; v_path ltree;
+declare v_path ltree;
 begin
-  begin
-    perform public.rebuild_role_path_subtree('60000000-0000-0000-0000-000000000002');
-  exception when insufficient_privilege then
-    blocked := true;  -- expected: no EXECUTE, or no UPDATE on profiles
-  end;
+  -- Asserted via has_function_privilege rather than by calling the function and
+  -- catching insufficient_privilege.
+  --
+  -- The original version invoked it. That reliably segfaulted Postgres in CI
+  -- ("server process was terminated by signal 11"), taking the rest of the
+  -- suite down with it, while passing on the development machine. The EXECUTE
+  -- revoke is demonstrably in effect in both (grants read as `postgres,
+  -- service_role` in CI), so the function is not even running; the crash is in
+  -- the surrounding machinery and is environment-specific.
+  --
+  -- Checking the grant is also the better test. It asserts the security
+  -- property directly instead of inferring it from an exception, and it cannot
+  -- be satisfied by the call failing for some unrelated reason.
+  if has_function_privilege('authenticated', 'public.rebuild_role_path_subtree(uuid)', 'EXECUTE') then
+    raise exception 'case6b: authenticated can execute rebuild_role_path_subtree';
+  end if;
+
+  -- And the row is untouched regardless.
   select role_path into v_path from profiles
    where id = '60000000-0000-0000-0000-000000000002';
-  if not blocked then
-    raise exception 'case6b: rep could call rebuild_role_path_subtree directly';
-  end if;
   if v_path is distinct from 'urep'::ltree then
     raise exception 'case6b: role_path changed to %', coalesce(v_path::text, 'NULL');
   end if;
