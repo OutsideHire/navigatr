@@ -10,6 +10,7 @@ import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supa
 import { resolvePersistenceConfig } from "../_shared/persistence/config.ts";
 import { runSnapshots, type SnapshotDeps } from "../_shared/persistence/runSnapshots.ts";
 import { chunk } from "../_shared/chunk.ts";
+import { requireCronCaller } from "../_shared/cronAuth.ts";
 
 /** Max deal ids per `.in(...)` filter when looking up future appointments,
  *  mirroring the batching used for Google searchNearby type lists. */
@@ -107,7 +108,14 @@ function makeDeps(db: SupabaseClient): SnapshotDeps {
   };
 }
 
-Deno.serve(async () => {
+Deno.serve(async (req) => {
+  // Cron-only. This job writes snapshot rows for EVERY org with the
+  // service-role key, bypassing RLS, so it must not run for arbitrary callers.
+  // Platform verify_jwt does not gate it (the public anon key and any rep's
+  // user JWT both clear that check). See _shared/cronAuth.ts.
+  const denied = requireCronCaller(req, SERVICE_ROLE_KEY);
+  if (denied) return denied;
+
   try {
     const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
     const summary = await runSnapshots(makeDeps(db), new Date());

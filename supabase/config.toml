@@ -386,6 +386,24 @@ port = 54327
 # Configure one of the supported backends: `postgres`, `bigquery`.
 backend = "postgres"
 
+# Edge Function JWT posture, version-controlled rather than left to a dashboard
+# toggle. verify_jwt stays true (the default) everywhere; it is recorded here so
+# a future change is visible in review.
+#
+# Note that verify_jwt is NOT an authorization boundary on its own: it checks
+# only that the bearer is a JWT signed with the project's JWT secret, which the
+# public anon key in the browser bundle satisfies, as does any logged-in user's
+# JWT. Functions that need a real caller check do it themselves, either
+# auth.getUser() (sync_path, sync_followup, sync_appointment,
+# read_calendar_events, discover_prospects, geocode), a webhook signature
+# (send_auth_email), or the cron-credential guard in _shared/cronAuth.ts
+# (compute_coverage_snapshots, compute_persistence_snapshots).
+[functions.compute_coverage_snapshots]
+verify_jwt = true
+
+[functions.compute_persistence_snapshots]
+verify_jwt = true
+
 # Experimental features may be deprecated any time
 [experimental]
 # Configures Postgres storage engine to use OrioleDB (S3)

@@ -28,11 +28,16 @@ vi.mock("@/stores/auth", () => ({
     selector({ user: { id: "user-1" } }),
 }));
 
-const updateEq = vi.fn(() => Promise.resolve({ error: null }));
-const profilesUpdate = vi.fn(() => ({ eq: updateEq }));
+// The picker writes through the set_primary_calendar_provider RPC rather than a
+// direct table UPDATE: 20260812000001 revokes UPDATE on profiles from
+// `authenticated`, so a .from("profiles").update(...) here would pass in test
+// and be refused in production.
+const rpc = vi.fn<(fn: string, args: unknown) => Promise<{ error: null }>>(() =>
+  Promise.resolve({ error: null }),
+);
 vi.mock("@/lib/supabase", () => ({
   supabase: {
-    from: vi.fn(() => ({ update: profilesUpdate })),
+    rpc: (fn: string, args: unknown) => rpc(fn, args),
   },
 }));
 
@@ -80,8 +85,7 @@ beforeEach(() => {
   microsoftConnect.mockReset();
   microsoftDisconnect.mockReset();
   useCalendarConnection.mockReset();
-  updateEq.mockClear();
-  profilesUpdate.mockClear();
+  rpc.mockClear();
   useProfile.mockReset();
   useProfile.mockReturnValue({ data: { primary_calendar_provider: null } });
 });
@@ -186,11 +190,28 @@ describe("IntegrationsTab", () => {
     expect(googleBtn).toHaveAttribute("aria-pressed", "true");
     expect(outlookBtn).toHaveAttribute("aria-pressed", "false");
 
-    // Choosing Outlook writes primary_calendar_provider = microsoft.
+    // Choosing Outlook writes primary_calendar_provider = microsoft, via the RPC.
     fireEvent.click(outlookBtn);
     await waitFor(() =>
-      expect(profilesUpdate).toHaveBeenCalledWith({ primary_calendar_provider: "microsoft" }),
+      expect(rpc).toHaveBeenCalledWith("set_primary_calendar_provider", {
+        p_provider: "microsoft",
+      }),
     );
-    expect(updateEq).toHaveBeenCalledWith("id", "user-1");
+  });
+
+  it("never writes to the profiles table directly", async () => {
+    // Regression guard for 20260812000001: UPDATE on profiles is revoked from
+    // `authenticated`, so any direct table write from this tab would pass CI and
+    // fail silently in production. The supabase mock exposes only `rpc`, so a
+    // reintroduced .from("profiles").update(...) throws here instead.
+    setup({ google: { status: "connected" }, microsoft: { status: "connected" } });
+    useProfile.mockReturnValue({ data: { primary_calendar_provider: "google" } });
+    renderTab(<IntegrationsTab />);
+
+    fireEvent.click(screen.getByRole("button", { name: /outlook calendar/i }));
+    await waitFor(() => expect(rpc).toHaveBeenCalledTimes(1));
+    expect(rpc).toHaveBeenCalledWith("set_primary_calendar_provider", {
+      p_provider: "microsoft",
+    });
   });
 });
