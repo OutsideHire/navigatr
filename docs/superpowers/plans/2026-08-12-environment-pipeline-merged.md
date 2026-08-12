@@ -814,14 +814,18 @@ Snapshot artifact attached, tag created, smoke test green.
 
 **Files:** Create `supabase/functions/_shared/emailGuard.ts` and its vitest test; modify `send_invite_email/index.ts` and `send_auth_email/index.ts`
 
-- [ ] **Step 1: Set `APP_ENV=production` on production FIRST and verify**
+- [x] **Step 1: Set `APP_ENV=production` on production FIRST and verify**
+
+**Done 2026-08-13, ahead of the guard existing**, which is the whole point: the
+variable is in place before any code depends on it, so the hazard cannot fire.
 
 ```bash
-supabase secrets set APP_ENV=production --project-ref ogvcveimjjeywfdkkinb
 supabase secrets list --project-ref ogvcveimjjeywfdkkinb | awk '{print $1}' | grep APP_ENV
 ```
 
-Do not write the guard until this is confirmed.
+Confirm it still returns `APP_ENV` before deploying the guard. If it does not,
+stop: deploying a fail-closed guard without it drops every invite and every
+password reset, silently.
 
 - [ ] **Step 2: Write the failing test, vitest-style**
 
