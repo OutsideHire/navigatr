@@ -58,20 +58,17 @@ jobs:
   # cannot create a staging environment either.
   database:
     # ARM, deliberately, to match production. Supabase runs this project on
-    # aarch64 ("PostgreSQL 17.6 on aarch64-unknown-linux-gnu"), and so does the
-    # development Mac.
+    # aarch64 ("PostgreSQL 17.6 on aarch64-unknown-linux-gnu"), as does the
+    # development Mac. Testing the database on an architecture production does
+    # not use invites chasing failures customers cannot hit while missing ones
+    # they can.
     #
-    # On x86_64 runners this job died with "server process was terminated by
-    # signal 11: Segmentation fault" during test 008, taking the rest of the
-    # suite down with it, while the identical migrations and tests passed on
-    # both aarch64 machines. That is a Postgres-level crash, almost certainly in
-    # ltree handling under the recursive role_path work, and it is
-    # architecture-specific.
-    #
-    # Testing on an architecture production does not use would mean chasing a
-    # crash customers can never hit, while missing anything that only shows up
-    # on the one they do. Matching production is both the fix and the correct
-    # posture.
+    # This was originally changed while chasing a segfault in test 008, on the
+    # theory that the crash was x86-only. That theory was WRONG: it reproduced
+    # on ARM too, and the real fix was in the test (it no longer invokes a
+    # function merely to prove the caller lacks EXECUTE). ARM is kept because
+    # matching production is right on its own merits, not because it fixed
+    # anything.
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
