@@ -17,7 +17,57 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
       - name: Type check
         run: pnpm --filter app typecheck
+
+      # `tsc --noEmit` does NOT catch everything `vite build` does. A build that
+      # fails here would fail on Vercel, and a failed Vercel build silently
+      # leaves the previous deployment serving, so users keep seeing old code
+      # with nothing obviously broken. That has already happened once on this
+      # project, which is why this step exists.
+      - name: Production build
+        run: pnpm --filter app build
+
+      # Covers apps/app/src plus supabase/functions/_shared, which
+      # vitest.config.ts includes. There is deliberately no separate `deno test`
+      # job: those tests import vitest and would fail under Deno.
       - name: Unit tests
         run: pnpm --filter app test
+
+      - name: Destructive migration check
+        run: node tools/check-destructive-migrations.mjs
+
+      - name: Destructive migration checker's own tests
+        run: node --test tools/check-destructive-migrations.test.mjs
+
+  # Builds a database from an empty state using every migration, then runs the
+  # RLS regression scripts against it.
+  #
+  # This is the check that matters most. Reviewing a migration cannot tell you
+  # whether the whole set still applies in order: a duplicate version number
+  # made this repo unable to build a database at all, and nobody noticed until
+  # `db reset` was run for the first time. Anything that cannot build from zero
+  # cannot create a staging environment either.
+  database:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase
+        run: supabase start
+
+      # Applies all migrations to an empty database in order, then runs
+      # supabase/seed.sql. The seed inserts auth.users rows that fire the real
+      # signup trigger, so a regression there fails this step too.
+      - name: Build the database from every migration
+        run: supabase db reset
+
+      # Plain psql scripts using `do $$ ... raise exception`, NOT pgTAP, so
+      # `supabase test db` cannot run them. 004, 008 and 009 assert the RLS
+      # boundaries that keep one ISO's data away from another's.
+      - name: RLS regression tests
+        run: ./tools/run-db-tests.sh "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
