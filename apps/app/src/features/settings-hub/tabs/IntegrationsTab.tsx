@@ -101,10 +101,14 @@ function PrimaryCalendarControl() {
 
   const setPrimary = useMutation({
     mutationFn: async (provider: CalendarProviderId): Promise<void> => {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ primary_calendar_provider: provider })
-        .eq("id", userId!);
+      // Goes through the SECURITY DEFINER RPC, not a direct table UPDATE:
+      // 20260812000001 revokes UPDATE on profiles from `authenticated` so that
+      // newly added columns are unwritable by default (that default being
+      // writable was the self-escalation hole). 20260812000003 reopens exactly
+      // this one column, on the caller's own row.
+      const { error } = await supabase.rpc("set_primary_calendar_provider", {
+        p_provider: provider,
+      });
       if (error) throw error;
     },
     onSuccess: () => {
