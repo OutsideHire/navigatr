@@ -340,7 +340,7 @@ export function CreatePathWizard({
         >
           <div className="flex shrink-0 items-center justify-between border-b border-border-default px-5 py-4">
             <Dialog.Title className="text-heading-sm text-text-default">
-              {step === "filters" ? "Create path" : step === "select" ? "Select stops" : "Optimized route preview"}
+              {step === "filters" ? "Start a path" : step === "select" ? "Select stops" : "Optimized route preview"}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button aria-label="Close" className="rounded-radius-sm p-1 text-text-muted hover:text-text-default">

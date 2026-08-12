@@ -19,6 +19,7 @@ import { ACTIVITIES_ORG_QUERY_KEY, ACTIVITIES_QUERY_KEY } from "./useActivities"
 import { DEALS_QUERY_KEY } from "@/features/pipeline/hooks/useDeals";
 import { taskFromOutcome } from "../lib/taskFromOutcome";
 import { bandsFromTarget } from "../lib/taskBands";
+import type { LogConfirmation, LogConfirmationTask } from "../lib/logConfirmation";
 import type { ActivityType } from "../mockData";
 import type { Disposition } from "@/lib/followUpScheduling";
 
@@ -48,7 +49,7 @@ export function useLogActivity() {
   const profile = useProfile();
 
   return useMutation({
-    mutationFn: async (input: LogActivityInput): Promise<{ id: string }> => {
+    mutationFn: async (input: LogActivityInput): Promise<{ id: string; confirmation: LogConfirmation }> => {
       if (!userId) throw new Error("Not signed in");
       if (!profile.data?.org_id) throw new Error("Profile not loaded — cannot log activity");
 
@@ -79,6 +80,11 @@ export function useLogActivity() {
         .single();
       if (error) throw error;
       const activityId = data.id as string;
+
+      // Post-log confirmation summary (SP2/Screen Content Spec §5): what the log
+      // actually created, returned so the sheet can explain it to the rep.
+      const createdTasks: LogConfirmationTask[] = [];
+      const recordEffects: string[] = [];
 
       // Task sync (SP1). Best-effort: the activity + follow_up_date remain the
       // durable signal Follow-Up Discipline reads, so a task hiccup must never
@@ -138,6 +144,7 @@ export function useLogActivity() {
               latest_at: followUpDateOnly,
               original_target_at: followUpDateOnly,
             });
+            createdTasks.push({ type: input.type, title: baseRow.title, targetAt: followUpDateOnly });
           } else if (input.disposition === "send_info") {
             // The one compound in the platform: get the info out today (Email),
             // then follow up on it (Call at the 3-day interval). Independent.
@@ -148,6 +155,8 @@ export function useLogActivity() {
               { ...baseRow, type: "email", date_source: "interval", earliest_at: emailBands.earliest_at, target_at: emailBands.target_at, latest_at: emailBands.latest_at, original_target_at: emailBands.target_at },
               { ...baseRow, type: "call", date_source: "interval", earliest_at: callBands.earliest_at, target_at: callBands.target_at, latest_at: callBands.latest_at, original_target_at: callBands.target_at },
             ]);
+            createdTasks.push({ type: "email", title: baseRow.title, targetAt: emailBands.target_at });
+            createdTasks.push({ type: "call", title: baseRow.title, targetAt: callBands.target_at });
           } else {
             const fields = taskFromOutcome(input.type, input.disposition, followUpDateOnly, dealName);
             if (fields) {
@@ -160,6 +169,7 @@ export function useLogActivity() {
                 latest_at: fields.latest_at,
                 original_target_at: fields.original_target_at,
               });
+              createdTasks.push({ type: fields.type, title: baseRow.title, targetAt: fields.target_at });
             }
           }
         }
@@ -169,29 +179,42 @@ export function useLogActivity() {
         const nowIso = new Date().toISOString();
         if (input.disposition === "bad_number") {
           await supabase.from("deals").update({ contact_phone_invalid: true }).eq("id", input.dealId);
+          recordEffects.push("Phone number flagged as invalid");
         } else if (input.disposition === "bad_address") {
           await supabase.from("deals").update({ contact_email_invalid: true }).eq("id", input.dealId);
+          recordEffects.push("Email address flagged as invalid");
         } else if (input.disposition === "do_not_call") {
           await supabase.from("deals").update({ do_not_call: true }).eq("id", input.dealId);
           await supabase.from("task").update({ status: "cancelled", cancelled_at: nowIso })
             .eq("deal_id", input.dealId).eq("type", "call").eq("status", "open");
+          recordEffects.push("Marked Do Not Call; open call follow-ups cancelled");
         } else if (input.disposition === "unsubscribed") {
           await supabase.from("deals").update({ email_opt_out: true }).eq("id", input.dealId);
           await supabase.from("task").update({ status: "cancelled", cancelled_at: nowIso })
             .eq("deal_id", input.dealId).eq("type", "email").eq("status", "open");
+          recordEffects.push("Marked email opt-out; open email follow-ups cancelled");
         } else if (input.disposition === "verbal_commitment") {
           // Advance to Proposal, never regress and never set won.
           const { data: d } = await supabase.from("deals").select("stage").eq("id", input.dealId).maybeSingle();
           const stage = d?.stage as string | undefined;
           if (stage === "new" || stage === "contacted" || stage === "qualified") {
             await supabase.from("deals").update({ stage: "proposal" }).eq("id", input.dealId);
+            recordEffects.push("Deal advanced to Proposal");
           }
         }
       } catch (taskErr) {
         console.error("[useLogActivity] task sync failed (activity still saved)", taskErr);
       }
 
-      return { id: activityId };
+      return {
+        id: activityId,
+        confirmation: {
+          activityType: input.type,
+          createdTasks,
+          compound: input.disposition === "send_info",
+          recordEffects,
+        },
+      };
     },
     onSuccess: (_data, variables) => {
       // 1. Per-deal activity timeline picks up the new row.

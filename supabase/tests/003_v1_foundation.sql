@@ -59,10 +59,12 @@ values
   ('20000000-0000-0000-0000-000000000002', 'svp@test.example',     'authenticated', 'authenticated', now(), now(), now()),
   ('20000000-0000-0000-0000-000000000003', 'rep@test.example',     'authenticated', 'authenticated', now(), now(), now());
 
-insert into profiles (id, org_id, role, full_name, role_path) values
-  ('20000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000a2', 'admin',   'CSO Carol',   'carol'::ltree),
-  ('20000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000a2', 'manager', 'SVP Sam',     'carol.sam'::ltree),
-  ('20000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-0000000000a2', 'rep',     'Rep Riley',   'carol.sam.riley'::ltree);
+-- `email` is NOT NULL on profiles (20260523000001_admin_portal.sql). This insert
+-- omitted it until 2026-08-13 and so could never run against current schema.
+insert into profiles (id, org_id, role, full_name, email, role_path) values
+  ('20000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000a2', 'admin',   'CSO Carol', 'cso@test.example',     'carol'::ltree),
+  ('20000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000a2', 'manager', 'SVP Sam',   'manager@test.example', 'carol.sam'::ltree),
+  ('20000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-0000000000a2', 'rep',     'Rep Riley', 'rep@test.example',     'carol.sam.riley'::ltree);
 
 do $$
 declare n int;

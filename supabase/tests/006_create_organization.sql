@@ -52,7 +52,7 @@ select set_config('request.jwt.claim.sub', '20000000-0000-0000-0000-000000000001
 select set_config('role', 'authenticated', true);
 
 -- ---------------------------------------------------------------------------
--- Case 1: happy path — first self-serve user gets an org + manager profile.
+-- Case 1: happy path — first self-serve user gets an org + administrator profile.
 -- This is the exact flow rpatton couldn't complete.
 -- ---------------------------------------------------------------------------
 do $$
@@ -70,8 +70,11 @@ begin
   if v_org_id is null then
     raise exception 'case1: create_organization returned null org_id';
   end if;
-  if v_role <> 'manager' then
-    raise exception 'case1: expected returned role=manager got %', v_role;
+  -- create_organization returns 'admin' since the role_level foundation
+  -- (20260722000002): the creator is the org's Administrator. Said 'manager'
+  -- until 2026-08-13, describing pre-July behaviour.
+  if v_role <> 'admin' then
+    raise exception 'case1: expected returned role=admin got %', v_role;
   end if;
   if v_code is null or length(v_code) <> 8 then
     raise exception 'case1: expected 8-char invite_code got %', v_code;
@@ -87,8 +90,8 @@ begin
   if p.email is null or p.email <> 'founder@selfserve.example' then
     raise exception 'case1: profile email not populated correctly, got %', p.email;
   end if;
-  if p.role <> 'manager' then
-    raise exception 'case1: profile role expected manager got %', p.role;
+  if p.role <> 'admin' then
+    raise exception 'case1: profile role expected admin got %', p.role;
   end if;
   if p.org_id <> v_org_id then
     raise exception 'case1: profile org_id % does not match returned %', p.org_id, v_org_id;

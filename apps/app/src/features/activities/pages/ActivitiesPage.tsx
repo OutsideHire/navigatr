@@ -42,15 +42,20 @@ import {
 import { type Activity, type ActivityType } from "../mockData";
 import { type Deal } from "@/features/pipeline/mockData";
 import { DISPOSITIONS, formatFollowUpDate } from "@/lib/followUpScheduling";
-import { calendarDayDelta } from "@/lib/calendarDate";
+import { calendarDayDelta, toDateOnly } from "@/lib/calendarDate";
+import { bandPosition } from "@/features/path/lib/classD";
+import { BandBadge } from "@/features/path/lib/bandBadge";
+import { useCalendarEvents } from "@/features/path/hooks/useCalendarEvents";
 import { LogActivitySheet } from "../components/LogActivitySheet";
 import { EditActivitySheet } from "../components/EditActivitySheet";
 import { CreateTaskSheet } from "../components/CreateTaskSheet";
 import { UnloggedCallsSection } from "../components/UnloggedCallsSection";
 import { AppointmentsAwaitingOutcome } from "@/features/appointments/components/AppointmentsAwaitingOutcome";
+import { useMyAppointments } from "@/features/appointments/useAppointments";
 import { useActivitiesForOrg } from "../hooks/useActivities";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { useTasks } from "../hooks/useTasks";
+import { taskPrimaryAction } from "../lib/taskPrimaryAction";
 import { useTaskMutations } from "../hooks/useTaskMutations";
 import { type Task } from "../tasks/taskTypes";
 import { type TaskType } from "../lib/isProspectTouch";
@@ -75,8 +80,9 @@ function daysBetween(now: Date, dueAt: Date): number {
 
 function formatRelativeShort(iso: string, now: Date): string {
   const d = daysBetween(now, new Date(iso));
-  if (d < -1) return `${Math.abs(d)}d overdue`;
-  if (d === -1) return "1d overdue";
+  // Lateness is always counted from target_at (one date vocabulary, per spec).
+  if (d < -1) return `${Math.abs(d)}d past target`;
+  if (d === -1) return "1d past target";
   if (d === 0) return "Due today";
   if (d === 1) return "Due tomorrow";
   return `Due ${formatFollowUpDate(iso)}`;
@@ -117,11 +123,20 @@ interface PageTask {
   id: string;
   type: TaskType;
   companyName: string;
+  /** The deal's business name (joined). For an appointment the `title` holds the
+   *  meeting agenda, so this is the only place the deal is named. Null when the
+   *  task has no deal. */
+  dealName: string | null;
   dueAt: string; // task.targetAt (YYYY-MM-DD)
   dealId: string | null;
   sourceOutcome: string | null;
   priority: string | null;
   startAt: string | null; // optional time-of-day (ISO)
+  // Band dates + creation, for the band badge and the "from X, Nd ago" provenance.
+  earliestAt: string;
+  latestAt: string;
+  dateSource: string;
+  createdAt: string;
 }
 
 function toPageTask(t: Task): PageTask {
@@ -129,11 +144,16 @@ function toPageTask(t: Task): PageTask {
     id: t.id,
     type: t.type,
     companyName: t.title,
+    dealName: t.dealName,
     dueAt: t.targetAt,
     dealId: t.dealId,
     sourceOutcome: t.sourceOutcome,
     priority: t.priority,
     startAt: t.startAt,
+    earliestAt: t.earliestAt,
+    latestAt: t.latestAt,
+    dateSource: t.dateSource,
+    createdAt: t.createdAt,
   };
 }
 
@@ -154,6 +174,7 @@ type HistoryItem =
 function TaskRow({
   task,
   now,
+  hasLoadableDeal,
   onLogOutcome,
   onMarkDone,
   onOpenDeal,
@@ -162,6 +183,10 @@ function TaskRow({
 }: {
   task: PageTask;
   now: Date;
+  /** Whether the task's deal is present in the rep's loaded org deals. When a
+   *  non-to-do task's deal is missing (removed / stale sample data), logging
+   *  would be rejected by the database, so the row offers Dismiss instead. */
+  hasLoadableDeal: boolean;
   onLogOutcome: (dealId: string) => void;
   onMarkDone: (taskId: string) => void;
   onOpenDeal: (dealId: string) => void;
@@ -170,6 +195,20 @@ function TaskRow({
 }) {
   const overdue = daysBetween(now, new Date(task.dueAt)) < 0;
   const isTodo = task.type === "todo";
+  // A task's `title` (surfaced here as `companyName`) is free text the rep typed
+  // (e.g. "Swing by in person" for a drop-in, or a meeting agenda for an
+  // appointment), NOT necessarily the merchant. Whenever the task is linked to a
+  // deal, surface the deal's business name as the row's identity so a rep can
+  // always tell which merchant it is (QA fix: drop-ins were showing the typed
+  // title, not the merchant). Fall back to the title when there is no linked
+  // deal so a row never renders blank.
+  const hasDealName = task.dealName != null && task.dealName !== "";
+  const primaryName = hasDealName ? (task.dealName as string) : task.companyName;
+  // The title the rep typed (agenda / note), kept as a secondary line so it
+  // isn't lost. Only when it differs from the deal name (avoids showing it
+  // twice) and is non-empty.
+  const agenda =
+    hasDealName && task.companyName && task.companyName !== task.dealName ? task.companyName : null;
   const Icon = isTodo ? CheckIcon : TYPE_ICON[task.type as ActivityType];
   const accent = isTodo
     ? { bg: "bg-surface-sunken", fg: "text-text-muted" }
@@ -177,15 +216,38 @@ function TaskRow({
   const outcomeLabel = task.sourceOutcome
     ? DISPOSITIONS[task.sourceOutcome as keyof typeof DISPOSITIONS]?.label
     : undefined;
+  // Band position "today" from the task's band dates (one band vocabulary).
+  const band = bandPosition(
+    {
+      type: task.type,
+      status: "open",
+      earliestAt: task.earliestAt,
+      targetAt: task.dueAt,
+      latestAt: task.latestAt,
+      dateSource: task.dateSource,
+      excludeFromPath: false,
+    },
+    toDateOnly(now),
+  );
 
   // Primary action varies by type: log the outcome (call/email/appointment),
-  // mark done (to-do, internal), or open the deal to log off-route (drop-in).
+  // mark done (to-do, internal), open the deal to log off-route (drop-in), or
+  // dismiss a dead row whose deal is no longer in the workspace (stale sample
+  // data), which the database would reject a log against.
+  const action = taskPrimaryAction({
+    isTodo,
+    type: task.type,
+    dealId: task.dealId,
+    hasLoadableDeal,
+  });
   const primary =
-    isTodo
-      ? { label: "Mark done", run: () => onMarkDone(task.id) }
-      : task.type === "drop_in"
-        ? { label: "Open deal", run: () => task.dealId && onOpenDeal(task.dealId) }
-        : { label: "Log activity", run: () => task.dealId && onLogOutcome(task.dealId) };
+    action.kind === "mark_done"
+      ? { label: "Mark done", run: () => onMarkDone(task.id), variant: "primary" as const, icon: CheckIcon }
+      : action.kind === "dismiss"
+        ? { label: "Dismiss", run: () => onCancel(task.id), variant: "secondary" as const, icon: undefined }
+        : action.kind === "open_deal"
+          ? { label: "Open deal", run: () => task.dealId && onOpenDeal(task.dealId), variant: "primary" as const, icon: PlusCircle }
+          : { label: "Log activity", run: () => task.dealId && onLogOutcome(task.dealId), variant: "primary" as const, icon: PlusCircle };
 
   return (
     <div
@@ -209,27 +271,34 @@ function TaskRow({
         </span>
         <div className="flex min-w-0 flex-col gap-0.5">
           <p className="flex items-center gap-1.5 text-body-strong text-text-default">
-            <span className="truncate">{task.companyName}</span>
+            <span className="truncate">{primaryName}</span>
+            {!isTodo && <BandBadge band={band} className="shrink-0" />}
             {task.priority === "high" && (
               <span className="inline-flex shrink-0 items-center rounded-radius-full bg-status-danger-bg px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-danger">
                 High
               </span>
             )}
           </p>
+          {agenda && <p className="truncate text-caption text-text-muted">{agenda}</p>}
+          {action.dealUnavailable && (
+            <p className="text-caption text-status-warning">
+              Sample data. The linked deal isn't in your workspace, so it can't be logged.
+            </p>
+          )}
           <p className="text-caption text-text-muted">
             <span className={overdue ? "font-medium text-status-danger" : "text-text-default"}>
               {formatRelativeShort(task.dueAt, now)}
             </span>
             {task.startAt ? <>{" · "}{formatTime(task.startAt)}</> : null}
-            {outcomeLabel ? <>{" · "}from {outcomeLabel}</> : null}
+            {outcomeLabel ? <>{" · "}from {outcomeLabel}, {formatPastRelative(task.createdAt, now)}</> : null}
           </p>
         </div>
       </div>
       <div className="flex shrink-0 gap-2 self-stretch sm:self-auto">
         <Button
-          variant="primary"
+          variant={primary.variant}
           size="sm"
-          leadingIcon={isTodo ? CheckIcon : PlusCircle}
+          leadingIcon={primary.icon}
           onClick={primary.run}
           className="flex-1 sm:flex-none"
         >
@@ -322,6 +391,160 @@ function TodoHistoryRow({ task, now }: { task: Task; now: Date }) {
         {task.completedAt ? formatPastRelative(task.completedAt, now) : ""}
       </span>
     </div>
+  );
+}
+
+// ── Today's meetings (external calendar, read-only) ───────────────────
+
+/** Today's external (third-party) calendar meetings, read-only.
+ *
+ *  Read from the rep's connected Outlook/Google calendar via useCalendarEvents
+ *  for today's local window. These are EXTERNAL meetings only: navigatr-booked
+ *  appointments surface as task rows above, and the read layer excludes
+ *  navigatr-pushed/mirrored events, so there is nothing to de-dup here.
+ *
+ *  For a list surface we show ALL of today's meetings, both located waypoints
+ *  and unlocated time blocks (unlike the Path map view, which needs a location).
+ *
+ *  Non-blocking, consistent with Path: a disconnected or failed read degrades to
+ *  empty arrays (status "needs_reconnect"/"not_connected"), so the merged list is
+ *  empty and the section renders nothing. No scary error, no empty-state clutter. */
+function TodaysMeetingsSection({ now }: { now: Date }) {
+  // Today's local window (midnight to end-of-day), pinned to the page's `now`.
+  const todayWindow = React.useMemo(() => {
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+    return { start: start.toISOString(), end: end.toISOString() };
+  }, [now]);
+
+  const { waypoints, timeBlocks } = useCalendarEvents(todayWindow);
+
+  // Merge located waypoints + unlocated time blocks, sorted by start time.
+  const meetings = React.useMemo(() => {
+    const located = waypoints.map((w) => ({
+      id: w.id,
+      title: w.title,
+      start: w.start,
+      location: w.address || null,
+    }));
+    const unlocated = timeBlocks.map((b) => ({
+      id: b.id,
+      title: b.title,
+      start: b.start,
+      location: null,
+    }));
+    return [...located, ...unlocated].sort((a, b) => a.start.localeCompare(b.start));
+  }, [waypoints, timeBlocks]);
+
+  if (meetings.length === 0) return null;
+
+  return (
+    <section className="flex flex-col gap-2" aria-label="Today's meetings">
+      <div className="flex flex-col gap-0.5">
+        <p className="text-eyebrow text-text-subtle">Today's meetings · {meetings.length}</p>
+        <p className="text-caption text-text-muted">From your connected calendar</p>
+      </div>
+      <div className="flex flex-col gap-2">
+        {meetings.map((m) => (
+          <div
+            key={m.id}
+            className="flex items-start gap-3 rounded-radius-md border border-border-subtle bg-surface-default p-4"
+          >
+            <span
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-surface-sunken text-text-muted"
+              aria-hidden
+            >
+              <Calendar className="h-4 w-4" />
+            </span>
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <p className="truncate text-body-strong text-text-default">{m.title}</p>
+              <p className="text-caption text-text-muted">
+                {formatTime(m.start)}
+                {m.location ? <>{" · "}{m.location}</> : null}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ── Today's booked appointments (navigatr scheduled_appointments) ─────
+
+/** A today booked-appointment row: the flattened view the section renders. */
+interface TodaysAppointmentRow {
+  id: string;
+  dealId: string;
+  /** The deal's business name (joined from the deals list). Null when the deal
+   *  is not in the rep's visible list. */
+  dealName: string | null;
+  /** The appointment title (agenda), kept as a secondary line. */
+  title: string;
+  startAt: string;
+}
+
+/** Today's navigatr-booked appointments (scheduled_appointments), read-only-ish
+ *  rows that link to the deal.
+ *
+ *  These are DISTINCT from appointment-type TASKS (a booked appointment is a
+ *  scheduled_appointments row, not a `task` row) and from external calendar
+ *  meetings (which come from the connected calendar). De-dup with the
+ *  "Appointments to log" nudge is handled by the caller: only appointments that
+ *  have NOT yet ended land here; ended ones are owned by that nudge. Renders
+ *  nothing when there is nothing to show. */
+function BookedAppointmentsSection({
+  appointments,
+  onOpenDeal,
+}: {
+  appointments: TodaysAppointmentRow[];
+  onOpenDeal: (dealId: string) => void;
+}) {
+  if (appointments.length === 0) return null;
+
+  const accent = TYPE_ACCENT.appointment;
+  return (
+    <section className="flex flex-col gap-2" aria-label="Booked appointments">
+      <div className="flex flex-col gap-0.5">
+        <p className="text-eyebrow text-text-subtle">Booked appointments · {appointments.length}</p>
+        <p className="text-caption text-text-muted">Appointments you booked on a deal in navigatr</p>
+      </div>
+      <div className="flex flex-col gap-2">
+        {appointments.map((a) => {
+          const primaryName = a.dealName ?? a.title;
+          const agenda = a.dealName && a.title && a.title !== a.dealName ? a.title : null;
+          return (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => onOpenDeal(a.dealId)}
+              className={cn(
+                "flex w-full items-start gap-3 rounded-radius-md border border-border-subtle bg-surface-default p-4 text-left transition-colors",
+                "hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas",
+              )}
+            >
+              <span
+                className={cn(
+                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full",
+                  accent.bg,
+                  accent.fg,
+                )}
+                aria-hidden
+              >
+                <Calendar className="h-4 w-4" />
+              </span>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <p className="truncate text-body-strong text-text-default">{primaryName}</p>
+                {agenda && <p className="truncate text-caption text-text-muted">{agenda}</p>}
+                <p className="text-caption text-text-muted">Appointment · {formatTime(a.startAt)}</p>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -421,6 +644,10 @@ export function ActivitiesPage() {
   const { tasks: completedTasks } = useTasks("completed");
   const { data: activities = [] } = useActivitiesForOrg();
   const { data: deals = [] } = useDeals();
+  // The rep's booked appointments (scheduled_appointments). Surfaced in the
+  // Today view so a deal-booked appointment shows up alongside tasks (QA fix:
+  // previously only `task` rows + external meetings appeared).
+  const { data: myAppointments = [] } = useMyAppointments();
   const { completeTask, cancelTask, snoozeTask } = useTaskMutations();
   const navigate = useNavigate();
 
@@ -428,6 +655,39 @@ export function ActivitiesPage() {
     () => new Map(deals.map((d) => [d.id, d])),
     [deals],
   );
+
+  // Today's booked appointments as rows: those starting today that have NOT yet
+  // ended. Excluding already-ended ones is the de-dup with the "Appointments to
+  // log" nudge (AppointmentsAwaitingOutcome), which owns past appointments with
+  // no outcome recorded, so a given appointment is only ever placed once.
+  const todaysAppointments = React.useMemo<TodaysAppointmentRow[]>(() => {
+    const nowMs = now.getTime();
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(now);
+    dayEnd.setHours(23, 59, 59, 999);
+    const startMs = dayStart.getTime();
+    const endMs = dayEnd.getTime();
+    return myAppointments
+      .filter((a) => {
+        const s = new Date(a.startAt).getTime();
+        const e = new Date(a.endAt).getTime();
+        return s >= startMs && s <= endMs && e >= nowMs;
+      })
+      .map((a) => ({
+        id: a.id,
+        dealId: a.dealId,
+        dealName: dealById.get(a.dealId)?.companyName ?? null,
+        title: a.title,
+        startAt: a.startAt,
+      }))
+      .sort((x, y) => x.startAt.localeCompare(y.startAt));
+  }, [myAppointments, now, dealById]);
+
+  // Booked appointments are appointment-typed, so the shared type filter should
+  // hide them unless "All" or "Appointment" is selected (consistent with how the
+  // task rows respect the filter).
+  const showBookedAppointments = typeFilter === "all" || typeFilter === "appointment";
 
   // Keep the full Task objects addressable by id (snooze needs the band dates).
   const taskById = React.useMemo(
@@ -530,6 +790,28 @@ export function ActivitiesPage() {
   const upcomingCount = upcoming.length;
   const historyCount = historyItems.length;
 
+  // Aging count for the header alarm (per spec): tasks whose band is "aging"
+  // (past their latest acceptable date). The one number that should alarm.
+  const agingCount = React.useMemo(
+    () =>
+      visibleTasks.filter(
+        (t) =>
+          bandPosition(
+            {
+              type: t.type,
+              status: "open",
+              earliestAt: t.earliestAt,
+              targetAt: t.dueAt,
+              latestAt: t.latestAt,
+              dateSource: t.dateSource,
+              excludeFromPath: false,
+            },
+            toDateOnly(now),
+          ) === "aging",
+      ).length,
+    [visibleTasks, now],
+  );
+
   return (
     <div className="mx-auto w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
       <div className="flex flex-col gap-4 lg:gap-6">
@@ -541,8 +823,8 @@ export function ActivitiesPage() {
               {todayCount === 0
                 ? "No tasks due today"
                 : `${todayCount} ${todayCount === 1 ? "task" : "tasks"} due today`}
-              {overdue.length > 0 && (
-                <> · <span className="font-medium text-status-danger">{overdue.length} overdue</span></>
+              {agingCount > 0 && (
+                <> · <span className="font-medium text-status-danger">{agingCount} aging</span></>
               )}
             </p>
           </div>
@@ -616,36 +898,52 @@ export function ActivitiesPage() {
 
           {/* Today */}
           <Tabs.Content value="today" className="mt-4 focus-visible:outline-none">
-            {todayCount === 0 ? (
-              typeFilter !== "all" ? (
-                <FilteredEmptyCard typeLabel={typeFilterLabel(typeFilter)} onClear={() => setTypeFilter("all")} />
+            <div className="flex flex-col gap-4">
+              {/* External calendar meetings for today (read-only). Sits above the
+                  follow-up task sections and is independent of the type filter. */}
+              <TodaysMeetingsSection now={now} />
+              {/* navigatr-booked appointments for today (from a deal). Distinct
+                  from external meetings above and from appointment TASKS below. */}
+              {showBookedAppointments && (
+                <BookedAppointmentsSection appointments={todaysAppointments} onOpenDeal={handleOpenDeal} />
+              )}
+              {todayCount === 0 ? (
+                typeFilter !== "all" ? (
+                  <FilteredEmptyCard typeLabel={typeFilterLabel(typeFilter)} onClear={() => setTypeFilter("all")} />
+                ) : (
+                  <EmptyTodayCard />
+                )
               ) : (
-                <EmptyTodayCard />
-              )
-            ) : (
-              <div className="flex flex-col gap-4">
-                {overdue.length > 0 && (
+                <div className="flex flex-col gap-4">
+                  {overdue.length > 0 && (
                   <section className="flex flex-col gap-2">
-                    <p className="text-eyebrow text-status-danger">Overdue · {overdue.length}</p>
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-eyebrow text-status-danger">Overdue · {overdue.length}</p>
+                      <p className="text-caption text-text-muted">Your navigatr tasks and follow-ups</p>
+                    </div>
                     <div className="flex flex-col gap-2">
                       {overdue.map((t) => (
-                        <TaskRow key={t.id} task={t} now={now} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
+                        <TaskRow key={t.id} task={t} now={now} hasLoadableDeal={t.dealId != null && dealById.has(t.dealId)} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
                       ))}
                     </div>
                   </section>
                 )}
                 {today.length > 0 && (
                   <section className="flex flex-col gap-2">
-                    <p className="text-eyebrow text-text-subtle">Due today · {today.length}</p>
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-eyebrow text-text-subtle">Due today · {today.length}</p>
+                      <p className="text-caption text-text-muted">Your navigatr tasks and follow-ups</p>
+                    </div>
                     <div className="flex flex-col gap-2">
                       {today.map((t) => (
-                        <TaskRow key={t.id} task={t} now={now} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
+                        <TaskRow key={t.id} task={t} now={now} hasLoadableDeal={t.dealId != null && dealById.has(t.dealId)} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
                       ))}
                     </div>
                   </section>
                 )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </Tabs.Content>
 
           {/* Upcoming */}
@@ -663,7 +961,7 @@ export function ActivitiesPage() {
                     <p className="text-eyebrow text-text-subtle">{dayHeading(items[0]!.dueAt, now)}</p>
                     <div className="flex flex-col gap-2">
                       {items.map((t) => (
-                        <TaskRow key={t.id} task={t} now={now} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
+                        <TaskRow key={t.id} task={t} now={now} hasLoadableDeal={t.dealId != null && dealById.has(t.dealId)} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
                       ))}
                     </div>
                   </section>

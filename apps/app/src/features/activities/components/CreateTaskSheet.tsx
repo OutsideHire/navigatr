@@ -3,20 +3,22 @@
  *
  * Two modes:
  *   - Deal-bound (dealId given): the task is for that deal, no picker shown.
- *     Used from the deal record's quick actions.
- *   - Standalone (no dealId, `deals` given): a deal picker is shown. Used from
- *     the Activities header so a rep can create a task without opening a deal
- *     first. A "To-do" needs no deal; every other type does (the DB requires it).
+ *   - Standalone (no dealId, `deals` given): a deal picker is shown.
  *
- * Fields: type + title + due date, plus optional time-of-day and priority. The
- * due date is the visible target; the band (earliest/latest) is derived around
- * it from the business-day gap to today, and date_source is "interval". Repeat
- * is intentionally omitted: nothing honours a recurrence rule yet, so offering
- * one would be a promise the app can't keep.
+ * Per the Screen Content Spec §3: the five types are visible at once (not a
+ * dropdown) and the fields change with the type:
+ *   - Appointment: a REQUIRED start time; no priority; no repeat.
+ *   - Drop-in: no time; no priority; no repeat (a timed/priority/recurring
+ *     drop-in would corrupt Path routing).
+ *   - Call / Email / To-do: an optional reminder time + priority.
+ * A live window preview shows the three derived band dates. "Assigned to" shows
+ * the current rep (reassigning to another rep is a future feature). Repeat is
+ * intentionally omitted everywhere until a recurrence engine exists — a control
+ * that silently does nothing would be a false promise.
  */
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { differenceInBusinessDays, parseISO } from "date-fns";
+import { addBusinessDays, differenceInBusinessDays, format, parseISO } from "date-fns";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -24,10 +26,11 @@ import { cn } from "@/lib/utils";
 import { toDateOnly } from "@/lib/calendarDate";
 import { Button, FormField, Input, Select, type SelectOption } from "@/components/navigatr";
 import { useTaskMutations } from "../hooks/useTaskMutations";
+import { useGeocodeDealCoords } from "@/features/pipeline/hooks/useGeocodeDealCoords";
 import { bandsFromTarget } from "../lib/taskBands";
 import { type TaskType } from "../lib/isProspectTouch";
 
-const TYPE_OPTIONS: SelectOption[] = [
+const TYPES: Array<{ value: TaskType; label: string }> = [
   { value: "call", label: "Call" },
   { value: "email", label: "Email" },
   { value: "drop_in", label: "Drop-in" },
@@ -40,6 +43,28 @@ const PRIORITY_OPTIONS: SelectOption[] = [
   { value: "high", label: "High" },
   { value: "low", label: "Low" },
 ];
+
+const PLACEHOLDER: Record<TaskType, string> = {
+  call: "Follow up by phone",
+  email: "Send a follow-up email",
+  drop_in: "Swing by in person",
+  appointment: "Meeting agenda",
+  todo: "What needs doing?",
+};
+
+// Relative due-date shortcuts, in BUSINESS days (matches how the band interval
+// is computed). "Today" is 0.
+const DUE_SHORTCUTS: Array<{ label: string; businessDays: number }> = [
+  { label: "Today", businessDays: 0 },
+  { label: "In 3 days", businessDays: 3 },
+  { label: "1 week", businessDays: 5 },
+  { label: "2 weeks", businessDays: 10 },
+];
+
+const priorityShown = (t: TaskType) => t === "call" || t === "email" || t === "todo";
+const timeShown = (t: TaskType) => t !== "drop_in";
+const timeRequired = (t: TaskType) => t === "appointment";
+const timeLabel = (t: TaskType) => (t === "appointment" ? "Start time" : "Reminder time (optional)");
 
 export interface CreateTaskDealOption {
   id: string;
@@ -61,6 +86,7 @@ export interface CreateTaskSheetProps {
 
 export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, deals, defaultType }: CreateTaskSheetProps) {
   const { createTask } = useTaskMutations();
+  const geocodeDealCoords = useGeocodeDealCoords();
   const boundMode = dealId != null;
   const [type, setType] = React.useState<TaskType>(defaultType ?? "call");
   const [title, setTitle] = React.useState(dealName ?? "");
@@ -70,8 +96,8 @@ export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, deals, d
   const [priority, setPriority] = React.useState<string>("normal");
   const [error, setError] = React.useState<string | null>(null);
   const [dealError, setDealError] = React.useState<string | null>(null);
+  const [timeError, setTimeError] = React.useState<string | null>(null);
 
-  // Reset the form each time it opens for a (possibly different) deal.
   React.useEffect(() => {
     if (open) {
       setType(defaultType ?? "call");
@@ -82,6 +108,7 @@ export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, deals, d
       setPriority("normal");
       setError(null);
       setDealError(null);
+      setTimeError(null);
     }
   }, [open, dealName, defaultType]);
 
@@ -90,27 +117,52 @@ export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, deals, d
     [deals],
   );
 
+  // Live band preview: derive the three dates from today → the chosen due date.
+  const bands = React.useMemo(() => {
+    const interval = Math.max(
+      1,
+      differenceInBusinessDays(parseISO(dueDate), parseISO(toDateOnly(new Date()))),
+    );
+    return bandsFromTarget(dueDate, interval)!;
+  }, [dueDate]);
+
+  const setDueRelative = (businessDays: number) =>
+    setDueDate(format(addBusinessDays(new Date(), businessDays), "yyyy-MM-dd"));
+
   const submit = () => {
     let ok = true;
     if (!title.trim()) {
       setError("Title is required");
       ok = false;
     }
-    // Resolve the deal: bound mode uses the prop; standalone uses the picker.
-    // Every type except "todo" requires a deal (the DB enforces this too).
     const resolvedDealId = boundMode ? dealId! : pickedDealId || null;
     if (!boundMode && type !== "todo" && !resolvedDealId) {
       setDealError("Pick a deal for this task");
       ok = false;
     }
+    if (timeRequired(type) && !time) {
+      setTimeError("Start time is required for an appointment");
+      ok = false;
+    }
     if (!ok) return;
 
-    // Band interval = business-day gap from today to the chosen due date
-    // (min 1), treated as the interval per the SP1 spec.
-    const interval = Math.max(1, differenceInBusinessDays(parseISO(dueDate), parseISO(toDateOnly(new Date()))));
-    const bands = bandsFromTarget(dueDate, interval)!;
-    // Optional time-of-day → start_at (local wall-clock on the due date).
-    const startAt = time ? new Date(`${dueDate}T${time}`).toISOString() : null;
+    // Time-of-day maps to start_at for an appointment (a real scheduled start)
+    // and to reminder_at for a call/email/to-do (a nudge). Drop-in has no time.
+    const iso = timeShown(type) && time ? new Date(`${dueDate}T${time}`).toISOString() : null;
+    const startAt = type === "appointment" ? iso : null;
+    const reminderAt = type === "appointment" ? null : iso;
+    const priorityVal = priorityShown(type) && priority !== "normal" ? priority : null;
+
+    // A drop-in is only routable once its deal has coordinates. If the deal has
+    // an address but no coords (and no place_id), geocode + stamp lat/lng now so
+    // the drop-in joins the route instead of sitting in "No location yet". The
+    // hook re-reads the live deal row and applies the same guard as create-time,
+    // so a deal that already has coords or a place_id is left untouched.
+    // Best-effort and fire-and-forget: it never blocks task creation.
+    if (type === "drop_in" && resolvedDealId) {
+      geocodeDealCoords.mutate({ dealId: resolvedDealId });
+    }
+
     createTask.mutate(
       {
         type,
@@ -122,7 +174,8 @@ export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, deals, d
         originalTargetAt: bands.target_at,
         dateSource: "interval",
         startAt,
-        priority: priority === "normal" ? null : priority,
+        reminderAt,
+        priority: priorityVal,
       },
       {
         onSuccess: () => {
@@ -143,7 +196,7 @@ export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, deals, d
           className={cn(
             "fixed z-50 flex flex-col bg-surface-default text-text-default shadow-card-hover",
             "inset-x-0 bottom-0 max-h-[90dvh] rounded-t-radius-lg",
-            "sm:inset-auto sm:left-1/2 sm:top-1/2 sm:w-full sm:max-w-[440px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-radius-lg",
+            "sm:inset-auto sm:left-1/2 sm:top-1/2 sm:w-full sm:max-w-[460px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-radius-lg",
           )}
         >
           <div className="flex shrink-0 items-center justify-between gap-2 px-5 pb-3 pt-5">
@@ -160,13 +213,29 @@ export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, deals, d
           </div>
 
           <div className="flex flex-col gap-4 overflow-y-auto px-5 pb-5">
-            <FormField htmlFor="task-type" label="Type">
-              <Select
-                id="task-type"
-                value={type}
-                onValueChange={(v) => setType(v as TaskType)}
-                options={TYPE_OPTIONS}
-              />
+            {/* Type — all five visible at once (per spec, not a dropdown). */}
+            <FormField htmlFor="task-type-group" label="Type">
+              <div id="task-type-group" role="group" aria-label="Task type" className="flex flex-wrap gap-1.5">
+                {TYPES.map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    aria-pressed={type === t.value}
+                    onClick={() => {
+                      setType(t.value);
+                      setTimeError(null);
+                    }}
+                    className={cn(
+                      "rounded-radius-md border px-3 py-1.5 text-caption font-medium transition-colors",
+                      type === t.value
+                        ? "border-brand-primary bg-brand-primary/10 text-brand-primary"
+                        : "border-border-default text-text-muted hover:text-text-default",
+                    )}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
             </FormField>
 
             {/* Deal picker — standalone mode only. Optional for a To-do. */}
@@ -191,25 +260,67 @@ export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, deals, d
             )}
 
             <FormField htmlFor="task-title" label="Title" required error={error ?? undefined}>
-              <Input id="task-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What needs doing?" />
+              <Input id="task-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={PLACEHOLDER[type]} />
             </FormField>
 
-            <div className="flex gap-3">
-              <FormField htmlFor="task-due" label="Due date" className="flex-1">
+            {/* Due date + relative shortcuts + live window preview. */}
+            <FormField htmlFor="task-due" label="Due date">
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {DUE_SHORTCUTS.map((s) => (
+                    <button
+                      key={s.label}
+                      type="button"
+                      onClick={() => setDueRelative(s.businessDays)}
+                      className="rounded-radius-md border border-border-default px-2.5 py-1 text-caption text-text-muted transition-colors hover:text-text-default"
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
                 <Input id="task-due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-              </FormField>
-              <FormField htmlFor="task-time" label="Time (optional)" className="flex-1">
-                <Input id="task-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-              </FormField>
-            </div>
+                <p className="text-caption text-brand-primary tabular-nums">
+                  Target {bands.target_at} · earliest {bands.earliest_at} · latest {bands.latest_at} · interval
+                </p>
+              </div>
+            </FormField>
 
-            <FormField htmlFor="task-priority" label="Priority">
-              <Select
-                id="task-priority"
-                value={priority}
-                onValueChange={setPriority}
-                options={PRIORITY_OPTIONS}
-              />
+            {/* Time — appointment (required start) / call·email·to-do (optional reminder). */}
+            {timeShown(type) && (
+              <FormField
+                htmlFor="task-time"
+                label={timeLabel(type)}
+                required={timeRequired(type)}
+                error={timeError ?? undefined}
+              >
+                <Input
+                  id="task-time"
+                  type="time"
+                  value={time}
+                  onChange={(e) => {
+                    setTime(e.target.value);
+                    setTimeError(null);
+                  }}
+                />
+              </FormField>
+            )}
+
+            {/* Priority — call/email/to-do only (Path routes drop-in/appointment
+                by band urgency, so a manual priority there would fight the router). */}
+            {priorityShown(type) && (
+              <FormField htmlFor="task-priority" label="Priority">
+                <Select id="task-priority" value={priority} onValueChange={setPriority} options={PRIORITY_OPTIONS} />
+              </FormField>
+            )}
+
+            {/* Assigned to — the current rep for now (reassigning is a future feature). */}
+            <FormField htmlFor="task-assignee" label="Assigned to">
+              <div
+                id="task-assignee"
+                className="flex h-10 items-center rounded-radius-md border border-border-default bg-surface-sunken/40 px-3 text-body-md text-text-muted"
+              >
+                You
+              </div>
             </FormField>
           </div>
 

@@ -52,7 +52,7 @@ export interface UpdateDealInput {
     companyName?: string;
     contactName?: string;
     contactPhone?: string;
-    contactEmail?: string;
+    contactEmail?: string | null;
     contactTitle?: string;
     address?: string;
     industry?: string;

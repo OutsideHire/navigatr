@@ -73,6 +73,10 @@ export interface PipelineKpis {
   activeDeals: number;
   wonThisMonth: number;
   wonDealsThisMonth: number;
+  /** Active deals with no value yet. They contribute $0 to Total/Weighted, so
+   *  those KPIs understate without this caveat (search-first + Path deals can
+   *  land value-less). */
+  noValueActiveDeals: number;
 }
 
 /** Latest WON-transition timestamp per deal, from deal_stage_history.
@@ -107,7 +111,7 @@ export function computeKpis(
   deals: Deal[] | undefined,
   wonAtByDeal?: Map<string, string>,
 ): PipelineKpis {
-  const zero = { totalPipeline: 0, weighted: 0, activeDeals: 0, wonThisMonth: 0, wonDealsThisMonth: 0 };
+  const zero = { totalPipeline: 0, weighted: 0, activeDeals: 0, wonThisMonth: 0, wonDealsThisMonth: 0, noValueActiveDeals: 0 };
   if (!deals || deals.length === 0) return zero;
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -125,6 +129,7 @@ export function computeKpis(
       k.totalPipeline += dDeal.valueCents;
       k.weighted += Math.round(dDeal.valueCents * (dDeal.probability / 100));
       k.activeDeals += 1;
+      if (!dDeal.valueCents) k.noValueActiveDeals += 1;
     }
   }
   return k;
@@ -379,9 +384,13 @@ function KpiStrip({
   wonAtByDeal: Map<string, string>;
 }) {
   const k = React.useMemo(() => computeKpis(deals, wonAtByDeal), [deals, wonAtByDeal]);
-  const tiles = [
+  const noValueCaveat =
+    k.noValueActiveDeals > 0
+      ? `${k.noValueActiveDeals} ${k.noValueActiveDeals === 1 ? "deal carries" : "deals carry"} no value`
+      : undefined;
+  const tiles: Array<{ dot: string; eyebrow: string; value: string; caveat?: string }> = [
     { dot: "teal",    eyebrow: filtered ? "Pipeline (filtered)" : "Total pipeline", value: fmtMoneyShort(k.totalPipeline) },
-    { dot: "violet",  eyebrow: "Weighted",       value: fmtMoneyShort(k.weighted) },
+    { dot: "violet",  eyebrow: "Weighted",       value: fmtMoneyShort(k.weighted), caveat: noValueCaveat },
     { dot: "blue",    eyebrow: "Active deals",   value: String(k.activeDeals) },
     { dot: "success", eyebrow: "Won this month", value: fmtMoneyShort(k.wonThisMonth) },
   ];
@@ -394,6 +403,7 @@ function KpiStrip({
             {t.eyebrow}
           </span>
           <span className="text-heading-lg tabular-nums text-text-default">{t.value}</span>
+          {t.caveat && <span className="text-caption text-text-muted">{t.caveat}</span>}
         </div>
       ))}
     </div>

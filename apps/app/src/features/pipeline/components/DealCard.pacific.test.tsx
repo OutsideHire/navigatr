@@ -41,7 +41,9 @@ function renderCard(over: Partial<Deal>) {
 describe("DealCard — follow-up renders on the correct day (Pacific, UTC+12)", () => {
   it("renders a noon-UTC Jul-9 follow-up as 'Jul 9', not a day late", () => {
     renderCard({ stage: "contacted", nextFollowup: dateOnlyToNoonUtcIso("2026-07-09") });
-    expect(screen.getByText(/Jul 9/)).toBeInTheDocument();
+    // The day now appears in both the follow-up chip and the footer's
+    // "Next: verb · date"; both must render the correct UTC calendar day.
+    expect(screen.getAllByText(/Jul 9/).length).toBeGreaterThan(0);
     // Pre-fix local rendering pushed noon-UTC + 12h into the next day.
     expect(screen.queryByText(/Jul 10/)).not.toBeInTheDocument();
   });

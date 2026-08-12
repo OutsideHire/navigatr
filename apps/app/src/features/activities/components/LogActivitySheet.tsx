@@ -26,6 +26,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   Calendar,
+  Check,
   ChevronDown,
   ChevronUp,
   Mail,
@@ -54,6 +55,9 @@ import { type ActivityType } from "../mockData";
 import { useLogActivity } from "../hooks/useLogActivity";
 import { useFollowupSync } from "@/features/appointments/useFollowupSync";
 import { DISPOSITIONS_BY_TYPE, DISPOSITION_VALUES } from "../lib/dispositionSets";
+import { formatLogConfirmation } from "../lib/logConfirmation";
+import { friendlyLogError } from "../lib/friendlyLogError";
+import { repOutcomeLabel, repOutcomeSubtitle } from "@/features/path/lib/outcomeRepLabels";
 
 // ───────────────────────────────────────────────────────────────────────
 // Type picker
@@ -254,6 +258,12 @@ function ActivityForm({
   const [nextStep, setNextStep] = React.useState("");
   const [captureError, setCaptureError] = React.useState<string | null>(null);
 
+  // Post-log confirmation, held inline so the rep sees what the platform did
+  // (which follow-up task[s] it created, any record change) right where they're
+  // looking, instead of relying only on the corner toast. Set on success; the
+  // sheet then auto-closes after a short beat.
+  const [confirmed, setConfirmed] = React.useState<{ title: string; lines: string[] } | null>(null);
+
   const {
     register,
     handleSubmit,
@@ -283,7 +293,7 @@ function ActivityForm({
     }
     const followUpIso = isCallback ? callbackAt : calculateFollowUpDate(values.disposition);
     try {
-      const { id } = await logActivity.mutateAsync({
+      const { id, confirmation } = await logActivity.mutateAsync({
         dealId,
         type,
         disposition: values.disposition,
@@ -300,19 +310,67 @@ function ActivityForm({
       // The log's DB trigger has moved the deal's next_followup_at — reconcile
       // its calendar event. Fire-and-forget: never blocks or fails the log.
       void syncFollowup(dealId);
-      if (followUpIso) {
-        toast.success(`Activity logged. Follow-up: ${formatFollowUpDate(followUpIso)}`);
-      } else {
-        toast.success("Activity logged. No follow-up scheduled.");
-      }
+      // Parent refreshes its activity list immediately.
       onLogged(id);
-      onClose();
+      // Post-log confirmation (Screen Content Spec §5): tell the rep what the
+      // platform just did (which task[s] it created or none, and any
+      // record-state change), not just that "something" happened. Render it
+      // inline in the rep's focus (the corner toast alone was not noticeable),
+      // then hold the sheet open a beat before it closes.
+      const { title, lines } = formatLogConfirmation(confirmation);
+      setConfirmed({ title, lines });
+      toast.success(title, { description: lines.join("\n"), duration: 8000 });
+      // The delayed auto-close is driven by an effect keyed on `confirmed`
+      // (below), so a manually-closed or reopened sheet can cancel a pending
+      // timer instead of letting a stale one fire onClose().
     } catch (err) {
-      // RLS denial / network failure / org mismatch — surface raw message.
-      // We do NOT close the sheet so the rep can retry without re-entering.
-      toast.error(err instanceof Error ? err.message : "Could not log activity");
+      // Network failure, or the deal is no longer in the workspace (FK / RLS /
+      // org mismatch on stale sample data). Map the latter to a clear, actionable
+      // line instead of a generic failure. We do NOT close the sheet so the rep
+      // can retry (or close and dismiss the dead row) without re-entering.
+      toast.error(friendlyLogError(err));
     }
   };
+
+  // Delayed auto-close: once the confirmation panel is showing, hold it a beat
+  // then close the sheet. Driven from an effect (not an inline setTimeout in
+  // the submit handler) so the timer is owned by React's lifecycle: the
+  // cleanup clears it if the sheet is closed manually or reopened before it
+  // fires, preventing a stale timer from closing a freshly-reopened sheet.
+  // The `!confirmed` guard means it never fires on mount (confirmed is null).
+  React.useEffect(() => {
+    if (!confirmed) return;
+    const timer = window.setTimeout(() => onClose(), 2600);
+    return () => window.clearTimeout(timer);
+  }, [confirmed, onClose]);
+
+  // Success state: the inline confirmation panel replaces the form so the
+  // "what the platform just did" message lands squarely in the rep's focus.
+  if (confirmed) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-6 pt-2">
+        <div
+          role="status"
+          aria-live="polite"
+          className="rounded-radius-lg bg-status-success-bg p-5"
+        >
+          <div className="flex items-start gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-surface-default text-status-success">
+              <Check className="h-5 w-5" aria-hidden />
+            </span>
+            <div className="flex flex-col gap-1">
+              <p className="text-body-strong text-status-success">{confirmed.title}</p>
+              {confirmed.lines.map((line, i) => (
+                <p key={i} className="text-caption text-text-default">
+                  {line}
+                </p>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -369,8 +427,8 @@ function ActivityForm({
                       <DispositionTile
                         key={d}
                         tier={spec.tier}
-                        title={spec.label}
-                        description={spec.rationale}
+                        title={repOutcomeLabel(d)}
+                        description={repOutcomeSubtitle(d)}
                         selected={field.value === d}
                         onClick={() => field.onChange(d)}
                       />

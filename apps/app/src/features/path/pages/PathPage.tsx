@@ -6,10 +6,9 @@
  * chips. Tapping a merchant opens a detail sheet with quick actions.
  *
  * Layout:
- *   Mobile: a Map/List toggle (Apple Maps pattern would be a draggable
- *           bottom sheet, but a tab toggle is simpler and works on
- *           every browser without gesture handling). Filters always
- *           visible above the active view.
+ *   Mobile: list-first, with a Show/Hide map toggle (the map defaults
+ *           hidden so it never eats the small screen). Filters always
+ *           visible above the list.
  *   Desktop (md+): map on the left (60%), list on the right (40%),
  *           filters at top spanning both.
  *
@@ -32,7 +31,7 @@
 
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import { List, ListChecks, Loader2, LocateFixed, Lock, Map as MapIcon, MapPinned, MapPinOff, Navigation, Route as RouteIcon, Settings } from "lucide-react";
+import { Loader2, LocateFixed, Lock, Map as MapIcon, MapPinned, MapPinOff, Navigation, Plus, Route as RouteIcon, Settings } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button, Card, Chip } from "@/components/navigatr";
@@ -50,7 +49,8 @@ import { MerchantList, type MerchantWithDistance } from "../components/MerchantL
 import { MerchantDetailSheet } from "../components/MerchantDetailSheet";
 import { CreatePathWizard } from "../components/CreatePathWizard";
 import { PlanPathWizard } from "./PlanPathWizard";
-import { PathEntry } from "../components/PathEntry";
+import { TodaysPathView, ADD_NEARBY_ENABLED } from "../components/TodaysPathView";
+import { PathOverflowSheet } from "../components/PathOverflowSheet";
 import { UpcomingPaths } from "../components/UpcomingPaths";
 import { PathSettings } from "../components/PathSettings";
 import { ActivePathView } from "../components/ActivePathView";
@@ -66,17 +66,21 @@ import { planQueueMigration } from "../lib/migrateLocalQueue";
 import { useMerchants } from "../hooks/useMerchants";
 import { discoveryShortfallHint } from "../lib/discoveryHint";
 import { sortMerchants, type PathSortMode } from "../lib/sortMerchants";
+import { daySubhead } from "../lib/daySubhead";
 import { useCalendarEvents } from "../hooks/useCalendarEvents";
-import { useGeolocation } from "../hooks/useGeolocation";
 import { computeFreeWindows } from "../lib/freeWindows";
-import { annotateRunSchedule } from "../lib/runSchedule";
 import { pickNextMeeting, fitsBeforeMeeting } from "../lib/discoverFit";
 import { DiscoverMeetingBanner } from "../components/DiscoverMeetingBanner";
 import { useQueryClient } from "@tanstack/react-query";
 import { useOwedVisits } from "../hooks/useOwedVisits";
+import { useTodaysPath } from "../hooks/useTodaysPath";
+import { useBackfillOwedCoords } from "../hooks/useBackfillOwedCoords";
+import type { OrderedStop } from "../lib/todaysPath";
 import { OwedVisitsList, type OwedVisitRow } from "../components/OwedVisitsList";
 import type { OwedVisit } from "../lib/owedVisits";
 import { useTaskMutations } from "@/features/activities/hooks/useTaskMutations";
+import { usePathPreferences } from "../hooks/usePathPreferences";
+import { selectedCategories } from "../lib/industrySelection";
 
 // Phase 2: discovered prospects are all cold leads, so the old deal-lifecycle
 // status chips (prospect/active/won/cooled) don't apply. Filter by business
@@ -86,8 +90,6 @@ type CategoryFilter = "all" | MerchantCategory;
 function chipLabel(f: CategoryFilter): string {
   return f === "all" ? "All" : CATEGORY_LABEL[f];
 }
-
-type ViewMode = "map" | "list";
 
 // Radius options (miles → meters). The selected radius drives the INGEST:
 // useMerchants(origin, { radiusM }) fetches + caches that whole area from Google
@@ -122,6 +124,29 @@ export function PathPage() {
   // (fetch every bucket); otherwise the selected categories scope the ingest.
   const [ingestIndustries, setIngestIndustries] = React.useState<MerchantCategory[]>([]);
   const [ingestAllIndustries, setIngestAllIndustries] = React.useState(false);
+  // Seed the discover ingest from the rep's effective default industries so the
+  // first browse fetch scopes to relevant buckets, not an empty set. Runs ONCE,
+  // the first time the preference query resolves (guarded by a ref) so a later
+  // refetch OR a rep's in-session edit via the CreatePathWizard
+  // (onIndustriesChange / onAllIndustriesChange) is never clobbered. Note
+  // `usePathPreferences` substitutes a recommended set when the rep has saved
+  // nothing, so `selectedCategories` is effectively always non-empty here: a
+  // no-saved rep is seeded to the recommended industries (relevant defaults),
+  // not raw "all". The all-industries branch is a defensive fallback only.
+  const { data: pathPrefs } = usePathPreferences();
+  const industriesSeededRef = React.useRef(false);
+  React.useEffect(() => {
+    if (industriesSeededRef.current || !pathPrefs) return;
+    industriesSeededRef.current = true;
+    const seed = selectedCategories(pathPrefs);
+    if (seed.length > 0) {
+      setIngestIndustries(seed);
+      setIngestAllIndustries(false);
+    } else {
+      // Unreachable in practice (see note above); fall back to all industries.
+      setIngestAllIndustries(true);
+    }
+  }, [pathPrefs]);
   // Results count — how many nearby businesses the discovery fetch returns/shows
   // (the pool size, NOT the stop cap). Default 25, clamped to [1, 50] in the hook.
   const [discoverLimit, setDiscoverLimit] = React.useState(25);
@@ -148,7 +173,11 @@ export function PathPage() {
   const [sortMode, setSortMode] = React.useState<PathSortMode>(DEFAULT_SORT_MODE);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = React.useState(false);
-  const [view, setView] = React.useState<ViewMode>("list"); // default to list until merchants are geocoded
+  // Show/Hide map (Path QA R4). Default HIDDEN so mobile leads with the list and
+  // the map never eats the small screen. Desktop always shows the map regardless
+  // of this state (the toggle and this flag only govern mobile) — see the
+  // `md:block` gate on the map pane and the `md:hidden` gate on the toggle.
+  const [mapVisible, setMapVisible] = React.useState(false);
 
   // Calendar-Aware Path (Slice 1): ephemeral planning overlay. The wizard emits
   // its day time-window; we read the rep's calendar for that window and derive
@@ -176,16 +205,11 @@ export function PathPage() {
 
   // Path-first view state machine:
   //   "entry"    — no active path, show two-card prompt (create / plan)
-  //   "path"     — a path with stops: the two-tab (Run | Stops) surface when it's
+  //   "path"     — a path with stops: the card-first active-RUN surface when it's
   //                in progress/completed (started_at set), or the Stops overview
   //                when it's Planned (started_at null — legacy or not-yet-started).
   //   "discover" — add-stops mode: map+list discovery, demoted from default
   const [pathView, setPathView] = React.useState<"entry" | "path" | "discover">("entry");
-  // Which tab of the two-tab active-path surface is showing. TRANSIENT UI state —
-  // deliberately NOT persisted across reload/return: re-entry always re-derives
-  // Run @ first pending (resume-in-place). Within a session a manual switch to
-  // Stops sticks until the rep leaves the Path tab.
-  const [activeTab, setActiveTab] = React.useState<"run" | "stops">("run");
 
   // Server-backed today's path. queueStops keeps the same name so all
   // downstream route math, badge counts, etc. keep working unchanged.
@@ -196,15 +220,27 @@ export function PathPage() {
   const prevUnfinished = usePreviousUnfinishedPath();
   const { continuePreviousPath, closePreviousPath } = usePathMutations();
 
-  // Route-around optimizer (Slice 2): a live, meeting-aware overlay for the
-  // RUNNING path. This is independent of the planning `calWindow` above — we
-  // always read TODAY's calendar so the Run tab can surface the current stop's
-  // ETA and warn when it will overrun the next fixed meeting. Purely additive +
-  // non-blocking: `runOverlay` stays null (nothing new renders, the running
-  // card looks exactly as before) unless the calendar is connected ("ok"),
-  // there is at least one meeting/time-block today, a pending stop remains, and
-  // we have a start location. The overlay's current stop is the first pending
-  // stop — the same one RunningPath seeks to on entry.
+  // Auto-built Today's Path (SP-B1/B2): the prioritized proposal the entry
+  // landing renders as its primary content. THIN: the assembler owns all
+  // ordering/selection; here we only read it and hand its flexible stops to the
+  // same create+start mechanism `handleStartPath` uses.
+  const todaysPath = useTodaysPath(origin);
+
+  // Lazy geocode: owed drop-ins that surfaced in "No location yet" BUT carry a
+  // street address get geocoded once (per dealId, per session) and their lat/lng
+  // stamped, so they graduate into the routed path on the next read. Only stubs
+  // with an address are eligible.
+  const noLocationWithAddress = React.useMemo(
+    () => todaysPath.noLocation.filter((s) => Boolean(s.address && s.address.trim())),
+    [todaysPath.noLocation],
+  );
+  useBackfillOwedCoords(noLocationWithAddress);
+
+  // TODAY's calendar, read live for the discover view's meeting-aware banner +
+  // drop-in fit flags (below). Independent of the planning `calWindow` above.
+  // The running Driving screen now composes its own day view via
+  // useDrivingSequence inside RunningPath, so PathPage no longer computes a
+  // separate run overlay here.
   const runTodayWindow = React.useMemo(() => {
     const s = new Date();
     s.setHours(0, 0, 0, 0);
@@ -218,57 +254,13 @@ export function PathPage() {
   // so TanStack dedupes them to one cached fetch. `useCalendarEvents(null)` is a
   // no-op (its query is `enabled` only when the window is set), so entry / planned
   // / finished paths that never open discover still never touch the calendar.
-  const calNeeded = pathView === "discover" || (startedAt && hasPending);
+  const calNeeded = pathView === "discover" || pathView === "path" || (startedAt && hasPending);
   const runWindow = calNeeded ? runTodayWindow : null;
   const {
     waypoints: runWaypoints,
     timeBlocks: runTimeBlocks,
     status: runCalStatus,
   } = useCalendarEvents(runWindow);
-  const runGeo = useGeolocation();
-  const runOverlay = React.useMemo(() => {
-    const pending = queueStops.filter((s) => s.status === "pending");
-    const startLoc = runGeo.coords ?? origin;
-    if (runCalStatus !== "ok" || pending.length === 0 || !startLoc) {
-      return null;
-    }
-    const result = annotateRunSchedule({
-      now: new Date().toISOString(),
-      startLoc,
-      stops: pending.map((s) => ({ id: s.merchantId, name: s.name, lat: s.lat, lng: s.lng })),
-      waypoints: runWaypoints.map((w) => ({
-        id: w.id,
-        title: w.title,
-        start: w.start,
-        end: w.end,
-        lat: w.lat,
-        lng: w.lng,
-      })),
-      timeBlocks: runTimeBlocks.map((b) => ({ id: b.id, title: b.title, start: b.start, end: b.end })),
-    });
-    // Guard on the POST-drop result: annotateRunSchedule drops meetings that
-    // already ended, so an afternoon rep whose only meeting is over ends up with
-    // zero FUTURE meetings — no overlay (matches spec). This subsumes both the
-    // "no meetings at all" and "all meetings already ended" cases, so the raw
-    // runWaypoints/runTimeBlocks emptiness check is no longer needed.
-    if (result.meetings.length === 0) return null;
-    const current = result.stops[0];
-    if (!current) return null;
-    const nextMeeting = result.meetings.find((m) => m.id === current.nextMeetingId) ?? null;
-    const stopsUntil = current.nextMeetingId
-      ? result.stops.filter((s) => s.nextMeetingId === current.nextMeetingId).length
-      : 0;
-    return {
-      arrive: current.arrive,
-      dwellMin: 20,
-      currentStopName: pending[0].name,
-      nextMeeting: nextMeeting
-        ? { title: nextMeeting.title, start: nextMeeting.start, located: nextMeeting.located }
-        : null,
-      stopsUntilNextMeeting: stopsUntil,
-      fits: current.fitsBeforeNextMeeting,
-    };
-  }, [queueStops, runWaypoints, runTimeBlocks, runCalStatus, runGeo.coords, origin]);
 
   // Lifecycle landing rule (design's lifecycle table). Derives where the rep
   // lands from started_at + pending stops, uniformly across tab switch, reopen,
@@ -278,31 +270,41 @@ export function PathPage() {
   React.useEffect(() => {
     setPathView((v) => {
       if (v === "discover") return v;
-      if (queueStops.length === 0) return "entry";
+      if (queueStops.length === 0) {
+        // No persisted merchant stops. Normally the entry landing. BUT an
+        // appointment-only (or live-tier-only) day has nothing to persist yet is
+        // still a real day the rep can run — the driving view reads appointments
+        // / owed / due-today live (useDrivingSequence). So once such a day has
+        // been explicitly started (started_at stamped by handleStartTodaysPath,
+        // which also sets pathView "path"), keep the current view rather than
+        // yanking the rep back to the landing.
+        return startedAt ? v : "entry";
+      }
       // Stops exist:
-      //  - startedAt null (Planned / legacy) → the overview ("path" w/ Stops), no
-      //    auto-jump into a run.
-      //  - startedAt set → the two-tab surface (also "path"); the tab is derived
-      //    below.
+      //  - startedAt null (Planned / legacy) → the Stops overview (ActivePathView,
+      //    still "path"), no auto-jump into a run.
+      //  - startedAt set → the card-first active-run surface (RunningPath, also
+      //    "path"; no Run|Stops tabs). Which of the two renders is decided by the
+      //    lifecycle `landing` in the "path" branch below.
       return "path";
     });
   }, [queueStops.length, startedAt]);
 
-  // Resume-in-place: whenever we're on the path surface for a STARTED path, the
-  // default tab is Run (RunningPath seeks the first pending stop itself; Summary
-  // when complete). This effect only sets the default on entry to the surface and
-  // when the lifecycle materially changes — a manual switch to Stops (setActiveTab)
-  // is not clobbered because we key it on startedAt + landing, not every render.
-  React.useEffect(() => {
-    if (startedAt) setActiveTab("run");
-  }, [startedAt, pathView === "path"]);
-
   // Handlers for transitioning between views.
   const enterDiscover = React.useCallback(() => setPathView("discover"), []);
-  // Leave discover → "entry"; the queueStops sync effect immediately upgrades to
-  // "path" when stops exist. Avoids a stale queueStops.length read right after
-  // an async add.
-  const handleDoneDiscovering = React.useCallback(() => setPathView("entry"), []);
+  // Leave discover → go straight to the right view from the CURRENT stop count:
+  // "path" when the rep has stops (the ones they just added already landed in the
+  // cache), else "entry". Routing through "entry" and leaning on the queueStops
+  // sync effect to upgrade to "path" left the rep stranded on the entry/proposal
+  // view whenever the add had already settled before they tapped Next — that
+  // effect only re-runs when queueStops.length / startedAt change, not on the view
+  // switch, so it never fired (Path QA R4: added stops missing until a refresh).
+  // If the add is still in flight (length still 0), we land on "entry" and the
+  // sync effect upgrades to "path" the moment the stops arrive.
+  const handleDoneDiscovering = React.useCallback(
+    () => setPathView(queueStops.length > 0 ? "path" : "entry"),
+    [queueStops.length],
+  );
 
   // Continue the unfinished path into today: reparent its pending stops; the
   // stops-sync effect then moves us to the active home once they land.
@@ -325,11 +327,15 @@ export function PathPage() {
     if (prev) closePreviousPath.mutate({ prevPathId: prev.pathId, prevPathDate: prev.pathDate });
   }, [prevUnfinished.data, closePreviousPath]);
 
-  const handleCreate = React.useCallback(() => { if (!closePreviousPath.isPending) finalizePrevious(); setCreateOpen(true); }, [finalizePrevious, closePreviousPath.isPending]);
-  // "Plan a Path" opens the stepped slide-out wizard (mode → search → results →
+  // "Plan a new area" opens the stepped slide-out wizard (mode → search → results →
   // review → schedule → saved). The in-page map/list discover view is still
   // reachable via "Add stops" on an active path (ActivePathView.onAddStops).
   const handlePlan = React.useCallback(() => { if (!closePreviousPath.isPending) finalizePrevious(); setPlanOpen(true); }, [finalizePrevious, closePreviousPath.isPending]);
+
+  // Header "+" overflow (FR-PATH-UX-12): the rarely-used actions ("Add more stops
+  // today", "Plan a new area", "Who's near me right now") live in a sheet so they
+  // stop competing with the daily action on the "Your day" landing.
+  const [overflowOpen, setOverflowOpen] = React.useState(false);
 
   // One-time migration: an existing local queue -> today's server path. Runs once
   // per device when merchants are loaded (snapshots need their display fields).
@@ -357,7 +363,9 @@ export function PathPage() {
     const p = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
   }, []);
-  const { owed: owedVisits } = useOwedVisits(pathView === "discover" ? todayDate : "");
+  const { owed: owedVisits } = useOwedVisits(
+    pathView === "discover" || pathView === "path" ? todayDate : "",
+  );
 
   // Discovery dedup: an owed visit is an existing active deal, which pipeline
   // de-dup already hides from discovery — but guard anyway so a due account can
@@ -666,29 +674,157 @@ export function PathPage() {
     [createMerchants, todayPath],
   );
 
+  // One-tap Start from discover (Path QA C3): launch the run straight from the
+  // stops the rep has queued in discover, skipping the review wizard. REUSES
+  // handleStartPath (its clear() + addMany(..., { start: true }) core) rather than
+  // duplicating the create+start logic — we only hand it the queued stops' ids,
+  // exactly as the CreatePathWizard's onStart does with its ordered selection.
+  const handleStartFromDiscover = React.useCallback(() => {
+    if (queueStops.length === 0) return;
+    void handleStartPath(queueStops.map((s) => s.merchantId));
+  }, [queueStops, handleStartPath]);
+
+  // Start the auto-built Today's Path from its FLEXIBLE stops. Appointments are
+  // calendar anchors shown in the plan but never created as merchant stops (they
+  // already come from the calendar). This REUSES the exact create+start mechanism
+  // handleStartPath uses (clear() then addMany(..., { start: true }) through
+  // usePathMutations) rather than inventing a parallel path-create. The only
+  // difference is the snapshot source: flexible OrderedStops (owed / due-today /
+  // nearby) instead of wizard-selected merchant ids. Nearby stops are enriched
+  // from the loaded browse set when present; owed / due-today deals carry no
+  // merchant record, so they fall back to the ordered-stop fields.
+  const [startingTodaysPath, setStartingTodaysPath] = React.useState(false);
+  const handleStartTodaysPath = React.useCallback(
+    async (flexibleStops: OrderedStop[]) => {
+      if (startingTodaysPath) return;
+      const byId = new Map(liveMerchants.map((m) => [m.id, m]));
+      // Only the "nearby" tier is persisted as path_stops here. A nearby stop's
+      // id IS a real prospects.id, which satisfies path_stops.prospect_id's NOT
+      // NULL FK. past_due / due_today stops carry a TASK id (see useTodaysPath),
+      // which is NOT a prospects row, so routing them through addStops' single
+      // batched upsert would fail the whole insert on a real DB. Those live tiers
+      // are DEALS/tasks rendered live in the run by SP-C2/C3 (useOwedVisits /
+      // useDueTodayVisits, which carry dealId/placeId), never persisted here.
+      const snapshots = flexibleStops
+        .filter((s) => s.kind === "flexible" && s.tier === "nearby" && s.lat != null && s.lng != null)
+        .map((s) => {
+          const m = byId.get(s.id);
+          return {
+            prospectId: s.id,
+            name: s.name,
+            address: m?.address ?? null,
+            phone: m?.phone ?? null,
+            lat: s.lat as number,
+            lng: s.lng as number,
+            category: (m?.category ?? "other") as MerchantCategory,
+            primaryType: m?.primaryType ?? null,
+          };
+        });
+      // A day with owed / due-today work OR appointments but no nearby stop has
+      // nothing to persist as a path_stop, yet it is still a meaningful day: the
+      // driving view reads appointments / owed / due-today live (useDrivingSequence),
+      // so it does not need persisted merchant stops. Stamp started_at (via
+      // start()) and flip to the running surface rather than blocking the rep with
+      // a false "nothing to start". The hero Start only renders when the day has at
+      // least one stop, so reaching here always means there is something to drive.
+      if (snapshots.length === 0) {
+        setStartingTodaysPath(true);
+        try {
+          finalizePrevious();
+          await todayPath.start();
+          // No queueStops to trigger the view-transition effect, so drive the
+          // view directly to the running surface (the effect preserves it once
+          // started_at is stamped).
+          setPathView("path");
+        } catch {
+          toast.error("Couldn't start the path. Please try again.");
+        } finally {
+          setStartingTodaysPath(false);
+        }
+        return;
+      }
+      setStartingTodaysPath(true);
+      try {
+        await todayPath.clear();
+        await todayPath.addMany(snapshots, { start: true });
+        finalizePrevious();
+      } catch {
+        toast.error("Couldn't start the path. Please try again.");
+      } finally {
+        setStartingTodaysPath(false);
+      }
+    },
+    [startingTodaysPath, liveMerchants, todayPath, finalizePrevious],
+  );
+
   return (
     <div className="mx-auto flex h-[calc(100dvh-4rem)] w-full flex-col px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
       {/* Header */}
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        {/* Header title + subhead. The ENTRY landing reads "Your day" with a
+            four-state day subhead (v2.2 A6). Every other view (active run,
+            discover) keeps the "Path" title and the "{N} merchants nearby"
+            count. Discover additionally gets one quiet muted line clarifying
+            those are nearby businesses, not stops on the day — the vocabulary
+            rule's only count-difference explainer. */}
         <div className="flex flex-col gap-1">
-          <h1 className="text-heading-lg text-text-default">Path</h1>
-          <p className="text-body-md text-text-muted">
-            {sorted.length} {sorted.length === 1 ? "merchant" : "merchants"}
-            {anyGeocoded
-              ? ` nearby · ${originSource === "manual" ? originLabel : "from your location"}`
-              : " · sorted by recent activity"}
-          </p>
+          {pathView === "entry" ? (
+            <>
+              <h1 className="text-heading-lg text-text-default">Your day</h1>
+              <p className="text-body-md text-text-muted">
+                {/* One authoritative day count (A10 / 3.4): the landing states
+                    the day's FULL ordered roster = the assembler's proposal
+                    length (appointments + owed + due-today + nearby). This is
+                    the same day-roster concept the run screen counts (there via
+                    useDrivingSequence's dayTotal), expressed here pre-start.
+                    started=false because the landing is always the pre-run
+                    review; the underway "Next at" state is rendered on the run
+                    screen. */}
+                {daySubhead({
+                  stopCount: todaysPath.proposal.length,
+                  startsAt: todaysPath.startsAt,
+                  started: false,
+                })}
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-heading-lg text-text-default">Path</h1>
+              <p className="text-body-md text-text-muted">
+                {sorted.length} {sorted.length === 1 ? "merchant" : "merchants"}
+                {anyGeocoded
+                  ? ` nearby · ${originSource === "manual" ? originLabel : "from your location"}`
+                  : " · sorted by recent activity"}
+              </p>
+              {pathView === "discover" && (
+                <p className="text-caption text-text-subtle">
+                  These are businesses near you, not stops on your day.
+                </p>
+              )}
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2">
-          {pathView !== "path" && (
+          {/* Start-a-path actions + the location control live in the header ONLY
+              on the browse/discover view. On the entry landing the Today's Path
+              proposal owns the daily action, and the rarely-used flows live in the
+              "+" overflow sheet, so we hide these there; on an active run
+              (pathView "path") they stay hidden too. */}
+          {pathView === "discover" && (
             <>
+              {/* "Plan a new area" is the rarely-used secondary action here. On
+                  mobile the discover header is crowded, so hide it below md (it
+                  stays on desktop, and is also reachable from the entry-view "+"
+                  overflow). Primary "Start a path" + the location control + the
+                  settings gear stay visible on every breakpoint. */}
               <Button
                 variant="tertiary"
                 size="sm"
                 leadingIcon={MapPinned}
                 onClick={() => setPlanOpen(true)}
+                className="hidden md:inline-flex"
               >
-                Plan ahead
+                Plan a new area
               </Button>
               <Button
                 variant="secondary"
@@ -697,19 +833,35 @@ export function PathPage() {
                 onClick={() => setCreateOpen(true)}
                 disabled={!anyGeocoded}
               >
-                Create path
+                Start a path
               </Button>
             </>
           )}
-          <Button
-            variant="secondary"
-            size="sm"
-            leadingIcon={geoStatus === "loading" ? Loader2 : LocateFixed}
-            onClick={useMyLocation}
-            loading={geoStatus === "loading"}
-          >
-            {originSource === "gps" ? "Re-center" : "Use my location"}
-          </Button>
+          {pathView !== "entry" && (
+            <Button
+              variant="secondary"
+              size="sm"
+              leadingIcon={geoStatus === "loading" ? Loader2 : LocateFixed}
+              onClick={useMyLocation}
+              loading={geoStatus === "loading"}
+            >
+              {originSource === "gps" ? "Re-center" : "Use my location"}
+            </Button>
+          )}
+          {/* "+" overflow (the rarely-used Path actions). Surfaced on the "Your
+              day" landing only, where it replaces the demoted secondary buttons;
+              on discover the header already exposes those actions, and on an active
+              run they don't belong. */}
+          {pathView === "entry" && (
+            <Button
+              variant="tertiary"
+              size="sm"
+              iconOnly
+              leadingIcon={Plus}
+              aria-label="More Path actions"
+              onClick={() => setOverflowOpen(true)}
+            />
+          )}
           {/* Path settings — manage default industries. Visible in every
               pathView (entry / active / discover) since it lives in the
               always-rendered header action group. */}
@@ -752,8 +904,10 @@ export function PathPage() {
              of pathView so a rep without a location still sees the right empty state.
           2. Origin set → switch on pathView:
              - "entry":    two-card prompt (create / plan a path)
-             - "path":     the active path — two-tab Run | Stops surface when
-                           started (started_at set), else the Stops overview
+             - "path":     the active path. When started (started_at set), the
+                           card-first RunningPath (current-stop card + an
+                           expandable list/map of what remains, no tabs); else
+                           the planned Stops overview (ActivePathView)
              - "discover": filter controls + map+list discovery ladder
           Filter chips, radius/sort controls are discovery-only and live
           exclusively inside the "discover" branch. Header + location bar are always above. */}
@@ -806,7 +960,11 @@ export function PathPage() {
           )}
         </Card>
       ) : pathView === "entry" ? (
-        <>
+        // Own scroll region within the fixed-height shell: a long proposal +
+        // "Won't fit today" + no-location list must scroll HERE, not overflow the
+        // box and paint over the AppLayout footer below it (the "footer in the
+        // middle of the page" bug). Mirrors the discover view's scroll wrapper.
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
           {prevUnfinished.data && (
             <ResumePathCard
               pathDate={prevUnfinished.data.pathDate}
@@ -816,83 +974,57 @@ export function PathPage() {
               disabled={continuePreviousPath.isPending || closePreviousPath.isPending}
             />
           )}
-          <PathEntry onCreate={handleCreate} onPlan={handlePlan} />
+          {/* Primary landing: the auto-built, reviewable Today's Path proposal.
+              The daily action lives here; the rarely-used build-it-yourself flows
+              (plan a new area / who's near me) now live in the header "+" overflow,
+              so the proposal is the only thing competing for attention. */}
+          <TodaysPathView
+            proposal={todaysPath.proposal}
+            overflow={todaysPath.overflow}
+            noLocation={todaysPath.noLocation}
+            isLoading={todaysPath.isLoading}
+            status={todaysPath.status}
+            onStart={handleStartTodaysPath}
+            onAddNearby={enterDiscover}
+            onOpenDeal={(dealId) => navigate(`/pipeline/${dealId}`)}
+            isStarting={startingTodaysPath}
+            remainingMin={todaysPath.remainingMin}
+            windowEndHour={todaysPath.windowEndHour}
+            origin={origin}
+            showAddNearby={ADD_NEARBY_ENABLED}
+          />
           {/* Upcoming (future-dated planned) paths — launch navigates to /path,
               where the today-path/discover flow takes over. */}
           <UpcomingPaths onLaunch={() => navigate("/path")} />
-        </>
+        </div>
       ) : pathView === "path" ? (
         landing === "entry" ? (
           /* Planned / legacy (started_at null): the Stops overview only — no
-             auto-run. "Start route" stamps started_at and flips to the Run tab
-             (same landing as Create's auto-start). */
+             auto-run. "Start route" stamps started_at, which flips the lifecycle
+             landing to the active-run surface below (same as Create's auto-start). */
           <>
             <ActivePathView
               origin={origin}
               onAddStops={enterDiscover}
-              onStartRoute={() => { void todayPath.start(); setActiveTab("run"); }}
+              onStartRoute={() => { void todayPath.start(); }}
             />
             <UpcomingPaths onLaunch={() => navigate("/path")} />
           </>
         ) : (
-          /* In progress / completed (started_at set): the two-tab Run | Stops
-             surface. Default tab is Run (resume-in-place); a manual switch to
-             Stops sticks until the rep leaves the Path tab. */
-          <>
-            <div
-              role="tablist"
-              aria-label="Path view"
-              className="mt-3 flex gap-1 self-start rounded-radius-md bg-surface-sunken p-0.5"
-            >
-              {([["run", "Run", Navigation], ["stops", "Stops", ListChecks]] as const).map(
-                ([key, label, Icon]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    role="tab"
-                    aria-selected={activeTab === key}
-                    onClick={() => setActiveTab(key)}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-radius-sm px-4 py-1.5 text-caption font-medium transition-colors",
-                      activeTab === key
-                        ? "bg-surface-default text-text-default shadow-sm"
-                        : "text-text-muted hover:text-text-default",
-                    )}
-                  >
-                    <Icon className="size-4" />
-                    {label}
-                  </button>
-                ),
-              )}
-            </div>
-            {activeTab === "run" ? (
-              <RunningPath
-                origin={origin}
-                onPause={() => setActiveTab("stops")}
-                onViewPipeline={() => navigate("/pipeline")}
-                onExit={() => setPathView("entry")}
-                runOverlay={runOverlay}
-              />
-            ) : (
-              <>
-                <ActivePathView origin={origin} onAddStops={enterDiscover} onStartRoute={() => setActiveTab("run")} />
-                <UpcomingPaths onLaunch={() => navigate("/path")} />
-              </>
-            )}
-          </>
+          /* In progress / completed (started_at set): the card-first active-run
+             surface (v2.2 A7). No Run|Stops tabs — RunningPath owns the permanent
+             stop card plus a "what remains" expandable (List | Map); nothing is
+             hidden behind a tab. */
+          <RunningPath
+            origin={origin}
+            onViewPipeline={() => navigate("/pipeline")}
+            onExit={() => setPathView("entry")}
+            onFindNearby={enterDiscover}
+          />
         )
       ) : (
         /* pathView === "discover": filter controls + map+list discovery ladder */
         <>
-          <Button
-            variant="tertiary"
-            size="sm"
-            onClick={handleDoneDiscovering}
-            className="mt-3 self-start"
-          >
-            {queueStops.length > 0 ? "Back to path" : "Done"}
-          </Button>
-
           {/* Meeting-aware header — renders only when the calendar is connected and
               there's a still-upcoming fixed meeting today; otherwise nothing shows
               (no empty spacer). Placed above the filters so it stays visible in both
@@ -991,30 +1123,21 @@ export function PathPage() {
             </div>
           )}
 
-          {/* Mobile view toggle: only shown when the map has something to render */}
+          {/* Show/Hide map toggle (Path QA R4). Mobile-only (`md:hidden`); the map
+              defaults HIDDEN so the list leads on a small screen. Desktop keeps
+              the two-pane map always visible via the `md:block` gate below. */}
           {anyGeocoded && (
-          <div className="mt-3 flex gap-1 self-start rounded-radius-md bg-surface-sunken p-0.5 md:hidden">
-            <button
-              type="button"
-              onClick={() => setView("map")}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-radius-sm px-3 py-1.5 text-caption font-medium transition-colors",
-                view === "map" ? "bg-surface-default text-text-default shadow-sm" : "text-text-muted hover:text-text-default",
-              )}
-            >
-              <MapIcon className="h-3.5 w-3.5" aria-hidden /> Map
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("list")}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-radius-sm px-3 py-1.5 text-caption font-medium transition-colors",
-                view === "list" ? "bg-surface-default text-text-default shadow-sm" : "text-text-muted hover:text-text-default",
-              )}
-            >
-              <List className="h-3.5 w-3.5" aria-hidden /> List ({sorted.length})
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setMapVisible((v) => !v)}
+            aria-pressed={mapVisible}
+            className={cn(
+              "mt-3 inline-flex items-center gap-1.5 self-start rounded-radius-md bg-surface-sunken px-3 py-1.5 text-caption font-medium text-text-default transition-colors hover:bg-surface-sunken/80 md:hidden",
+            )}
+          >
+            <MapIcon className="h-3.5 w-3.5" aria-hidden />
+            {mapVisible ? "Hide map" : "Show map"}
+          </button>
           )}
 
           {/* Discovery body — mobile single pane, desktop split. When nothing is
@@ -1063,9 +1186,11 @@ export function PathPage() {
             "mt-3 grid min-h-0 flex-1 gap-4",
             anyGeocoded && "md:grid-cols-[1.4fr_1fr]",
           )}>
-            {/* Map — only when at least one merchant is geocoded. */}
+            {/* Map — only when at least one merchant is geocoded. On mobile the
+                map is gated by the Show/Hide toggle (default hidden); `md:block`
+                keeps the desktop two-pane map always visible. */}
             {anyGeocoded ? (
-              <div className={cn("min-h-[320px]", view === "list" && "hidden md:block")}>
+              <div className={cn("min-h-[320px]", mapVisible ? "block" : "hidden", "md:block")}>
                 <MerchantMap
                   position={origin}
                   merchants={sorted.filter((m) => Number.isFinite(m.lat) && Number.isFinite(m.lng))}
@@ -1082,11 +1207,9 @@ export function PathPage() {
                 </p>
               </div>
             )}
-            {/* List */}
-            <div className={cn(
-              "min-h-0 overflow-y-auto",
-              anyGeocoded && view === "map" && "hidden md:block",
-            )}>
+            {/* List — always visible; on mobile it leads and takes the full
+                width whenever the map is hidden (its grid cell collapses). */}
+            <div className="min-h-0 overflow-y-auto">
               <MerchantList
                 merchants={sorted}
                 selectedId={selectedId}
@@ -1112,6 +1235,37 @@ export function PathPage() {
             </div>
           </div>
           )}
+
+          {/* Discover action bar (Path QA C3/C4). Pinned to the bottom of the
+              fixed-height page column as a sticky footer so the primary "Start
+              path" one-tap launch and the secondary back action stay thumb-
+              reachable on short phone screens (the list pane above scrolls
+              independently). shrink-0 + mt-auto keep it below the flex-1 body;
+              the negative margins let the solid bar span the full width against
+              the page's own horizontal padding. Harmless on desktop, where the
+              column rarely overflows. */}
+          <div
+            data-testid="discover-action-bar"
+            className={cn(
+              "sticky bottom-0 z-10 mt-auto flex shrink-0 items-center gap-2",
+              "-mx-4 border-t border-border-default bg-surface-default/95 px-4 py-3 backdrop-blur",
+              "sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8",
+            )}
+          >
+            {queueStops.length > 0 && (
+              <Button
+                variant="primary"
+                size="sm"
+                leadingIcon={Navigation}
+                onClick={handleStartFromDiscover}
+              >
+                Start path
+              </Button>
+            )}
+            <Button variant="tertiary" size="sm" onClick={handleDoneDiscovering}>
+              {queueStops.length > 0 ? "Next" : "Done"}
+            </Button>
+          </div>
         </>
       )}
 
@@ -1150,6 +1304,14 @@ export function PathPage() {
       />
 
       <PathSettings open={settingsOpen} onOpenChange={setSettingsOpen} />
+
+      <PathOverflowSheet
+        open={overflowOpen}
+        onOpenChange={setOverflowOpen}
+        onAddMoreStops={enterDiscover}
+        onPlanNewArea={handlePlan}
+        onFindNearby={enterDiscover}
+      />
     </div>
   );
 }

@@ -38,6 +38,7 @@ import { TopBar, type TopBarUser } from "./TopBar";
 import { BottomNav } from "./BottomNav";
 import { SidebarNav } from "./SidebarNav";
 import { useBrand } from "@/features/branding/useBrand";
+import { IntercomBoot } from "@/features/support/IntercomBoot";
 
 const STORAGE_KEY = "navigatr-sidebar-collapsed";
 
@@ -98,6 +99,12 @@ export function AppLayout({
 
   return (
     <div className="flex min-h-dvh flex-col bg-surface-canvas text-text-default">
+      {/* Intercom Messenger boot. Renders nothing; boots the messenger for
+          signed-in users when VITE_INTERCOM_APP_ID is set, and is inert
+          (ship-dark) otherwise. Lives here so it only runs in the authed
+          shell (AppLayout mounts behind ProtectedRoute). */}
+      <IntercomBoot />
+
       {/* TopBar — full viewport width, sticky top. The logo lives here at
           the true top-left (x=0) of the page on every breakpoint. */}
       <TopBar

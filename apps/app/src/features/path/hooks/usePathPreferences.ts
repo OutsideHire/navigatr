@@ -10,6 +10,20 @@ import { RECOMMENDED_SELECTION, selectedCategories, pruneToKnownCategories, type
 
 export const PATH_PREFS_QUERY_KEY = ["path", "preferences"] as const;
 
+/**
+ * The persisted per-rep Path preferences row. `end_of_day_minutes` is the
+ * per-rep end-of-day override (minutes from local midnight; null = use
+ * DEFAULT_END_OF_DAY_MINUTES). Defined here so the field is available to the
+ * types; B-T2 will actually read it. This task does not query the column, so the
+ * hook's runtime behavior is unchanged.
+ */
+export interface PathPreferencesRow {
+  user_id: string;
+  default_industries: IndustrySelection;
+  end_of_day_minutes: number | null;
+  updated_at: string;
+}
+
 export function usePathPreferences() {
   const userId = useAuth((s) => s.user?.id);
   return useQuery({
@@ -23,6 +37,29 @@ export function usePathPreferences() {
       if (error) throw error;
       const saved = pruneToKnownCategories((data?.default_industries ?? {}) as IndustrySelection);
       return selectedCategories(saved).length > 0 ? saved : RECOMMENDED_SELECTION;
+    },
+  });
+}
+
+/**
+ * usePathEndOfDayMinutes - the rep's per-rep end-of-day override (v2.2 B 4.3),
+ * as minutes from local midnight, or null when unset (the caller then uses
+ * DEFAULT_END_OF_DAY_MINUTES). Read as its own thin query so it can be consumed
+ * (by useTodaysPath's capacity window) without disturbing the industry-selection
+ * hook's IndustrySelection return contract. Owner-scoped via RLS.
+ */
+export function usePathEndOfDayMinutes() {
+  const userId = useAuth((s) => s.user?.id);
+  return useQuery({
+    queryKey: [...PATH_PREFS_QUERY_KEY, "end_of_day_minutes", userId],
+    enabled: !!userId,
+    queryFn: async (): Promise<number | null> => {
+      const { data, error } = await (supabase
+        .from("path_preferences")
+        .select("end_of_day_minutes")
+        .maybeSingle() as unknown as Promise<{ data: { end_of_day_minutes: number | null } | null; error: { message: string } | null }>);
+      if (error) throw error;
+      return data?.end_of_day_minutes ?? null;
     },
   });
 }
@@ -43,6 +80,38 @@ export function useUpdateDefaultIndustries() {
         .single() as unknown as Promise<{ data: unknown; error: { message: string } | null }>);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: [...PATH_PREFS_QUERY_KEY, userId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: PATH_PREFS_QUERY_KEY }),
+  });
+}
+
+/**
+ * useUpdateEndOfDayMinutes - persist the rep's per-rep end-of-day override (v2.2
+ * B 4.3), as minutes from local midnight, or null to clear it (fall back to
+ * DEFAULT_END_OF_DAY_MINUTES). Upserts ONLY the end_of_day_minutes column so it
+ * never disturbs the saved default_industries on the same one-row-per-rep record;
+ * onConflict user_id updates just this column. Owner-scoped via RLS.
+ */
+export function useUpdateEndOfDayMinutes() {
+  const qc = useQueryClient();
+  const userId = useAuth((s) => s.user?.id);
+  return useMutation({
+    mutationFn: async (endOfDayMinutes: number | null): Promise<void> => {
+      if (!userId) throw new Error("Not signed in");
+      const { error } = await (supabase
+        .from("path_preferences")
+        .upsert(
+          { user_id: userId, end_of_day_minutes: endOfDayMinutes, updated_at: new Date().toISOString() },
+          { onConflict: "user_id" },
+        )
+        .select()
+        .single() as unknown as Promise<{ data: unknown; error: { message: string } | null }>);
+      if (error) throw error;
+    },
+    // Invalidate the 2-element prefix so BOTH the industries read
+    // (["path","preferences",userId]) AND the separately-keyed end-of-day read
+    // (["path","preferences","end_of_day_minutes",userId]) refetch. Keying on
+    // [...KEY, userId] would prefix-miss the end-of-day query and leave the
+    // control + capacity window stale until a refocus.
+    onSuccess: () => qc.invalidateQueries({ queryKey: PATH_PREFS_QUERY_KEY }),
   });
 }

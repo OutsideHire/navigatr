@@ -18,6 +18,7 @@ const row = (o: Partial<OwedVisitRow> = {}): OwedVisitRow => ({
   latestAt: "2026-08-12",
   snoozeCount: 0,
   sourceOutcome: "not_available",
+  createdAt: "2026-08-01T12:00:00.000Z",
   distanceMeters: 1200,
   fits: true,
   ...o,
@@ -33,7 +34,7 @@ describe("OwedVisitsList", () => {
     render(<OwedVisitsList visits={[row()]} onSelect={vi.fn()} />);
     expect(screen.getByText("Owed visits")).toBeInTheDocument();
     expect(screen.getByText("Blue Bottle")).toBeInTheDocument();
-    expect(screen.getByText("Overdue")).toBeInTheDocument(); // past_ideal
+    expect(screen.getByText("Past ideal")).toBeInTheDocument(); // past_ideal
     expect(screen.getByText(/from not available/)).toBeInTheDocument();
   });
 

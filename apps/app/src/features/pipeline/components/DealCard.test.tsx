@@ -67,6 +67,19 @@ describe("DealCard", () => {
     expect(screen.getByText(/Reach out/i)).toBeInTheDocument();
   });
 
+  it("shows a 'Follow up: {date}' indicator when a follow-up date is set", () => {
+    renderCard(deal({ stage: "contacted", nextFollowup: "2026-08-14T12:00:00.000Z" }));
+    // "Follow up:" text is unique to the chip; the date also appears in the
+    // footer's "Next: verb · date", so assert the date shows at least once.
+    expect(screen.getByText(/Follow up:/i)).toBeInTheDocument();
+    expect(screen.getAllByText("Aug 14").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("omits the 'Follow up:' indicator when no follow-up date is set", () => {
+    renderCard(deal({ stage: "new", nextFollowup: null }));
+    expect(screen.queryByText(/Follow up:/i)).not.toBeInTheDocument();
+  });
+
   it("hides the contact line when it duplicates the company name", () => {
     renderCard(deal({ companyName: "Northwind Traders", contactName: "Northwind Traders" }));
     expect(screen.getAllByText("Northwind Traders")).toHaveLength(1);

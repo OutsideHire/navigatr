@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { formatCalendarDate } from "@/lib/calendarDate";
 import { CardWithStatusBand } from "@/components/navigatr";
 import { DealCallButton } from "@/features/activities/components/DealCallButton";
+import { FollowupChip } from "./FollowupChip";
 import {
   formatMoney,
   formatRelative,
@@ -82,6 +83,8 @@ export function DealCard({ deal }: { deal: Deal }) {
             <div className={cn("h-full rounded-radius-full", tone.barFill)} style={{ width: `${pct}%` }} />
           </div>
         </div>
+
+        <FollowupChip date={deal.nextFollowup} />
 
         <div className="flex items-center justify-between gap-2 border-t border-border-subtle pt-3 text-caption text-text-muted">
           <span className="truncate">

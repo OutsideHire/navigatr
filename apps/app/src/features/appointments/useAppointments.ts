@@ -32,6 +32,10 @@ import {
 export const dealAppointmentsKey = (dealId: string) =>
   ["appointments", "deal", dealId] as const;
 
+/** TanStack Query key for the signed-in rep's own scheduled appointments. */
+export const myAppointmentsKey = (userId: string | undefined) =>
+  ["appointments", "mine", userId ?? "anon"] as const;
+
 /** Name of the Edge function that pushes/removes the event on Google Calendar. */
 const SYNC_FUNCTION = "sync_appointment";
 
@@ -50,6 +54,33 @@ export function useDealAppointments(dealId: string) {
         .select("*")
         .eq("deal_id", dealId)
         .neq("status", "cancelled")
+        .order("start_at", { ascending: true });
+      if (error) throw error;
+      return ((data as ScheduledAppointmentRow[] | null) ?? []).map(rowToAppointment);
+    },
+  });
+}
+
+/**
+ * List the signed-in rep's own scheduled (non-cancelled, no-outcome-yet)
+ * appointments, ordered by start time. Owner-scoped explicitly:
+ * scheduled_appointments RLS is org-wide for managers/admins, so the owner_id
+ * filter keeps this to the rep's OWN appointments (same rationale as
+ * useAppointmentsAwaitingOutcome). Used by the Activities Today view to surface
+ * booked appointments as rows.
+ */
+export function useMyAppointments() {
+  const userId = useAuth((s) => s.user?.id);
+  return useQuery({
+    queryKey: myAppointmentsKey(userId),
+    enabled: !!userId,
+    staleTime: 30_000,
+    queryFn: async (): Promise<ScheduledAppointment[]> => {
+      const { data, error } = await supabase
+        .from("scheduled_appointments")
+        .select("*")
+        .eq("owner_id", userId)
+        .eq("status", "scheduled")
         .order("start_at", { ascending: true });
       if (error) throw error;
       return ((data as ScheduledAppointmentRow[] | null) ?? []).map(rowToAppointment);

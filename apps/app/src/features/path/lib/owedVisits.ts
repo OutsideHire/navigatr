@@ -63,6 +63,27 @@ export interface OwedProspectRow {
   lng: number;
 }
 
+/** A lightweight stub for an owed drop-in whose deal has NO coordinates yet, so
+ *  it can't be routed. Carries just the identity needed to SHOW it in the day
+ *  and act on it (open the deal / log a drop-in). A later task geocodes deals
+ *  with an address so they graduate to routable `OwedVisit`s; this stub ensures
+ *  a task-created drop-in on a coordinate-less deal is never silently dropped. */
+export interface OwedVisitNoCoords {
+  taskId: string;
+  dealId: string;
+  name: string;
+  /** The deal's address, when it has one (what a later geocode step would use);
+   *  null when even that is missing. */
+  address: string | null;
+}
+
+/** The split result of the join: routable visits (real coords + urgency) and the
+ *  otherwise-eligible drop-ins that have no coordinates yet. */
+export interface AssembledOwedVisits {
+  routable: OwedVisit[];
+  noLocation: OwedVisitNoCoords[];
+}
+
 /** A routable owed visit: a due drop-in with real coordinates + urgency. */
 export interface OwedVisit {
   taskId: string;
@@ -85,12 +106,22 @@ export interface OwedVisit {
   snoozeCount: number;
   /** The outcome that generated this follow-up (for the "from <outcome>" chip). */
   sourceOutcome: string | null;
+  /** When the follow-up was generated (UTC ISO), for the "Nd ago" staleness age. */
+  createdAt: string;
 }
 
 /**
  * Join tasks → deals (by deal_id) → prospects (by place_id) and keep only the
- * Class D eligible ones for `pathDate`, ordered by descending urgency (aging +
- * pinned first), then by earliest target date as a stable tiebreak.
+ * Class D eligible ones for `pathDate`, split into `routable` (real coords +
+ * urgency, ordered by descending urgency then earliest target date) and
+ * `noLocation` (otherwise-eligible drop-ins whose deal has no coordinates yet).
+ *
+ * The no-location split is ADDITIVE: an eligible drop-in with no coords used to
+ * be silently dropped, so a task-created drop-in on a deal without a mapped
+ * place never appeared anywhere. It now surfaces as a lightweight stub the day
+ * can show under a "No location yet" group, without ever entering the route.
+ * Ineligibility (wrong type/stage, opted out, superseded, created-today, before
+ * its window, or no deal) still excludes a task from BOTH lists.
  */
 export function assembleOwedVisits(
   tasks: OwedTaskRow[],
@@ -98,13 +129,14 @@ export function assembleOwedVisits(
   prospects: OwedProspectRow[],
   pathDate: string,
   opts: OwedVisitOptions = {},
-): OwedVisit[] {
+): AssembledOwedVisits {
   const dealById = new Map(deals.map((d) => [d.id, d]));
   const coordsByPlaceId = new Map(prospects.map((p) => [p.place_id, p]));
   const superseded = opts.supersededDealIds;
   const createdCutoff = opts.excludeCreatedAtOrAfter;
 
   const visits: OwedVisit[] = [];
+  const noLocation: OwedVisitNoCoords[] = [];
   for (const t of tasks) {
     if (t.deal_id == null) continue;
     // Created during today's path (an outcome logged mid-run) → not pulled back in.
@@ -118,20 +150,28 @@ export function assembleOwedVisits(
     const coords =
       (deal.place_id ? coordsByPlaceId.get(deal.place_id) : undefined) ??
       (deal.lat != null && deal.lng != null ? { place_id: deal.place_id ?? "", lat: deal.lat, lng: deal.lng } : undefined);
-    const hasCoords = coords != null;
 
-    const eligible = isClassDEligible(
+    // Eligibility EXCLUDING the coords requirement: pass `hasCoords: true` so the
+    // helper tests everything else (type/status/stage/opt-out/window). A task
+    // that fails this is ineligible and belongs in neither list; one that passes
+    // is routable when it has coords, otherwise a no-location stub.
+    const eligibleIgnoringCoords = isClassDEligible(
       {
         type: t.type,
         status: t.status,
         earliestAt: t.earliest_at,
         excludeFromPath: t.exclude_from_path,
         dealStage: deal.stage,
-        hasCoords,
+        hasCoords: true,
       },
       pathDate,
     );
-    if (!eligible || !coords) continue;
+    if (!eligibleIgnoringCoords) continue;
+    if (!coords) {
+      // Otherwise-eligible but not yet mappable: surface it, don't drop it.
+      noLocation.push({ taskId: t.id, dealId: deal.id, name: deal.company_name, address: deal.address });
+      continue;
+    }
 
     const taskLike: ClassDTaskLike = {
       type: t.type,
@@ -158,9 +198,10 @@ export function assembleOwedVisits(
       latestAt: t.latest_at,
       snoozeCount: t.snooze_count,
       sourceOutcome: t.source_outcome,
+      createdAt: t.created_at,
     });
   }
 
   visits.sort((a, b) => b.urgency - a.urgency || a.targetAt.localeCompare(b.targetAt));
-  return visits;
+  return { routable: visits, noLocation };
 }

@@ -160,6 +160,33 @@ describe("LogActivitySheet — submission payload by type", () => {
   });
 });
 
+describe("LogActivitySheet inline post-log confirmation", () => {
+  it("renders the confirmation title and lines inline after a successful log", async () => {
+    // The hook returns a confirmation summary alongside the new id; the sheet
+    // formats it and shows it inline (not just a corner toast).
+    mutateAsyncMock.mockResolvedValueOnce({
+      id: "act-1",
+      confirmation: {
+        activityType: "email",
+        createdTasks: [],
+        compound: false,
+        recordEffects: [],
+      },
+    });
+
+    openSheet();
+    fireEvent.click(screen.getByText("Email"));
+    fireEvent.click(screen.getByText(/reply received/i));
+    fireEvent.click(screen.getByRole("button", { name: /log activity/i }));
+
+    // The inline success panel shows what the platform just did.
+    expect(await screen.findByText("Email logged")).toBeInTheDocument();
+    expect(screen.getByText("No follow-up scheduled.")).toBeInTheDocument();
+    // The panel is announced to assistive tech.
+    expect(screen.getByRole("status")).toBeInTheDocument();
+  });
+});
+
 describe("LogActivitySheet — defaultType", () => {
   it("opens directly on the form when defaultType is set", () => {
     render(<LogActivitySheet open onOpenChange={vi.fn()} dealId="deal-1" defaultType="call" />);

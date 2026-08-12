@@ -39,7 +39,9 @@ function renderCard(over: Partial<Deal>) {
 describe("DealCard — expected close renders on the correct day (Americas)", () => {
   it("renders a noon-UTC Jul-9 follow-up as 'Jul 9'", () => {
     renderCard({ stage: "contacted", nextFollowup: dateOnlyToNoonUtcIso("2026-07-09") });
-    expect(screen.getByText(/Jul 9/)).toBeInTheDocument();
+    // The day now appears in both the follow-up chip and the footer's
+    // "Next: verb · date"; both must render the correct UTC calendar day.
+    expect(screen.getAllByText(/Jul 9/).length).toBeGreaterThan(0);
     // Sanity: the buggy UTC-midnight representation would have shown Jul 8.
     expect(screen.queryByText(/Jul 8/)).not.toBeInTheDocument();
   });
@@ -51,7 +53,7 @@ describe("DealCard — expected close renders on the correct day (Americas)", ()
     // local time (the pre-fix bug) showed "Jul 9" — a day early. The correct
     // display is the stored UTC calendar day, "Jul 10".
     renderCard({ stage: "contacted", nextFollowup: "2026-07-10T00:00:00.000Z" });
-    expect(screen.getByText(/Jul 10/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Jul 10/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/Jul 9/)).not.toBeInTheDocument();
   });
 

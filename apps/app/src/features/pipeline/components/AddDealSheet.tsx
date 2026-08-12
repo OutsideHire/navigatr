@@ -29,14 +29,19 @@
 
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { useForm, Controller, type SubmitHandler } from "react-hook-form";
+import { useForm, Controller, type SubmitHandler, type SubmitErrorHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "react-router-dom";
-import { REP_SOURCE_OPTIONS } from "../lib/leadSources";
+import { REP_SOURCE_OPTIONS, LEAD_SOURCE_LABEL } from "../lib/leadSources";
 import { z } from "zod";
 import { AsYouType } from "libphonenumber-js";
 import { useCreateDeal } from "../hooks/useCreateDeal";
-import { useDuplicateDealCheck, type DuplicateDealMatch } from "../hooks/useDuplicateDealCheck";
+import { usePlaceResolver } from "../hooks/usePlaceResolver";
+import { usePlaceDuplicateCheck } from "../hooks/usePlaceDuplicateCheck";
+import { useAttachPlaceToDeal } from "../hooks/useAttachPlaceToDeal";
+import { BusinessSearchField } from "./BusinessSearchField";
+import { planInterstitial, type InterstitialPlan } from "../lib/placeInterstitial";
+import type { ResolvedPlace } from "../hooks/placeResolverTypes";
 
 /** Strip everything but digits. Used for phone validation + value extraction. */
 function digitsOnly(s: string): string {
@@ -98,6 +103,42 @@ const INDUSTRY_OPTIONS: SelectOption[] = [
   { value: "automotive", label: "Automotive" },
   { value: "other", label: "Other" },
 ];
+
+/** Map a resolved-place industry (a navigatr IndustryKey from the taxonomy) to
+ *  the closest option in this form's smaller INDUSTRY_OPTIONS vocabulary, so a
+ *  Business-Search prefill lands on a value the Select (and the edit form) can
+ *  round-trip. Unmapped keys fall through to "other". */
+const PLACE_INDUSTRY_TO_FORM: Record<string, string> = {
+  restaurants_bars_entertainment: "restaurant",
+  hospitality: "personal_services",
+  retail: "retail",
+  convenience_fuel: "retail",
+  healthcare: "healthcare",
+  veterinary_pet: "healthcare",
+  fitness_wellness: "personal_services",
+  personal_services: "personal_services",
+  sports_recreation: "personal_services",
+  professional_services: "professional_services",
+  finance_banking: "professional_services",
+  education: "professional_services",
+  non_profit: "professional_services",
+  automotive: "automotive",
+  transportation: "automotive",
+  manufacturing_wholesale: "other",
+  construction_trades: "other",
+  other: "other",
+};
+
+/** Place metadata carried from a Business-Search pick through to create. */
+interface PlaceMeta {
+  placeId: string;
+  lat: number | null;
+  lng: number | null;
+  syncedAt: string;
+  /** The full resolved place, kept so an "attach to existing" backfill has the
+   *  complete field set. */
+  place: ResolvedPlace;
+}
 
 const EMPLOYEE_COUNT_OPTIONS: SelectOption[] = [
   { value: "1-9", label: "1-9" },
@@ -164,7 +205,10 @@ const baseShape = {
   // Primary contact
   contactName: z.string().min(1, "Contact name is required"),
   contactTitle: z.string().optional(),
-  contactEmail: z.string().email("Enter a valid email"),
+  // Optional: an empty string is allowed (submitted as no email), but a
+  // non-empty value must still be a valid email. Email is not required to
+  // create a deal (Path QA D).
+  contactEmail: z.string().email("Enter a valid email").optional().or(z.literal("")),
   // Permissive on purpose: 10 digits (US). libphonenumber's strict "valid"
   // check rejects 555-555-5555 (reserved area code), which is the most-typed
   // test number on Earth. Sprint 2 can tighten if we route real calls.
@@ -464,16 +508,36 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
   const profession: Profession = getProfession(user) ?? "merchant_services";
   const createDeal = useCreateDeal();
   const navigate = useNavigate();
-  const { checkDuplicate } = useDuplicateDealCheck();
+  const resolver = usePlaceResolver();
+  const { checkPlaceDuplicate } = usePlaceDuplicateCheck();
+  const attachPlace = useAttachPlaceToDeal();
 
-  // Soft de-dup: the active deal a pre-submit check found for this name+address,
-  // if any. When set, we show a warning and offer "open it" instead of creating
-  // a duplicate. Cleared when the sheet reopens or the company/address changes.
-  const [duplicate, setDuplicate] = React.useState<DuplicateDealMatch | null>(null);
+  // Tiered de-dup interstitial: the plan a pre-submit check produced (block /
+  // soft-confirm / second-location), or null. Cleared when the sheet reopens or
+  // the identity fields change.
+  const [interstitial, setInterstitial] = React.useState<InterstitialPlan | null>(null);
+
+  // Business-Search provenance for this draft, set when the rep picks a Google
+  // result and cleared when they edit the identity fields by hand. Drives the
+  // 'places' lead source, coord/place_id stamping, and the attach affordance.
+  const [placeMeta, setPlaceMeta] = React.useState<PlaceMeta | null>(null);
+
+  // One-shot bypass: set true when the rep confirms through a soft interstitial
+  // ("add anyway" / "add as separate") so the re-submit skips the dup check.
+  const bypassDupCheck = React.useRef(false);
+  // Parent deal id to link when the rep chose "add as a second location".
+  const pendingParentId = React.useRef<string | null>(null);
+  // Guards the identity-change effect from wiping placeMeta during a prefill.
+  const prefilling = React.useRef(false);
 
   // Tracks whether the user has manually edited probability. Once they
   // type into the field, stage changes no longer overwrite it.
   const probabilityTouched = React.useRef(false);
+
+  // The dedup interstitial renders at the TOP of a long, scrolled form. Hold a
+  // ref so we can bring it into view when it appears: a rep scrolled down to the
+  // "Add deal" button would otherwise never see why the save was held.
+  const interstitialRef = React.useRef<HTMLDivElement>(null);
 
   const defaultValues = React.useMemo<DealFormValues>(() => {
     const base = {
@@ -533,17 +597,69 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
     }
   }, [watchedStage, setValue]);
 
-  // Editing the identity fields invalidates any prior duplicate warning.
+  // Editing the identity fields by hand invalidates any prior interstitial AND
+  // the Business-Search provenance (the rep is now describing a different
+  // business than the one Google resolved). Skipped during a prefill.
   const watchedCompany = watch("companyName");
   const watchedAddress = watch("address");
   React.useEffect(() => {
-    setDuplicate(null);
+    if (prefilling.current) return;
+    setInterstitial(null);
+    setPlaceMeta(null);
   }, [watchedCompany, watchedAddress]);
 
-  // Clear the warning whenever the sheet closes so it doesn't reappear stale.
+  // When a dedup interstitial appears, scroll it into view and echo it as a
+  // toast. Both are needed: the banner sits at the top of the form (invisible to
+  // a rep scrolled to the button), and the toast gives corner feedback near the
+  // action so the held save never reads as a dead button.
   React.useEffect(() => {
-    if (!open) setDuplicate(null);
-  }, [open]);
+    if (!interstitial || interstitial.mode === "none") return;
+    interstitialRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    const notify = interstitial.mode === "block" ? toast.error : toast;
+    notify(interstitial.title);
+  }, [interstitial]);
+
+  // Reset transient state whenever the sheet closes, and start a fresh Places
+  // billing session whenever it opens.
+  React.useEffect(() => {
+    if (open) {
+      resolver.newSession();
+    } else {
+      setInterstitial(null);
+      setPlaceMeta(null);
+      bypassDupCheck.current = false;
+      pendingParentId.current = null;
+    }
+  }, [open, resolver]);
+
+  // Prefill the form from a picked Business-Search result and record provenance.
+  const onResolvePlace = React.useCallback(
+    (place: ResolvedPlace) => {
+      prefilling.current = true;
+      setValue("companyName", place.name, { shouldValidate: true });
+      if (place.formattedAddress) setValue("address", place.formattedAddress);
+      const formIndustry = PLACE_INDUSTRY_TO_FORM[place.industry];
+      if (formIndustry) setValue("industry", formIndustry);
+      if (place.phone) setValue("contactPhone", formatUSPhone(place.phone));
+      // A places-sourced deal is stamped 'places' at submit; set the field so
+      // the required-source validation passes without a rep pick.
+      setValue("leadSource", "places", { shouldValidate: true });
+      setPlaceMeta({
+        placeId: place.placeId,
+        lat: place.lat,
+        lng: place.lng,
+        syncedAt: new Date().toISOString(),
+        place,
+      });
+      setInterstitial(null);
+      // Release the prefill guard after this render's effects have run so the
+      // identity-change effect doesn't immediately wipe placeMeta.
+      requestAnimationFrame(() => {
+        prefilling.current = false;
+      });
+    },
+    [setValue],
+  );
 
   const onSubmit: SubmitHandler<DealFormValues> = async (values) => {
     // Split the form into typed columns + profession-specific bucket.
@@ -559,13 +675,30 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
       ...professionFields
     } = values;
 
-    // Soft de-dup: if an active deal already matches this name+address, warn and
-    // stop rather than letting the create fail on the database guard. The rep
-    // opens the existing deal, or edits the fields (which clears this) to proceed.
-    const dup = await checkDuplicate(companyName, address);
-    if (dup) {
-      setDuplicate(dup);
-      return;
+    const e164Phone = "+1" + digitsOnly(contactPhone);
+
+    // Consume the one-shot bypass + pending parent link (set by the
+    // interstitial's confirm buttons) so each submit re-evaluates from scratch.
+    const bypass = bypassDupCheck.current;
+    bypassDupCheck.current = false;
+    const parentDealId = pendingParentId.current;
+    pendingParentId.current = null;
+
+    // Tiered de-dup pre-check (unless the rep already confirmed through it). A
+    // blocking tier stops here with an open/attach choice; a soft tier asks the
+    // rep to confirm. Advisory: the DB guard is still the guarantee on insert.
+    if (!bypass) {
+      const match = await checkPlaceDuplicate({
+        placeId: placeMeta?.placeId ?? null,
+        name: companyName,
+        phone: e164Phone,
+        address: address ?? null,
+      });
+      const plan = planInterstitial(match, !!placeMeta);
+      if (plan.mode !== "none") {
+        setInterstitial(plan);
+        return;
+      }
     }
 
     try {
@@ -576,33 +709,98 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
         employeeCountRange,
         contactName,
         contactTitle,
-        contactEmail,
+        // Email is optional; send undefined (→ null column) for an empty value
+        // so a blank field never persists as "".
+        contactEmail: contactEmail?.trim() ? contactEmail : undefined,
         // Normalize to E.164 ("+1XXXXXXXXXX"). The form validator already
         // guarantees 10 digits; PhoneWithClickToCall on the deal card
         // requires E.164 to render without an "Invalid number" error.
-        contactPhone: "+1" + digitsOnly(contactPhone),
+        contactPhone: e164Phone,
         valueCents: Math.round(dealValue * 100),
         stage,
         probability,
         expectedClose: expectedClose || null,
-        leadSource,
-        leadSourceNote: leadSource === "other" ? leadSourceNote?.trim() || null : null,
+        // A Business-Search deal is stamped 'places' (rep-directed, auto-set);
+        // a manual deal keeps the rep's picked source.
+        leadSource: placeMeta ? "places" : leadSource,
+        leadSourceNote: !placeMeta && leadSource === "other" ? leadSourceNote?.trim() || null : null,
         notes,
         // expectedClose is a YYYY-MM-DD calendar date; store the mirrored
         // timestamp at noon UTC so cards/hero render the same day the rep
         // picked (new Date(date) parsed as UTC midnight → a day early in the US).
         nextFollowupAt: expectedClose ? dateOnlyToNoonUtcIso(expectedClose) : null,
         professionData: { profession: _profession, ...professionFields },
+        // Place provenance (Business-Search only): anchor de-dup + routability.
+        placeId: placeMeta?.placeId,
+        lat: placeMeta?.lat ?? null,
+        lng: placeMeta?.lng ?? null,
+        placeSyncedAt: placeMeta?.syncedAt ?? null,
+        parentDealId,
       });
-      toast.success("Deal added");
+      toast.success(parentDealId ? "Second location added" : "Deal added");
       reset(defaultValues);
       probabilityTouched.current = false;
+      setPlaceMeta(null);
+      setInterstitial(null);
       onOpenChange(false);
     } catch (err) {
       // RLS denial, network failure, validation server-side — surface raw
       // message. We do NOT close the sheet so the user can retry without
       // re-entering the whole form.
       toast.error(err instanceof Error ? err.message : "Could not create deal");
+    }
+  };
+
+  // Submit blocked by validation. The failing fields (company / contact / phone
+  // up top) render above the button, so a rep scrolled to "Add deal" sees
+  // nothing happen. Surface it: a toast near the action, plus scroll the first
+  // invalid field into view so the red field is never stranded off-screen.
+  const onInvalid: SubmitErrorHandler<DealFormValues> = () => {
+    toast.error("Add the missing details highlighted above to save this deal.");
+    requestAnimationFrame(() => {
+      document
+        .getElementById("add-deal-form")
+        ?.querySelector<HTMLElement>('[aria-invalid="true"]')
+        ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+  };
+
+  // Interstitial actions — all operate on the current form values.
+  const openExistingDeal = (dealId: string) => {
+    navigate(`/pipeline/${dealId}`);
+    onOpenChange(false);
+  };
+
+  // "Add anyway" (soft confirm) / "Add as separate" (second location): confirm
+  // through the interstitial and re-submit with the dup check bypassed.
+  const confirmAndResubmit = () => {
+    bypassDupCheck.current = true;
+    setInterstitial(null);
+    void handleSubmit(onSubmit)();
+  };
+
+  // "Add as a second location": link to the matched deal as a sibling.
+  const addAsSecondLocation = (parentId: string) => {
+    pendingParentId.current = parentId;
+    bypassDupCheck.current = true;
+    setInterstitial(null);
+    void handleSubmit(onSubmit)();
+  };
+
+  // "Attach" (blocking match, legacy record without a place_id): backfill the
+  // resolved Google fields onto the existing deal instead of creating a new one.
+  const attachToExisting = async (dealId: string) => {
+    if (!placeMeta) return;
+    try {
+      await attachPlace.mutateAsync({ dealId, place: placeMeta.place });
+      toast.success("Attached to existing deal");
+      reset(defaultValues);
+      probabilityTouched.current = false;
+      setPlaceMeta(null);
+      setInterstitial(null);
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not attach to the existing deal");
     }
   };
 
@@ -656,43 +854,105 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
           {/* Scrollable form body */}
           <form
             id="add-deal-form"
-            onSubmit={handleSubmit(onSubmit)}
+            onSubmit={handleSubmit(onSubmit, onInvalid)}
             className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-4"
             noValidate
           >
             <div className="flex flex-col gap-6">
-              {/* Soft de-dup warning — shown when a pre-submit check found an
-                  active deal for this same business. */}
-              {duplicate && (
+              {/* Tiered de-dup interstitial — block / soft-confirm / second-location. */}
+              {interstitial && interstitial.mode !== "none" && (
                 <div
+                  ref={interstitialRef}
                   role="alert"
-                  className="flex flex-col gap-2 rounded-radius-md border border-status-warning/40 bg-status-warning-bg px-4 py-3"
+                  className={cn(
+                    "flex flex-col gap-2 rounded-radius-md border px-4 py-3",
+                    interstitial.mode === "block"
+                      ? "border-status-error/40 bg-status-error-bg"
+                      : "border-status-warning/40 bg-status-warning-bg",
+                  )}
                 >
-                  <p className="text-body-sm font-medium text-status-warning">
-                    {duplicate.companyName} may already be in your pipeline
+                  <p
+                    className={cn(
+                      "text-body-sm font-medium",
+                      interstitial.mode === "block" ? "text-status-error" : "text-status-warning",
+                    )}
+                  >
+                    {interstitial.title}
                   </p>
-                  <p className="text-caption text-text-muted">
-                    An active deal for this business already exists. Open it instead of adding a
-                    duplicate, or edit the company name or address to add a different business.
-                  </p>
-                  <div className="flex">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        navigate(`/pipeline/${duplicate.id}`);
-                        onOpenChange(false);
-                      }}
-                    >
-                      Open existing deal
-                    </Button>
+                  <p className="text-caption text-text-muted">{interstitial.body}</p>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {interstitial.dealId && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => openExistingDeal(interstitial.dealId!)}
+                      >
+                        Open existing deal
+                      </Button>
+                    )}
+                    {interstitial.mode === "block" && interstitial.canAttach && interstitial.dealId && (
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        loading={attachPlace.isPending}
+                        onClick={() => void attachToExisting(interstitial.dealId!)}
+                      >
+                        Attach to existing
+                      </Button>
+                    )}
+                    {interstitial.mode === "confirm" && (
+                      <Button type="button" variant="tertiary" size="sm" onClick={confirmAndResubmit}>
+                        Add anyway
+                      </Button>
+                    )}
+                    {interstitial.mode === "second_location" && interstitial.dealId && (
+                      <>
+                        <Button
+                          type="button"
+                          variant="primary"
+                          size="sm"
+                          onClick={() => addAsSecondLocation(interstitial.dealId!)}
+                        >
+                          Add as second location
+                        </Button>
+                        <Button type="button" variant="tertiary" size="sm" onClick={confirmAndResubmit}>
+                          Add as separate
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               )}
               {/* Section 1: Company */}
               <section className="flex flex-col gap-3">
                 <SectionHeader>Company</SectionHeader>
+                {/* Search-first: resolve a business from Google, or type below. */}
+                <FormField
+                  htmlFor="business-search"
+                  label="Find a business"
+                  helper="Search Google, or enter the details manually below"
+                >
+                  <BusinessSearchField resolver={resolver} onResolve={onResolvePlace} />
+                </FormField>
+                {placeMeta && (
+                  <div className="flex items-center gap-2 rounded-radius-sm bg-surface-sunken px-3 py-2">
+                    <span className="text-caption font-medium text-text-default">
+                      Filled from Google Business Search
+                    </span>
+                    <button
+                      type="button"
+                      className="ml-auto text-caption text-text-muted underline hover:text-text-default"
+                      onClick={() => {
+                        setPlaceMeta(null);
+                        setValue("leadSource", "");
+                      }}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
                 <FormField htmlFor="companyName" label="Company name" required error={errors.companyName?.message}>
                   <Input id="companyName" placeholder="e.g., Sunset Cafe" {...register("companyName")} />
                 </FormField>
@@ -742,7 +1002,7 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
                 <FormField htmlFor="contactTitle" label="Title / role">
                   <Input id="contactTitle" placeholder="Owner, Manager, etc." {...register("contactTitle")} />
                 </FormField>
-                <FormField htmlFor="contactEmail" label="Email" required error={errors.contactEmail?.message}>
+                <FormField htmlFor="contactEmail" label="Email" error={errors.contactEmail?.message}>
                   <Input id="contactEmail" type="email" placeholder="contact@company.com" {...register("contactEmail")} />
                 </FormField>
                 <Controller
@@ -757,8 +1017,15 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
                         autoComplete="tel"
                         placeholder="(555) 123-4567"
                         value={field.value ?? ""}
-                        onChange={(e) => field.onChange(formatUSPhone(e.target.value))}
-                        onBlur={field.onBlur}
+                        // Keep the raw typed value while editing so backspacing a
+                        // formatting char (e.g. the ")") deletes naturally instead
+                        // of AsYouType re-inserting it and stranding the caret.
+                        // Format on blur; submit strips to digits regardless.
+                        onChange={(e) => field.onChange(e.target.value)}
+                        onBlur={(e) => {
+                          field.onChange(formatUSPhone(e.target.value));
+                          field.onBlur();
+                        }}
                       />
                     </FormField>
                   )}
@@ -804,22 +1071,28 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
                 <FormField htmlFor="expectedClose" label="Expected close">
                   <Input id="expectedClose" type="date" {...register("expectedClose")} />
                 </FormField>
-                <Controller
-                  control={control}
-                  name="leadSource"
-                  render={({ field }) => (
-                    <FormField htmlFor="leadSource" label="Lead source" error={errors.leadSource?.message as string | undefined}>
-                      <Select
-                        id="leadSource"
-                        value={field.value ?? ""}
-                        onValueChange={field.onChange}
-                        options={REP_SOURCE_OPTIONS}
-                        placeholder="Select source"
-                      />
-                    </FormField>
-                  )}
-                />
-                {watch("leadSource") === "other" && (
+                {placeMeta ? (
+                  <FormField htmlFor="leadSourceLocked" label="Lead source">
+                    <Input id="leadSourceLocked" value={LEAD_SOURCE_LABEL.places} readOnly disabled />
+                  </FormField>
+                ) : (
+                  <Controller
+                    control={control}
+                    name="leadSource"
+                    render={({ field }) => (
+                      <FormField htmlFor="leadSource" label="Lead source" error={errors.leadSource?.message as string | undefined}>
+                        <Select
+                          id="leadSource"
+                          value={field.value ?? ""}
+                          onValueChange={field.onChange}
+                          options={REP_SOURCE_OPTIONS}
+                          placeholder="Select source"
+                        />
+                      </FormField>
+                    )}
+                  />
+                )}
+                {!placeMeta && watch("leadSource") === "other" && (
                   <Controller
                     control={control}
                     name="leadSourceNote"

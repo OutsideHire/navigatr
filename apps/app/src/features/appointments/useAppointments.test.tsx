@@ -20,6 +20,7 @@ import type { ReactNode } from "react";
 
 import {
   useDealAppointments,
+  useMyAppointments,
   useScheduleAppointment,
   useCancelAppointment,
   useRetryAppointmentSync,
@@ -168,6 +169,28 @@ describe("useDealAppointments (list)", () => {
 
   it("stays disabled when dealId is empty (no query fired)", () => {
     const { result } = renderHook(() => useDealAppointments(""), { wrapper });
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(orderMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("useMyAppointments (rep-scoped list)", () => {
+  it("selects the rep's own scheduled rows ordered by start_at asc and maps to camelCase", async () => {
+    orderMock.mockResolvedValueOnce({ data: [ROW], error: null });
+
+    const { result } = renderHook(() => useMyAppointments(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(eqMock).toHaveBeenCalledWith("owner_id", "user-1");
+    expect(eqMock).toHaveBeenCalledWith("status", "scheduled");
+    expect(orderMock).toHaveBeenCalledWith("start_at", { ascending: true });
+    expect(result.current.data?.[0]?.id).toBe("appt-1");
+    expect(result.current.data?.[0]?.dealId).toBe("deal-1");
+  });
+
+  it("stays disabled when there is no signed-in user", () => {
+    authUserId = undefined;
+    const { result } = renderHook(() => useMyAppointments(), { wrapper });
     expect(result.current.fetchStatus).toBe("idle");
     expect(orderMock).not.toHaveBeenCalled();
   });

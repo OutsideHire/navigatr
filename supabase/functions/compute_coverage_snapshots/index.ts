@@ -7,9 +7,13 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveCoverageConfig } from "../_shared/coverage/config.ts";
 import { runSnapshots, type SnapshotDeps } from "../_shared/coverage/runSnapshots.ts";
+import { requireCronCaller } from "../_shared/cronAuth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// Authentication for the cron caller is a dedicated secret, NOT the service-role
+// key. See _shared/cronAuth.ts for why.
+const CRON_SECRET = Deno.env.get("CRON_SECRET");
 
 function makeDeps(db: SupabaseClient): SnapshotDeps {
   return {
@@ -60,7 +64,14 @@ function makeDeps(db: SupabaseClient): SnapshotDeps {
   };
 }
 
-Deno.serve(async () => {
+Deno.serve(async (req) => {
+  // Cron-only. This job writes snapshot rows for EVERY org with the
+  // service-role key, bypassing RLS, so it must not run for arbitrary callers.
+  // Platform verify_jwt does not gate it (the public anon key and any rep's
+  // user JWT both clear that check). See _shared/cronAuth.ts.
+  const denied = requireCronCaller(req, CRON_SECRET);
+  if (denied) return denied;
+
   try {
     const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
     const summary = await runSnapshots(makeDeps(db), new Date());

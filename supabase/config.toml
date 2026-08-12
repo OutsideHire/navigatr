@@ -386,6 +386,97 @@ port = 54327
 # Configure one of the supported backends: `postgres`, `bigquery`.
 backend = "postgres"
 
+# Edge Function JWT posture, version-controlled rather than left to a dashboard
+# toggle. verify_jwt stays true (the default) everywhere; it is recorded here so
+# a future change is visible in review.
+#
+# Note that verify_jwt is NOT an authorization boundary on its own: it checks
+# only that the bearer is a JWT signed with the project's JWT secret, which the
+# public anon key in the browser bundle satisfies, as does any logged-in user's
+# JWT. Functions that need a real caller check do it themselves, either
+# auth.getUser() (sync_path, sync_followup, sync_appointment,
+# read_calendar_events, discover_prospects, geocode), a webhook signature
+# (send_auth_email), or the cron-credential guard in _shared/cronAuth.ts
+# (compute_coverage_snapshots, compute_persistence_snapshots).
+# These two are verify_jwt = FALSE deliberately, and that is stronger here, not
+# weaker. They authenticate with CRON_SECRET, a raw random string rather than a
+# JWT. Platform verify_jwt rejects any non-JWT bearer with
+# UNAUTHORIZED_INVALID_JWT_FORMAT *before* the function runs, so leaving it on
+# would block the schedulers themselves (observed 2026-08-12).
+#
+# Turning it off loses nothing, because verify_jwt was never an authorization
+# boundary for these: it only proves the bearer is signed with the project's JWT
+# secret, which the public anon key in the browser bundle satisfies, as does any
+# logged-in rep's token. The real gate is requireCronCaller in
+# _shared/cronAuth.ts, which demands an exact match on a secret we own. That is
+# strictly narrower than "any valid project JWT".
+[functions.compute_coverage_snapshots]
+verify_jwt = false
+
+[functions.compute_persistence_snapshots]
+verify_jwt = false
+
+# Same reasoning as the two above. refresh_place_ids is cron-driven, updates
+# place_id across every org with the service-role key, and each run spends
+# Google Places calls. It authenticates with CRON_SECRET, a raw string rather
+# than a JWT, so platform verify_jwt would reject the scheduler itself.
+[functions.refresh_place_ids]
+verify_jwt = false
+
+# --- verify_jwt = false for a reason other than cron ---------------------------
+#
+# calendar_oauth: its /callback route is a provider redirect (GET, no session,
+# Google/Microsoft send code+state). No Supabase JWT is present, so platform
+# verification would reject the callback and break calendar connect entirely.
+# The /start route builds the state; /callback validates it.
+[functions.calendar_oauth]
+verify_jwt = false
+
+# send_auth_email: invoked by the Supabase Auth Send-Email hook, which
+# authenticates with a webhook signature (SEND_EMAIL_HOOK_SECRET), not a JWT.
+# It must also return application/json with a 2xx or the login flow breaks;
+# see commit 76eb9a5.
+[functions.send_auth_email]
+verify_jwt = false
+
+# --- verify_jwt = true, each doing its own caller check ------------------------
+#
+# Recorded so a future change is visible in review. Note that verify_jwt is NOT
+# an authorization boundary by itself: it proves only that the bearer is a JWT
+# signed with the project's JWT secret, which the public anon key in the browser
+# bundle satisfies. Every function below therefore verifies its caller:
+# auth.getUser() in all of them except send_invite_email, which instead queries
+# through the caller's JWT so RLS on org_invites is the boundary.
+[functions.discover_prospects]
+verify_jwt = true
+
+[functions.geocode]
+verify_jwt = true
+
+[functions.intercom_user_hash]
+verify_jwt = true
+
+[functions.read_calendar_events]
+verify_jwt = true
+
+[functions.resolve_place]
+verify_jwt = true
+
+[functions.send_invite_email]
+verify_jwt = true
+
+[functions.sync_appointment]
+verify_jwt = true
+
+[functions.sync_followup]
+verify_jwt = true
+
+[functions.sync_path]
+verify_jwt = true
+
+[functions.transcribe]
+verify_jwt = true
+
 # Experimental features may be deprecated any time
 [experimental]
 # Configures Postgres storage engine to use OrioleDB (S3)

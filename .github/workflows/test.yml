@@ -17,7 +17,113 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
       - name: Type check
         run: pnpm --filter app typecheck
+
+      # `tsc --noEmit` does NOT catch everything `vite build` does. A build that
+      # fails here would fail on Vercel, and a failed Vercel build silently
+      # leaves the previous deployment serving, so users keep seeing old code
+      # with nothing obviously broken. That has already happened once on this
+      # project, which is why this step exists.
+      - name: Production build
+        run: pnpm --filter app build
+
+      # Covers apps/app/src plus supabase/functions/_shared, which
+      # vitest.config.ts includes. There is deliberately no separate `deno test`
+      # job: those tests import vitest and would fail under Deno.
       - name: Unit tests
         run: pnpm --filter app test
+
+      - name: Destructive migration check
+        run: node tools/check-destructive-migrations.mjs
+
+      - name: Destructive migration checker's own tests
+        run: node --test tools/check-destructive-migrations.test.mjs
+
+      # Manifest-vs-code only. Checking a live environment needs an access token
+      # and belongs in the deploy workflows; this catches the manifest going
+      # stale, which is the failure that makes the live check report a false
+      # pass.
+      - name: Secrets manifest covers the code
+        run: node tools/check-secrets.mjs --audit
+
+  # Builds a database from an empty state using every migration, then runs the
+  # RLS regression scripts against it.
+  #
+  # This is the check that matters most. Reviewing a migration cannot tell you
+  # whether the whole set still applies in order: a duplicate version number
+  # made this repo unable to build a database at all, and nobody noticed until
+  # `db reset` was run for the first time. Anything that cannot build from zero
+  # cannot create a staging environment either.
+  database:
+    # ARM, deliberately, to match production. Supabase runs this project on
+    # aarch64 ("PostgreSQL 17.6 on aarch64-unknown-linux-gnu"), as does the
+    # development Mac. Testing the database on an architecture production does
+    # not use invites chasing failures customers cannot hit while missing ones
+    # they can.
+    #
+    # This was originally changed while chasing a segfault in test 008, on the
+    # theory that the crash was x86-only. That theory was WRONG: it reproduced
+    # on ARM too, and the real fix was in the test (it no longer invokes a
+    # function merely to prove the caller lacks EXECUTE). ARM is kept because
+    # matching production is right on its own merits, not because it fixed
+    # anything.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      # PINNED, not `latest`. The CLI version determines the Postgres image, and
+      # the image determines Supabase's stock default grants to anon and
+      # authenticated. CLI 2.98.2 ships postgres 17.6.1.121; `latest` (2.113.0)
+      # ships 17.6.1.158, which grants less. Since this repo contains no
+      # explicit GRANT statements and relies entirely on those stock defaults,
+      # the two images produce databases where different tables are readable,
+      # and four RLS tests fail on the newer one with "permission denied".
+      #
+      # An unpinned CI is not reproducible: the same commit would pass today and
+      # fail whenever Supabase ships an image. Upgrade this deliberately, with
+      # the grant question in docs/launch/environment-bootstrap.md resolved
+      # first.
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.98.2
+
+      # Database only. A full `supabase start` brings up 12 containers; this job
+      # needs one. On a 7GB runner the full stack starved Postgres badly enough
+      # that it was killed mid-test, producing "connection to server was lost"
+      # followed by "the database system is in recovery mode" and taking the
+      # remaining tests down with it. That reads like a query crashing the
+      # server and is not.
+      #
+      # The seed writes auth.users rows directly in SQL, so it needs the auth
+      # SCHEMA (created by migrations) rather than the gotrue SERVICE. Verified
+      # locally: migrations, seed and all 9 tests pass with only the database.
+      # Also cuts startup from minutes to about 20 seconds.
+      - name: Start Postgres only
+        run: >
+          supabase start
+          -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+
+      # Applies all migrations to an empty database in order, then runs
+      # supabase/seed.sql. The seed inserts auth.users rows that fire the real
+      # signup trigger, so a regression there fails this step too.
+      - name: Build the database from every migration
+        run: supabase db reset
+
+      # Plain psql scripts using `do $$ ... raise exception`, NOT pgTAP, so
+      # `supabase test db` cannot run them. 004, 008 and 009 assert the RLS
+      # boundaries that keep one ISO's data away from another's.
+      - name: RLS regression tests
+        run: ./tools/run-db-tests.sh "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+
+      # A backend crash ("connection to server was lost", then recovery mode)
+      # says nothing about WHY from the client side. Postgres logs the signal
+      # and usually the statement. Without this the only options are guessing or
+      # pushing commits to probe CI, which is slow and leaves a bad history.
+      - name: Postgres log on failure
+        if: failure()
+        run: |
+          echo "=== container ==="
+          docker ps -a --format '{{.Names}}\t{{.Status}}' | grep supabase_db || true
+          echo "=== last 120 log lines ==="
+          docker logs --tail 120 "$(docker ps -a --format '{{.Names}}' | grep '^supabase_db' | head -1)" 2>&1 || true
