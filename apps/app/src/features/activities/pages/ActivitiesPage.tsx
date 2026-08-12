@@ -55,6 +55,7 @@ import { useMyAppointments } from "@/features/appointments/useAppointments";
 import { useActivitiesForOrg } from "../hooks/useActivities";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { useTasks } from "../hooks/useTasks";
+import { taskPrimaryAction } from "../lib/taskPrimaryAction";
 import { useTaskMutations } from "../hooks/useTaskMutations";
 import { type Task } from "../tasks/taskTypes";
 import { type TaskType } from "../lib/isProspectTouch";
@@ -173,6 +174,7 @@ type HistoryItem =
 function TaskRow({
   task,
   now,
+  hasLoadableDeal,
   onLogOutcome,
   onMarkDone,
   onOpenDeal,
@@ -181,6 +183,10 @@ function TaskRow({
 }: {
   task: PageTask;
   now: Date;
+  /** Whether the task's deal is present in the rep's loaded org deals. When a
+   *  non-to-do task's deal is missing (removed / stale sample data), logging
+   *  would be rejected by the database, so the row offers Dismiss instead. */
+  hasLoadableDeal: boolean;
   onLogOutcome: (dealId: string) => void;
   onMarkDone: (taskId: string) => void;
   onOpenDeal: (dealId: string) => void;
@@ -225,13 +231,23 @@ function TaskRow({
   );
 
   // Primary action varies by type: log the outcome (call/email/appointment),
-  // mark done (to-do, internal), or open the deal to log off-route (drop-in).
+  // mark done (to-do, internal), open the deal to log off-route (drop-in), or
+  // dismiss a dead row whose deal is no longer in the workspace (stale sample
+  // data), which the database would reject a log against.
+  const action = taskPrimaryAction({
+    isTodo,
+    type: task.type,
+    dealId: task.dealId,
+    hasLoadableDeal,
+  });
   const primary =
-    isTodo
-      ? { label: "Mark done", run: () => onMarkDone(task.id) }
-      : task.type === "drop_in"
-        ? { label: "Open deal", run: () => task.dealId && onOpenDeal(task.dealId) }
-        : { label: "Log activity", run: () => task.dealId && onLogOutcome(task.dealId) };
+    action.kind === "mark_done"
+      ? { label: "Mark done", run: () => onMarkDone(task.id), variant: "primary" as const, icon: CheckIcon }
+      : action.kind === "dismiss"
+        ? { label: "Dismiss", run: () => onCancel(task.id), variant: "secondary" as const, icon: undefined }
+        : action.kind === "open_deal"
+          ? { label: "Open deal", run: () => task.dealId && onOpenDeal(task.dealId), variant: "primary" as const, icon: PlusCircle }
+          : { label: "Log activity", run: () => task.dealId && onLogOutcome(task.dealId), variant: "primary" as const, icon: PlusCircle };
 
   return (
     <div
@@ -264,6 +280,11 @@ function TaskRow({
             )}
           </p>
           {agenda && <p className="truncate text-caption text-text-muted">{agenda}</p>}
+          {action.dealUnavailable && (
+            <p className="text-caption text-status-warning">
+              Sample data. The linked deal isn't in your workspace, so it can't be logged.
+            </p>
+          )}
           <p className="text-caption text-text-muted">
             <span className={overdue ? "font-medium text-status-danger" : "text-text-default"}>
               {formatRelativeShort(task.dueAt, now)}
@@ -275,9 +296,9 @@ function TaskRow({
       </div>
       <div className="flex shrink-0 gap-2 self-stretch sm:self-auto">
         <Button
-          variant="primary"
+          variant={primary.variant}
           size="sm"
-          leadingIcon={isTodo ? CheckIcon : PlusCircle}
+          leadingIcon={primary.icon}
           onClick={primary.run}
           className="flex-1 sm:flex-none"
         >
@@ -902,7 +923,7 @@ export function ActivitiesPage() {
                     </div>
                     <div className="flex flex-col gap-2">
                       {overdue.map((t) => (
-                        <TaskRow key={t.id} task={t} now={now} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
+                        <TaskRow key={t.id} task={t} now={now} hasLoadableDeal={t.dealId != null && dealById.has(t.dealId)} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
                       ))}
                     </div>
                   </section>
@@ -915,7 +936,7 @@ export function ActivitiesPage() {
                     </div>
                     <div className="flex flex-col gap-2">
                       {today.map((t) => (
-                        <TaskRow key={t.id} task={t} now={now} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
+                        <TaskRow key={t.id} task={t} now={now} hasLoadableDeal={t.dealId != null && dealById.has(t.dealId)} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
                       ))}
                     </div>
                   </section>
@@ -940,7 +961,7 @@ export function ActivitiesPage() {
                     <p className="text-eyebrow text-text-subtle">{dayHeading(items[0]!.dueAt, now)}</p>
                     <div className="flex flex-col gap-2">
                       {items.map((t) => (
-                        <TaskRow key={t.id} task={t} now={now} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
+                        <TaskRow key={t.id} task={t} now={now} hasLoadableDeal={t.dealId != null && dealById.has(t.dealId)} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
                       ))}
                     </div>
                   </section>

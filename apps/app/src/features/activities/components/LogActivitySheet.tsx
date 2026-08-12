@@ -56,6 +56,7 @@ import { useLogActivity } from "../hooks/useLogActivity";
 import { useFollowupSync } from "@/features/appointments/useFollowupSync";
 import { DISPOSITIONS_BY_TYPE, DISPOSITION_VALUES } from "../lib/dispositionSets";
 import { formatLogConfirmation } from "../lib/logConfirmation";
+import { friendlyLogError } from "../lib/friendlyLogError";
 import { repOutcomeLabel, repOutcomeSubtitle } from "@/features/path/lib/outcomeRepLabels";
 
 // ───────────────────────────────────────────────────────────────────────
@@ -323,9 +324,11 @@ function ActivityForm({
       // (below), so a manually-closed or reopened sheet can cancel a pending
       // timer instead of letting a stale one fire onClose().
     } catch (err) {
-      // RLS denial / network failure / org mismatch — surface raw message.
-      // We do NOT close the sheet so the rep can retry without re-entering.
-      toast.error(err instanceof Error ? err.message : "Could not log activity");
+      // Network failure, or the deal is no longer in the workspace (FK / RLS /
+      // org mismatch on stale sample data). Map the latter to a clear, actionable
+      // line instead of a generic failure. We do NOT close the sheet so the rep
+      // can retry (or close and dismiss the dead row) without re-entering.
+      toast.error(friendlyLogError(err));
     }
   };
 
