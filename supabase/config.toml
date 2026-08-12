@@ -416,6 +416,13 @@ verify_jwt = false
 [functions.compute_persistence_snapshots]
 verify_jwt = false
 
+# Same reasoning as the two above. refresh_place_ids is cron-driven, updates
+# place_id across every org with the service-role key, and each run spends
+# Google Places calls. It authenticates with CRON_SECRET, a raw string rather
+# than a JWT, so platform verify_jwt would reject the scheduler itself.
+[functions.refresh_place_ids]
+verify_jwt = false
+
 # Experimental features may be deprecated any time
 [experimental]
 # Configures Postgres storage engine to use OrioleDB (S3)

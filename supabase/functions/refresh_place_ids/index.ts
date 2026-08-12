@@ -19,9 +19,13 @@
 // (returns the same id) so it is safe to schedule before live Places is on.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireCronCaller } from "../_shared/cronAuth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// Authentication for the cron caller is a dedicated secret, NOT the service-role
+// key. See _shared/cronAuth.ts for why.
+const CRON_SECRET = Deno.env.get("CRON_SECRET");
 const GOOGLE_PLACES_API_KEY = Deno.env.get("GOOGLE_PLACES_API_KEY") ?? "";
 const PLACES_MOCK = Deno.env.get("PLACES_MOCK") === "1";
 
@@ -85,6 +89,15 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return json({ error: "method_not_allowed" }, 405);
   }
+
+  // Cron-only. This job updates place_id and place_synced_at for EVERY org with
+  // the service-role key, bypassing RLS, and each run costs Google Places calls.
+  // Platform verify_jwt does not gate it: the public anon key in the browser
+  // bundle and any logged-in rep's JWT both clear that check, so without this an
+  // arbitrary caller could trigger an all-tenant refresh and burn quota. See
+  // _shared/cronAuth.ts.
+  const denied = requireCronCaller(req, CRON_SECRET);
+  if (denied) return denied;
 
   if (!PLACES_MOCK && !GOOGLE_PLACES_API_KEY) {
     return json({ error: "places_unavailable", detail: "live Places is off (no key, PLACES_MOCK unset)" }, 503);
