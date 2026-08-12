@@ -103,3 +103,15 @@ jobs:
       # boundaries that keep one ISO's data away from another's.
       - name: RLS regression tests
         run: ./tools/run-db-tests.sh "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+
+      # A backend crash ("connection to server was lost", then recovery mode)
+      # says nothing about WHY from the client side. Postgres logs the signal
+      # and usually the statement. Without this the only options are guessing or
+      # pushing commits to probe CI, which is slow and leaves a bad history.
+      - name: Postgres log on failure
+        if: failure()
+        run: |
+          echo "=== container ==="
+          docker ps -a --format '{{.Names}}\t{{.Status}}' | grep supabase_db || true
+          echo "=== last 120 log lines ==="
+          docker logs --tail 120 "$(docker ps -a --format '{{.Names}}' | grep '^supabase_db' | head -1)" 2>&1 || true
