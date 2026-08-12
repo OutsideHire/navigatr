@@ -11,6 +11,9 @@ import { requireCronCaller } from "../_shared/cronAuth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// Authentication for the cron caller is a dedicated secret, NOT the service-role
+// key. See _shared/cronAuth.ts for why.
+const CRON_SECRET = Deno.env.get("CRON_SECRET");
 
 function makeDeps(db: SupabaseClient): SnapshotDeps {
   return {
@@ -66,7 +69,7 @@ Deno.serve(async (req) => {
   // service-role key, bypassing RLS, so it must not run for arbitrary callers.
   // Platform verify_jwt does not gate it (the public anon key and any rep's
   // user JWT both clear that check). See _shared/cronAuth.ts.
-  const denied = requireCronCaller(req, SERVICE_ROLE_KEY);
+  const denied = requireCronCaller(req, CRON_SECRET);
   if (denied) return denied;
 
   try {

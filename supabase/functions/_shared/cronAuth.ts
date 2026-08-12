@@ -14,10 +14,27 @@
  *   - independently of that, any logged-in rep holds a genuine user JWT that
  *     clears the gate outright.
  *
- * The schedulers already send the right credential. Both *_snapshot_cron.sql
- * migrations do `net.http_post(..., 'Authorization', 'Bearer ' ||
- * <service_role_key from Vault>, ...)`; the functions just never verified it.
- * These helpers make them verify, so no scheduling change is needed.
+ * WHAT THE CREDENTIAL IS, AND WHY IT IS NOT THE SERVICE-ROLE KEY.
+ *
+ * The first version of this guard compared the bearer against
+ * SUPABASE_SERVICE_ROLE_KEY, because the schedulers already sent that. It was
+ * deployed on 2026-08-12 and immediately rejected the schedulers' own requests
+ * with 401: the Vault copy is a valid original service_role JWT, but it is not
+ * byte-identical to what Supabase now injects into that variable (new-format
+ * `sb_secret_*` keys coexist with the legacy JWTs). An exact string comparison
+ * against a platform-managed value fails the moment the platform changes it,
+ * and it fails silently, because a skipped nightly job produces no error anyone
+ * sees. That is a bad property for a job nobody watches.
+ *
+ * So the credential is CRON_SECRET, a value we own:
+ *   - set as an Edge Function secret, read here;
+ *   - stored in Vault as `cron_secret`, sent by both *_snapshot_cron.sql jobs;
+ *   - nothing Supabase does to key formats can invalidate it.
+ *
+ * It also shrinks the blast radius. The service-role key grants full database
+ * access bypassing every RLS policy; using it to answer "is this the scheduler?"
+ * put a full-access credential in the cron job definition to settle a yes/no
+ * question. CRON_SECRET grants nothing on its own.
  *
  * Plain dependency-free TS (no Deno globals at module scope) so the app's vitest
  * run unit-tests it, matching the other _shared modules. `Response` and
