@@ -49,8 +49,13 @@ begin
   if r.org_id <> '00000000-0000-0000-0000-000000000001' then
     raise exception 'case1: wrong org_id %', r.org_id;
   end if;
-  if r.role <> 'manager' then
-    raise exception 'case1: expected role=manager got %', r.role;
+  -- The first user in an org became 'admin' rather than 'manager' when the
+  -- role_level foundation landed (20260722000002/3): role_level is now the real
+  -- authorization gate and the legacy `role` column is derived from it. The
+  -- trigger comments this as "First user in the org becomes the Administrator".
+  -- This assertion said 'manager' until 2026-08-13, describing pre-July behaviour.
+  if r.role <> 'admin' then
+    raise exception 'case1: expected role=admin got %', r.role;
   end if;
 end $$;
 
