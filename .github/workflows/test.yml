@@ -53,9 +53,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # PINNED, not `latest`. The CLI version determines the Postgres image, and
+      # the image determines Supabase's stock default grants to anon and
+      # authenticated. CLI 2.98.2 ships postgres 17.6.1.121; `latest` (2.113.0)
+      # ships 17.6.1.158, which grants less. Since this repo contains no
+      # explicit GRANT statements and relies entirely on those stock defaults,
+      # the two images produce databases where different tables are readable,
+      # and four RLS tests fail on the newer one with "permission denied".
+      #
+      # An unpinned CI is not reproducible: the same commit would pass today and
+      # fail whenever Supabase ships an image. Upgrade this deliberately, with
+      # the grant question in docs/launch/environment-bootstrap.md resolved
+      # first.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.98.2
 
       - name: Start local Supabase
         run: supabase start
