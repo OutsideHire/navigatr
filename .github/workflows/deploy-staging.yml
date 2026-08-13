@@ -1,0 +1,56 @@
+name: deploy-staging
+
+# Every merge to main reaches staging automatically. Vercel deploys the frontend
+# on its own (main is its Preview branch, with staging.getnavigatr.io pinned to
+# it); this workflow handles the two halves Vercel does not: the database and the
+# edge functions.
+on:
+  push:
+    branches: [main]
+
+# Two merges in quick succession must not run `db push` at the same time.
+# cancel-in-progress is deliberately false: cancelling a half-applied migration
+# is worse than queueing.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned for the same reason as the database job in test.yml: the CLI
+      # version determines the Postgres image, and an unpinned CI is not
+      # reproducible.
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.98.2
+
+      # --db-url, NOT --linked. Supabase direct connections are IPv6-only and
+      # GitHub runners are IPv4-only, so SUPABASE_DB_URL must be the Session
+      # POOLER connection string. Using --linked here fails with an SSL EOF
+      # partway through, which reads like a network blip rather than a
+      # configuration error.
+      #
+      # Note also that `--project-ref` is not a valid flag on db push; it is
+      # accepted only by `functions deploy` and the `secrets` commands.
+      - name: Migrate the staging database
+        run: supabase db push --db-url "${{ secrets.SUPABASE_DB_URL }}"
+
+      # --use-api bundles server-side, so this needs no Docker on the runner.
+      # verify_jwt posture comes from config.toml, so a new environment inherits
+      # the right auth settings rather than needing 15 dashboard clicks.
+      - name: Deploy the staging edge functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --use-api
+
+      # Catches a half-configured environment before someone hits it in the app.
+      - name: Verify staging has every secret it needs
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: node tools/check-secrets.mjs staging

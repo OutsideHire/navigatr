@@ -62,3 +62,7 @@ figma-whoami.sh
 
 # Brainstorming visual companion artifacts
 .superpowers/
+
+# Playwright smoke-test artifacts (traces, screenshots, HTML report)
+apps/app/test-results/
+apps/app/playwright-report/
