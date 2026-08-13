@@ -100,6 +100,21 @@ export default defineConfig({
       },
     }),
   ],
+  // observability.ts reads VITE_RELEASE so Sentry can group errors by the
+  // commit that produced them. Vercel already knows the commit, but exposes it
+  // as VERCEL_GIT_COMMIT_SHA, and Vite only inlines VITE_-prefixed variables.
+  // Bridging it here rather than adding a dashboard row is deliberate: a
+  // hand-maintained release value goes stale the first time someone forgets to
+  // update it, and a stale release tag is worse than none — it silently
+  // attributes new errors to an old build.
+  //
+  // Falls back to "dev" so local builds are distinguishable from deployed ones
+  // rather than reporting an empty release.
+  define: {
+    "import.meta.env.VITE_RELEASE": JSON.stringify(
+      process.env.VITE_RELEASE ?? process.env.VERCEL_GIT_COMMIT_SHA ?? "dev",
+    ),
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
