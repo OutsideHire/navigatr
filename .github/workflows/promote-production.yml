@@ -29,10 +29,29 @@ jobs:
     permissions:
       contents: write   # needed to fast-forward `release` and push the tag
     steps:
+      # Two gates, because GitHub Environment "required reviewers" needs a paid
+      # plan on private repos and is unavailable here.
+      #
+      # Be honest about what this is worth: an actor check lives in the same
+      # file the actor could edit, so it is not a security boundary against
+      # someone with write access. It IS effective against the failure it is
+      # meant to catch: an automation, a mistaken click, or a future teammate
+      # promoting to production without realising what the button does.
+      # workflow_dispatch already requires repo write access, so this narrows
+      # that to named people.
+      - name: Refuse unless a named promoter triggered this
+        run: |
+          allowed="outsidehiredev"
+          if ! echo " $allowed " | grep -q " ${{ github.actor }} "; then
+            echo "::error::${{ github.actor }} is not on the promote allowlist ($allowed)."
+            exit 1
+          fi
+          echo "triggered by ${{ github.actor }}"
+
       - name: Refuse unless explicitly confirmed
         run: |
           if [ "${{ github.event.inputs.confirm }}" != "PROMOTE" ]; then
-            echo "Confirmation text did not match. Nothing was deployed."
+            echo "::error::Confirmation text did not match. Nothing was deployed."
             exit 1
           fi
 
