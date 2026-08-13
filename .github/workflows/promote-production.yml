@@ -20,7 +20,12 @@ concurrency:
 jobs:
   promote:
     runs-on: ubuntu-latest
-    environment: production
+    # NOT `production`: Vercel's GitHub integration already owns an environment
+    # called `Production`, and GitHub matches these names case-insensitively.
+    # Reusing it would mean this workflow's required-reviewer rule also gates
+    # Vercel's own deployments, which could leave production frontend deploys
+    # waiting for an approval nobody knows to give.
+    environment: production-deploy
     permissions:
       contents: write   # needed to fast-forward `release` and push the tag
     steps:
