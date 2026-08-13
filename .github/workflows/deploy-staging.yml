@@ -7,6 +7,10 @@ name: deploy-staging
 on:
   push:
     branches: [main]
+  # Manually triggerable too, so staging can be redeployed without an empty
+  # commit, and so a failed run can be retried against updated secrets without
+  # relying on re-run semantics.
+  workflow_dispatch:
 
 # Two merges in quick succession must not run `db push` at the same time.
 # cancel-in-progress is deliberately false: cancelling a half-applied migration
@@ -37,6 +41,22 @@ jobs:
       #
       # Note also that `--project-ref` is not a valid flag on db push; it is
       # accepted only by `functions deploy` and the `secrets` commands.
+      # Prints the host only. A wrong connection string is otherwise reported as
+      # "network is unreachable", which reads like a transient network fault
+      # rather than "you pasted the Direct string instead of the pooler one".
+      - name: Check the connection string shape
+        run: |
+          url="${{ secrets.SUPABASE_DB_URL }}"
+          host=$(printf '%s' "$url" | sed -E 's#.*@([^:/]+).*#\1#')
+          user=$(printf '%s' "$url" | sed -E 's#^postgresql://([^:]+):.*#\1#')
+          echo "host: $host"
+          echo "user: $user"
+          case "$host" in
+            *pooler.supabase.com) echo "pooler host, correct for CI" ;;
+            db.*) echo "::error::This is the DIRECT connection string. Direct is IPv6-only and GitHub runners are IPv4-only. Use the Session pooler string, whose host ends in pooler.supabase.com and whose user is postgres.<project-ref>."; exit 1 ;;
+            *) echo "::error::Unrecognised host '$host'." ; exit 1 ;;
+          esac
+
       - name: Migrate the staging database
         run: supabase db push --db-url "${{ secrets.SUPABASE_DB_URL }}"
 
