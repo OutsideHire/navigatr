@@ -38,7 +38,7 @@ do $$
 begin
   if not exists (select 1 from vault.secrets where name = 'cron_secret') then
     perform vault.create_secret(
-      encode(gen_random_bytes(32), 'hex'),
+      encode(extensions.gen_random_bytes(32), 'hex'),
       'cron_secret',
       'Shared secret the nightly snapshot schedulers send. Auto-generated on first apply; an operator must set the matching CRON_SECRET Edge Function secret before the jobs can authenticate.'
     );
