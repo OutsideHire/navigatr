@@ -6,8 +6,13 @@ import { Resend } from "resend";
 import { Webhook } from "standardwebhooks";
 import { renderEmail } from "../_shared/emailTemplate.ts";
 import { authEmailContent, buildVerifyUrl } from "../_shared/authEmail.ts";
+import { shouldSend } from "../_shared/emailGuard.ts";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
+// Outside production only allowlisted recipients are deliverable. Unset APP_ENV
+// fails closed. See _shared/emailGuard.ts.
+const APP_ENV = Deno.env.get("APP_ENV");
+const EMAIL_ALLOWLIST = Deno.env.get("EMAIL_ALLOWLIST") ?? "";
 const FROM_ADDRESS = Deno.env.get("FROM_ADDRESS") ?? "navigatr <invites@send.getnavigatr.io>";
 // Supabase provides the hook secret as "v1,whsec_<base64>"; standardwebhooks
 // wants the base64 portion.
@@ -63,6 +68,17 @@ Deno.serve(async (req) => {
     footnote: content.footnote,
     code: d.email_action_type === "magiclink" ? d.token : undefined,
   });
+
+  // Outside production, drop non-allowlisted recipients. Returns 200 like every
+  // other path here: Supabase's Send-Email hook treats a non-200 as "you
+  // failed, I will send my own version instead", which on staging would defeat
+  // the whole point by delivering an unbranded email to the same person.
+  if (!shouldSend(APP_ENV, EMAIL_ALLOWLIST, body.user.email)) {
+    console.log(
+      `[emailGuard] dropped ${d.email_action_type} to ${body.user.email} in APP_ENV=${APP_ENV ?? "(unset)"}`,
+    );
+    return json({}, 200);
+  }
 
   try {
     const r = await resend.emails.send({
