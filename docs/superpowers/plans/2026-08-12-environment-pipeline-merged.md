@@ -39,9 +39,16 @@ Learned the hard way; ignoring any of these produces silent failures.
 
 ---
 
+> **Checkbox warning.** The `- [ ]` boxes below were never ticked as the work was
+> done, so they are NOT a record of progress. Read the **Status** line under each
+> task heading instead. As of 2026-08-13: Phases 0-3 are complete apart from
+> Tasks 8 and 17, Task 7 was cut, and Phase 4 is the real remaining work.
+
+
 ## Phase 0: close the hole found while scoping
 
 ### Task 1: Require a cron credential on `refresh_place_ids`
+**Status: DONE.** cron credential required; verified in production
 
 `refresh_place_ids` runs monthly, builds a service-role client, and updates rows across every org, with no caller check (`index.ts:81-95`). Platform `verify_jwt` is not an authorization boundary: the public anon key in the browser bundle satisfies it. Anyone with that key can trigger an all-tenant refresh, burning Google Places quota.
 
@@ -199,6 +206,7 @@ git commit -m "fix(security): require a cron credential on refresh_place_ids"
 ---
 
 ### Task 2: Declare JWT posture for every function
+**Status: DONE.** all 15 functions declare verify_jwt in config.toml
 
 `config.toml` declares `verify_jwt` for three of fifteen functions. The rest are set by dashboard clicks, invisible to review, and will not be reproduced on staging.
 
@@ -226,6 +234,7 @@ git commit -m "chore(config): declare verify_jwt posture for all 15 edge functio
 ## Phase 1: finish the foundations
 
 ### Task 3: Repair production's migration ledger
+**Status: DONE.** ledger repaired; db push works against production
 
 Production recorded 54 migrations and stops at `20260708160000`, because SQL Editor pastes are never recorded. The repo has 110. Until the ledger matches, `supabase db push` will refuse to run, so Phase 3 cannot deploy anything.
 
@@ -274,6 +283,7 @@ Expected: reports nothing to apply. If it wants to apply migrations, Step 3 was 
 ---
 
 ### Task 4: Audit and repair the database test scripts
+**Status: DONE.** 9 test scripts repaired and running in CI
 
 `supabase/tests/` holds 9 files. They are **not pgTAP** (zero `plan()` calls); they are psql scripts using `do $$ ... raise` assertions. They run nowhere and target early-June schema. Their value is RLS regression coverage, which is the surface most expensive to get wrong.
 
@@ -313,6 +323,7 @@ git commit -m "test(db): repair the RLS regression scripts and add a runner"
 ---
 
 ### Task 5: Write the real seed file
+**Status: DONE.** loginable local seed; supabase db reset works from zero
 
 `supabase/seed.sql` exists but is empty, so a fresh local database has no data and the app shows empty states everywhere.
 
@@ -351,6 +362,7 @@ git add supabase/seed.sql && git commit -m "feat(db): local development seed"
 ---
 
 ### Task 6: Write the per-environment bootstrap runbook
+**Status: DONE.** docs/launch/environment-bootstrap.md
 
 Everything below lives only in a dashboard. It is invisible to the repo and to any schema diff, and none of it is recreated by migrations. Without this document, staging's login is broken out of the box and a "does the page render" check still passes.
 
@@ -388,6 +400,7 @@ git commit -m "docs: per-environment bootstrap runbook"
 ---
 
 ### Task 7: Destructive schema cleanup
+**Status: CUT.** lead-architect call: the schema was fully read during the drift work and nothing warranted destructive cleanup
 
 The last chance to rename or drop anything for free. After the first real user, every one of these becomes a two-release job forever (spec 6.4).
 
@@ -455,6 +468,7 @@ git commit -m "feat(db): final destructive schema cleanup before additive-only"
 ---
 
 ### Task 8: Move navigatr to its own Supabase organization
+**Status: OUTSTANDING.** production still shares an org with 13 unrelated projects; 5 people have access
 
 Production shares organization `lwicvufjihaqvlebwulb` with 13 unrelated projects. Anyone with org access reaches navigatr production; billing and spend limits are org-wide; and navigatr's buyers are payment and payroll ISOs who will ask where their reps' data lives. Navigatr LLC is a separate entity from OutsideHire.
 
@@ -487,6 +501,7 @@ Confirm nobody outside Navigatr LLC retains access.
 ## Phase 2: gates
 
 ### Task 9: Full CI on every pull request
+**Status: DONE.** test + database jobs; proven green on PR #69
 
 Today CI runs typecheck and vitest. It does not run the real build, which has already caused a silently blocked deploy on this project.
 
@@ -538,6 +553,7 @@ Do not mark this done from a local run; the point is that CI does it.
 ---
 
 ### Task 10: Block unannotated destructive migrations
+**Status: DONE.** tools/check-destructive-migrations.mjs, 11 tests
 
 **Files:** Create `tools/check-destructive-migrations.mjs` and its test; modify `.github/workflows/test.yml`
 
@@ -642,6 +658,7 @@ The Task 7 cleanup migration carries an override comment, so this should report 
 ---
 
 ### Task 11: Secrets manifest
+**Status: DONE.** supabase/secrets.manifest.json; production check fails BY DESIGN until Task 18
 
 **Files:** Create `supabase/secrets.manifest.json` and `tools/check-secrets.mjs`
 
@@ -674,6 +691,7 @@ A first run that reports gaps is the check working.
 ---
 
 ### Task 12: Branch protection
+**Status: DONE.** branch protection active on main; verified by a rejected push
 
 **Files:** none
 
@@ -698,6 +716,7 @@ Open a pull request that breaks a test, confirm merge is disabled, close it with
 ## Phase 3: staging and the release flow
 
 ### Task 13: Stand up staging
+**Status: DONE.** staging ref hjhxdznpdytnafsxvptx; 113 migrations byte-identical
 
 **Files:** Create `apps/app/.env.staging.example`
 
@@ -753,6 +772,7 @@ This is the real verification (spec 6.3). On staging: send an invite, complete s
 ---
 
 ### Task 14: Move Vercel Preview off production
+**Status: DONE.** Preview builds point at staging, verified in the served bundle
 
 Today there is one Supabase project, so every pull request preview build carries production credentials. Every preview URL is a live client against real data.
 
@@ -769,6 +789,7 @@ Open the preview, check the network tab, confirm requests go to the staging proj
 ---
 
 ### Task 15: The two-branch release flow
+**Status: DONE.** two-branch model live; promote ran successfully twice on 2026-08-13
 
 The spec's original design had promote controlling the database and functions while Vercel deployed the frontend on every merge, so any change needing both would break production in the gap. Vercel has no tag-based deploy.
 
@@ -809,6 +830,7 @@ Snapshot artifact attached, tag created, smoke test green.
 ---
 
 ### Task 16: Email allowlist outside production
+**Status: DONE.** guard proven on staging AND proven a no-op on production
 
 **Ordering hazard, and it is severe.** The guard fails closed. Deploying it before `APP_ENV=production` is set on production would silently drop every invite and every auth email. That is the exact day-one catastrophe this program exists to prevent.
 
@@ -852,6 +874,7 @@ Send one real invite from production and confirm it arrives. This is the step th
 ---
 
 ### Task 17: Seed staging at 50-rep volume and measure
+**Status: OUTSTANDING.** staging has not been seeded at 50-rep volume
 
 A dashboard that is instant on five rows and takes eleven seconds on fifty reps is a classic way to lose a beta, and the buyer is the person looking at those reports.
 
@@ -882,6 +905,7 @@ Supabase Reports, Query Performance, sort by total time. `explain analyze` the w
 ## Phase 4: pre-onboarding
 
 ### Task 18: Take Google Places live, capped
+**Status: OUTSTANDING.** PLACES_MOCK still set on production; discovery returns sample data
 
 `PLACES_MOCK` is still set on production, so the live Places path has never run there. If it is broken, discovery does not work for anyone on day one.
 
@@ -893,38 +917,45 @@ Supabase Reports, Query Performance, sort by total time. `explain analyze` the w
 - [ ] **Step 6: Unset `PLACES_MOCK` on production, redeploy `discover_prospects`, run one discovery, and confirm `geo_cell_cache` recorded the pull.** An empty cache after a successful discovery means every request re-hits Google at full cost.
 
 ### Task 19: Rotate the AssemblyAI key
+**Status: OUTSTANDING.** key was exposed in chat; treat as compromised
 
 It passed through a chat transcript and must be treated as public.
 
 - [ ] Create a new key in the AssemblyAI dashboard; update `ASSEMBLYAI_API_KEY` on production and staging; redeploy `transcribe`; record a voice note end to end to confirm; revoke the old key.
 
 ### Task 20: Rehearse inviting fifty people
+**Status: OUTSTANDING.**
 
 If invites throttle silently, half the cohort gets nothing on day one and navigatr looks broken before anyone logs in.
 
 - [ ] Raise the Supabase auth email rate limit above 200/hour. Confirm the Resend plan's daily limit and that the sending domain shows SPF, DKIM and DMARC passing. Invite ten plus-addressed addresses you control via the CSV wizard. Confirm ten successful `send_invite_email` invocations **and** ten Resend delivered events; disagreeing counts mean invites are being lost. Revoke the rehearsal invites afterwards.
 
 ### Task 21: Prove Sentry actually reports
+**Status: MOSTLY DONE.** Sentry live on both environments, ingest and email alerting both verified 2026-08-13. REMAINING: the second alert rule (an issue seen more than 10 times in an hour)
 
 Initialization is conditional on `VITE_SENTRY_DSN` (`apps/app/src/lib/observability.ts:34`). If that variable is absent in Vercel's production environment, Sentry has never reported anything.
 
 - [ ] Confirm `VITE_SENTRY_DSN`, `VITE_SENTRY_ENVIRONMENT=production`, and `VITE_RELEASE` exist in Vercel Production. Throw a test error from the production console and confirm it arrives. Create two alert rules: any new issue in `production`, and any issue seen more than 10 times in an hour. **Verify a notification actually reaches Ryan's phone**; an untested alert rule is not an alert rule. Resolve the smoke-test issues afterwards.
 
 ### Task 22: Enable point-in-time recovery
+**Status: OUTSTANDING.** only protection today is the promote snapshot
 
 Last, because it protects data that does not exist yet, costs roughly $100/month, and can block the Task 8 organization transfer.
 
 - [ ] Enable PITR on production. Record the retention window. Return after 30 minutes and confirm the earliest restore point is populated and advancing; an enabled toggle with no restore point is not protection.
 
 ### Task 23: Beta agreement data terms
+**Status: OUTSTANDING.** needs Ryan's sign-off; customer-facing
 
 - [ ] Write the retention window from Task 22 into the beta agreement, with an explicit statement that navigatr is in beta and should not be the sole record of business-critical information. Get Ryan's sign-off; this is customer-facing contractual language.
 
 ### Task 24: Correct the README
+**Status: OUTSTANDING.**
 
 - [ ] `README.md` describes a .NET 9 backend at `apps/api/` that does not exist, and `package.json` has dead `dev:api`, `db:up`, and `db:down` scripts alongside a `docker-compose.yml` serving the removed stack. Rewrite Layout, Prerequisites, and Quick start around Vite plus Supabase, replace the Docker Postgres instructions with `supabase start`, delete the dead scripts and compose file, and add an Environments section linking the spec. Verify the quick start works from a clean clone.
 
 ### Task 25: Staged cohort runbook
+**Status: OUTSTANDING.** highest value item remaining, and costs nothing
 
 - [ ] Write `docs/launch/beta-onboarding-runbook.md`: Wave 1 of three to five users, held a full working day; Wave 2 only if no unresolved Sentry issues and no failed invite deliveries; code freeze from the day before Wave 1 through the Friday of week one, hotfixes only. Include the go/no-go checklist. This and the freeze remain the two highest-value items in the whole program, and they cost nothing.
 
