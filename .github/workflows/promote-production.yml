@@ -1,0 +1,136 @@
+name: promote-production
+
+# The only route to production. Takes whatever is on main (already deployed to
+# staging and, ideally, clicked through there) and publishes it.
+#
+# Order matters and is not arbitrary: database, then functions, then frontend.
+# The frontend goes last because it is the half users see. If a migration fails,
+# nothing user-visible has changed yet.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type PROMOTE to deploy the current main to production'
+        required: true
+
+concurrency:
+  group: promote-production
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: write   # needed to fast-forward `release` and push the tag
+    steps:
+      - name: Refuse unless explicitly confirmed
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "PROMOTE" ]; then
+            echo "Confirmation text did not match. Nothing was deployed."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.98.2
+
+      # Belt and braces alongside PITR. This produces a file you can diff and
+      # inspect, which point-in-time recovery does not.
+      #
+      # The emptiness check is not paranoia: `supabase db dump` EXITS 0 WHILE
+      # WRITING AN EMPTY FILE when the connection drops. Without this assertion
+      # a failed snapshot looks exactly like a successful one, and we would
+      # migrate production believing we had a backup.
+      - name: Snapshot production before migrating
+        run: |
+          supabase db dump --db-url "${{ secrets.SUPABASE_DB_URL }}" -f schema-${{ github.sha }}.sql
+          supabase db dump --db-url "${{ secrets.SUPABASE_DB_URL }}" --data-only -f data-${{ github.sha }}.sql
+          for f in schema-${{ github.sha }}.sql data-${{ github.sha }}.sql; do
+            if [ ! -s "$f" ]; then
+              echo "::error::$f is empty. The dump failed despite exiting 0. Refusing to migrate without a snapshot."
+              exit 1
+            fi
+            echo "$f: $(wc -l < "$f") lines"
+          done
+
+      - name: Upload the snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-promote-snapshot-${{ github.sha }}
+          path: |
+            schema-${{ github.sha }}.sql
+            data-${{ github.sha }}.sql
+          retention-days: 30
+
+      - name: Record what production is serving now
+        id: before
+        run: |
+          idx=$(curl -s -m 30 https://app.getnavigatr.io/ | grep -oE '/assets/index-[A-Za-z0-9._-]+\.js' | head -1)
+          echo "bundle=$idx" >> "$GITHUB_OUTPUT"
+          echo "production currently serves: $idx"
+
+      - name: Migrate the production database
+        run: supabase db push --db-url "${{ secrets.SUPABASE_DB_URL }}"
+
+      - name: Deploy the production edge functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --use-api
+
+      # Vercel's production branch is `release`, so this is what actually ships
+      # the frontend. Fast-forward only: if `release` has drifted ahead of main
+      # somehow, this fails rather than forcing, because a force push here would
+      # silently discard whatever was on production.
+      - name: Publish the frontend by fast-forwarding release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin release
+          git push origin main:release
+
+      # Vercel builds asynchronously, so wait for the new bundle rather than
+      # smoke-testing the old one and calling it a pass. A promote with no
+      # frontend change produces the same hash, so a timeout here is not a
+      # failure; it just means there was nothing new to wait for.
+      - name: Wait for the new frontend to go live
+        run: |
+          before="${{ steps.before.outputs.bundle }}"
+          for i in $(seq 1 20); do
+            now=$(curl -s -m 30 "https://app.getnavigatr.io/?cb=$i" | grep -oE '/assets/index-[A-Za-z0-9._-]+\.js' | head -1)
+            if [ -n "$now" ] && [ "$now" != "$before" ]; then
+              echo "new bundle live: $now"; exit 0
+            fi
+            echo "[$i] still $now"
+            sleep 20
+          done
+          echo "::notice::Bundle unchanged after ~7 minutes. Expected when a promote contains no frontend changes."
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright browser
+        run: cd apps/app && npx playwright install --with-deps chromium
+
+      # The check a green build cannot give you: a blank white page returns 200.
+      - name: Smoke test production
+        env:
+          SMOKE_BASE_URL: https://app.getnavigatr.io
+        run: cd apps/app && npx playwright test e2e/smoke.spec.ts
+
+      # Written last, so a tag exists only for a promote that actually
+      # succeeded. This is the marker you roll back to.
+      - name: Tag the release
+        run: |
+          tag="release-$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
+          git tag "$tag"
+          git push origin "$tag"
+          echo "::notice::Tagged $tag"
