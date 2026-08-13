@@ -9,10 +9,16 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Resend } from "resend";
 import { renderEmail } from "../_shared/emailTemplate.ts";
+import { shouldSend } from "../_shared/emailGuard.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
+// Outside production only allowlisted recipients are deliverable. Unset APP_ENV
+// fails closed (nothing sends), so a new environment cannot mail customers by
+// omission. See _shared/emailGuard.ts.
+const APP_ENV = Deno.env.get("APP_ENV");
+const EMAIL_ALLOWLIST = Deno.env.get("EMAIL_ALLOWLIST") ?? "";
 const FROM_ADDRESS = Deno.env.get("FROM_ADDRESS") ?? "invites@navigatr.app";
 const APP_BASE_URL = Deno.env.get("APP_BASE_URL") ?? "https://navigatr.app";
 
@@ -97,6 +103,14 @@ Deno.serve(async (req) => {
       ctaUrl: link,
       footnote: "This invite expires in 14 days. If you weren't expecting it, you can ignore this email.",
     });
+    // Outside production, only allowlisted recipients are deliverable. Reported
+    // as ok:true so the caller's UI behaves normally on staging; the log line is
+    // how you tell a dropped send from a delivered one.
+    if (!shouldSend(APP_ENV, EMAIL_ALLOWLIST, inv.email)) {
+      console.log(`[emailGuard] dropped ${inv.email} in APP_ENV=${APP_ENV ?? "(unset)"}`);
+      results.push({ id: inv.id, ok: true, dropped: true });
+      continue;
+    }
     try {
       const send = await resend.emails.send({ from: FROM_ADDRESS, to: inv.email, subject: `You're invited to ${orgName} on navigatr`, html, text });
       if ((send as { error?: unknown }).error) {
