@@ -150,10 +150,18 @@ describe("useTodayPath", () => {
     expect(markStarted).toHaveBeenCalledWith("p1");
   });
 
-  it("start() no-ops when there's no path yet", async () => {
+  it("start() with no path yet creates today's path already stamped started", async () => {
+    // An appointment / follow-up-only day has nothing to persist as a merchant
+    // stop, so there is no path row to mark. start() must instead CREATE the path
+    // already stamped started, so the day is genuinely "started" (started_at set)
+    // and the run surface renders it rather than falling back to the entry landing.
     activeState.current = { data: { path: null, stops: [] }, isLoading: false };
     const { result } = renderHook(() => useTodayPath());
     await act(async () => { await result.current.start(); });
     expect(markStarted).not.toHaveBeenCalled();
+    expect(createPath).toHaveBeenCalledTimes(1);
+    const arg = createPath.mock.calls[0][0] as { startedAt?: string };
+    expect(typeof arg.startedAt).toBe("string");
+    expect(Number.isNaN(Date.parse(arg.startedAt!))).toBe(false);
   });
 });

@@ -53,14 +53,12 @@ import { TodaysPathView, ADD_NEARBY_ENABLED } from "../components/TodaysPathView
 import { PathOverflowSheet } from "../components/PathOverflowSheet";
 import { UpcomingPaths } from "../components/UpcomingPaths";
 import { PathSettings } from "../components/PathSettings";
-import { ActivePathView } from "../components/ActivePathView";
 import { RunningPath } from "../components/RunningPath";
 import { ResumePathCard } from "../components/ResumePathCard";
 import { usePathQueue } from "../hooks/usePathQueue";
 import { useTodayPath } from "../hooks/useTodayPath";
 import { usePreviousUnfinishedPath } from "../hooks/usePreviousUnfinishedPath";
 import { usePathMutations } from "../hooks/usePathMutations";
-import { pathLanding } from "../lib/pathTypes";
 import { toast } from "sonner";
 import { planQueueMigration } from "../lib/migrateLocalQueue";
 import { useMerchants } from "../hooks/useMerchants";
@@ -262,11 +260,8 @@ export function PathPage() {
     status: runCalStatus,
   } = useCalendarEvents(runWindow);
 
-  // Lifecycle landing rule (design's lifecycle table). Derives where the rep
-  // lands from started_at + pending stops, uniformly across tab switch, reopen,
-  // and full reload. Never override an explicit "discover" — the rep is in the
-  // middle of adding stops and we shouldn't yank them back.
-  const landing = pathLanding({ startedAt, hasPendingStops: hasPending });
+  // Never override an explicit "discover" — the rep is in the middle of adding
+  // stops and we shouldn't yank them back.
   React.useEffect(() => {
     setPathView((v) => {
       if (v === "discover") return v;
@@ -280,12 +275,9 @@ export function PathPage() {
         // yanking the rep back to the landing.
         return startedAt ? v : "entry";
       }
-      // Stops exist:
-      //  - startedAt null (Planned / legacy) → the Stops overview (ActivePathView,
-      //    still "path"), no auto-jump into a run.
-      //  - startedAt set → the card-first active-run surface (RunningPath, also
-      //    "path"; no Run|Stops tabs). Which of the two renders is decided by the
-      //    lifecycle `landing` in the "path" branch below.
+      // Stops exist → the card-first run surface ("path" → RunningPath). Whether
+      // or not started_at is stamped, RunningPath composes the ordered day live,
+      // so a not-yet-started path and a running one share the same surface.
       return "path";
     });
   }, [queueStops.length, startedAt]);
@@ -329,7 +321,7 @@ export function PathPage() {
 
   // "Plan a new area" opens the stepped slide-out wizard (mode → search → results →
   // review → schedule → saved). The in-page map/list discover view is still
-  // reachable via "Add stops" on an active path (ActivePathView.onAddStops).
+  // reachable via "Find nearby" on the run surface (RunningPath.onFindNearby).
   const handlePlan = React.useCallback(() => { if (!closePreviousPath.isPending) finalizePrevious(); setPlanOpen(true); }, [finalizePrevious, closePreviousPath.isPending]);
 
   // Header "+" overflow (FR-PATH-UX-12): the rarely-used actions ("Add more stops
@@ -529,7 +521,7 @@ export function PathPage() {
   const orderedQueue: Merchant[] = React.useMemo(() => {
     // Only the discover-branch map consumes the ordered queue / routePath.
     // Skip the O(n²) nearest-neighbor pass in every other view (entry/active/
-    // running) where ActivePathView/RunningPath compute their own route.
+    // running) where RunningPath computes its own route.
     if (pathView !== "discover") return [];
     if (queuedMerchants.length === 0) return [];
     // Nearest-neighbor only makes sense for geocoded stops; without
@@ -904,10 +896,10 @@ export function PathPage() {
              of pathView so a rep without a location still sees the right empty state.
           2. Origin set → switch on pathView:
              - "entry":    two-card prompt (create / plan a path)
-             - "path":     the active path. When started (started_at set), the
-                           card-first RunningPath (current-stop card + an
-                           expandable list/map of what remains, no tabs); else
-                           the planned Stops overview (ActivePathView)
+             - "path":     the active path — the card-first RunningPath
+                           (current-stop card + an expandable list/map of what
+                           remains, no tabs). One surface for planned, running,
+                           and appointment-only days alike.
              - "discover": filter controls + map+list discovery ladder
           Filter chips, radius/sort controls are discovery-only and live
           exclusively inside the "discover" branch. Header + location bar are always above. */}
@@ -998,30 +990,19 @@ export function PathPage() {
           <UpcomingPaths onLaunch={() => navigate("/path")} />
         </div>
       ) : pathView === "path" ? (
-        landing === "entry" ? (
-          /* Planned / legacy (started_at null): the Stops overview only — no
-             auto-run. "Start route" stamps started_at, which flips the lifecycle
-             landing to the active-run surface below (same as Create's auto-start). */
-          <>
-            <ActivePathView
-              origin={origin}
-              onAddStops={enterDiscover}
-              onStartRoute={() => { void todayPath.start(); }}
-            />
-            <UpcomingPaths onLaunch={() => navigate("/path")} />
-          </>
-        ) : (
-          /* In progress / completed (started_at set): the card-first active-run
-             surface (v2.2 A7). No Run|Stops tabs — RunningPath owns the permanent
-             stop card plus a "what remains" expandable (List | Map); nothing is
-             hidden behind a tab. */
-          <RunningPath
-            origin={origin}
-            onViewPipeline={() => navigate("/pipeline")}
-            onExit={() => setPathView("entry")}
-            onFindNearby={enterDiscover}
-          />
-        )
+        /* Any path with stops, and any explicitly-started appointment / follow-up
+           day: the single card-first run surface (v2.2 A7). There is no separate
+           "planned Stops overview" screen — RunningPath composes its own ordered
+           day (appointments + past-due + due-today + native stops) via
+           useDrivingSequence, so it renders a not-yet-started path and an
+           appointment-only day alike. No Run|Stops tabs: RunningPath owns the
+           permanent stop card plus a "what remains" expandable (List | Map). */
+        <RunningPath
+          origin={origin}
+          onViewPipeline={() => navigate("/pipeline")}
+          onExit={() => setPathView("entry")}
+          onFindNearby={enterDiscover}
+        />
       ) : (
         /* pathView === "discover": filter controls + map+list discovery ladder */
         <>

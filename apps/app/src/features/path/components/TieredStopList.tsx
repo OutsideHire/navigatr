@@ -5,7 +5,7 @@
  * an optional past-due age, and a caller-supplied action node. It is purely
  * presentational: it owns row chrome (badge, name, chip, time, age, dim /
  * strike treatment) and renders whatever actions the parent hands it, so both
- * the Stops tab (ActivePathView) and the SP-C3 Run view can reuse it without
+ * the Run view (RunningPath) reuses it without
  * baking either surface's actions into the component.
  *
  * Rows arrive already ordered (appointments, then past-due, due-today, nearby);

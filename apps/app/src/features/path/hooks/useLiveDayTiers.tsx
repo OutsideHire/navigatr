@@ -3,8 +3,8 @@
  * appointments + located external meetings, past-due owed drop-ins, and
  * due-today drop-ins. These are the tiers that are NOT the persisted native
  * `path_stops` (SP-C1): they are read live from their hooks and never written
- * into the path. Extracted from ActivePathView (SP-C2) so both the Stops tab
- * (ActivePathView) and the guided Run view (RunningPath) render the SAME rows
+ * into the path. Originally extracted for SP-C2 so the guided Run view
+ * (RunningPath) renders the SAME rows
  * with the SAME actions, rather than copy-pasting the tier assembly.
  *
  * It returns:
