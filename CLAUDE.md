@@ -78,3 +78,20 @@ Tests live next to source (`foo.ts` → `foo.test.ts`). Goals:
 - Never commit code that breaks existing tests.
 
 CI: `.github/workflows/test.yml` runs typecheck + tests on every push to main and every PR.
+
+## Shipping and environments (follow always)
+
+navigatr ships on a two-branch pipeline. Full detail is in the `ship-navigatr`
+skill; the always-on rules:
+
+- Flow: feature branch -> PR -> merge to `main` (auto-deploys STAGING at
+  staging.getnavigatr.io) -> `promote-production` workflow -> `release`
+  (PRODUCTION at app.getnavigatr.io). `main` is STAGING, not production.
+- NEVER push straight to `main` expecting it to reach customers, and NEVER
+  hand-apply SQL to the production database. Migrations and edge functions ship
+  through the pipeline (`supabase db push` / `functions deploy` run by CI).
+- Production changes (the `release` branch, the prod Supabase project
+  `ogvcveimjjeywfdkkinb`) happen ONLY via the approved `promote-production`
+  workflow, and only on the user's explicit go.
+- Staging Supabase = `hjhxdznpdytnafsxvptx` (all mock flags ON). Production =
+  `ogvcveimjjeywfdkkinb`. Verify with tests + a real `pnpm build` before merging.
