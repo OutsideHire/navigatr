@@ -280,6 +280,19 @@ describe("TodaysPathView", () => {
     expect(screen.queryByRole("button", { name: /start driving/i })).not.toBeInTheDocument();
   });
 
+  it("shows the empty state when nothing is scheduled even if a nearby fill pool exists (D-12)", () => {
+    // Robert's case: no scheduled stops, but a background nearby pool (overflow)
+    // is present. The day must still read as empty ("No stops today / Build my
+    // day"), NOT an empty list with an "Add more stops" row. Before the fix the
+    // pool made `empty` false, so the empty state was effectively unreachable.
+    renderView({ proposal: [], noLocation: [] }); // default overflow is NON-empty
+    expect(screen.getByText(/No stops today/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /build my day/i })).toBeInTheDocument();
+    // The empty-list affordances must NOT render alongside the empty card.
+    expect(screen.queryByRole("button", { name: /add more stops/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /start driving/i })).not.toBeInTheDocument();
+  });
+
   it("shows Start on an appointment-only plan and starts it with an empty flexible array", () => {
     // A day with ONLY appointments (no owed/due/nearby flexible stops) must still
     // offer the primary action: the run view drives the appointments live. Start

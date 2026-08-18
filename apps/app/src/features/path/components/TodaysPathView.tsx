@@ -288,7 +288,14 @@ export function TodaysPathView({
   // it renders whenever there are coordinate-less owed drop-ins, even when there
   // is no routable day, so a truly caught-up rep still sees what they owe.
   const hasRoutable = visibleProposal.length > 0 || visibleOverflow.length > 0;
-  const empty = !hasRoutable && noLocation.length === 0;
+  // "Empty day" = nothing SCHEDULED to show (no shown stops, no no-location
+  // group). Deliberately independent of the withheld nearby fill pool
+  // (visibleOverflow): a day with only background nearby suggestions and nothing
+  // actually on it is still an empty day, and must show the "No stops today /
+  // Build my day" card, not an empty list with an "Add more stops" row. Because
+  // there is almost always a nearby pool, keying `empty` off `hasRoutable` (which
+  // counts that pool) made the empty state effectively unreachable.
+  const empty = visibleProposal.length === 0 && noLocation.length === 0;
 
   return (
     <div className={wrap}>

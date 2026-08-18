@@ -262,7 +262,13 @@ export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: Ru
   }, [visibleCards.length, index]);
 
   const handleEndRoute = () => {
-    if (pendingCount() === 0) { onExit(); return; }
+    // End route is only reachable while the run is showing (visibleCards > 0; a
+    // fully-resolved day auto-renders the summary above and has no End route
+    // button). So there is always a live day to end — open the options sheet.
+    // Do NOT gate on the SAVED-stop count (pendingCount): an appointment /
+    // follow-up-only day has zero saved merchant stops but a real day to end, and
+    // the old `pendingCount() === 0` gate skipped the sheet and dumped the rep
+    // back to the day screen instead of offering complete / carry / clear.
     setEndOpen(true);
   };
   const handleCarry = async () => {
