@@ -1,0 +1,105 @@
+name: deploy-demo
+
+# Keeps the demo environment (demo.getnavigatr.io + the demo Supabase project)
+# in step with PRODUCTION, so an ISO is always shown the same build a paying
+# customer would get, just against demo data. It runs automatically after a
+# successful production promote, and can be run by hand to refresh demo on demand.
+#
+# Demo tracks `release` (production), NOT `main` (staging): a demo should show the
+# stable, shipped version, never bleeding-edge work in review.
+#
+# Like the other environments, demo has two halves that move together:
+#   1. Frontend: Vercel builds the `demo` branch (its branch-scoped env vars point
+#      it at the demo Supabase project). This workflow gives that branch a fresh,
+#      unique commit off `release` so Vercel rebuilds it.
+#   2. Backend: the demo database migrations + edge functions. These run only when
+#      the demo environment's secrets are configured; otherwise the step logs and
+#      skips, so the frontend refresh still works on its own. Most promotes carry
+#      no database change, so this half is usually a no-op anyway.
+on:
+  workflow_run:
+    workflows: ["promote-production"]
+    types: [completed]
+  workflow_dispatch:
+
+# A promote and a manual refresh must not rewrite the demo branch at the same time.
+# cancel-in-progress is false: a half-applied demo migration is worse than queueing.
+concurrency:
+  group: deploy-demo
+  cancel-in-progress: false
+
+jobs:
+  deploy-demo:
+    runs-on: ubuntu-latest
+    # Chase only a promote that actually succeeded; a manual run always proceeds.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    environment: demo
+    permissions:
+      contents: write # push the refreshed `demo` branch
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.98.2
+
+      # ---- Frontend: point `demo` at the production tip so Vercel rebuilds it.
+      # An empty commit on top of `release` gives the branch a UNIQUE sha. Vercel
+      # keys deployments by commit, so a demo branch that shared production's exact
+      # sha would never get its own deployment (the bug that first broke demo).
+      - name: Refresh the demo branch off release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin release
+          git checkout -B demo origin/release
+          git commit --allow-empty -m "chore(demo): auto-refresh to $(git rev-parse --short origin/release)"
+          git push --force origin demo
+          echo "::notice::demo branch refreshed to $(git rev-parse --short origin/release); Vercel will rebuild demo.getnavigatr.io."
+
+      # ---- Backend (runs only when the demo environment secrets are configured).
+      # SUPABASE_DB_URL must be the demo project's SESSION POOLER string (IPv4),
+      # not the IPv6-only Direct string; see deploy-staging.yml for the full why.
+      - name: Migrate the demo database (skipped if secrets absent)
+        env:
+          DEMO_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DEMO_DB_URL" ]; then
+            echo "::notice::No demo SUPABASE_DB_URL secret. Skipping demo DB migrate. Add the demo environment secrets to enable the backend half."
+            exit 0
+          fi
+          host=$(printf '%s' "$DEMO_DB_URL" | sed -E 's#.*@([^:/]+).*#\1#')
+          case "$host" in
+            *pooler.supabase.com) echo "pooler host, correct for CI" ;;
+            db.*) echo "::error::This is the DIRECT connection string (IPv6-only). GitHub runners are IPv4-only; use the demo Session pooler string."; exit 1 ;;
+            *) echo "::error::Unrecognised host '$host'."; exit 1 ;;
+          esac
+          supabase db push --db-url "$DEMO_DB_URL"
+
+      # --use-api bundles server-side, so no Docker is needed on the runner, and
+      # verify_jwt posture comes from config.toml.
+      - name: Deploy the demo edge functions (skipped if secrets absent)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          DEMO_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$DEMO_PROJECT_REF" ]; then
+            echo "::notice::No demo SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF. Skipping demo functions deploy."
+            exit 0
+          fi
+          supabase functions deploy --project-ref "$DEMO_PROJECT_REF" --use-api
+
+      # Catches a half-configured demo before someone hits it in a live demo.
+      - name: Verify demo has every secret it needs (skipped if unconfigured)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_PROJECT_REF" ]; then
+            echo "::notice::demo secrets unconfigured; skipping secret audit."
+            exit 0
+          fi
+          node tools/check-secrets.mjs demo
