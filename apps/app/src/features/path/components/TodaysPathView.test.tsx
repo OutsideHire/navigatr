@@ -267,13 +267,13 @@ describe("TodaysPathView", () => {
     renderView({ proposal: [], overflow: [], noLocation });
     expect(screen.getByText("No Map Co")).toBeInTheDocument();
     // The caught-up empty state must NOT show: the rep still owes this drop-in.
-    expect(screen.queryByText(/all caught up/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No stops today/i)).not.toBeInTheDocument();
   });
 
   it("empty proposal renders a friendly empty state that still offers find nearby", () => {
     const onAddNearby = vi.fn();
     renderView({ proposal: [], overflow: [], onAddNearby });
-    expect(screen.getByText(/all caught up/i)).toBeInTheDocument();
+    expect(screen.getByText(/No stops today/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /build my day/i }));
     expect(onAddNearby).toHaveBeenCalledTimes(1);
     // No Start button when there's nothing to run.

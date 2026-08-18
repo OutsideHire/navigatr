@@ -21,11 +21,11 @@ describe("daySubhead", () => {
   });
 
   it("nothing planned: prompts the rep to build a day", () => {
-    expect(daySubhead({ stopCount: 0 })).toBe("No stops yet. Build one to get going.");
+    expect(daySubhead({ stopCount: 0 })).toBe("Nothing scheduled yet.");
   });
 
   it("treats a negative count as nothing planned", () => {
-    expect(daySubhead({ stopCount: -3 })).toBe("No stops yet. Build one to get going.");
+    expect(daySubhead({ stopCount: -3 })).toBe("Nothing scheduled yet.");
   });
 
   it("falls back to the count alone when the planned start time is missing", () => {
