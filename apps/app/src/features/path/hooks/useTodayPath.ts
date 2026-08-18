@@ -86,10 +86,19 @@ export function useTodayPath() {
     const pathId = await ensurePathId(opts?.start ? { startedAt: new Date().toISOString() } : undefined);
     await m.addStops.mutateAsync({ pathId, basePosition: rawStops.length, stops: snapshots });
   };
-  // Stamp started_at on the current path without adding stops — "start a planned
-  // path" from Upcoming. No-op if there's no path yet.
+  // Stamp started_at without adding stops — "start" a day from the landing.
+  // If a path row exists, mark it started. If none exists yet (an appointment /
+  // follow-up-only day has nothing to persist as a merchant stop), CREATE the
+  // path already stamped started, so the day is genuinely "started" (started_at
+  // set) and the run surface renders it instead of bouncing back to the entry
+  // landing. The run reads appointments / owed / due-today live, so an empty
+  // path_stops set is fine.
   const start = async (): Promise<void> => {
-    if (path?.id) await m.markStarted.mutateAsync(path.id);
+    if (path?.id) {
+      await m.markStarted.mutateAsync(path.id);
+      return;
+    }
+    await ensurePathId({ startedAt: new Date().toISOString() });
   };
   const remove = async (merchantId: string): Promise<void> => {
     const id = stopIdFor(merchantId);

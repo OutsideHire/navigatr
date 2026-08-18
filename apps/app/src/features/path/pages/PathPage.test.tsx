@@ -61,27 +61,22 @@ vi.mock("../components/CreatePathWizard", () => ({
     return null;
   },
 }));
-// Stub ActivePathView, but expose the real onAddStops wiring: clicking "Add stops"
-// calls the prop, which is PathPage's enterDiscover — the same UI path a rep takes
-// from an active path into the discover view. (The real component is a MapLibre-heavy
-// surface; the button is all the discover-entry test needs.)
-vi.mock("../components/ActivePathView", () => ({
-  ActivePathView: (props: { onAddStops?: () => void; onStartRoute?: () => void }) => (
-    <div data-testid="active-path">
-      <button type="button" onClick={() => props.onAddStops?.()}>Add stops</button>
-      <button type="button" onClick={() => props.onStartRoute?.()}>Start route</button>
-    </div>
-  ),
-}));
-// Stub RunningPath — the guided run has its own tests; here we only assert the
-// two-tab surface renders it as the default (Run) tab for a started path, and
-// capture the onFindNearby prop so the discover-glue test can assert PathPage
-// wired it to enterDiscover.
+// Stub RunningPath — the single card-first run surface for any path with stops
+// (planned, running, or appointment-only). The legacy ActivePathView "Stops
+// overview" was retired, so RunningPath is now what a queued path renders. It
+// exposes the real onFindNearby wiring: clicking "Add stops" calls the prop,
+// which is PathPage's enterDiscover — the same UI path a rep takes from the run
+// surface into the discover view. (The real component is a MapLibre-heavy
+// surface; the button is all the discover-entry tests need.)
 let capturedOnFindNearby: (() => void) | null = null;
 vi.mock("../components/RunningPath", () => ({
   RunningPath: (props: { onFindNearby?: () => void }) => {
     capturedOnFindNearby = props.onFindNearby ?? null;
-    return <div data-testid="running-path" />;
+    return (
+      <div data-testid="running-path">
+        <button type="button" onClick={() => props.onFindNearby?.()}>Add stops</button>
+      </div>
+    );
   },
 }));
 
@@ -359,11 +354,11 @@ describe("PathPage path-first view states", () => {
     expect(screen.getByRole("button", { name: /who's near me right now/i })).toBeInTheDocument();
   });
 
-  it("shows the active path view when today's path has stops", () => {
+  it("shows the run surface when today's path has stops", () => {
     todayState.current = { ...todayState.current, stops: [{ merchantId: "m1" }] };
     originState.current = { ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready" };
     render(<PathPage />, { wrapper });
-    expect(screen.getByTestId("active-path")).toBeInTheDocument();
+    expect(screen.getByTestId("running-path")).toBeInTheDocument();
   });
 });
 
@@ -459,7 +454,7 @@ describe("PathPage carryover", () => {
     // Simulate the carried stops landing (query invalidation → useActivePath refetch).
     todayState.current = { ...todayState.current, stops: [{ merchantId: "s1" }] };
     rerender(<PathPage />);
-    await waitFor(() => expect(screen.getByTestId("active-path")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("running-path")).toBeInTheDocument());
   });
 });
 
@@ -479,8 +474,8 @@ describe("PathPage route memos — discover-only", () => {
     originState.current = readyOrigin;
     todayState.current = { ...todayState.current, stops: geoStops as unknown as typeof todayState.current.stops };
     render(<PathPage />, { wrapper });
-    // Stops present → lands on the active home, not discover.
-    expect(screen.getByTestId("active-path")).toBeInTheDocument();
+    // Stops present → lands on the run surface, not discover.
+    expect(screen.getByTestId("running-path")).toBeInTheDocument();
     // The route memo must short-circuit when pathView !== "discover".
     expect(nearestNeighborSpy).not.toHaveBeenCalled();
   });
@@ -543,7 +538,6 @@ describe("PathPage active-run surface — card-first, no tabs (v2.2 A7)", () => 
     expect(screen.queryByRole("tab", { name: /^run$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: /^stops$/i })).not.toBeInTheDocument();
     expect(screen.getByTestId("running-path")).toBeInTheDocument();
-    expect(screen.queryByTestId("active-path")).not.toBeInTheDocument();
   });
 
   it("wires RunningPath's onFindNearby to the discover view", () => {
@@ -565,7 +559,10 @@ describe("PathPage active-run surface — card-first, no tabs (v2.2 A7)", () => 
     expect(screen.getByRole("button", { name: /^next$/i })).toBeInTheDocument();
   });
 
-  it("a PLANNED path (started_at null) shows the overview only — no run, no tabs", () => {
+  it("a PLANNED path (started_at null) renders the single run surface — no legacy overview, no tabs", () => {
+    // ActivePathView was retired: a path with stops but not yet started now
+    // renders the same card-first RunningPath as a started one. RunningPath
+    // composes the ordered day live, so it does not need started_at to be set.
     originState.current = readyOrigin;
     todayState.current = {
       ...todayState.current,
@@ -574,22 +571,7 @@ describe("PathPage active-run surface — card-first, no tabs (v2.2 A7)", () => 
     };
     render(<PathPage />, { wrapper });
     expect(screen.queryByRole("tab", { name: /^run$/i })).not.toBeInTheDocument();
-    expect(screen.getByTestId("active-path")).toBeInTheDocument();
-    expect(screen.queryByTestId("running-path")).not.toBeInTheDocument();
-  });
-
-  it("'Start route' on a planned path stamps started_at (start()), which flips to the run surface", () => {
-    originState.current = readyOrigin;
-    const start = vi.fn();
-    todayState.current = {
-      ...todayState.current,
-      startedAt: null,
-      start,
-      stops: geoStops as unknown as typeof todayState.current.stops,
-    };
-    render(<PathPage />, { wrapper });
-    fireEvent.click(screen.getByRole("button", { name: /start route/i }));
-    expect(start).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("running-path")).toBeInTheDocument();
   });
 });
 
@@ -602,8 +584,8 @@ describe("PathPage discover — meeting-aware banner + fit flags", () => {
   const nearbyMerchant = [
     { id: "x", name: "Xray", address: "9 X St", phone: null, lat: 30.02, lng: -97.02, category: "retail", primaryType: null },
   ] as unknown as typeof merchantsState.current.merchants;
-  // An active (planned) path with a pending geocoded stop → lands on the active
-  // home whose "Add stops" button (onAddStops === enterDiscover) enters discover.
+  // A planned path with a pending geocoded stop → lands on the run surface
+  // whose "Add stops" button (onFindNearby === enterDiscover) enters discover.
   const geoStops = [
     { merchantId: "a", name: "Alpha", address: "1 A St", lat: 30.05, lng: -97.05, category: "retail", status: "pending" },
   ];
@@ -973,7 +955,7 @@ describe("PathPage discover — one-tap Start path (Path QA C3)", () => {
     };
   });
 
-  // A queued path renders ActivePathView, whose "Add stops" enters discover.
+  // A queued path renders RunningPath, whose "Add stops" (onFindNearby) enters discover.
   function enterDiscoverWithStops() {
     render(<PathPage />, { wrapper });
     fireEvent.click(screen.getByRole("button", { name: /add stops/i }));
@@ -1083,10 +1065,10 @@ describe("PathPage discover — added stops appear on return without a refresh (
     // With a stop queued, the back action now reads "Next"; the rep taps it.
     fireEvent.click(screen.getByRole("button", { name: /^next$/i }));
 
-    // The rep must land back on the active path (which reflects the added stop),
+    // The rep must land back on the run surface (which reflects the added stop),
     // NOT on the entry/proposal landing. Before the fix this asserts false because
     // pathView was stranded at "entry".
-    expect(screen.getByTestId("active-path")).toBeInTheDocument();
+    expect(screen.getByTestId("running-path")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /build my day/i })).not.toBeInTheDocument();
   });
 });
