@@ -9,7 +9,7 @@
  *   - One stop:              "1 stop. Starts at 9:15."
  *   - Day underway:          "8 stops. Next at 11:40."  (a start time is wrong
  *                            once underway; show the next arrival instead)
- *   - Nothing planned:       "No stops yet. Build one to get going."
+ *   - Nothing planned:       "Nothing scheduled yet."
  *
  * Fallbacks keep it graceful: with a stop count but no clock string, it states
  * the count alone ("8 stops.") rather than an empty or malformed clause.
@@ -26,7 +26,7 @@ export interface DaySubheadInput {
 }
 
 export function daySubhead({ stopCount, startsAt, nextAt, started = false }: DaySubheadInput): string {
-  if (stopCount <= 0) return "No stops yet. Build one to get going.";
+  if (stopCount <= 0) return "Nothing scheduled yet.";
   const stops = `${stopCount} ${stopCount === 1 ? "stop" : "stops"}`;
   if (started) {
     return nextAt ? `${stops}. Next at ${nextAt}.` : `${stops}.`;

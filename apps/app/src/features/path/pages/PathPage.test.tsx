@@ -137,7 +137,7 @@ vi.mock("../hooks/useTodayPath", () => ({ useTodayPath: () => todayState.current
 // Auto-built Today's Path (SP-B2). Mocked so the entry landing's TodaysPathView
 // renders from a controllable proposal WITHOUT the real hook firing its four tier
 // sub-hooks (useMeetingStops/useOwedVisits/useDueTodayVisits/useMerchants) in
-// jsdom. Default: empty proposal → the "all caught up / find nearby" empty state,
+// jsdom. Default: empty proposal → the "No stops today / find nearby" empty state,
 // under which the demoted Create/Plan actions still render.
 const todaysPathState = {
   current: {
@@ -247,17 +247,17 @@ describe("PathPage location states", () => {
     expect(screen.getByText(/finding your location/i)).toBeInTheDocument();
   });
 
-  it("does NOT show the empty 'all caught up' day while geolocation is still resolving (Path QA B1)", () => {
+  it("does NOT show the empty 'No stops today' day while geolocation is still resolving (Path QA B1)", () => {
     // Regression guard for "empty until refresh": with no origin yet and location
     // still resolving, useTodaysPath reports an empty, not-loading proposal (its
     // no-origin contract). The landing must render the finding-location loader,
     // NOT the empty day state, so a rep who does have appointments/owed drop-ins
-    // never sees a false "all caught up" during the origin-pending window. (The
+    // never sees a false "No stops today" during the origin-pending window. (The
     // default todaysPathState here is exactly that empty, not-loading proposal.)
     originState.current = { ...base, geoStatus: "loading" };
     render(<PathPage />, { wrapper });
     expect(screen.getByText(/finding your location/i)).toBeInTheDocument();
-    expect(screen.queryByText(/all caught up/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No stops today/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/today's path/i)).not.toBeInTheDocument();
   });
 
@@ -1187,7 +1187,7 @@ describe("PathPage 'Your day' landing header (v2.2 A6)", () => {
     todaysPathState.current = { ...todaysPathState.current, proposal: [], startsAt: null };
     render(<PathPage />, { wrapper });
     expect(screen.getByRole("heading", { name: /^your day$/i })).toBeInTheDocument();
-    expect(screen.getByText("No stops yet. Build one to get going.")).toBeInTheDocument();
+    expect(screen.getByText("Nothing scheduled yet.")).toBeInTheDocument();
   });
 
   it("keeps the discover header as '{N} merchants nearby' with the nearby-vocabulary explainer (not 'Your day')", () => {

@@ -22,10 +22,10 @@
  * fill pool), it simply does not render its own visible section anymore.
  */
 import * as React from "react";
-import { ArrowRight, CalendarClock, ExternalLink, List, Loader2, Map as MapIcon, MapPin, MapPinOff, Navigation, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { ArrowRight, CalendarClock, ExternalLink, List, Loader2, Map as MapIcon, MapPinOff, Navigation, Plus, RefreshCw, Trash2, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { Button, Card } from "@/components/navigatr";
+import { Button } from "@/components/navigatr";
 import type { OrderedStop, FlexibleStop } from "../lib/todaysPath";
 import type { OwedVisitNoCoords } from "../lib/owedVisits";
 import type { TodaysPathStatus } from "../hooks/useTodaysPath";
@@ -307,21 +307,23 @@ export function TodaysPathView({
           v2.2 A6), so this view no longer repeats a heading — it goes straight to
           the plan (or the caught-up empty card). */}
       {empty ? (
-        <Card padding="lg" className="flex flex-col items-center gap-3 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-surface-sunken text-text-muted">
-            <MapPin className="h-6 w-6" aria-hidden />
-          </span>
-          <div className="flex flex-col gap-1">
-            <p className="text-heading-sm text-text-default">You&apos;re all caught up</p>
+        // Completely-empty day (Robert's v2.2 prototype): a dashed banner explains
+        // that owed visits populate the day on their own, with one primary action
+        // to build a day from nearby prospects. Replaces the old "all caught up"
+        // card. Renders ONLY when the day is completely empty (no stops, no fill
+        // pool, no no-location group), so it disappears on its own once any stop
+        // exists (this branch stops rendering). Same layout on phone + desktop.
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col items-center gap-1 rounded-radius-lg border border-dashed border-border-default bg-surface-default px-6 py-8 text-center">
+            <p className="text-heading-sm text-text-default">No stops today</p>
             <p className="text-body-md text-text-muted">
-              No follow-ups owed or due today, and no appointments on the calendar. Find
-              some nearby businesses to prospect.
+              Once you start logging visits, the places you need to go back to show up here on their own.
             </p>
           </div>
-          <Button variant="secondary" size="sm" leadingIcon={Plus} onClick={onAddNearby}>
+          <Button variant="primary" size="lg" className="w-full" onClick={onAddNearby}>
             Build my day
           </Button>
-        </Card>
+        </div>
       ) : (
         <>
           {hasRoutable && (
