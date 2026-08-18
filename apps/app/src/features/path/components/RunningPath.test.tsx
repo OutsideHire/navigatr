@@ -514,14 +514,23 @@ describe("RunningPath — End route / Pause flow", () => {
     expect(onExitSpy).not.toHaveBeenCalled();
   });
 
-  it("End route with no pending stops exits immediately", () => {
-    stops = [stop("A", { status: "visited" })];
+  it("End route on an appointment-only day (no saved stops) still opens the sheet", () => {
+    // D-10 regression: an appointment / follow-up-only day has zero SAVED merchant
+    // stops (pendingCount 0) but a live day (an appointment card). End route must
+    // offer the options, not dump the rep back to the day screen. (A fully-resolved
+    // day has no cards at all and auto-renders the summary, so it never reaches the
+    // End route button.)
+    stops = [];
     pendingCount = () => 0;
+    seqState.current = {
+      cards: [drivingCard({ kind: "appointment", appointmentId: "a1", dealId: "d1", merchantId: null })],
+      isLoading: false,
+    };
     const onExitSpy = vi.fn();
     render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={onExitSpy} onFindNearby={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /end route/i }));
-    expect(onExitSpy).toHaveBeenCalled();
-    expect(screen.queryByTestId("end-sheet")).not.toBeInTheDocument();
+    expect(screen.getByTestId("end-sheet")).toBeInTheDocument();
+    expect(onExitSpy).not.toHaveBeenCalled();
   });
 
   it("Carry to tomorrow calls carryToTomorrow then exits", async () => {
