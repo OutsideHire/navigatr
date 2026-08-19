@@ -5,8 +5,16 @@
 // COMPOSITION/adaptation only, NOT the assembler's internal ordering (which has
 // its own tests). A fixed `now` keeps every assertion deterministic.
 
+// Pin the suite to UTC. The hook now anchors the working window to the device's
+// timezone offset (Robert's "Starts at" tz fix), so a fixed instant like NOW
+// (15:00Z) must fall in the 9..17 window regardless of the machine the suite runs
+// on. UTC makes NOW == 15:00 local, mid-window, and getTimezoneOffset() == 0.
+// Follows the repo convention of setting TZ per tz-sensitive test file (see the
+// .pacific / .americas suites). Assigned before any import constructs a Date.
+process.env.TZ = "UTC";
+
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 
 import { useTodaysPath } from "./useTodaysPath";
 import type { MeetingStop } from "../lib/meetingStops";
@@ -404,5 +412,58 @@ describe("useTodaysPath", () => {
     expect(result.current.status).toBe("no_origin");
     expect(result.current.proposal).toHaveLength(0);
     expect(result.current.noLocation.map((s) => s.taskId)).toEqual(["nl1"]);
+  });
+
+  // Robert QA (Path "Starts at"): the day's start + remaining capacity must track
+  // the CURRENT time, not the instant the screen first mounted. Returning to the
+  // Path screen (window focus / document visible) re-reads the clock and rebuilds
+  // the day; a plain re-render must NOT (that was the R3-B1 churn). Called without
+  // a fixed `now` so the internal refresh path is exercised.
+  it("refreshes the day to the current time when the rep returns to the screen (focus)", () => {
+    owedRef.owed = [owedVisit()]; // one located past-due stop, so the day is non-empty
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-09T15:00:00.000Z")); // 15:00, inside 9..17
+    try {
+      const { result } = renderHook(() => useTodaysPath(ORIGIN));
+      const startBefore = result.current.startsAt;
+      const remainingBefore = result.current.remainingMin;
+      expect(result.current.proposal.length).toBeGreaterThan(0);
+
+      // 30 minutes pass while the rep is away; then they return to the tab.
+      vi.setSystemTime(new Date("2026-08-09T15:30:00.000Z"));
+      act(() => {
+        window.dispatchEvent(new Event("focus"));
+      });
+
+      // Start moved 30 min later and the window has 30 fewer minutes of capacity.
+      expect(result.current.startsAt).not.toBe(startBefore);
+      expect(remainingBefore - result.current.remainingMin).toBe(30);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // The refresh keeps the SAME wall-clock minute stable: a quick tab-away-and-back
+  // inside one minute must not rebuild the proposal (identity preserved), so the
+  // rep's in-progress review is not reset. Only a real clock advance rebuilds.
+  it("keeps a stable day identity for a focus within the same wall-clock minute", () => {
+    owedRef.owed = [owedVisit()];
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-09T15:00:00.000Z"));
+    try {
+      const { result } = renderHook(() => useTodaysPath(ORIGIN));
+      const proposalBefore = result.current.proposal;
+
+      vi.setSystemTime(new Date("2026-08-09T15:00:20.000Z")); // same minute
+      act(() => {
+        window.dispatchEvent(new Event("focus"));
+      });
+
+      expect(result.current.proposal).toBe(proposalBefore);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

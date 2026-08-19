@@ -397,3 +397,64 @@ describe("assembleTodaysPath", () => {
     expect(assembleTodaysPath(input, NOW)).toEqual(r);
   });
 });
+
+// The working window's hours (startHour / endMinutes) are the rep's wall-clock
+// business hours, so they must anchor to the rep's timezone, NOT UTC. Regression
+// for Robert's "Starts at shows the wrong time" QA: a rep in US Central saw the
+// day open and close on UTC hours, offsetting "Starts at" and collapsing
+// capacity in the late morning. `tzOffsetMinutes` is the device offset (minutes
+// BEHIND UTC: 300 = US Central UTC-5, -60 = CET UTC+1, 0 = UTC).
+describe("assembleTodaysPath — timezone-local working window", () => {
+  it("opens the day at the rep's LOCAL start hour, not the UTC hour (US Central)", () => {
+    // 13:30Z with offset 300 == 8:30 local, before the 9:00 local open. So the
+    // day starts at 9:00 local == 14:00Z, with the full 480min window intact.
+    // Ignoring the offset (the bug) would start at "now" and lose ~3.5h.
+    const r = assembleTodaysPath(
+      base({ tzOffsetMinutes: 300 }),
+      "2026-08-19T13:30:00.000Z",
+    );
+    expect(r.startsAtIso).toBe("2026-08-19T14:00:00.000Z");
+    expect(r.remainingMin).toBe(480);
+  });
+
+  it("clamps 'Starts at' to now once the local window is already open (US Central)", () => {
+    // 15:30Z with offset 300 == 10:30 local, inside the 9:00..17:00 local window.
+    // Start is now; remaining runs to 17:00 local (22:00Z) == 6.5h = 390min.
+    const r = assembleTodaysPath(
+      base({ tzOffsetMinutes: 300 }),
+      "2026-08-19T15:30:00.000Z",
+    );
+    expect(r.startsAtIso).toBe("2026-08-19T15:30:00.000Z");
+    expect(r.remainingMin).toBe(390);
+  });
+
+  it("closes the day at the rep's LOCAL end-of-day (no capacity after local EOD)", () => {
+    // 02:00Z Aug 20 with offset 300 == 21:00 local Aug 19, well past the 17:00
+    // local close. The local date is derived from (now, offset), so the window
+    // is Aug 19 local and there is zero remaining budget.
+    const r = assembleTodaysPath(
+      base({ tzOffsetMinutes: 300 }),
+      "2026-08-20T02:00:00.000Z",
+    );
+    expect(r.remainingMin).toBe(0);
+  });
+
+  it("anchors the window for an east-of-UTC rep too (CET, offset -60)", () => {
+    // 07:30Z with offset -60 == 08:30 local, before the 9:00 local open, which
+    // is 08:00Z. Day starts at 08:00Z with the full 480min window.
+    const r = assembleTodaysPath(
+      base({ tzOffsetMinutes: -60 }),
+      "2026-08-19T07:30:00.000Z",
+    );
+    expect(r.startsAtIso).toBe("2026-08-19T08:00:00.000Z");
+    expect(r.remainingMin).toBe(480);
+  });
+
+  it("defaults to UTC (offset 0) when no tzOffsetMinutes is given", () => {
+    // Backward-compat: the prior UTC behavior is exactly offset 0.
+    const withZero = assembleTodaysPath(base({ tzOffsetMinutes: 0 }), NOW);
+    const without = assembleTodaysPath(base(), NOW);
+    expect(without).toEqual(withZero);
+    expect(without.startsAtIso).toBe("2026-08-09T09:00:00.000Z");
+  });
+});
