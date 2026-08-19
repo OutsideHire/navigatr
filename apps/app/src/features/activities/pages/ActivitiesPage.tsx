@@ -177,7 +177,6 @@ function TaskRow({
   hasLoadableDeal,
   onLogOutcome,
   onMarkDone,
-  onOpenDeal,
   onSnooze,
   onCancel,
 }: {
@@ -187,9 +186,8 @@ function TaskRow({
    *  non-to-do task's deal is missing (removed / stale sample data), logging
    *  would be rejected by the database, so the row offers Dismiss instead. */
   hasLoadableDeal: boolean;
-  onLogOutcome: (dealId: string, taskId: string) => void;
+  onLogOutcome: (dealId: string, taskId: string, lockedType: ActivityType) => void;
   onMarkDone: (taskId: string) => void;
-  onOpenDeal: (dealId: string) => void;
   onSnooze: (task: PageTask, days: number) => void;
   onCancel: (taskId: string) => void;
 }) {
@@ -230,10 +228,10 @@ function TaskRow({
     toDateOnly(now),
   );
 
-  // Primary action varies by type: log the outcome (call/email/appointment),
-  // mark done (to-do, internal), open the deal to log off-route (drop-in), or
-  // dismiss a dead row whose deal is no longer in the workspace (stale sample
-  // data), which the database would reject a log against.
+  // Primary action varies by type: "Log outcome" (call/email/drop-in/appointment
+  // — type inherited from the task), "Complete" (to-do, internal), or "Dismiss"
+  // when the deal is no longer in the workspace (stale sample data) and a log
+  // would be rejected by the database.
   const action = taskPrimaryAction({
     isTodo,
     type: task.type,
@@ -242,12 +240,10 @@ function TaskRow({
   });
   const primary =
     action.kind === "mark_done"
-      ? { label: "Mark done", run: () => onMarkDone(task.id), variant: "primary" as const, icon: CheckIcon }
+      ? { label: "Complete", run: () => onMarkDone(task.id), variant: "primary" as const, icon: CheckIcon }
       : action.kind === "dismiss"
         ? { label: "Dismiss", run: () => onCancel(task.id), variant: "secondary" as const, icon: undefined }
-        : action.kind === "open_deal"
-          ? { label: "Open deal", run: () => task.dealId && onOpenDeal(task.dealId), variant: "primary" as const, icon: PlusCircle }
-          : { label: "Log activity", run: () => task.dealId && onLogOutcome(task.dealId, task.id), variant: "primary" as const, icon: PlusCircle };
+        : { label: "Log outcome", run: () => task.dealId && onLogOutcome(task.dealId, task.id, task.type as ActivityType), variant: "primary" as const, icon: PlusCircle };
 
   return (
     <div
@@ -629,6 +625,7 @@ export function ActivitiesPage() {
   const [typeFilter, setTypeFilter] = React.useState<"all" | TaskType>("all");
   const [logSheetDealId, setLogSheetDealId] = React.useState<string | null>(null);
   const [logSheetTaskId, setLogSheetTaskId] = React.useState<string | null>(null);
+  const [logSheetLockedType, setLogSheetLockedType] = React.useState<ActivityType | null>(null);
   const [logSheetOpen, setLogSheetOpen] = React.useState(false);
   const [editingActivity, setEditingActivity] = React.useState<Activity | null>(null);
   const [createTaskOpen, setCreateTaskOpen] = React.useState(false);
@@ -753,9 +750,10 @@ export function ActivitiesPage() {
     return [...acts, ...todos].sort((a, b) => b.ts.localeCompare(a.ts));
   }, [activities, completedTodos, typeFilter]);
 
-  const openLogSheet = (dealId: string, taskId?: string) => {
+  const openLogSheet = (dealId: string, taskId?: string, lockedType?: ActivityType) => {
     setLogSheetDealId(dealId);
     setLogSheetTaskId(taskId ?? null);
+    setLogSheetLockedType(lockedType ?? null);
     setLogSheetOpen(true);
   };
 
@@ -925,7 +923,7 @@ export function ActivitiesPage() {
                     </div>
                     <div className="flex flex-col gap-2">
                       {overdue.map((t) => (
-                        <TaskRow key={t.id} task={t} now={now} hasLoadableDeal={t.dealId != null && dealById.has(t.dealId)} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
+                        <TaskRow key={t.id} task={t} now={now} hasLoadableDeal={t.dealId != null && dealById.has(t.dealId)} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onSnooze={handleSnooze} onCancel={handleCancel} />
                       ))}
                     </div>
                   </section>
@@ -938,7 +936,7 @@ export function ActivitiesPage() {
                     </div>
                     <div className="flex flex-col gap-2">
                       {today.map((t) => (
-                        <TaskRow key={t.id} task={t} now={now} hasLoadableDeal={t.dealId != null && dealById.has(t.dealId)} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
+                        <TaskRow key={t.id} task={t} now={now} hasLoadableDeal={t.dealId != null && dealById.has(t.dealId)} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onSnooze={handleSnooze} onCancel={handleCancel} />
                       ))}
                     </div>
                   </section>
@@ -963,7 +961,7 @@ export function ActivitiesPage() {
                     <p className="text-eyebrow text-text-subtle">{dayHeading(items[0]!.dueAt, now)}</p>
                     <div className="flex flex-col gap-2">
                       {items.map((t) => (
-                        <TaskRow key={t.id} task={t} now={now} hasLoadableDeal={t.dealId != null && dealById.has(t.dealId)} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onOpenDeal={handleOpenDeal} onSnooze={handleSnooze} onCancel={handleCancel} />
+                        <TaskRow key={t.id} task={t} now={now} hasLoadableDeal={t.dealId != null && dealById.has(t.dealId)} onLogOutcome={openLogSheet} onMarkDone={handleMarkDone} onSnooze={handleSnooze} onCancel={handleCancel} />
                       ))}
                     </div>
                   </section>
@@ -1009,6 +1007,7 @@ export function ActivitiesPage() {
           onOpenChange={setLogSheetOpen}
           dealId={logSheetDealId}
           closeTaskId={logSheetTaskId}
+          lockedType={logSheetLockedType}
           onLogged={() => {
             // The sheet's own toast already fires. useLogActivity
             // invalidates both ACTIVITIES_ORG_QUERY_KEY and the deals

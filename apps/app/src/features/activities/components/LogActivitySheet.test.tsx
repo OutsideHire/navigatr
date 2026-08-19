@@ -213,3 +213,19 @@ describe("LogActivitySheet — change-type navigation", () => {
     expect(mutateAsyncMock).not.toHaveBeenCalled();
   });
 });
+
+
+describe("LogActivitySheet — lockedType (Log outcome path)", () => {
+  it("locks to the task's type: no picker, no Change type, titled Log outcome, with an editable time", () => {
+    render(
+      <LogActivitySheet open onOpenChange={vi.fn()} dealId="deal-1" lockedType="drop_in" closeTaskId="task-1" />,
+    );
+    // Opens straight on the form (no type picker), titled "Log outcome".
+    expect(screen.getAllByText("Log outcome").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/what did you do\?/i)).not.toBeInTheDocument();
+    // The inherited type cannot be changed.
+    expect(screen.queryByRole("button", { name: /change type/i })).not.toBeInTheDocument();
+    // The editable event-time field is present.
+    expect(screen.getByLabelText(/^When$/i)).toBeInTheDocument();
+  });
+});

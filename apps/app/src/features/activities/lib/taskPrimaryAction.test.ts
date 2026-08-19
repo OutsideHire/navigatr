@@ -7,16 +7,11 @@ describe("taskPrimaryAction", () => {
       .toEqual({ kind: "mark_done", dealUnavailable: false });
   });
 
-  it("a call/email/appointment with a loadable deal logs its outcome", () => {
-    for (const type of ["call", "email", "appointment"]) {
+  it("call/email/appointment/drop-in with a loadable deal all offer Log outcome (drop-in included, reversal)", () => {
+    for (const type of ["call", "email", "appointment", "drop_in"]) {
       expect(taskPrimaryAction({ isTodo: false, type, dealId: "d-1", hasLoadableDeal: true }))
-        .toEqual({ kind: "log_activity", dealUnavailable: false });
+        .toEqual({ kind: "log_outcome", dealUnavailable: false });
     }
-  });
-
-  it("a drop-in with a loadable deal opens the deal record", () => {
-    expect(taskPrimaryAction({ isTodo: false, type: "drop_in", dealId: "d-1", hasLoadableDeal: true }))
-      .toEqual({ kind: "open_deal", dealUnavailable: false });
   });
 
   it("a non-to-do whose deal is not loaded (removed/foreign) offers Dismiss", () => {

@@ -137,6 +137,9 @@ const schemaWithDuration = z.object({
   ),
   disposition: z.enum(DISPOSITION_VALUES),
   outcomeNotes: z.string().optional(),
+  // Editable event time (datetime-local, local wall-clock). Clamped to
+  // not-in-the-future on submit; a rep often records something from earlier today.
+  occurredAt: z.string().min(1),
 });
 
 const schemaNoDuration = z.object({
@@ -145,7 +148,15 @@ const schemaNoDuration = z.object({
   durationMinutes: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().optional()),
   disposition: z.enum(DISPOSITION_VALUES),
   outcomeNotes: z.string().optional(),
+  occurredAt: z.string().min(1),
 });
+
+// Local wall-clock "YYYY-MM-DDTHH:mm" for a datetime-local default + max bound.
+function nowLocalInput(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 
 type FormValues = z.infer<typeof schemaWithDuration>;
 
@@ -236,6 +247,7 @@ function ActivityForm({
   type,
   dealId,
   closeTaskId,
+  canChangeType,
   onLogged,
   onBack,
   onClose,
@@ -243,6 +255,9 @@ function ActivityForm({
   type: ActivityType;
   dealId: string;
   closeTaskId?: string | null;
+  /** When false the type is inherited from a task (the "Log outcome" path):
+   *  hide "Change type" and title the form "Log outcome". */
+  canChangeType: boolean;
   onLogged: (activityId: string) => void;
   onBack: () => void;
   onClose: () => void;
@@ -280,6 +295,7 @@ function ActivityForm({
       durationMinutes: "" as unknown as number,
       disposition: undefined,
       outcomeNotes: "",
+      occurredAt: nowLocalInput(),
     },
     mode: "onBlur",
   });
@@ -303,7 +319,12 @@ function ActivityForm({
         // is nullable and the consistency trigger doesn't care.
         durationMinutes: cfg.needsDuration ? values.durationMinutes : null,
         outcomeNotes: values.outcomeNotes ?? "",
-        occurredAt: new Date().toISOString(),
+        // Editable time, clamped to not-in-the-future (a bad/blank value falls
+        // back to now).
+        occurredAt: (() => {
+          const t = Date.parse(values.occurredAt);
+          return new Date(Number.isNaN(t) ? Date.now() : Math.min(t, Date.now())).toISOString();
+        })(),
         followUpDate: followUpIso,
         followUpDateSource: isCallback ? "asserted" : "interval",
         // Verbal commitment's next step becomes the To-do title.
@@ -388,11 +409,25 @@ function ActivityForm({
         <div className="flex flex-col gap-5">
           {/* Header row inside scroll body so it scrolls with content */}
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-body-strong text-text-default">Log {cfg.verb}</h2>
-            <Button type="button" variant="tertiary" size="sm" onClick={onBack}>
-              Change type
-            </Button>
+            <h2 className="text-body-strong text-text-default">
+              {canChangeType ? `Log ${cfg.verb}` : "Log outcome"}
+            </h2>
+            {canChangeType && (
+              <Button type="button" variant="tertiary" size="sm" onClick={onBack}>
+                Change type
+              </Button>
+            )}
           </div>
+
+          {/* When did it happen — editable, defaults to now, cannot be future. */}
+          <FormField
+            htmlFor="occurredAt"
+            label="When"
+            helper="Defaults to now; you can back-date it (not into the future)."
+            error={errors.occurredAt?.message}
+          >
+            <Input id="occurredAt" type="datetime-local" max={nowLocalInput()} {...register("occurredAt")} />
+          </FormField>
 
           {/* Duration — call + appointment only. Email + Drop-In are
               point-in-time events; asking for "duration: 0 min" reads as
@@ -550,6 +585,9 @@ export interface LogActivitySheetProps {
   /** When opened from a specific task row, the id of that task to close on a
    *  successful log (regardless of the activity type picked). */
   closeTaskId?: string | null;
+  /** The "Log outcome" path: the type is INHERITED from the task and locked —
+   *  open straight onto it, no type picker, no "Change type". */
+  lockedType?: ActivityType | null;
 }
 
 export function LogActivitySheet({
@@ -559,13 +597,15 @@ export function LogActivitySheet({
   onLogged,
   defaultType,
   closeTaskId,
+  lockedType,
 }: LogActivitySheetProps) {
-  const [type, setType] = React.useState<ActivityType | null>(defaultType ?? null);
+  const [type, setType] = React.useState<ActivityType | null>(lockedType ?? defaultType ?? null);
 
-  // Reset on close so reopening starts where the caller asked (picker or a type).
+  // Reset on close so reopening starts where the caller asked (locked type,
+  // preset type, or the picker).
   React.useEffect(() => {
-    if (!open) setType(defaultType ?? null);
-  }, [open, defaultType]);
+    if (!open) setType(lockedType ?? defaultType ?? null);
+  }, [open, defaultType, lockedType]);
 
   // All four types route to the shared ActivityForm; duration field is
   // gated per-type via TYPE_CONFIG.
@@ -601,7 +641,7 @@ export function LogActivitySheet({
 
           <div className="flex shrink-0 items-center justify-between gap-2 px-5 pb-3 pt-3 sm:pt-5">
             <Dialog.Title className="text-heading-sm text-text-default">
-              {type ? "Log activity" : "What did you do?"}
+              {type ? (lockedType ? "Log outcome" : "Log activity") : "What did you do?"}
             </Dialog.Title>
             <Dialog.Close asChild>
               <button
@@ -619,6 +659,7 @@ export function LogActivitySheet({
               type={type}
               dealId={dealId}
               closeTaskId={closeTaskId}
+              canChangeType={!lockedType}
               onLogged={onLogged ?? (() => {})}
               onBack={() => setType(null)}
               onClose={() => onOpenChange(false)}

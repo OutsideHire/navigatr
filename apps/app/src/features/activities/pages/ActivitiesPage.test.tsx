@@ -196,10 +196,10 @@ describe("ActivitiesPage / task row actions", () => {
     expect(cancelMutate).toHaveBeenCalledWith("t-1", expect.anything());
   });
 
-  it("a To-do task shows Mark done, which calls completeTask", async () => {
+  it("a To-do task shows Complete, which calls completeTask", async () => {
     const user = userEvent.setup();
     renderWithSeed({ tasks: [makeTask("t-1", "d-1", todayDate(), "todo")], deals: [deal("d-1", "Acme")] });
-    await user.click(screen.getByRole("button", { name: /Mark done/i }));
+    await user.click(screen.getByRole("button", { name: /^Complete$/i }));
     expect(completeMutate).toHaveBeenCalledWith("t-1", expect.anything());
   });
 

@@ -1,14 +1,17 @@
 /**
  * taskPrimaryAction. The one primary CTA an Activities task row should offer.
  *
- * A non-to-do task (call / email / drop-in / appointment) logs its outcome
- * against its DEAL. If that deal is not in the rep's loaded org deals (it was
- * removed, or is stale/foreign sample data), logging can only fail at the
- * database, so the row must NOT offer "Log activity" / "Open deal": it offers
- * "Dismiss" instead, so the rep can clear the dead row. To-dos never need a deal.
+ * A non-to-do task (call / email / drop-in / appointment) logs its OUTCOME
+ * against its DEAL: the card offers "Log outcome" (the scheduled path — the
+ * type is inherited from the task, not re-picked). Drop-ins are included (a
+ * drop-in task otherwise has no way to be closed off-Path). If that deal is not
+ * in the rep's loaded org deals (removed, or stale/foreign sample data), logging
+ * can only fail at the database, so the row offers "Dismiss" instead so the rep
+ * can clear the dead row. To-dos are completed in place ("Complete"), no deal,
+ * no outcome, excluded from Follow-Up Discipline.
  */
 
-export type TaskActionKind = "mark_done" | "log_activity" | "open_deal" | "dismiss";
+export type TaskActionKind = "mark_done" | "log_outcome" | "dismiss";
 
 export interface TaskActionInput {
   /** type === "todo": a plain reminder, completed in place, needs no deal. */
@@ -37,7 +40,9 @@ export function taskPrimaryAction(input: TaskActionInput): TaskPrimaryAction {
   const loadable = input.dealId != null && input.hasLoadableDeal;
   if (!loadable) return { kind: "dismiss", dealUnavailable: true };
 
-  // A drop-in is logged from the deal record; the rest log inline.
-  if (input.type === "drop_in") return { kind: "open_deal", dealUnavailable: false };
-  return { kind: "log_activity", dealUnavailable: false };
+  // Call / email / drop-in / appointment all log their outcome inline from the
+  // card (drop-ins included — reversal of the earlier "removed on drop-ins" rule,
+  // since a drop-in task otherwise cannot be closed without an open-tasks surface
+  // on the deal record).
+  return { kind: "log_outcome", dealUnavailable: false };
 }
