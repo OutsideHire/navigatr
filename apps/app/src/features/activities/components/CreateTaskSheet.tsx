@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { toDateOnly } from "@/lib/calendarDate";
 import { Button, FormField, Input, Select, type SelectOption } from "@/components/navigatr";
 import { useTaskMutations } from "../hooks/useTaskMutations";
+import { useScheduleAppointment } from "@/features/appointments/useAppointments";
 import { useGeocodeDealCoords } from "@/features/pipeline/hooks/useGeocodeDealCoords";
 import { bandsFromTarget } from "../lib/taskBands";
 import { type TaskType } from "../lib/isProspectTouch";
@@ -86,6 +87,7 @@ export interface CreateTaskSheetProps {
 
 export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, deals, defaultType }: CreateTaskSheetProps) {
   const { createTask } = useTaskMutations();
+  const scheduleAppointment = useScheduleAppointment();
   const geocodeDealCoords = useGeocodeDealCoords();
   const boundMode = dealId != null;
   const [type, setType] = React.useState<TaskType>(defaultType ?? "call");
@@ -161,6 +163,30 @@ export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, deals, d
     // Best-effort and fire-and-forget: it never blocks task creation.
     if (type === "drop_in" && resolvedDealId) {
       geocodeDealCoords.mutate({ dealId: resolvedDealId });
+    }
+
+    // An "Appointment" is NOT a task: it is a real scheduled appointment. Route
+    // it to useScheduleAppointment so it inserts a scheduled_appointments row,
+    // pushes to the rep's Google/Outlook calendar (sync_appointment), and shows
+    // on Path (useMeetingStops) — identical to the deal's Schedule-appointment
+    // flow. Duration defaults to 30 min (matching that flow); end = start + 30
+    // guarantees end > start. Validation above already requires a deal + start
+    // time for an appointment, so both are present here.
+    if (type === "appointment") {
+      if (!resolvedDealId || !startAt) return;
+      const endAt = new Date(new Date(startAt).getTime() + 30 * 60_000).toISOString();
+      scheduleAppointment.mutate(
+        { dealId: resolvedDealId, title: title.trim(), startAt, endAt },
+        {
+          onSuccess: () => {
+            toast.success("Appointment scheduled");
+            onOpenChange(false);
+          },
+          onError: (e) =>
+            toast.error(e instanceof Error ? e.message : "Could not schedule appointment"),
+        },
+      );
+      return;
     }
 
     createTask.mutate(
@@ -328,7 +354,7 @@ export function CreateTaskSheet({ open, onOpenChange, dealId, dealName, deals, d
             <Dialog.Close asChild>
               <Button type="button" variant="tertiary" size="md">Cancel</Button>
             </Dialog.Close>
-            <Button type="button" variant="primary" size="md" onClick={submit} loading={createTask.isPending}>
+            <Button type="button" variant="primary" size="md" onClick={submit} loading={createTask.isPending || scheduleAppointment.isPending}>
               Create task
             </Button>
           </div>
