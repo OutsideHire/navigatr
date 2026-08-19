@@ -293,6 +293,42 @@ describe("TodaysPathView", () => {
     expect(screen.queryByRole("button", { name: /start driving/i })).not.toBeInTheDocument();
   });
 
+  it("Build my day AUTO-ASSEMBLES the day from nearby and lands on the list (not the finder)", () => {
+    // D-12 follow-up / Robert: on an empty day, "Build my day" must fill the day
+    // from the nearby pool and show the reviewable "Your day" LIST, NOT open the
+    // find-nearby map (onAddNearby). Regression guard so this can't silently flip
+    // back to opening the map.
+    const onAddNearby = vi.fn();
+    renderView({
+      proposal: [],
+      noLocation: [],
+      // A nearby pool candidate close to origin + ample budget so fillToCapacity
+      // definitely places it (keeps the test off the drive-budget boundary).
+      overflow: [{ id: "of1", dealId: null, name: "Corner Cafe", lat: 30.01, lng: -97.01, tier: "nearby", ageDays: null }],
+      origin: { lat: 30, lng: -97 },
+      remainingMin: 480,
+      onAddNearby,
+    });
+    // Empty state first.
+    expect(screen.getByText(/No stops today/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /build my day/i }));
+    // It built the day in place: the list + Start driving now render, and it did
+    // NOT fall back to the finder.
+    expect(onAddNearby).not.toHaveBeenCalled();
+    expect(screen.queryByText(/No stops today/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /start driving/i })).toBeInTheDocument();
+    expect(screen.getByText("Corner Cafe")).toBeInTheDocument();
+  });
+
+  it("Build my day falls back to the finder when there is nothing nearby to build from", () => {
+    // Empty pool → nothing to auto-assemble → open the finder so the rep can
+    // widen the search rather than land on a still-empty day.
+    const onAddNearby = vi.fn();
+    renderView({ proposal: [], overflow: [], noLocation: [], onAddNearby });
+    fireEvent.click(screen.getByRole("button", { name: /build my day/i }));
+    expect(onAddNearby).toHaveBeenCalledTimes(1);
+  });
+
   it("shows Start on an appointment-only plan and starts it with an empty flexible array", () => {
     // A day with ONLY appointments (no owed/due/nearby flexible stops) must still
     // offer the primary action: the run view drives the appointments live. Start
