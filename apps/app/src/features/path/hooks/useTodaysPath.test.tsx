@@ -27,6 +27,10 @@ const merchantsRef = vi.hoisted(() => ({ merchants: [] as Merchant[], isLoading:
 // Per-rep end-of-day (minutes from midnight) or null to use the global default.
 // Mocked so the hook's capacity window is driven without a live DB/QueryClient.
 const eodRef = vi.hoisted(() => ({ current: null as number | null }));
+// Captures the opts useTodaysPath passes to useMerchants (industry scoping).
+const merchantsOptsRef = vi.hoisted(() => ({ current: undefined as { industries?: string[] } | undefined }));
+// The rep's Default Industries (usePathPreferences already returns saved-or-recommended).
+const prefsRef = vi.hoisted(() => ({ current: null as Record<string, string[]> | null }));
 
 vi.mock("./useMeetingStops", () => ({
   useMeetingStops: () => ({
@@ -42,10 +46,14 @@ vi.mock("./useDueTodayVisits", () => ({
   useDueTodayVisits: () => ({ dueToday: dueTodayRef.dueToday, noLocation: dueTodayRef.noLocation, isLoading: dueTodayRef.isLoading }),
 }));
 vi.mock("./useMerchants", () => ({
-  useMerchants: () => ({ merchants: merchantsRef.merchants, isLoading: merchantsRef.isLoading }),
+  useMerchants: (_origin: unknown, opts?: { industries?: string[] }) => {
+    merchantsOptsRef.current = opts;
+    return { merchants: merchantsRef.merchants, isLoading: merchantsRef.isLoading };
+  },
 }));
 vi.mock("./usePathPreferences", () => ({
   usePathEndOfDayMinutes: () => ({ data: eodRef.current }),
+  usePathPreferences: () => ({ data: prefsRef.current }),
 }));
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -129,6 +137,8 @@ beforeEach(() => {
   merchantsRef.merchants = [];
   merchantsRef.isLoading = false;
   eodRef.current = null;
+  merchantsOptsRef.current = undefined;
+  prefsRef.current = null;
 });
 
 describe("useTodaysPath", () => {
@@ -226,6 +236,17 @@ describe("useTodaysPath", () => {
     meetingsRef.status = "needs_reconnect";
     const { result } = renderHook(() => useTodaysPath(ORIGIN, NOW));
     expect(result.current.status).toBe("needs_reconnect");
+  });
+
+  it("scopes the nearby fill to the rep's Default Industries (Path QA)", () => {
+    // Regression: the day-builder must pass the rep's Default Industries to the
+    // nearby fetch (same source as discover). Before the fix it passed nothing,
+    // so the Edge fetched EVERY industry and the auto-fill ignored the setting.
+    prefsRef.current = { retail: ["grocery_store"], restaurants_bars_entertainment: ["restaurant"] };
+    renderHook(() => useTodaysPath(ORIGIN, NOW));
+    expect(new Set(merchantsOptsRef.current?.industries)).toEqual(
+      new Set(["retail", "restaurants_bars_entertainment"]),
+    );
   });
 
   it("is loading while any composed source is loading (with an origin)", () => {
