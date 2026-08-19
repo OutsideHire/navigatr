@@ -139,8 +139,11 @@ export function assembleOwedVisits(
   const noLocation: OwedVisitNoCoords[] = [];
   for (const t of tasks) {
     if (t.deal_id == null) continue;
-    // Created during today's path (an outcome logged mid-run) → not pulled back in.
-    if (createdCutoff && t.created_at >= createdCutoff) continue;
+    // An AUTO-created follow-up (from an outcome logged mid-run) is not pulled
+    // back onto the same day's path. Only those carry a source_outcome; a drop-in
+    // the rep created BY HAND ("Create task", source_outcome null) must NOT be
+    // suppressed — the rep wants it on today's path.
+    if (createdCutoff && t.created_at >= createdCutoff && t.source_outcome != null) continue;
     const deal = dealById.get(t.deal_id);
     if (!deal) continue;
     // A scheduled appointment on this deal today supersedes the drop-in.

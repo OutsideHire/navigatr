@@ -135,7 +135,10 @@ describe("assembleOwedVisits", () => {
     expect(kept.routable).toHaveLength(1);
   });
 
-  it("excludes a task created at/after the cutoff from both lists (created during today's path)", () => {
+  it("excludes an AUTO-created follow-up (has source_outcome) created at/after the cutoff", () => {
+    // The cutoff suppresses a follow-up auto-created mid-run (from a logged
+    // outcome) so it does not bounce back onto the same day's path. Those tasks
+    // carry a source_outcome. `task()` defaults source_outcome to "not_available".
     const cutoff = "2026-08-08T00:00:00.000Z";
     const createdToday = task({ created_at: "2026-08-08T09:30:00.000Z" });
     const excluded = assembleOwedVisits([createdToday], [deal({ place_id: null })], [prospect()], PATH_DATE, {
@@ -149,6 +152,34 @@ describe("assembleOwedVisits", () => {
       assembleOwedVisits([createdYesterday], [deal()], [prospect()], PATH_DATE, { excludeCreatedAtOrAfter: cutoff })
         .routable,
     ).toHaveLength(1);
+  });
+
+  it("KEEPS a manually-created drop-in (no source_outcome) created today on the path", () => {
+    // Regression (Robert): a drop-in the rep created by hand via "Create task"
+    // has NO source_outcome. The created-today cutoff must NOT suppress it — the
+    // rep wants that drop-in on today's path. Only auto-created follow-ups are
+    // suppressed.
+    const cutoff = "2026-08-08T00:00:00.000Z";
+    const manualToday = task({ created_at: "2026-08-08T09:30:00.000Z", source_outcome: null });
+    const res = assembleOwedVisits([manualToday], [deal()], [prospect()], PATH_DATE, {
+      excludeCreatedAtOrAfter: cutoff,
+    });
+    // It has coords (deal place_id -> prospect), so it lands routable, not dropped.
+    expect(res.routable).toHaveLength(1);
+    expect(res.routable[0]).toMatchObject({ taskId: "t1", dealId: "d1", sourceOutcome: null });
+  });
+
+  it("KEEPS a manually-created drop-in created today even with no coords (as a no-location stub)", () => {
+    // Same as above but the deal has no coordinates yet (Jims Broom Shack): it
+    // must still surface in the no-location group, never silently dropped.
+    const cutoff = "2026-08-08T00:00:00.000Z";
+    const manualToday = task({ created_at: "2026-08-08T09:30:00.000Z", source_outcome: null });
+    const res = assembleOwedVisits([manualToday], [deal({ place_id: null })], [prospect()], PATH_DATE, {
+      excludeCreatedAtOrAfter: cutoff,
+    });
+    expect(res.routable).toHaveLength(0);
+    expect(res.noLocation).toHaveLength(1);
+    expect(res.noLocation[0]).toMatchObject({ taskId: "t1", dealId: "d1" });
   });
 
   it("orders routable by descending urgency, then earliest target date", () => {
