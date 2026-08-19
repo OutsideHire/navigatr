@@ -35,7 +35,8 @@ import { useMeetingStops } from "./useMeetingStops";
 import { useOwedVisits } from "./useOwedVisits";
 import { useDueTodayVisits } from "./useDueTodayVisits";
 import { useMerchants } from "./useMerchants";
-import { usePathEndOfDayMinutes } from "./usePathPreferences";
+import { usePathEndOfDayMinutes, usePathPreferences } from "./usePathPreferences";
+import { selectedCategories } from "../lib/industrySelection";
 import { DEFAULT_END_OF_DAY_MINUTES } from "../lib/pathCapacityDefaults";
 import {
   assembleTodaysPath,
@@ -138,7 +139,18 @@ export function useTodaysPath(
   // Tier 3: drop-ins whose window opens today.
   const dueTodayVisits = useDueTodayVisits(pathDate);
   // Tier 4: nearby discovery fill (disabled internally when origin is null).
-  const nearby = useMerchants(origin);
+  // Scoped to the rep's Default Industries, the SAME source the discover view
+  // seeds from. usePathPreferences returns saved-or-recommended, so this is
+  // non-empty once loaded; while prefs are still loading it's empty, which lets
+  // useMerchants fetch broadly until they arrive (matches the discover seeding).
+  // Without this the assembler passed no industries and the Edge fetched EVERY
+  // industry, so the day-builder ignored Default Industries (Path QA).
+  const { data: pathPrefs } = usePathPreferences();
+  const dayIndustries = useMemo(
+    () => (pathPrefs ? selectedCategories(pathPrefs) : []),
+    [pathPrefs],
+  );
+  const nearby = useMerchants(origin, { industries: dayIndustries });
 
   // Per-rep end-of-day (minutes from midnight), or the global default when the
   // rep has no override. Feeds the assembler's window end so `remainingMin` /
