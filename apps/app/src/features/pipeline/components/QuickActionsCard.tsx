@@ -1,8 +1,8 @@
 /**
  * QuickActionsCard — Deal Detail right-rail actions (Figma 328:4).
  *
- * Slice 3a renders the shell: Send to CRM / Send as referral / Schedule
- * appointment are disabled "Coming soon" (no integrations yet); Mark as lost is
+ * Send to CRM / Send as referral are disabled "Coming soon" (no integrations
+ * yet); Mark as lost is
  * wired in slice 3b (FR-PIPE-07) when stage changes are centralized — until a
  * handler is passed it stays disabled. Later slices flip individual actions live
  * by passing handlers.
@@ -45,20 +45,14 @@ function ActionButton({ action }: { action: QuickAction }) {
 
 export function QuickActionsCard({
   onSendReferral,
-  onScheduleAppointment,
-  onCreateTask,
   onMarkLost,
 }: {
   onSendReferral?: () => void;
-  onScheduleAppointment?: () => void;
-  onCreateTask?: () => void;
   onMarkLost?: () => void;
 }) {
   const actions: QuickAction[] = [
     { label: "Send to CRM", disabledTitle: "Coming soon" },
     { label: "Send as referral", onClick: onSendReferral, disabledTitle: "Coming soon" },
-    { label: "Schedule appointment", onClick: onScheduleAppointment },
-    { label: "Create task", onClick: onCreateTask },
     { label: "Mark as lost", onClick: onMarkLost, danger: true },
   ];
   return (

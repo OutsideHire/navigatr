@@ -88,6 +88,16 @@ describe("DealDetailPage / LatestActivityCard", () => {
     expect(rows.length).toBe(3);
   });
 
+  it("shows Log activity and Create task in the deal header (Create task moved out of Quick actions)", () => {
+    activitiesMock.mockReturnValue({ data: [] });
+    renderPage();
+    // Both "act now" buttons live together in the header now.
+    expect(screen.getByRole("button", { name: /log activity/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /create task/i })).toBeInTheDocument();
+    // Schedule appointment was removed (redundant with Create task -> Appointment).
+    expect(screen.queryByRole("button", { name: /schedule appointment/i })).not.toBeInTheDocument();
+  });
+
   it("shows an empty state and does not crash when there are none", () => {
     activitiesMock.mockReturnValue({ data: [] });
     expect(() => renderPage()).not.toThrow();
