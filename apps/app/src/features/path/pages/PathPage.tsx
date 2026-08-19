@@ -782,16 +782,23 @@ export function PathPage() {
           ) : (
             <>
               <h1 className="text-heading-lg text-text-default">Path</h1>
-              <p className="text-body-md text-text-muted">
-                {sorted.length} {sorted.length === 1 ? "merchant" : "merchants"}
-                {anyGeocoded
-                  ? ` nearby · ${originSource === "manual" ? originLabel : "from your location"}`
-                  : " · sorted by recent activity"}
-              </p>
+              {/* The "{N} merchants nearby" count is a DISCOVER-view fact (how many
+                  browse results are near the rep). It is meaningless on the active
+                  run, where RunningPath owns its own status line ("Path active ·
+                  N/M stops"), so it is shown on discover only. The "Path" title
+                  stays on both. */}
               {pathView === "discover" && (
-                <p className="text-caption text-text-subtle">
-                  These are businesses near you, not stops on your day.
-                </p>
+                <>
+                  <p className="text-body-md text-text-muted">
+                    {sorted.length} {sorted.length === 1 ? "merchant" : "merchants"}
+                    {anyGeocoded
+                      ? ` nearby · ${originSource === "manual" ? originLabel : "from your location"}`
+                      : " · sorted by recent activity"}
+                  </p>
+                  <p className="text-caption text-text-subtle">
+                    These are businesses near you, not stops on your day.
+                  </p>
+                </>
               )}
             </>
           )}
@@ -829,7 +836,10 @@ export function PathPage() {
               </Button>
             </>
           )}
-          {pathView !== "entry" && (
+          {/* Re-center re-acquires GPS for the browse/discover map. The active run
+              (pathView "path") follows the rep's live position on its own, so the
+              button is redundant there; show it on discover only. */}
+          {pathView === "discover" && (
             <Button
               variant="secondary"
               size="sm"
@@ -854,17 +864,20 @@ export function PathPage() {
               onClick={() => setOverflowOpen(true)}
             />
           )}
-          {/* Path settings — manage default industries. Visible in every
-              pathView (entry / active / discover) since it lives in the
-              always-rendered header action group. */}
-          <Button
-            variant="tertiary"
-            size="sm"
-            iconOnly
-            leadingIcon={Settings}
-            aria-label="Path settings"
-            onClick={() => setSettingsOpen(true)}
-          />
+          {/* Path settings — manage default industries + end of day. Those govern
+              BUILDING/finding a day, so they belong on the "Your day" landing and
+              the discover view, not on the active run (pathView "path"), where the
+              day is already set and RunningPath owns the surface. */}
+          {pathView !== "path" && (
+            <Button
+              variant="tertiary"
+              size="sm"
+              iconOnly
+              leadingIcon={Settings}
+              aria-label="Path settings"
+              onClick={() => setSettingsOpen(true)}
+            />
+          )}
         </div>
       </header>
 

@@ -381,6 +381,20 @@ describe("PathPage landing header actions: redundant buttons hidden", () => {
     expect(screen.queryByRole("button", { name: /plan a path/i })).not.toBeInTheDocument();
   });
 
+  it("hides the merchants-nearby count, Re-center, and Path settings on the active run (RunningPath owns the surface)", () => {
+    originState.current = readyOrigin;
+    todayState.current = { ...todayState.current, stops: [{ merchantId: "m1" }] };
+    render(<PathPage />, { wrapper });
+    // On the active run surface...
+    expect(screen.getByTestId("running-path")).toBeInTheDocument();
+    // ...the "Path" title stays (Robert asked to keep it),
+    expect(screen.getByRole("heading", { name: /^path$/i })).toBeInTheDocument();
+    // ...but the three discovery-only header items are gone.
+    expect(screen.queryByText(/merchants? nearby/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /re-center|use my location/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /path settings/i })).not.toBeInTheDocument();
+  });
+
   it("still shows those header buttons on the discover/browse view", () => {
     originState.current = readyOrigin;
     // A live geocoded merchant so the discover branch renders, plus an active
