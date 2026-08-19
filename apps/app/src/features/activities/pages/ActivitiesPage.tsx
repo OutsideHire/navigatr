@@ -187,7 +187,7 @@ function TaskRow({
    *  non-to-do task's deal is missing (removed / stale sample data), logging
    *  would be rejected by the database, so the row offers Dismiss instead. */
   hasLoadableDeal: boolean;
-  onLogOutcome: (dealId: string) => void;
+  onLogOutcome: (dealId: string, taskId: string) => void;
   onMarkDone: (taskId: string) => void;
   onOpenDeal: (dealId: string) => void;
   onSnooze: (task: PageTask, days: number) => void;
@@ -247,7 +247,7 @@ function TaskRow({
         ? { label: "Dismiss", run: () => onCancel(task.id), variant: "secondary" as const, icon: undefined }
         : action.kind === "open_deal"
           ? { label: "Open deal", run: () => task.dealId && onOpenDeal(task.dealId), variant: "primary" as const, icon: PlusCircle }
-          : { label: "Log activity", run: () => task.dealId && onLogOutcome(task.dealId), variant: "primary" as const, icon: PlusCircle };
+          : { label: "Log activity", run: () => task.dealId && onLogOutcome(task.dealId, task.id), variant: "primary" as const, icon: PlusCircle };
 
   return (
     <div
@@ -628,6 +628,7 @@ export function ActivitiesPage() {
   const [tab, setTab] = React.useState<"today" | "upcoming" | "history">("today");
   const [typeFilter, setTypeFilter] = React.useState<"all" | TaskType>("all");
   const [logSheetDealId, setLogSheetDealId] = React.useState<string | null>(null);
+  const [logSheetTaskId, setLogSheetTaskId] = React.useState<string | null>(null);
   const [logSheetOpen, setLogSheetOpen] = React.useState(false);
   const [editingActivity, setEditingActivity] = React.useState<Activity | null>(null);
   const [createTaskOpen, setCreateTaskOpen] = React.useState(false);
@@ -752,8 +753,9 @@ export function ActivitiesPage() {
     return [...acts, ...todos].sort((a, b) => b.ts.localeCompare(a.ts));
   }, [activities, completedTodos, typeFilter]);
 
-  const openLogSheet = (dealId: string) => {
+  const openLogSheet = (dealId: string, taskId?: string) => {
     setLogSheetDealId(dealId);
+    setLogSheetTaskId(taskId ?? null);
     setLogSheetOpen(true);
   };
 
@@ -1006,6 +1008,7 @@ export function ActivitiesPage() {
           open={logSheetOpen}
           onOpenChange={setLogSheetOpen}
           dealId={logSheetDealId}
+          closeTaskId={logSheetTaskId}
           onLogged={() => {
             // The sheet's own toast already fires. useLogActivity
             // invalidates both ACTIVITIES_ORG_QUERY_KEY and the deals

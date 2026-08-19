@@ -169,4 +169,20 @@ describe("useLogActivity task sync", () => {
     expect(taskUpdatePayload!.status).toBe("completed");
     expect(activityUpdatePayload!.closed_task_id).toBe("task-open-1");
   });
+
+  it("closeTaskId closes THAT exact task even when no same-type task matches (Activities row log)", async () => {
+    // Regression (Robert): logging from an overdue task row must clear that task
+    // regardless of the activity type picked. openTaskRow is null (the same-type
+    // match finds nothing, e.g. an overdue Drop-in logged as a Call), yet the
+    // passed closeTaskId is still closed and stamped on the activity.
+    openTaskRow = null;
+    const { result } = renderHook(() => useLogActivity(), { wrapper });
+    await result.current.mutateAsync({
+      dealId: "deal-1", type: "call", disposition: "positive_engagement",
+      followUpDate: "2026-05-22T00:00:00.000Z",
+      closeTaskId: "task-overdue-dropin",
+    });
+    expect(taskUpdatePayload!.status).toBe("completed");
+    expect(activityUpdatePayload!.closed_task_id).toBe("task-overdue-dropin");
+  });
 });
