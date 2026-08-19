@@ -13,6 +13,10 @@ vi.mock("../hooks/useTaskMutations", () => ({
     snoozeTask: { mutate: vi.fn() },
   }),
 }));
+const scheduleMutate = vi.fn();
+vi.mock("@/features/appointments/useAppointments", () => ({
+  useScheduleAppointment: () => ({ mutate: scheduleMutate, isPending: false }),
+}));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 // Supabase powers the real useGeocodeDealCoords a drop-in triggers: it reads the
@@ -47,6 +51,7 @@ beforeAll(() => {
 });
 beforeEach(() => {
   createMutate.mockReset();
+  scheduleMutate.mockReset();
   singleMock.mockReset();
   updateEqMock.mockReset().mockResolvedValue({ error: null });
   updateMock.mockClear();
@@ -95,20 +100,29 @@ describe("CreateTaskSheet", () => {
     expect(new Date(input.reminderAt).getMinutes()).toBe(30);
   });
 
-  it("an appointment requires a start time and maps it to start_at", () => {
+  it("an appointment books a REAL scheduled appointment (not a task), start+30min, syncing to calendar/Path", () => {
+    // Regression (Robert): "Create task -> Appointment" must create a real
+    // scheduled appointment (which syncs to Google Calendar via sync_appointment
+    // and shows on Path via useMeetingStops), NOT a task. It routes to
+    // useScheduleAppointment, never createTask.
     render(<CreateTaskSheet open onOpenChange={() => {}} dealId="d-1" dealName="Acme Co" />);
     fireEvent.click(screen.getByRole("button", { name: "Appointment" }));
     // Missing start time blocks submit.
     fireEvent.click(screen.getByRole("button", { name: /^Create task$/i }));
+    expect(scheduleMutate).not.toHaveBeenCalled();
     expect(createMutate).not.toHaveBeenCalled();
     expect(screen.getByText(/Start time is required/i)).toBeInTheDocument();
-    // Provide it → maps to start_at, not reminder_at.
+    // Provide it -> books the appointment via useScheduleAppointment.
     fireEvent.change(screen.getByLabelText(/Start time/i), { target: { value: "09:15" } });
     fireEvent.click(screen.getByRole("button", { name: /^Create task$/i }));
-    const [input] = createMutate.mock.calls[0];
-    expect(input.type).toBe("appointment");
+    // It did NOT create a task.
+    expect(createMutate).not.toHaveBeenCalled();
+    const [input] = scheduleMutate.mock.calls[0];
+    expect(input.dealId).toBe("d-1");
+    expect(input.title).toBeTruthy();
     expect(input.startAt).toBeTruthy();
-    expect(input.reminderAt).toBeNull();
+    // Duration defaults to 30 min: end = start + 30 min.
+    expect(new Date(input.endAt).getTime() - new Date(input.startAt).getTime()).toBe(30 * 60_000);
   });
 
   it("hides priority for drop-in and appointment; shows it for call", () => {
