@@ -235,12 +235,14 @@ function FollowUpPreview({ disposition }: { disposition: Disposition }) {
 function ActivityForm({
   type,
   dealId,
+  closeTaskId,
   onLogged,
   onBack,
   onClose,
 }: {
   type: ActivityType;
   dealId: string;
+  closeTaskId?: string | null;
   onLogged: (activityId: string) => void;
   onBack: () => void;
   onClose: () => void;
@@ -306,6 +308,9 @@ function ActivityForm({
         followUpDateSource: isCallback ? "asserted" : "interval",
         // Verbal commitment's next step becomes the To-do title.
         taskTitle: values.disposition === "verbal_commitment" ? nextStep.trim() || undefined : undefined,
+        // Close the exact task the rep opened this from (Activities list), so it
+        // clears regardless of the activity type picked.
+        closeTaskId: closeTaskId ?? null,
       });
       // The log's DB trigger has moved the deal's next_followup_at — reconcile
       // its calendar event. Fire-and-forget: never blocks or fails the log.
@@ -542,6 +547,9 @@ export interface LogActivitySheetProps {
   onLogged?: (activityId: string) => void;
   /** Open straight onto this type's form, skipping the picker. */
   defaultType?: ActivityType;
+  /** When opened from a specific task row, the id of that task to close on a
+   *  successful log (regardless of the activity type picked). */
+  closeTaskId?: string | null;
 }
 
 export function LogActivitySheet({
@@ -550,6 +558,7 @@ export function LogActivitySheet({
   dealId,
   onLogged,
   defaultType,
+  closeTaskId,
 }: LogActivitySheetProps) {
   const [type, setType] = React.useState<ActivityType | null>(defaultType ?? null);
 
@@ -609,6 +618,7 @@ export function LogActivitySheet({
             <ActivityForm
               type={type}
               dealId={dealId}
+              closeTaskId={closeTaskId}
               onLogged={onLogged ?? (() => {})}
               onBack={() => setType(null)}
               onClose={() => onOpenChange(false)}

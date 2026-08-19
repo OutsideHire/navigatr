@@ -41,6 +41,11 @@ export interface LogActivityInput {
   followUpDateSource?: "interval" | "asserted";
   /** Overrides the generated task's title (e.g. Verbal commitment's next step). */
   taskTitle?: string;
+  /** When logging from a specific task row (the Activities list), the id of that
+   *  task to close on success. Closed regardless of which activity TYPE the rep
+   *  picks — they are resolving that exact task. When omitted (e.g. logging from
+   *  a deal page), fall back to closing a same-type open task on the deal. */
+  closeTaskId?: string | null;
 }
 
 export function useLogActivity() {
@@ -91,25 +96,35 @@ export function useLogActivity() {
       // fail the logged activity or move the score. Tasks are a derived
       // convenience the Activities screen + bell render.
       try {
-        // Auto-close a matching open task of the same type on this deal
-        // (preserves today's supersession behavior, now explicit).
-        const { data: openTask } = await supabase
-          .from("task")
-          .select("id")
-          .eq("deal_id", input.dealId)
-          .eq("type", input.type)
-          .eq("status", "open")
-          .order("target_at", { ascending: true })
-          .limit(1)
-          .maybeSingle();
-        if (openTask?.id) {
+        // Resolve which open task this log closes. When the rep logged from a
+        // specific task row (closeTaskId), close THAT exact task regardless of
+        // the activity type they picked — they are resolving that task, so a
+        // Drop-in task must clear even if they logged a Call. Otherwise (e.g.
+        // logging from a deal page) fall back to a same-type open task on the
+        // deal, preserving the prior supersession behavior.
+        let taskIdToClose: string | null = null;
+        if (input.closeTaskId) {
+          taskIdToClose = input.closeTaskId;
+        } else {
+          const { data: openTask } = await supabase
+            .from("task")
+            .select("id")
+            .eq("deal_id", input.dealId)
+            .eq("type", input.type)
+            .eq("status", "open")
+            .order("target_at", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          taskIdToClose = (openTask?.id as string | undefined) ?? null;
+        }
+        if (taskIdToClose) {
           await supabase
             .from("task")
             .update({ status: "completed", completed_at: new Date().toISOString() })
-            .eq("id", openTask.id as string);
+            .eq("id", taskIdToClose);
           await supabase
             .from("activities")
-            .update({ closed_task_id: openTask.id })
+            .update({ closed_task_id: taskIdToClose })
             .eq("id", activityId);
         }
         // Create the next follow-up task(s). target_at mirrors the stored
