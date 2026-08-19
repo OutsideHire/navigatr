@@ -88,7 +88,6 @@ import { RelatedCard } from "../components/RelatedCard";
 import { QualificationTab } from "../components/QualificationTab";
 import { QualificationEditSheet } from "../components/QualificationEditSheet";
 import { SendReferralSheet } from "../components/SendReferralSheet";
-import { ScheduleAppointmentSheet } from "../components/ScheduleAppointmentSheet";
 import { CreateTaskSheet } from "@/features/activities/components/CreateTaskSheet";
 import { UpcomingAppointments } from "@/features/appointments/UpcomingAppointments";
 import { ContactsTab } from "../components/ContactsTab";
@@ -258,7 +257,7 @@ function StagePicker({ deal }: { deal: Deal }) {
   );
 }
 
-function HeroCard({ deal, onLogActivity, onEdit }: { deal: Deal; onLogActivity: () => void; onEdit: () => void }) {
+function HeroCard({ deal, onLogActivity, onCreateTask, onEdit }: { deal: Deal; onLogActivity: () => void; onCreateTask: () => void; onEdit: () => void }) {
   return (
     <CardWithStatusBand bandColor={STAGE_BAND_COLOR[deal.stage]} contentPadding="lg">
       <div className="flex flex-col gap-4">
@@ -294,6 +293,9 @@ function HeroCard({ deal, onLogActivity, onEdit }: { deal: Deal; onLogActivity: 
           <div className="ml-auto flex flex-wrap gap-2">
             <Button variant="primary" size="md" leadingIcon={Plus} onClick={onLogActivity}>
               Log activity
+            </Button>
+            <Button variant="secondary" size="md" leadingIcon={Plus} onClick={onCreateTask}>
+              Create task
             </Button>
             <Button
               variant="secondary"
@@ -645,7 +647,6 @@ export function DealDetailPage() {
   const [lostOpen, setLostOpen] = React.useState(false);
   const [qualOpen, setQualOpen] = React.useState(false);
   const [referralOpen, setReferralOpen] = React.useState(false);
-  const [apptOpen, setApptOpen] = React.useState(false);
   const [createTaskOpen, setCreateTaskOpen] = React.useState(false);
 
   const handlePageLostSubmit = async (category: LostReasonCategory, notes: string | null) => {
@@ -689,6 +690,7 @@ export function DealDetailPage() {
         <HeroCard
           deal={deal}
           onLogActivity={() => setSheetOpen(true)}
+          onCreateTask={() => setCreateTaskOpen(true)}
           onEdit={() => setEditOpen(true)}
         />
 
@@ -724,8 +726,6 @@ export function DealDetailPage() {
             />
             <QuickActionsCard
               onSendReferral={() => setReferralOpen(true)}
-              onScheduleAppointment={() => setApptOpen(true)}
-              onCreateTask={() => setCreateTaskOpen(true)}
               onMarkLost={() => setLostOpen(true)}
             />
             <UpcomingAppointments dealId={deal.id} />
@@ -767,12 +767,6 @@ export function DealDetailPage() {
       <SendReferralSheet
         open={referralOpen}
         onOpenChange={setReferralOpen}
-        deal={deal}
-      />
-
-      <ScheduleAppointmentSheet
-        open={apptOpen}
-        onOpenChange={setApptOpen}
         deal={deal}
       />
 
