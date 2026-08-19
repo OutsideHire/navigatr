@@ -215,6 +215,29 @@ export function TodaysPathView({
     setPoolCursor(res.poolCursor);
     setBudgetLeft(res.remainingMin);
   }, [overflow, poolCursor, workingProposal, origin, budgetLeft, now]);
+  // "Build my day" (empty-day primary action): auto-assemble a runnable day by
+  // filling the open time from the nearby pool with the SAME fillToCapacity
+  // engine "Add more stops" uses, so the rep lands on the reviewable "Your day"
+  // LIST (stops + Start driving), NOT the manual find-nearby map. This is the
+  // rep's explicit opt-in to fill, so it stays consistent with withhold-nearby-
+  // on-load (we fill on request, never on load). Falls back to opening the finder
+  // ONLY when there is nothing nearby to build from (empty pool / no capacity),
+  // so the rep can widen the search rather than land on a still-empty day.
+  const handleBuildMyDay = React.useCallback(() => {
+    const res = fillToCapacity(workingProposal, overflow, poolCursor, {
+      origin,
+      remainingMin: budgetLeft,
+      now,
+    });
+    if (res.added.length > 0) {
+      setWorkingProposal(res.proposal);
+      setFilledStops((prev) => [...prev, ...res.added]);
+      setPoolCursor(res.poolCursor);
+      setBudgetLeft(res.remainingMin);
+      return;
+    }
+    onAddNearby();
+  }, [workingProposal, overflow, poolCursor, origin, budgetLeft, now, onAddNearby]);
   const flexibleStops = React.useMemo(
     () => visibleProposal.filter((s) => s.kind === "flexible"),
     [visibleProposal],
@@ -316,10 +339,12 @@ export function TodaysPathView({
       {empty ? (
         // Completely-empty day (Robert's v2.2 prototype): a dashed banner explains
         // that owed visits populate the day on their own, with one primary action
-        // to build a day from nearby prospects. Replaces the old "all caught up"
-        // card. Renders ONLY when the day is completely empty (no stops, no fill
-        // pool, no no-location group), so it disappears on its own once any stop
-        // exists (this branch stops rendering). Same layout on phone + desktop.
+        // to build a day. "Build my day" AUTO-ASSEMBLES a runnable day from the
+        // nearby pool (handleBuildMyDay) and lands the rep on the LIST below, NOT
+        // the find-nearby map. Renders ONLY when the day has no shown stops and no
+        // no-location group; once the fill lands a stop, visibleProposal is
+        // non-empty and this branch stops rendering (the list takes over). Same
+        // layout on phone + desktop.
         <div className="flex flex-col gap-4">
           <div className="flex flex-col items-center gap-1 rounded-radius-lg border border-dashed border-border-default bg-surface-default px-6 py-8 text-center">
             <p className="text-heading-sm text-text-default">No stops today</p>
@@ -327,7 +352,7 @@ export function TodaysPathView({
               Once you start logging visits, the places you need to go back to show up here on their own.
             </p>
           </div>
-          <Button variant="primary" size="lg" className="w-full" onClick={onAddNearby}>
+          <Button variant="primary" size="lg" className="w-full" onClick={handleBuildMyDay}>
             Build my day
           </Button>
         </div>
