@@ -190,7 +190,9 @@ vi.mock("../hooks/usePathPreferences", () => ({
   usePathPreferences: () => pathPrefsState.current,
   // PathSettings (rendered by PathPage) also pulls the update mutation from here.
   useUpdateDefaultIndustries: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  // useTodaysPath reads the per-rep end-of-day; null -> global default window.
+  // useTodaysPath reads the per-rep start/end-of-day; null -> global defaults.
+  usePathStartOfDayMinutes: () => ({ data: null }),
+  useUpdateStartOfDayMinutes: () => ({ mutateAsync: vi.fn(), isPending: false }),
   usePathEndOfDayMinutes: () => ({ data: null }),
   // PathSettings also owns the end-of-day save control.
   useUpdateEndOfDayMinutes: () => ({ mutateAsync: vi.fn(), isPending: false }),

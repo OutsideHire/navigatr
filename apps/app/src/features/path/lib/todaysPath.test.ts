@@ -103,6 +103,23 @@ describe("assembleTodaysPath", () => {
     expect(r.windowEndHour).toBe(18);
   });
 
+  it("honors a minute-precise per-rep start-of-day (startMinutes) for the budget", () => {
+    // 8:30 AM open = 510 min. NOW is 09:00, so the day is already open and the
+    // budget runs 09:00 -> 18:00 (540). Verify startMinutes is accepted and the
+    // window still opens no later than 09:00 (the start clamps below now).
+    const r = assembleTodaysPath(base({ dayWindow: { startHour: 8, endHour: 18, startMinutes: 510 } }), NOW);
+    expect(r.remainingMin).toBe(540);
+  });
+
+  it("a startMinutes AFTER now defers the day's start to that open time", () => {
+    // 09:30 open (570 min) with NOW 09:00 (offset 0): the day has not opened yet,
+    // so it starts at 09:30 and remaining runs 09:30 -> 18:00 = 510.
+    const r = assembleTodaysPath(base({ dayWindow: { startHour: 8, endHour: 18, startMinutes: 570 } }), NOW);
+    expect(r.startsAtIso).toBe("2026-08-09T09:30:00.000Z");
+    expect(r.remainingMin).toBe(510);
+    expect(r.dayNotYetOpen).toBe(true);
+  });
+
   it("endMinutes carries sub-hour precision into windowEndHour (floored) and the budget", () => {
     // 16:30 EOD = 990 min -> 7.5h = 450min budget; the hour label floors to 16.
     const r = assembleTodaysPath(base({ dayWindow: { startHour: 9, endHour: 17, endMinutes: 990 } }), NOW);

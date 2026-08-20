@@ -4,15 +4,17 @@ import { toast } from "sonner";
 import { IndustryEditor } from "./IndustryEditor";
 import {
   usePathPreferences,
+  usePathStartOfDayMinutes,
   usePathEndOfDayMinutes,
   usePathTimezone,
   useUpdateDefaultIndustries,
+  useUpdateStartOfDayMinutes,
   useUpdateEndOfDayMinutes,
   useUpdateTimezone,
 } from "../hooks/usePathPreferences";
 import type { IndustrySelection } from "../lib/industrySelection";
-import { DEFAULT_END_OF_DAY_MINUTES } from "../lib/pathCapacityDefaults";
-import { minutesToTimeValue, timeValueToMinutes, endOfDayLabel } from "../lib/endOfDayControl";
+import { DEFAULT_START_OF_DAY_MINUTES, DEFAULT_END_OF_DAY_MINUTES } from "../lib/pathCapacityDefaults";
+import { minutesToTimeValue, timeValueToMinutes, endOfDayLabel, workdayWindowError } from "../lib/endOfDayControl";
 import { US_TIMEZONES, timezoneLabel, isKnownTimezone } from "../lib/timezones";
 
 interface PathSettingsProps {
@@ -28,11 +30,15 @@ interface PathSettingsProps {
 export function PathSettings({ open, onOpenChange }: PathSettingsProps) {
   const { data: defaults, isLoading } = usePathPreferences();
   const update = useUpdateDefaultIndustries();
+  const { data: startOfDayMinutes } = usePathStartOfDayMinutes();
+  const updateStartOfDay = useUpdateStartOfDayMinutes();
   const { data: endOfDayMinutes } = usePathEndOfDayMinutes();
   const updateEndOfDay = useUpdateEndOfDayMinutes();
   const { data: timezone } = usePathTimezone();
   const updateTimezone = useUpdateTimezone();
 
+  // Effective start-of-day: the rep's override, or the 8:00 AM default when unset.
+  const effectiveStartOfDay = startOfDayMinutes ?? DEFAULT_START_OF_DAY_MINUTES;
   // Effective end-of-day: the rep's override, or the 6:00 PM default when unset.
   const effectiveEndOfDay = endOfDayMinutes ?? DEFAULT_END_OF_DAY_MINUTES;
   // Effective zone: the rep's stored zone, or the device zone until captured.
@@ -49,10 +55,34 @@ export function PathSettings({ open, onOpenChange }: PathSettingsProps) {
 
   // Save on change: a single control, so persist immediately rather than adding a
   // second Save button beside the industries one. A partial/garbage time value
-  // (timeValueToMinutes null) is ignored, never persisted. Keeps the sheet open.
+  // (timeValueToMinutes null) is ignored, never persisted (a field cannot be
+  // cleared into an empty value). A proposed pair shorter than an hour, with the
+  // end at or before the start, or crossing midnight is rejected with a toast and
+  // not saved (v1.4 Section 7). Keeps the sheet open.
+  const handleStartOfDayChange = async (value: string) => {
+    const minutes = timeValueToMinutes(value);
+    if (minutes === null) return;
+    const invalid = workdayWindowError(minutes, effectiveEndOfDay);
+    if (invalid) {
+      toast.error(invalid);
+      return;
+    }
+    try {
+      await updateStartOfDay.mutateAsync(minutes);
+      toast.success(`Day starts at ${endOfDayLabel(minutes)}.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't save. Check your connection and try again.");
+    }
+  };
+
   const handleEndOfDayChange = async (value: string) => {
     const minutes = timeValueToMinutes(value);
     if (minutes === null) return;
+    const invalid = workdayWindowError(effectiveStartOfDay, minutes);
+    if (invalid) {
+      toast.error(invalid);
+      return;
+    }
     try {
       await updateEndOfDay.mutateAsync(minutes);
       toast.success(`Day ends at ${endOfDayLabel(minutes)}.`);
@@ -104,13 +134,24 @@ export function PathSettings({ open, onOpenChange }: PathSettingsProps) {
               />
             )}
           </div>
-          <div className="flex flex-col gap-2 border-t border-border-subtle pt-4">
+          <div className="flex flex-col gap-3 border-t border-border-subtle pt-4">
             <div className="flex flex-col gap-0.5">
-              <h3 className="text-body-strong text-text-default">End of day</h3>
+              <h3 className="text-body-strong text-text-default">Your workday</h3>
               <p className="text-caption text-text-muted">
-                New stops won't be suggested past this time. Currently {endOfDayLabel(effectiveEndOfDay)}.
+                New stops are suggested between these times. Currently {endOfDayLabel(effectiveStartOfDay)} to {endOfDayLabel(effectiveEndOfDay)}.
               </p>
             </div>
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-body-md text-text-default">Day starts at</span>
+              <input
+                type="time"
+                aria-label="Start of day"
+                value={minutesToTimeValue(effectiveStartOfDay)}
+                onChange={(e) => void handleStartOfDayChange(e.target.value)}
+                disabled={updateStartOfDay.isPending}
+                className="rounded-radius-sm border border-border-default bg-surface-default px-3 py-2 text-body-md text-text-default disabled:opacity-60"
+              />
+            </label>
             <label className="flex items-center justify-between gap-3">
               <span className="text-body-md text-text-default">Day ends at</span>
               <input

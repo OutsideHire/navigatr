@@ -35,9 +35,9 @@ import { useMeetingStops } from "./useMeetingStops";
 import { useOwedVisits } from "./useOwedVisits";
 import { useDueTodayVisits } from "./useDueTodayVisits";
 import { useMerchants } from "./useMerchants";
-import { usePathEndOfDayMinutes, usePathPreferences } from "./usePathPreferences";
+import { usePathEndOfDayMinutes, usePathStartOfDayMinutes, usePathPreferences } from "./usePathPreferences";
 import { selectedCategories } from "../lib/industrySelection";
-import { DEFAULT_END_OF_DAY_MINUTES } from "../lib/pathCapacityDefaults";
+import { DEFAULT_END_OF_DAY_MINUTES, DEFAULT_START_OF_DAY_MINUTES } from "../lib/pathCapacityDefaults";
 import {
   assembleTodaysPath,
   type OrderedStop,
@@ -76,12 +76,6 @@ export interface UseTodaysPathResult {
   status: TodaysPathStatus;
   isLoading: boolean;
 }
-
-/** Working-day open hour. Mirrors the assembler's DEFAULT_WINDOW.startHour so the
- *  budget starts from the same morning open once the rep EOD is threaded in.
- *  8:00 AM (Workday Window Fix v1.4 Section 7 default) so an early-morning
- *  appointment falls inside the working window rather than just before it. */
-const DEFAULT_WINDOW_START_HOUR = 8;
 
 const MS_PER_DAY = 86_400_000;
 
@@ -193,6 +187,10 @@ export function useTodaysPath(
   // `windowEndHour` reflect the rep's actual EOD, not the hardcoded 17:00.
   const endOfDayMinutes = usePathEndOfDayMinutes();
   const eodMinutes = endOfDayMinutes.data ?? DEFAULT_END_OF_DAY_MINUTES;
+  // Per-rep start-of-day (minutes from midnight), or the global 8:00 AM default
+  // (v1.4 Ticket 3a). Feeds the assembler's window open, mirroring eodMinutes.
+  const startOfDayMinutes = usePathStartOfDayMinutes();
+  const sodMinutes = startOfDayMinutes.data ?? DEFAULT_START_OF_DAY_MINUTES;
 
   return useMemo<UseTodaysPathResult>(() => {
     // No-location owed drop-ins: eligible follow-ups whose deal has no coords
@@ -311,7 +309,8 @@ export function useTodaysPath(
         // Thread the rep's EOD as a minute-precise window close; endHour is the
         // coarse fallback the assembler floors to for the label.
         dayWindow: {
-          startHour: DEFAULT_WINDOW_START_HOUR,
+          startHour: Math.floor(sodMinutes / 60),
+          startMinutes: sodMinutes,
           endHour: Math.floor(eodMinutes / 60),
           endMinutes: eodMinutes,
         },
@@ -332,5 +331,5 @@ export function useTodaysPath(
       status,
       isLoading,
     };
-  }, [origin, now, pathDate, eodMinutes, meetings.stops, meetings.status, meetings.isLoading, owed.owed, owed.noLocation, owed.isLoading, dueTodayVisits.dueToday, dueTodayVisits.noLocation, dueTodayVisits.isLoading, nearby.merchants, nearby.isLoading]);
+  }, [origin, now, pathDate, sodMinutes, eodMinutes, meetings.stops, meetings.status, meetings.isLoading, owed.owed, owed.noLocation, owed.isLoading, dueTodayVisits.dueToday, dueTodayVisits.noLocation, dueTodayVisits.isLoading, nearby.merchants, nearby.isLoading]);
 }

@@ -60,6 +60,7 @@ vi.mock("./useMerchants", () => ({
   },
 }));
 vi.mock("./usePathPreferences", () => ({
+  usePathStartOfDayMinutes: () => ({ data: null }),
   usePathEndOfDayMinutes: () => ({ data: eodRef.current }),
   usePathPreferences: () => ({ data: prefsRef.current }),
 }));
