@@ -34,10 +34,10 @@ describe("PathSettings", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("shows the 5:00 PM default in the End of day control when unset", () => {
+  it("shows the 6:00 PM default in the End of day control when unset", () => {
     render(<PathSettings open onOpenChange={() => {}} />);
-    expect(screen.getByText(/currently 5:00 PM/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/end of day/i)).toHaveValue("17:00");
+    expect(screen.getByText(/currently 6:00 PM/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/end of day/i)).toHaveValue("18:00");
   });
 
   it("reflects a saved override instead of the default", () => {
@@ -50,8 +50,10 @@ describe("PathSettings", () => {
   it("persists a new end-of-day time on change without closing the sheet", async () => {
     const onOpenChange = vi.fn();
     render(<PathSettings open onOpenChange={onOpenChange} />);
-    fireEvent.change(screen.getByLabelText(/end of day/i), { target: { value: "18:00" } });
-    await waitFor(() => expect(updateEndOfDayAsync).toHaveBeenCalledWith(18 * 60));
+    // Type a value distinct from the 6:00 PM default so the controlled input
+    // registers a real change (16:30 = 990 minutes from midnight).
+    fireEvent.change(screen.getByLabelText(/end of day/i), { target: { value: "16:30" } });
+    await waitFor(() => expect(updateEndOfDayAsync).toHaveBeenCalledWith(16 * 60 + 30));
     expect(onOpenChange).not.toHaveBeenCalled();
   });
 

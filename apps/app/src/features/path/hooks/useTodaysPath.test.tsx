@@ -7,7 +7,7 @@
 
 // Pin the suite to UTC. The hook now anchors the working window to the device's
 // timezone offset (Robert's "Starts at" tz fix), so a fixed instant like NOW
-// (15:00Z) must fall in the 9..17 window regardless of the machine the suite runs
+// (15:00Z) must fall in the 08..18 window regardless of the machine the suite runs
 // on. UTC makes NOW == 15:00 local, mid-window, and getTimezoneOffset() == 0.
 // Follows the repo convention of setting TZ per tz-sensitive test file (see the
 // .pacific / .americas suites). Assigned before any import constructs a Date.
@@ -66,7 +66,7 @@ vi.mock("./usePathPreferences", () => ({
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 const ORIGIN = { lat: 40.0, lng: -74.0 };
-const NOW = "2026-08-09T15:00:00Z"; // 15:00 UTC, inside the default 9..17 window
+const NOW = "2026-08-09T15:00:00Z"; // 15:00 UTC, inside the default 08..18 window
 
 // The local calendar day the composing hook derives from NOW. Computed the same
 // way as the hook so the "opens today" band lines up regardless of runner TZ.
@@ -381,12 +381,12 @@ describe("useTodaysPath", () => {
     expect(result.current.overflow.some((s) => s.name === "No Map Co")).toBe(false);
   });
 
-  it("uses the global 17:00 default end-of-day when the rep has no override", () => {
-    // Empty day, NOW = 15:00 UTC in the 9..17 window: 2h = 120min still open.
+  it("uses the global 18:00 default end-of-day when the rep has no override", () => {
+    // Empty day, NOW = 15:00 UTC in the 08..18 window: 3h = 180min still open.
     eodRef.current = null;
     const { result } = renderHook(() => useTodaysPath(ORIGIN, NOW));
-    expect(result.current.remainingMin).toBe(120);
-    expect(result.current.windowEndHour).toBe(17);
+    expect(result.current.remainingMin).toBe(180);
+    expect(result.current.windowEndHour).toBe(18);
   });
 
   it("reflects the rep's per-rep end-of-day in the budget and the window-end hour", () => {
@@ -423,7 +423,7 @@ describe("useTodaysPath", () => {
     owedRef.owed = [owedVisit()]; // one located past-due stop, so the day is non-empty
 
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-08-09T15:00:00.000Z")); // 15:00, inside 9..17
+    vi.setSystemTime(new Date("2026-08-09T15:00:00.000Z")); // 15:00, inside 08..18
     try {
       const { result } = renderHook(() => useTodaysPath(ORIGIN));
       const startBefore = result.current.startsAt;
@@ -478,7 +478,7 @@ describe("useTodaysPath", () => {
   });
 
   it("once the workday is open, dayNotYetOpen is false and the start has no meridiem", () => {
-    // NOW = 15:00Z (3:00 PM) under the UTC pin, well inside 8..17.
+    // NOW = 15:00Z (3:00 PM) under the UTC pin, well inside 08..18.
     owedRef.owed = [owedVisit()];
     const { result } = renderHook(() => useTodaysPath(ORIGIN, NOW));
     expect(result.current.dayNotYetOpen).toBe(false);

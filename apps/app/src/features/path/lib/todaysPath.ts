@@ -113,7 +113,7 @@ export interface AssembleTodaysPathInput {
   dueToday: DueTodayCandidate[];
   nearbyPool: NearbyCandidate[];
   origin: LatLng;
-  /** Working hours. Defaults to 9..17. */
+  /** Working hours. Defaults to 8..18. */
   dayWindow?: DayWindow;
   /** Fixed dwell override for EVERY stop. When omitted, dwell is derived per
    *  kind: 30 min for an appointment, 15 min for a flexible stop
@@ -197,7 +197,7 @@ export interface TodaysPathResult {
 
 // --- helpers -----------------------------------------------------------------
 
-const DEFAULT_WINDOW: DayWindow = { startHour: 8, endHour: 17 };
+const DEFAULT_WINDOW: DayWindow = { startHour: 8, endHour: 18 };
 
 const toMs = (now: string | number): number =>
   typeof now === "number" ? now : Date.parse(now);

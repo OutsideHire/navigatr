@@ -64,7 +64,8 @@ const base = (o: Partial<AssembleTodaysPathInput> = {}): AssembleTodaysPathInput
   ...o,
 });
 
-// 09:00 local-UTC start of an 09..17 window -> full 480min budget.
+// 09:00 UTC start inside the default 08..18 window (offset 0) -> 540min budget
+// (09:00 clamps above the 08:00 open, runs to the 18:00 close).
 const NOW = "2026-08-09T09:00:00.000Z";
 
 describe("assembleTodaysPath", () => {
@@ -75,12 +76,12 @@ describe("assembleTodaysPath", () => {
   });
 
   it("exposes remaining capacity and the working-window end hour", () => {
-    // Empty day at 09:00 in the default 09..17 window: the whole 480min budget
-    // is still open and the window closes at hour 17.
+    // Empty day at 09:00 in the default 08..18 window: 09:00 -> 18:00 is 540min
+    // still open and the window closes at hour 18.
     const r = assembleTodaysPath(base(), NOW);
     expect(typeof r.remainingMin).toBe("number");
-    expect(r.remainingMin).toBe(480);
-    expect(r.windowEndHour).toBe(17);
+    expect(r.remainingMin).toBe(540);
+    expect(r.windowEndHour).toBe(18);
   });
 
   it("returns the configured window end hour when a dayWindow is given", () => {
@@ -96,10 +97,10 @@ describe("assembleTodaysPath", () => {
     expect(r.windowEndHour).toBe(16);
   });
 
-  it("falls back to the default 17:00 close when no per-rep endMinutes is given", () => {
+  it("falls back to the default 18:00 close when no per-rep endMinutes is given", () => {
     const r = assembleTodaysPath(base(), NOW);
-    expect(r.remainingMin).toBe(480); // full 09..17 window
-    expect(r.windowEndHour).toBe(17);
+    expect(r.remainingMin).toBe(540); // 09:00 -> 18:00 in the default 08..18 window
+    expect(r.windowEndHour).toBe(18);
   });
 
   it("endMinutes carries sub-hour precision into windowEndHour (floored) and the budget", () => {
@@ -128,7 +129,7 @@ describe("assembleTodaysPath", () => {
   });
 
   it("selects flexible candidates in strict tier order: past_due, then due_today, then nearby", () => {
-    // dwell 150 with a 480 budget fits exactly 3 of 4.
+    // dwell 150 with the 540 budget (09:00->18:00) fits exactly 3 of 4.
     const input = base({
       owed: [owed({ id: "o-old", ageDays: 9 }), owed({ id: "o-new", ageDays: 3 })],
       dueToday: [due({ id: "d-1" })],
@@ -275,10 +276,10 @@ describe("assembleTodaysPath", () => {
       owed: [owed({ id: "o-1", ageDays: 8 }), owed({ id: "o-2", ageDays: 6 }), owed({ id: "o-3", ageDays: 4 })],
       dwellMin: 120,
     });
-    // Full day (09:00): 480 budget -> 3 fit (360<=480).
+    // Full day (09:00): 540 budget -> 3 fit (360<=540).
     const full = assembleTodaysPath(input, "2026-08-09T09:00:00.000Z");
     expect(full.proposal.filter((s) => s.tier !== "appointment")).toHaveLength(3);
-    // Late start (15:00): only 120min left -> 1 fits.
+    // Late start (15:00): only 180min left -> 1 fits.
     const late = assembleTodaysPath(input, "2026-08-09T15:00:00.000Z");
     expect(late.proposal.filter((s) => s.tier !== "appointment").map((s) => s.id)).toEqual(["o-1"]);
     expect(late.overflow.map((s) => s.id)).toEqual(["o-2", "o-3"]);
@@ -289,9 +290,9 @@ describe("assembleTodaysPath", () => {
       owed: [owed({ id: "o-1", ageDays: 8 }), owed({ id: "o-2", ageDays: 6 })],
       dwellMin: 200,
     });
-    // No appointment: 480 budget -> 2 fit.
+    // No appointment: 540 budget -> 2 fit.
     expect(assembleTodaysPath(flexOnly, NOW).proposal.filter((s) => s.tier !== "appointment")).toHaveLength(2);
-    // A 4-hour appointment (240min) eats budget -> only 1 flexible fits (200<=240).
+    // A 4-hour appointment (240min) eats budget -> only 1 flexible fits (200<=300).
     const withAppt = { ...flexOnly, appointments: [appt({ startAt: "2026-08-09T12:00:00.000Z", endAt: "2026-08-09T16:00:00.000Z" })] };
     const r = assembleTodaysPath(withAppt, NOW);
     expect(r.proposal.filter((s) => s.tier !== "appointment")).toHaveLength(1);
@@ -301,15 +302,15 @@ describe("assembleTodaysPath", () => {
   it("uses per-kind dwell when no override: an end-less appointment holds 30, a flexible stop holds 15", () => {
     // No dwellMin override -> derive per kind. An appointment with no endAt
     // consumes the 30-min appointment dwell; a flexible owed stop at the origin
-    // (zero drive) consumes the 15-min flexible dwell. Budget is the full 480min.
+    // (zero drive) consumes the 15-min flexible dwell. Budget is the full 540min.
     const apptOnly = assembleTodaysPath(
       base({ appointments: [appt({ id: "a-noend", startAt: "2026-08-09T11:00:00.000Z", endAt: null })] }),
       NOW,
     );
-    expect(apptOnly.remainingMin).toBe(480 - 30);
+    expect(apptOnly.remainingMin).toBe(540 - 30);
 
     const flexOnly = assembleTodaysPath(base({ owed: [owed({ id: "o-1" })] }), NOW);
-    expect(flexOnly.remainingMin).toBe(480 - 15);
+    expect(flexOnly.remainingMin).toBe(540 - 15);
   });
 
   it("is deterministic and pure (same inputs -> identical output)", () => {
@@ -409,32 +410,32 @@ describe("assembleTodaysPath", () => {
 describe("assembleTodaysPath — timezone-local working window", () => {
   it("opens the day at the rep's LOCAL start hour, not the UTC hour (US Central)", () => {
     // 12:30Z with offset 300 == 7:30 local, before the 8:00 local open. So the
-    // day starts at 8:00 local == 13:00Z, with the full 540min (8..17) window.
+    // day starts at 8:00 local == 13:00Z, with the full 600min (8..18) window.
     // Ignoring the offset (the bug) would start at "now" and lose ~4.5h.
     const r = assembleTodaysPath(
       base({ tzOffsetMinutes: 300 }),
       "2026-08-19T12:30:00.000Z",
     );
     expect(r.startsAtIso).toBe("2026-08-19T13:00:00.000Z");
-    expect(r.remainingMin).toBe(540);
+    expect(r.remainingMin).toBe(600);
     // Before the local open, so the start is the scheduled opening, not now.
     expect(r.dayNotYetOpen).toBe(true);
   });
 
   it("clamps 'Starts at' to now once the local window is already open (US Central)", () => {
-    // 15:30Z with offset 300 == 10:30 local, inside the 8:00..17:00 local window.
-    // Start is now; remaining runs to 17:00 local (22:00Z) == 6.5h = 390min.
+    // 15:30Z with offset 300 == 10:30 local, inside the 8:00..18:00 local window.
+    // Start is now; remaining runs to 18:00 local (23:00Z) == 7.5h = 450min.
     const r = assembleTodaysPath(
       base({ tzOffsetMinutes: 300 }),
       "2026-08-19T15:30:00.000Z",
     );
     expect(r.startsAtIso).toBe("2026-08-19T15:30:00.000Z");
-    expect(r.remainingMin).toBe(390);
+    expect(r.remainingMin).toBe(450);
     expect(r.dayNotYetOpen).toBe(false);
   });
 
   it("closes the day at the rep's LOCAL end-of-day (no capacity after local EOD)", () => {
-    // 02:00Z Aug 20 with offset 300 == 21:00 local Aug 19, well past the 17:00
+    // 02:00Z Aug 20 with offset 300 == 21:00 local Aug 19, well past the 18:00
     // local close. The local date is derived from (now, offset), so the window
     // is Aug 19 local and there is zero remaining budget.
     const r = assembleTodaysPath(
@@ -447,13 +448,13 @@ describe("assembleTodaysPath — timezone-local working window", () => {
 
   it("anchors the window for an east-of-UTC rep too (CET, offset -60)", () => {
     // 06:30Z with offset -60 == 07:30 local, before the 8:00 local open, which
-    // is 07:00Z. Day starts at 07:00Z with the full 540min window.
+    // is 07:00Z. Day starts at 07:00Z with the full 600min window.
     const r = assembleTodaysPath(
       base({ tzOffsetMinutes: -60 }),
       "2026-08-19T06:30:00.000Z",
     );
     expect(r.startsAtIso).toBe("2026-08-19T07:00:00.000Z");
-    expect(r.remainingMin).toBe(540);
+    expect(r.remainingMin).toBe(600);
     expect(r.dayNotYetOpen).toBe(true);
   });
 

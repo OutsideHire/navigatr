@@ -7,9 +7,9 @@ import {
 } from "./pathCapacityDefaults";
 
 describe("pathCapacityDefaults", () => {
-  it("DEFAULT_END_OF_DAY_MINUTES is 5:00 PM in minutes from midnight", () => {
-    expect(DEFAULT_END_OF_DAY_MINUTES).toBe(17 * 60);
-    expect(DEFAULT_END_OF_DAY_MINUTES).toBe(1020);
+  it("DEFAULT_END_OF_DAY_MINUTES is 6:00 PM in minutes from midnight", () => {
+    expect(DEFAULT_END_OF_DAY_MINUTES).toBe(18 * 60);
+    expect(DEFAULT_END_OF_DAY_MINUTES).toBe(1080);
   });
 
   it("names the per-kind dwell constants (15 flexible / 30 appointment)", () => {
