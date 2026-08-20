@@ -51,3 +51,21 @@ export function endOfDayLabel(minutes: number): string {
   const d = new Date(2000, 0, 1, Math.floor(m / 60), m % 60, 0, 0);
   return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
+
+/** The workday must be at least this long (v1.4 Section 7: minimum one hour). */
+export const MIN_WORKDAY_MINUTES = 60;
+
+/**
+ * Validate a proposed workday window (both minutes from local midnight). Returns
+ * an error message when the end is not at least MIN_WORKDAY_MINUTES after the
+ * start (which also rejects end <= start and any cross-midnight pair, since both
+ * values live in a single day), or null when the window is valid. Shared by the
+ * "Day starts at" and "Day ends at" controls so neither can be saved into an
+ * invalid pair (v1.4 Section 7).
+ */
+export function workdayWindowError(startMinutes: number, endMinutes: number): string | null {
+  if (endMinutes - startMinutes < MIN_WORKDAY_MINUTES) {
+    return `Your day must end at least an hour after it starts (currently ${endOfDayLabel(startMinutes)} to ${endOfDayLabel(endMinutes)}).`;
+  }
+  return null;
+}

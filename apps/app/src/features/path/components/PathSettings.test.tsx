@@ -4,13 +4,17 @@ import { PathSettings } from "./PathSettings";
 import { allSubtypes } from "../lib/industrySelection";
 
 const mutateAsync = vi.fn(async () => {});
+const updateStartOfDayAsync = vi.fn(async () => {});
 const updateEndOfDayAsync = vi.fn(async () => {});
 const updateTimezoneAsync = vi.fn(async () => {});
+let startOfDayData: number | null = null;
 let endOfDayData: number | null = null;
 let timezoneData: string | null = null;
 vi.mock("../hooks/usePathPreferences", () => ({
   usePathPreferences: () => ({ data: { retail: allSubtypes("retail") }, isLoading: false }),
   useUpdateDefaultIndustries: () => ({ mutate: vi.fn(), mutateAsync, isPending: false }),
+  usePathStartOfDayMinutes: () => ({ data: startOfDayData }),
+  useUpdateStartOfDayMinutes: () => ({ mutateAsync: updateStartOfDayAsync, isPending: false }),
   usePathEndOfDayMinutes: () => ({ data: endOfDayData }),
   useUpdateEndOfDayMinutes: () => ({ mutateAsync: updateEndOfDayAsync, isPending: false }),
   usePathTimezone: () => ({ data: timezoneData }),
@@ -19,8 +23,10 @@ vi.mock("../hooks/usePathPreferences", () => ({
 
 beforeEach(() => {
   mutateAsync.mockClear();
+  updateStartOfDayAsync.mockClear();
   updateEndOfDayAsync.mockClear();
   updateTimezoneAsync.mockClear();
+  startOfDayData = null;
   endOfDayData = null;
   timezoneData = null;
 });
@@ -40,17 +46,43 @@ describe("PathSettings", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("shows the 6:00 PM default in the End of day control when unset", () => {
+  it("shows the 8:00 AM to 6:00 PM defaults in the workday controls when unset", () => {
     render(<PathSettings open onOpenChange={() => {}} />);
-    expect(screen.getByText(/currently 6:00 PM/i)).toBeInTheDocument();
+    expect(screen.getByText(/currently 8:00 AM to 6:00 PM/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/start of day/i)).toHaveValue("08:00");
     expect(screen.getByLabelText(/end of day/i)).toHaveValue("18:00");
   });
 
-  it("reflects a saved override instead of the default", () => {
+  it("reflects saved start/end overrides instead of the defaults", () => {
+    startOfDayData = 9 * 60 + 30;
     endOfDayData = 15 * 60 + 30;
     render(<PathSettings open onOpenChange={() => {}} />);
+    expect(screen.getByLabelText(/start of day/i)).toHaveValue("09:30");
     expect(screen.getByLabelText(/end of day/i)).toHaveValue("15:30");
-    expect(screen.getByText(/currently 3:30 PM/i)).toBeInTheDocument();
+    expect(screen.getByText(/currently 9:30 AM to 3:30 PM/i)).toBeInTheDocument();
+  });
+
+  it("persists a new start-of-day time on change", async () => {
+    render(<PathSettings open onOpenChange={() => {}} />);
+    // 7:00 AM (420), distinct from the 8:00 default and a valid pair with 6:00 PM.
+    fireEvent.change(screen.getByLabelText(/start of day/i), { target: { value: "07:00" } });
+    await waitFor(() => expect(updateStartOfDayAsync).toHaveBeenCalledWith(7 * 60));
+  });
+
+  it("rejects a start that is not at least an hour before the end (never persists)", () => {
+    endOfDayData = 18 * 60; // 6:00 PM
+    render(<PathSettings open onOpenChange={() => {}} />);
+    // 5:30 PM start vs 6:00 PM end = 30 min window -> rejected.
+    fireEvent.change(screen.getByLabelText(/start of day/i), { target: { value: "17:30" } });
+    expect(updateStartOfDayAsync).not.toHaveBeenCalled();
+  });
+
+  it("rejects an end that is not at least an hour after the start (never persists)", () => {
+    startOfDayData = 8 * 60; // 8:00 AM
+    render(<PathSettings open onOpenChange={() => {}} />);
+    // 8:30 AM end vs 8:00 AM start = 30 min window -> rejected.
+    fireEvent.change(screen.getByLabelText(/end of day/i), { target: { value: "08:30" } });
+    expect(updateEndOfDayAsync).not.toHaveBeenCalled();
   });
 
   it("persists a new end-of-day time on change without closing the sheet", async () => {

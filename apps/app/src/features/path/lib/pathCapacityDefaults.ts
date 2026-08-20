@@ -14,6 +14,10 @@
  *    flexible drop-in (discovery / owed / due-today / nearby) consumes 15.
  */
 
+/** Global start-of-day default: 8:00 AM, in minutes from local midnight
+ *  (Workday Window Fix v1.4 Section 7). A per-rep override still wins. */
+export const DEFAULT_START_OF_DAY_MINUTES = 8 * 60;
+
 /** Global end-of-day default: 6:00 PM, in minutes from local midnight
  *  (Workday Window Fix v1.4 Section 7). A per-rep override still wins. */
 export const DEFAULT_END_OF_DAY_MINUTES = 18 * 60;

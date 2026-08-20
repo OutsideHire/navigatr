@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { minutesToTimeValue, timeValueToMinutes, endOfDayLabel } from "./endOfDayControl";
+import { minutesToTimeValue, timeValueToMinutes, endOfDayLabel, workdayWindowError } from "./endOfDayControl";
 
 describe("minutesToTimeValue", () => {
   it("formats the 5pm default", () => {
@@ -52,5 +52,19 @@ describe("endOfDayLabel", () => {
     expect(endOfDayLabel(9 * 60 + 30)).toBe("9:30 AM");
     expect(endOfDayLabel(12 * 60)).toBe("12:00 PM");
     expect(endOfDayLabel(0)).toBe("12:00 AM");
+  });
+});
+
+describe("workdayWindowError", () => {
+  it("accepts a window at least one hour long", () => {
+    expect(workdayWindowError(8 * 60, 18 * 60)).toBeNull(); // 8:00 -> 18:00
+    expect(workdayWindowError(9 * 60, 10 * 60)).toBeNull(); // exactly one hour
+  });
+  it("rejects a window shorter than one hour", () => {
+    expect(workdayWindowError(9 * 60, 9 * 60 + 30)).not.toBeNull(); // 30 min
+  });
+  it("rejects end equal to or before start (incl. any cross-midnight pair)", () => {
+    expect(workdayWindowError(10 * 60, 10 * 60)).not.toBeNull();
+    expect(workdayWindowError(18 * 60, 8 * 60)).not.toBeNull(); // end before start
   });
 });

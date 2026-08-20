@@ -85,6 +85,7 @@ describe("PathPreferencesRow type", () => {
     const row: PathPreferencesRow = {
       user_id: "user-1",
       default_industries: { retail: ["clothing_store"] },
+      start_of_day_minutes: null,
       end_of_day_minutes: null,
       timezone: null,
       updated_at: "2026-08-11T00:00:00.000Z",

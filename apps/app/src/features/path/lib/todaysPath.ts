@@ -99,6 +99,11 @@ export interface NearbyCandidate {
 export interface DayWindow {
   startHour: number; // 0..24 local-UTC hour the working day opens
   endHour: number; // 0..24 local-UTC hour it closes
+  /** Optional minute-precise open, minutes from local midnight (v1.4 Ticket 3a).
+   *  When set it is AUTHORITATIVE for the working-window start (the per-rep
+   *  start-of-day from `path_preferences.start_of_day_minutes`); `startHour` is
+   *  then only the coarse fallback used when this is absent. Mirrors endMinutes. */
+  startMinutes?: number;
   /** Optional minute-precise close, minutes from local midnight (v2.2 B 4.3).
    *  When set it is AUTHORITATIVE for the working-window end (the per-rep
    *  end-of-day from `path_preferences.end_of_day_minutes`); `endHour` is then
@@ -312,7 +317,10 @@ export function assembleTodaysPath(
   const lda = localNow.getUTCDate();
   // Build each wall-clock boundary on that local date, then add the offset back
   // to convert the local wall clock to a true UTC instant.
-  const windowStartMs = Date.UTC(ly, lmo, lda, window.startHour, 0, 0, 0) + offsetMs;
+  // Per-rep start-of-day (startMinutes, minutes from midnight) is authoritative
+  // when present; otherwise fall back to the coarse startHour. Mirrors endMinutes.
+  const startMinutesFromMidnight = window.startMinutes ?? window.startHour * 60;
+  const windowStartMs = Date.UTC(ly, lmo, lda, 0, startMinutesFromMidnight, 0, 0) + offsetMs;
   // Per-rep end-of-day (endMinutes, minutes from midnight) is authoritative when
   // present; otherwise fall back to the coarse endHour. Date.UTC normalizes the
   // minutes overflow (e.g. 990 -> 16:30, 1020 -> 17:00).

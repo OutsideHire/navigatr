@@ -20,6 +20,9 @@ export const PATH_PREFS_QUERY_KEY = ["path", "preferences"] as const;
 export interface PathPreferencesRow {
   user_id: string;
   default_industries: IndustrySelection;
+  /** Per-rep start-of-day override (minutes from local midnight; null = use
+   *  DEFAULT_START_OF_DAY_MINUTES). Sibling of end_of_day_minutes. */
+  start_of_day_minutes: number | null;
   end_of_day_minutes: number | null;
   /** The rep's IANA timezone (e.g. "America/Chicago"), or null until captured
    *  from the device at sign-in. Day boundaries resolve in this zone. */
@@ -64,6 +67,49 @@ export function usePathEndOfDayMinutes() {
       if (error) throw error;
       return data?.end_of_day_minutes ?? null;
     },
+  });
+}
+
+/** usePathStartOfDayMinutes - the rep's per-rep start-of-day override (v1.4
+ *  Ticket 3a), minutes from local midnight, or null when unset (the caller then
+ *  uses DEFAULT_START_OF_DAY_MINUTES). Own thin query, sibling of
+ *  usePathEndOfDayMinutes. Owner-scoped via RLS. */
+export function usePathStartOfDayMinutes() {
+  const userId = useAuth((s) => s.user?.id);
+  return useQuery({
+    queryKey: [...PATH_PREFS_QUERY_KEY, "start_of_day_minutes", userId],
+    enabled: !!userId,
+    queryFn: async (): Promise<number | null> => {
+      const { data, error } = await (supabase
+        .from("path_preferences")
+        .select("start_of_day_minutes")
+        .maybeSingle() as unknown as Promise<{ data: { start_of_day_minutes: number | null } | null; error: { message: string } | null }>);
+      if (error) throw error;
+      return data?.start_of_day_minutes ?? null;
+    },
+  });
+}
+
+/** useUpdateStartOfDayMinutes - persist the rep's start-of-day override. Upserts
+ *  ONLY the start_of_day_minutes column so it never disturbs the other prefs on
+ *  the one-row-per-rep record. Owner-scoped via RLS. */
+export function useUpdateStartOfDayMinutes() {
+  const qc = useQueryClient();
+  const userId = useAuth((s) => s.user?.id);
+  return useMutation({
+    mutationFn: async (startOfDayMinutes: number | null): Promise<void> => {
+      if (!userId) throw new Error("Not signed in");
+      const { error } = await (supabase
+        .from("path_preferences")
+        .upsert(
+          { user_id: userId, start_of_day_minutes: startOfDayMinutes, updated_at: new Date().toISOString() },
+          { onConflict: "user_id" },
+        )
+        .select()
+        .single() as unknown as Promise<{ data: unknown; error: { message: string } | null }>);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: PATH_PREFS_QUERY_KEY }),
   });
 }
 
