@@ -113,7 +113,7 @@ export interface AssembleTodaysPathInput {
   dueToday: DueTodayCandidate[];
   nearbyPool: NearbyCandidate[];
   origin: LatLng;
-  /** Working hours. Defaults to 9..17. */
+  /** Working hours. Defaults to 8..18. */
   dayWindow?: DayWindow;
   /** Fixed dwell override for EVERY stop. When omitted, dwell is derived per
    *  kind: 30 min for an appointment, 15 min for a flexible stop
@@ -188,11 +188,16 @@ export interface TodaysPathResult {
    *  subhead's "Starts at" clause (v2.2 A6). Always the current instant once the
    *  window is open; the window-open time earlier in the morning. */
   startsAtIso: string;
+  /** True when `now` is BEFORE the working window opens, so `startsAtIso` is the
+   *  future window-open time rather than the current instant. Lets the subhead
+   *  say "Your day starts at 8:00 AM" (a scheduled opening) instead of a bare
+   *  "Starts at 8:00" that reads as the current time and looks frozen off-hours. */
+  dayNotYetOpen: boolean;
 }
 
 // --- helpers -----------------------------------------------------------------
 
-const DEFAULT_WINDOW: DayWindow = { startHour: 9, endHour: 17 };
+const DEFAULT_WINDOW: DayWindow = { startHour: 8, endHour: 18 };
 
 const toMs = (now: string | number): number =>
   typeof now === "number" ? now : Date.parse(now);
@@ -315,6 +320,8 @@ export function assembleTodaysPath(
   const windowEndMs = Date.UTC(ly, lmo, lda, 0, endMinutesFromMidnight, 0, 0) + offsetMs;
   const effectiveStartMs = Math.max(nowMs, windowStartMs);
   const totalWindowMin = Math.max(0, (windowEndMs - effectiveStartMs) / 60000);
+  // Before the window opens, effectiveStart is the future open time, not now.
+  const dayNotYetOpen = effectiveStartMs > nowMs;
 
   // 1. Fixed anchors: appointments always belong, ordered ascending by startAt
   //    (stable, with the original index as tiebreak for equal times).
@@ -407,5 +414,6 @@ export function assembleTodaysPath(
     // (floored to the hour), else the coarse endHour.
     windowEndHour: window.endMinutes != null ? Math.floor(window.endMinutes / 60) : window.endHour,
     startsAtIso: new Date(effectiveStartMs).toISOString(),
+    dayNotYetOpen,
   };
 }

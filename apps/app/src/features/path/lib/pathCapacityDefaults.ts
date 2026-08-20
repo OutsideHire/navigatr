@@ -6,7 +6,7 @@
  * module holds only the constants + a per-kind dwell helper. It does NOT compute
  * the capacity readout (that is B-T2) and reads no per-rep column yet.
  *
- *  - `DEFAULT_END_OF_DAY_MINUTES`: the global end-of-day, 5:00 PM, expressed as
+ *  - `DEFAULT_END_OF_DAY_MINUTES`: the global end-of-day, 6:00 PM, expressed as
  *    minutes from local midnight. A per-rep override lives on
  *    `path_preferences.end_of_day_minutes` (null = use this default); B-T2 reads
  *    it. Nothing here depends on the column existing yet.
@@ -14,8 +14,9 @@
  *    flexible drop-in (discovery / owed / due-today / nearby) consumes 15.
  */
 
-/** Global end-of-day default: 5:00 PM, in minutes from local midnight. */
-export const DEFAULT_END_OF_DAY_MINUTES = 17 * 60;
+/** Global end-of-day default: 6:00 PM, in minutes from local midnight
+ *  (Workday Window Fix v1.4 Section 7). A per-rep override still wins. */
+export const DEFAULT_END_OF_DAY_MINUTES = 18 * 60;
 
 /** Dwell for a flexible stop: discovery / drop-in / owed / due-today / nearby. */
 export const DWELL_DISCOVERY_MIN = 15;
