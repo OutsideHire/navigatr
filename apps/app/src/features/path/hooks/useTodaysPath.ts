@@ -66,15 +66,22 @@ export interface UseTodaysPathResult {
   windowEndHour: number;
   /** Preformatted clock (e.g. "9:15") of the day's effective start, for the
    *  "Your day" landing subhead's "Starts at" clause (v2.2 A6). Null when there
-   *  is no origin / nothing assembled yet. */
+   *  is no origin / nothing assembled yet. Includes " AM"/" PM" only in the
+   *  before-open state (see dayNotYetOpen). */
   startsAt: string | null;
+  /** True when the current time is before the working day opens, so `startsAt`
+   *  is the scheduled opening time. Drives the subhead's "Your day starts at
+   *  8:00 AM" wording so an off-hours open does not read as a frozen clock. */
+  dayNotYetOpen: boolean;
   status: TodaysPathStatus;
   isLoading: boolean;
 }
 
 /** Working-day open hour. Mirrors the assembler's DEFAULT_WINDOW.startHour so the
- *  budget starts from the same morning open once the rep EOD is threaded in. */
-const DEFAULT_WINDOW_START_HOUR = 9;
+ *  budget starts from the same morning open once the rep EOD is threaded in.
+ *  8:00 AM (Workday Window Fix v1.4 Section 7 default) so an early-morning
+ *  appointment falls inside the working window rather than just before it. */
+const DEFAULT_WINDOW_START_HOUR = 8;
 
 const MS_PER_DAY = 86_400_000;
 
@@ -87,15 +94,18 @@ function localDateOf(iso: string): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-/** Local-tz 12-hour clock with no am/pm, e.g. "9:15", "11:40" (v2.2 A6 subhead
- *  style, matching the day-capacity sentences). Returns null for an unparseable
- *  instant so the subhead falls back to the count alone. */
-function fmtClock(iso: string): string | null {
+/** Local-tz 12-hour clock, e.g. "9:15", "11:40" (v2.2 A6 subhead style, matching
+ *  the day-capacity sentences). Returns null for an unparseable instant so the
+ *  subhead falls back to the count alone. `withMeridiem` appends " AM"/" PM";
+ *  used only for the before-open "Your day starts at 8:00 AM" clarifier, where
+ *  the meridiem disambiguates a scheduled morning start from the current time. */
+function fmtClock(iso: string, withMeridiem = false): string | null {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
   const h = d.getHours();
   const hr12 = h % 12 === 0 ? 12 : h % 12;
-  return `${hr12}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const clock = `${hr12}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return withMeridiem ? `${clock} ${h < 12 ? "AM" : "PM"}` : clock;
 }
 
 /** Whole days between an ISO timestamp and now (floored, never negative). Used
@@ -218,6 +228,7 @@ export function useTodaysPath(
         remainingMin: 0,
         windowEndHour: Math.floor(eodMinutes / 60),
         startsAt: null,
+        dayNotYetOpen: false,
         status,
         isLoading: false,
       };
@@ -289,7 +300,7 @@ export function useTodaysPath(
     // the wrong time.
     const tzOffsetMinutes = new Date(now).getTimezoneOffset();
 
-    const { proposal, overflow, remainingMin, windowEndHour, startsAtIso } = assembleTodaysPath(
+    const { proposal, overflow, remainingMin, windowEndHour, startsAtIso, dayNotYetOpen } = assembleTodaysPath(
       {
         appointments,
         owed: owedCandidates,
@@ -314,7 +325,10 @@ export function useTodaysPath(
       noLocation,
       remainingMin,
       windowEndHour,
-      startsAt: fmtClock(startsAtIso),
+      // Meridiem only in the before-open state, where "8:00 AM" reads as a
+      // scheduled opening rather than a frozen current-time clock.
+      startsAt: fmtClock(startsAtIso, dayNotYetOpen),
+      dayNotYetOpen,
       status,
       isLoading,
     };

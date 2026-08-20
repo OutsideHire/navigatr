@@ -466,4 +466,22 @@ describe("useTodaysPath", () => {
       vi.useRealTimers();
     }
   });
+
+  it("before the workday opens, exposes dayNotYetOpen and a meridiem start (Your day starts at 8:00 AM)", () => {
+    // 06:00Z under the UTC-pinned suite is 6:00 AM local, before the 8:00 open.
+    // The day's start is the scheduled 8:00 opening, flagged dayNotYetOpen, and
+    // formatted with a meridiem so the subhead reads "Your day starts at 8:00 AM".
+    owedRef.owed = [owedVisit()];
+    const { result } = renderHook(() => useTodaysPath(ORIGIN, "2026-08-09T06:00:00Z"));
+    expect(result.current.dayNotYetOpen).toBe(true);
+    expect(result.current.startsAt).toBe("8:00 AM");
+  });
+
+  it("once the workday is open, dayNotYetOpen is false and the start has no meridiem", () => {
+    // NOW = 15:00Z (3:00 PM) under the UTC pin, well inside 8..17.
+    owedRef.owed = [owedVisit()];
+    const { result } = renderHook(() => useTodaysPath(ORIGIN, NOW));
+    expect(result.current.dayNotYetOpen).toBe(false);
+    expect(result.current.startsAt).toBe("3:00");
+  });
 });

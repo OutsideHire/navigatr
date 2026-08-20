@@ -776,6 +776,7 @@ export function PathPage() {
                   stopCount: todaysPath.proposal.length,
                   startsAt: todaysPath.startsAt,
                   started: false,
+                  notYetOpen: todaysPath.dayNotYetOpen,
                 })}
               </p>
             </>
