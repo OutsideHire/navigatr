@@ -34,6 +34,7 @@ function deps(over: Partial<SnapshotDeps> = {}): SnapshotDeps {
   return {
     listOrgs: vi.fn(async () => [{ id: "org-1", config: DEFAULT_PERSISTENCE_CONFIG }]),
     listRepIds: vi.fn(async () => ["rep-1", "rep-2", "rep-3"]),
+    fetchRepTimezones: vi.fn(async () => ({})),
     fetchOrgDeals: vi.fn(async () => deals),
     fetchOrgActivities: vi.fn(async () => activities),
     upsertRepSnapshot: vi.fn(async () => {}),
@@ -189,5 +190,44 @@ describe("runSnapshots", () => {
     expect(companyRow.composite_median).toBe(78);
     expect(companyRow.composite_p90).toBe(78);
     expect(summary).toEqual({ orgs: 1, reps: 2, repSnapshots: 2, companySnapshots: 1, failures: 0 });
+  });
+});
+
+// Ticket 2 Phase 3: the nightly snapshot scores each rep in their stored zone.
+describe("runSnapshots — per-rep timezone", () => {
+  const zoneDeals: ScoreDeal[] = [
+    { id: "dz", owner_id: "rep-1", stage: "open", owner_changed_at: null, has_future_appointment: false },
+  ];
+  const zoneActs: ScoreActivity[] = [
+    // Follow-up promised 2026-07-20; kept at 9pm Los Angeles (07-21T04:00Z).
+    { dealId: "dz", occurredAt: "2026-07-19T15:00:00.000Z", followUpDate: "2026-07-20" },
+    { dealId: "dz", occurredAt: "2026-07-21T04:00:00.000Z", followUpDate: null },
+  ];
+  const mk = (tz: Record<string, string | null>) =>
+    deps({
+      listRepIds: vi.fn(async () => ["rep-1"]),
+      fetchOrgDeals: vi.fn(async () => zoneDeals),
+      fetchOrgActivities: vi.fn(async () => zoneActs),
+      fetchRepTimezones: vi.fn(async () => tz),
+    });
+
+  it("threads the rep's zone into scoring (LA on-time vs UTC late)", async () => {
+    const laDeps = mk({ "rep-1": "America/Los_Angeles" });
+    await runSnapshots(laDeps, NOW);
+    const laRow = (laDeps.upsertRepSnapshot as any).mock.calls[0][0] as RepSnapshotRow;
+
+    const utcDeps = mk({}); // no stored zone -> UTC fallback
+    await runSnapshots(utcDeps, NOW);
+    const utcRow = (utcDeps.upsertRepSnapshot as any).mock.calls[0][0] as RepSnapshotRow;
+
+    expect(laRow.followup_points).toBeGreaterThan(utcRow.followup_points);
+    expect(utcRow.followup_points).toBe(0);
+  });
+
+  it("fetches rep timezones once per org", async () => {
+    const d = mk({});
+    await runSnapshots(d, NOW);
+    expect(d.fetchRepTimezones).toHaveBeenCalledTimes(1);
+    expect(d.fetchRepTimezones).toHaveBeenCalledWith("org-1");
   });
 });

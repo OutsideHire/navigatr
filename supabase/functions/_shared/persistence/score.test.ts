@@ -202,3 +202,35 @@ describe("scoreRep", () => {
     expect(typeof r.composite).toBe("number");
   });
 });
+
+// Ticket 2 Phase 3: Follow-Up Discipline resolves its day boundaries in the
+// rep's zone, not UTC. A follow-up promised for a date is "kept on time" if a
+// later touch lands on/before that date in the rep's LOCAL calendar.
+describe("scoreRep — Follow-Up Discipline in the rep's timezone", () => {
+  it("counts an evening West-Coast touch as on time for the prior local day", () => {
+    const deals: ScoreDeal[] = [deal({ id: "d1", owner_id: OWNER, stage: "open" })];
+    const activities: ScoreActivity[] = [
+      // Promised a follow-up for 2026-07-20.
+      { dealId: "d1", occurredAt: "2026-07-19T15:00:00.000Z", followUpDate: "2026-07-20" },
+      // Kept it at 9:00 PM Los Angeles on 07-20 == 2026-07-21T04:00Z. In UTC the
+      // touch is 07-21 (late); in America/Los_Angeles it is 07-20 (on time).
+      { dealId: "d1", occurredAt: "2026-07-21T04:00:00.000Z", followUpDate: null },
+    ];
+    const utc = scoreRep(deals, activities, OWNER, NOW, DEFAULT_SCORE_PARAMS, "UTC");
+    const la = scoreRep(deals, activities, OWNER, NOW, DEFAULT_SCORE_PARAMS, "America/Los_Angeles");
+    expect(utc.followupPoints).toBe(0);
+    expect(la.followupPoints).toBeGreaterThan(0);
+  });
+
+  it("defaults to UTC when no zone is passed (unchanged behavior)", () => {
+    const deals: ScoreDeal[] = [deal({ id: "d1", owner_id: OWNER, stage: "open" })];
+    const activities: ScoreActivity[] = [
+      { dealId: "d1", occurredAt: "2026-07-19T15:00:00.000Z", followUpDate: "2026-07-20" },
+      { dealId: "d1", occurredAt: "2026-07-21T04:00:00.000Z", followUpDate: null },
+    ];
+    const dflt = scoreRep(deals, activities, OWNER, NOW, DEFAULT_SCORE_PARAMS);
+    const utc = scoreRep(deals, activities, OWNER, NOW, DEFAULT_SCORE_PARAMS, "UTC");
+    expect(dflt.followupPoints).toBe(utc.followupPoints);
+    expect(dflt.followupPoints).toBe(0);
+  });
+});

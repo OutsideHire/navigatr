@@ -9,6 +9,8 @@
  * the two implementations cannot silently drift apart.
  */
 
+import { dateInZone } from "./zonedDate";
+
 // ── Types ────────────────────────────────────────────────────────────────
 
 export interface ScoreDeal {
@@ -100,13 +102,17 @@ function computeFollowUpDiscipline(
   windowStart: Date,
   windowEnd: Date,
   params: ScoreParams,
+  tz: string | null | undefined,
 ): FollowUpResult {
   const eligibleDealIds = new Set(
     deals.filter((d) => d.owner_id === ownerId && d.stage !== "lost").map((d) => d.id),
   );
 
-  const startDate = windowStart.toISOString().slice(0, 10);
-  const endDate = windowEnd.toISOString().slice(0, 10);
+  // Day boundaries resolve in the rep's zone, not UTC: a follow-up promised for
+  // a date is "kept on time" if a later touch lands on/before that date in the
+  // rep's LOCAL calendar. A null zone falls back to UTC (prior behavior).
+  const startDate = dateInZone(windowStart, tz);
+  const endDate = dateInZone(windowEnd, tz);
 
   const byDeal = new Map<string, ScoreActivity[]>();
   for (const a of activities) {
@@ -132,7 +138,7 @@ function computeFollowUpDiscipline(
   for (const a of due) {
     const siblings = byDeal.get(a.dealId) ?? [];
     const kept = siblings.some(
-      (b) => b.occurredAt > a.occurredAt && b.occurredAt.slice(0, 10) <= (a.followUpDate as string),
+      (b) => b.occurredAt > a.occurredAt && dateInZone(b.occurredAt, tz) <= (a.followUpDate as string),
     );
     if (kept) onTime += 1;
   }
@@ -315,11 +321,15 @@ export function scoreRep(
   ownerId: string,
   now: Date,
   params: ScoreParams = DEFAULT_SCORE_PARAMS,
+  tz: string | null | undefined = null,
 ): RepScore {
   const windowEnd = now;
   const windowStart = new Date(now.getTime() - params.windowDays * DAY_MS);
 
-  const followUp = computeFollowUpDiscipline(deals, activities, ownerId, windowStart, windowEnd, params);
+  // Only Follow-Up Discipline truncates to calendar days, so it is the only
+  // scorer that takes the rep's zone. Cadence + re-engagement compare elapsed
+  // milliseconds and are zone-independent.
+  const followUp = computeFollowUpDiscipline(deals, activities, ownerId, windowStart, windowEnd, params, tz);
   const cadence = computeTouchCadence(deals, activities, ownerId, windowStart, windowEnd, params);
   const reEngagement = computeReEngagement(deals, activities, ownerId, windowEnd, params);
 

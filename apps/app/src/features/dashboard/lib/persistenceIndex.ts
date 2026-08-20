@@ -10,6 +10,7 @@
 import type { Deal } from "@/features/pipeline/mockData";
 import type { Activity } from "@/features/activities/mockData";
 import { median, mean, percentile } from "./activityToWin";
+import { dateInZone } from "@/lib/zonedDate";
 
 export const TARGET_CADENCE = 3.5;
 export const TARGET_SCORE = 75;
@@ -48,13 +49,17 @@ export function computeFollowUpDiscipline(
   ownerId: string,
   windowStart: Date,
   windowEnd: Date,
+  tz: string | null | undefined = null,
 ): FollowUpResult {
   const eligibleDealIds = new Set(
     deals.filter((d) => d.owner_id === ownerId && d.stage !== "lost").map((d) => d.id),
   );
 
-  const startDate = windowStart.toISOString().slice(0, 10);
-  const endDate = windowEnd.toISOString().slice(0, 10);
+  // Day boundaries resolve in the rep's zone, not UTC (a null zone falls back
+  // to UTC, the prior behavior). Mirrors the server scorer in
+  // supabase/functions/_shared/persistence/score.ts.
+  const startDate = dateInZone(windowStart, tz);
+  const endDate = dateInZone(windowEnd, tz);
 
   const byDeal = new Map<string, Activity[]>();
   for (const a of activities) {
@@ -80,7 +85,7 @@ export function computeFollowUpDiscipline(
   for (const a of due) {
     const siblings = byDeal.get(a.dealId) ?? [];
     const kept = siblings.some(
-      (b) => b.occurredAt > a.occurredAt && b.occurredAt.slice(0, 10) <= (a.followUpDate as string),
+      (b) => b.occurredAt > a.occurredAt && dateInZone(b.occurredAt, tz) <= (a.followUpDate as string),
     );
     if (kept) onTime += 1;
   }
@@ -274,6 +279,9 @@ export interface PersistenceOptions {
   ownerId: string;
   now: Date;
   windowDays?: number;
+  /** The rep's IANA zone; Follow-Up Discipline resolves its day boundaries in
+   *  it. Null/omitted falls back to UTC (prior behavior). */
+  timezone?: string | null;
 }
 
 export interface ComponentView {
@@ -315,7 +323,7 @@ export function computePersistenceIndex(
   const windowEnd = opts.now;
   const windowStart = new Date(opts.now.getTime() - windowDays * DAY_MS);
 
-  const followUp = computeFollowUpDiscipline(deals, activities, opts.ownerId, windowStart, windowEnd);
+  const followUp = computeFollowUpDiscipline(deals, activities, opts.ownerId, windowStart, windowEnd, opts.timezone ?? null);
   const cadence = computeTouchCadence(deals, activities, opts.ownerId, windowStart, windowEnd);
   const reEngagement = computeReEngagement(deals, activities, opts.ownerId, windowEnd, windowDays);
 

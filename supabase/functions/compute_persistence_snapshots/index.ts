@@ -43,6 +43,26 @@ function makeDeps(db: SupabaseClient): SnapshotDeps {
         ),
       ];
     },
+    async fetchRepTimezones(orgId) {
+      // Org-scope via profiles (path_preferences has no org_id); service role
+      // bypasses RLS. A rep with no stored zone is simply absent from the map,
+      // and scoreRep falls back to UTC for them.
+      const { data: profs, error: profErr } = await db
+        .from("profiles")
+        .select("id")
+        .eq("org_id", orgId);
+      if (profErr) throw profErr;
+      const ids = (profs ?? []).map((p) => p.id as string);
+      if (ids.length === 0) return {};
+      const { data, error } = await db
+        .from("path_preferences")
+        .select("user_id, timezone")
+        .in("user_id", ids);
+      if (error) throw error;
+      const out: Record<string, string | null> = {};
+      for (const r of data ?? []) out[r.user_id as string] = (r.timezone as string | null) ?? null;
+      return out;
+    },
     async fetchOrgDeals(orgId) {
       const { data, error } = await db
         .from("deals")

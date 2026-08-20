@@ -43,6 +43,9 @@ export interface CompanySnapshotRow {
 export interface SnapshotDeps {
   listOrgs(): Promise<{ id: string; config: PersistenceConfig }[]>;
   listRepIds(orgId: string): Promise<string[]>;
+  /** IANA zone per rep id for the org, from path_preferences.timezone. A rep
+   *  with no stored zone is absent (or null), and scoring falls back to UTC. */
+  fetchRepTimezones(orgId: string): Promise<Record<string, string | null>>;
   fetchOrgDeals(orgId: string): Promise<ScoreDeal[]>;
   fetchOrgActivities(orgId: string): Promise<ScoreActivity[]>;
   upsertRepSnapshot(row: RepSnapshotRow): Promise<void>;
@@ -93,17 +96,18 @@ export async function runSnapshots(deps: SnapshotDeps, now: Date): Promise<RunSu
     summary.orgs += 1;
     const windowStartDate = isoDate(new Date(now.getTime() - org.config.windowDays * DAY_MS));
 
-    const [deals, activities, repIds] = await Promise.all([
+    const [deals, activities, repIds, repTz] = await Promise.all([
       deps.fetchOrgDeals(org.id),
       deps.fetchOrgActivities(org.id),
       deps.listRepIds(org.id),
+      deps.fetchRepTimezones(org.id),
     ]);
 
     const composites: number[] = [];
     for (const repId of repIds) {
       summary.reps += 1;
       try {
-        const s = scoreRep(deals, activities, repId, now, org.config);
+        const s = scoreRep(deals, activities, repId, now, org.config, repTz[repId] ?? null);
         const row: RepSnapshotRow = {
           org_id: org.id,
           user_id: repId,
