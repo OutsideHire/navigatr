@@ -5,18 +5,24 @@ import { allSubtypes } from "../lib/industrySelection";
 
 const mutateAsync = vi.fn(async () => {});
 const updateEndOfDayAsync = vi.fn(async () => {});
+const updateTimezoneAsync = vi.fn(async () => {});
 let endOfDayData: number | null = null;
+let timezoneData: string | null = null;
 vi.mock("../hooks/usePathPreferences", () => ({
   usePathPreferences: () => ({ data: { retail: allSubtypes("retail") }, isLoading: false }),
   useUpdateDefaultIndustries: () => ({ mutate: vi.fn(), mutateAsync, isPending: false }),
   usePathEndOfDayMinutes: () => ({ data: endOfDayData }),
   useUpdateEndOfDayMinutes: () => ({ mutateAsync: updateEndOfDayAsync, isPending: false }),
+  usePathTimezone: () => ({ data: timezoneData }),
+  useUpdateTimezone: () => ({ mutateAsync: updateTimezoneAsync, isPending: false }),
 }));
 
 beforeEach(() => {
   mutateAsync.mockClear();
   updateEndOfDayAsync.mockClear();
+  updateTimezoneAsync.mockClear();
   endOfDayData = null;
+  timezoneData = null;
 });
 
 describe("PathSettings", () => {
@@ -55,6 +61,15 @@ describe("PathSettings", () => {
     fireEvent.change(screen.getByLabelText(/end of day/i), { target: { value: "16:30" } });
     await waitFor(() => expect(updateEndOfDayAsync).toHaveBeenCalledWith(16 * 60 + 30));
     expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("shows the stored timezone and lets the rep change it", async () => {
+    timezoneData = "America/Chicago";
+    render(<PathSettings open onOpenChange={() => {}} />);
+    expect(screen.getByText(/shown in Central Time \(America\/Chicago\)/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/time zone/i)).toHaveValue("America/Chicago");
+    fireEvent.change(screen.getByLabelText(/time zone/i), { target: { value: "America/Los_Angeles" } });
+    await waitFor(() => expect(updateTimezoneAsync).toHaveBeenCalledWith("America/Los_Angeles"));
   });
 
   it("ignores a cleared/partial time value (never persists a bad value)", () => {

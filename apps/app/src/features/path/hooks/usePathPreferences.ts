@@ -21,6 +21,9 @@ export interface PathPreferencesRow {
   user_id: string;
   default_industries: IndustrySelection;
   end_of_day_minutes: number | null;
+  /** The rep's IANA timezone (e.g. "America/Chicago"), or null until captured
+   *  from the device at sign-in. Day boundaries resolve in this zone. */
+  timezone: string | null;
   updated_at: string;
 }
 
@@ -61,6 +64,48 @@ export function usePathEndOfDayMinutes() {
       if (error) throw error;
       return data?.end_of_day_minutes ?? null;
     },
+  });
+}
+
+/** usePathTimezone - the rep's stored IANA zone, or null when not yet captured.
+ *  Its own thin query so consumers read it without the industry-selection hook's
+ *  IndustrySelection return contract. Owner-scoped via RLS. */
+export function usePathTimezone() {
+  const userId = useAuth((s) => s.user?.id);
+  return useQuery({
+    queryKey: [...PATH_PREFS_QUERY_KEY, "timezone", userId],
+    enabled: !!userId,
+    queryFn: async (): Promise<string | null> => {
+      const { data, error } = await (supabase
+        .from("path_preferences")
+        .select("timezone")
+        .maybeSingle() as unknown as Promise<{ data: { timezone: string | null } | null; error: { message: string } | null }>);
+      if (error) throw error;
+      return data?.timezone ?? null;
+    },
+  });
+}
+
+/** useUpdateTimezone - persist the rep's IANA zone. Upserts ONLY the timezone
+ *  column so it never disturbs default_industries / end_of_day_minutes on the
+ *  one-row-per-rep record. Owner-scoped via RLS. */
+export function useUpdateTimezone() {
+  const qc = useQueryClient();
+  const userId = useAuth((s) => s.user?.id);
+  return useMutation({
+    mutationFn: async (timezone: string): Promise<void> => {
+      if (!userId) throw new Error("Not signed in");
+      const { error } = await (supabase
+        .from("path_preferences")
+        .upsert(
+          { user_id: userId, timezone, updated_at: new Date().toISOString() },
+          { onConflict: "user_id" },
+        )
+        .select()
+        .single() as unknown as Promise<{ data: unknown; error: { message: string } | null }>);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: PATH_PREFS_QUERY_KEY }),
   });
 }
 
