@@ -194,6 +194,10 @@ vi.mock("../hooks/usePathPreferences", () => ({
   usePathEndOfDayMinutes: () => ({ data: null }),
   // PathSettings also owns the end-of-day save control.
   useUpdateEndOfDayMinutes: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  // useCaptureTimezone (mounted by PathPage) + PathSettings read/write the zone.
+  // Return a stored zone so the capture no-ops (no write during PathPage tests).
+  usePathTimezone: () => ({ data: "America/Chicago", isLoading: false }),
+  useUpdateTimezone: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
 }));
 vi.mock("../hooks/useGeolocation", () => ({
   useGeolocation: () => ({ coords: null, status: "denied", error: null, retry: vi.fn() }),

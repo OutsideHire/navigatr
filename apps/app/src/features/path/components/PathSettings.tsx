@@ -5,12 +5,15 @@ import { IndustryEditor } from "./IndustryEditor";
 import {
   usePathPreferences,
   usePathEndOfDayMinutes,
+  usePathTimezone,
   useUpdateDefaultIndustries,
   useUpdateEndOfDayMinutes,
+  useUpdateTimezone,
 } from "../hooks/usePathPreferences";
 import type { IndustrySelection } from "../lib/industrySelection";
 import { DEFAULT_END_OF_DAY_MINUTES } from "../lib/pathCapacityDefaults";
 import { minutesToTimeValue, timeValueToMinutes, endOfDayLabel } from "../lib/endOfDayControl";
+import { US_TIMEZONES, timezoneLabel, isKnownTimezone } from "../lib/timezones";
 
 interface PathSettingsProps {
   open: boolean;
@@ -27,9 +30,13 @@ export function PathSettings({ open, onOpenChange }: PathSettingsProps) {
   const update = useUpdateDefaultIndustries();
   const { data: endOfDayMinutes } = usePathEndOfDayMinutes();
   const updateEndOfDay = useUpdateEndOfDayMinutes();
+  const { data: timezone } = usePathTimezone();
+  const updateTimezone = useUpdateTimezone();
 
-  // Effective end-of-day: the rep's override, or the 5:00 PM default when unset.
+  // Effective end-of-day: the rep's override, or the 6:00 PM default when unset.
   const effectiveEndOfDay = endOfDayMinutes ?? DEFAULT_END_OF_DAY_MINUTES;
+  // Effective zone: the rep's stored zone, or the device zone until captured.
+  const effectiveTz = timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const handleSave = async (sel: IndustrySelection) => {
     try {
@@ -49,6 +56,17 @@ export function PathSettings({ open, onOpenChange }: PathSettingsProps) {
     try {
       await updateEndOfDay.mutateAsync(minutes);
       toast.success(`Day ends at ${endOfDayLabel(minutes)}.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't save. Check your connection and try again.");
+    }
+  };
+
+  // Persist the rep's zone on change. An unresolvable value is ignored.
+  const handleTimezoneChange = async (value: string) => {
+    if (!isKnownTimezone(value)) return;
+    try {
+      await updateTimezone.mutateAsync(value);
+      toast.success(`Time zone set to ${timezoneLabel(value)}.`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't save. Check your connection and try again.");
     }
@@ -103,6 +121,31 @@ export function PathSettings({ open, onOpenChange }: PathSettingsProps) {
                 disabled={updateEndOfDay.isPending}
                 className="rounded-radius-sm border border-border-default bg-surface-default px-3 py-2 text-body-md text-text-default disabled:opacity-60"
               />
+            </label>
+          </div>
+          <div className="flex flex-col gap-2 border-t border-border-subtle pt-4">
+            <div className="flex flex-col gap-0.5">
+              <h3 className="text-body-strong text-text-default">Time zone</h3>
+              <p className="text-caption text-text-muted">
+                Your day and times are shown in {timezoneLabel(effectiveTz)}.
+              </p>
+            </div>
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-body-md text-text-default">Time zone</span>
+              <select
+                aria-label="Time zone"
+                value={effectiveTz}
+                onChange={(e) => void handleTimezoneChange(e.target.value)}
+                disabled={updateTimezone.isPending}
+                className="rounded-radius-sm border border-border-default bg-surface-default px-3 py-2 text-body-md text-text-default disabled:opacity-60"
+              >
+                {US_TIMEZONES.map((z) => (
+                  <option key={z.id} value={z.id}>{z.label}</option>
+                ))}
+                {!US_TIMEZONES.some((z) => z.id === effectiveTz) && (
+                  <option value={effectiveTz}>{timezoneLabel(effectiveTz)}</option>
+                )}
+              </select>
             </label>
           </div>
         </Dialog.Content>

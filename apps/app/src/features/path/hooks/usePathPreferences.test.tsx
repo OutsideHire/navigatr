@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { usePathPreferences, usePathEndOfDayMinutes, useUpdateDefaultIndustries, useUpdateEndOfDayMinutes, type PathPreferencesRow } from "./usePathPreferences";
+import { usePathPreferences, usePathEndOfDayMinutes, usePathTimezone, useUpdateDefaultIndustries, useUpdateEndOfDayMinutes, useUpdateTimezone, type PathPreferencesRow } from "./usePathPreferences";
 import { RECOMMENDED_SELECTION } from "../lib/industrySelection";
 
 const maybeSingle = vi.fn();
@@ -51,12 +51,42 @@ describe("usePathPreferences", () => {
   });
 });
 
+describe("usePathTimezone", () => {
+  it("returns the stored zone", async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { timezone: "America/Chicago" }, error: null });
+    const { result } = renderHook(() => usePathTimezone(), { wrapper: wrap(makeClient()) });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toBe("America/Chicago");
+  });
+  it("returns null when no zone is stored", async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { timezone: null }, error: null });
+    const { result } = renderHook(() => usePathTimezone(), { wrapper: wrap(makeClient()) });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toBeNull();
+  });
+});
+
+describe("useUpdateTimezone", () => {
+  it("upserts only the timezone column", async () => {
+    upsertSingle.mockResolvedValueOnce({ data: {}, error: null });
+    const { result } = renderHook(() => useUpdateTimezone(), { wrapper: wrap(makeClient()) });
+    await result.current.mutateAsync("America/Los_Angeles");
+    // Exact match proves ONLY user_id + timezone (+ updated_at) are sent, so the
+    // upsert never disturbs default_industries / end_of_day_minutes.
+    expect(upsert).toHaveBeenCalledWith(
+      { user_id: "user-1", timezone: "America/Los_Angeles", updated_at: expect.any(String) },
+      { onConflict: "user_id" },
+    );
+  });
+});
+
 describe("PathPreferencesRow type", () => {
   it("includes the nullable per-rep end_of_day_minutes field", () => {
     const row: PathPreferencesRow = {
       user_id: "user-1",
       default_industries: { retail: ["clothing_store"] },
       end_of_day_minutes: null,
+      timezone: null,
       updated_at: "2026-08-11T00:00:00.000Z",
     };
     expect(row.end_of_day_minutes).toBeNull();
