@@ -119,6 +119,13 @@ export interface AssembleTodaysPathInput {
    *  kind: 30 min for an appointment, 15 min for a flexible stop
    *  (`dwellMinutesForKind`). Pass a number only to force one flat value. */
   dwellMin?: number;
+  /** The rep's timezone offset in minutes BEHIND UTC, i.e. the device's
+   *  `Date.getTimezoneOffset()` (300 for US Central UTC-5, -60 for CET UTC+1,
+   *  0 for UTC). The working window's start/end are the rep's wall-clock
+   *  business hours, so they are anchored to this offset: "Starts at", capacity,
+   *  and end-of-day track the rep's local clock instead of UTC. Defaults to 0
+   *  (UTC), which is the assembler's prior behavior. */
+  tzOffsetMinutes?: number;
 }
 
 // --- outputs -----------------------------------------------------------------
@@ -284,15 +291,28 @@ export function assembleTodaysPath(
 
   const nowMs = toMs(now);
 
-  // Working window on `now`'s calendar date, in UTC (deterministic; callers pass
-  // an explicit-offset `now`). The remaining budget runs from max(now, open).
-  const d = new Date(nowMs);
-  const windowStartMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), window.startHour, 0, 0, 0);
+  // Working window on `now`'s LOCAL calendar date. startHour / endMinutes are the
+  // rep's wall-clock business hours, so they anchor to the rep's timezone offset,
+  // NOT UTC. `tzOffsetMinutes` is the device offset (minutes BEHIND UTC). Keeping
+  // this a parameter (rather than reading the machine clock) keeps the assembler
+  // pure and deterministic: tests pass an explicit offset and the result never
+  // depends on the runner's timezone. Offset 0 == UTC == the prior behavior. The
+  // remaining budget runs from max(now, open).
+  const offsetMs = (input.tzOffsetMinutes ?? 0) * 60000;
+  // Shift by the offset then read UTC parts to recover the rep-LOCAL Y/M/D of
+  // `now` independent of the JS runtime's own timezone.
+  const localNow = new Date(nowMs - offsetMs);
+  const ly = localNow.getUTCFullYear();
+  const lmo = localNow.getUTCMonth();
+  const lda = localNow.getUTCDate();
+  // Build each wall-clock boundary on that local date, then add the offset back
+  // to convert the local wall clock to a true UTC instant.
+  const windowStartMs = Date.UTC(ly, lmo, lda, window.startHour, 0, 0, 0) + offsetMs;
   // Per-rep end-of-day (endMinutes, minutes from midnight) is authoritative when
   // present; otherwise fall back to the coarse endHour. Date.UTC normalizes the
   // minutes overflow (e.g. 990 -> 16:30, 1020 -> 17:00).
   const endMinutesFromMidnight = window.endMinutes ?? window.endHour * 60;
-  const windowEndMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, endMinutesFromMidnight, 0, 0);
+  const windowEndMs = Date.UTC(ly, lmo, lda, 0, endMinutesFromMidnight, 0, 0) + offsetMs;
   const effectiveStartMs = Math.max(nowMs, windowStartMs);
   const totalWindowMin = Math.max(0, (windowEndMs - effectiveStartMs) / 60000);
 

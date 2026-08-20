@@ -25,11 +25,11 @@
  *      server-side), mapped to NearbyCandidate.
  *
  * Not a pure fn: it reads three hooks. `now` is passed through so tests can pin
- * the clock; it defaults to the current time. `now` also derives the local
- * `pathDate` the tier hooks key on, so the whole composition is deterministic
- * for a given `now`.
+ * the clock; it defaults to the current time and refreshes when the rep returns
+ * to the screen (focus/visibility). `now` also derives the local `pathDate` the
+ * tier hooks key on, so the whole composition is deterministic for a given `now`.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { LatLng } from "@/lib/distance";
 import { useMeetingStops } from "./useMeetingStops";
 import { useOwedVisits } from "./useOwedVisits";
@@ -112,25 +112,51 @@ function ageDaysSince(iso: string, nowMs: number): number {
  *
  * @param origin the run's start point, or null (no located origin yet).
  * @param nowOverride ISO instant, for tests that pin the clock. In production it
- *               is omitted: the hook captures `now` ONCE per instance (see below)
- *               so the whole composition stays referentially stable across
- *               renders. `now` drives the budget AND the local `pathDate` the tier
- *               hooks read.
+ *               is omitted: the hook captures `now` at mount and refreshes it only
+ *               when the rep returns to the screen (focus/visibility), so the
+ *               composition stays referentially stable between those events. `now`
+ *               drives the budget AND the local `pathDate` the tier hooks read.
  */
 export function useTodaysPath(
   origin: LatLng | null,
   nowOverride?: string,
 ): UseTodaysPathResult {
-  // Capture `now` ONCE per hook instance rather than reading the clock on every
-  // render. A per-render default (`new Date().toISOString()`) changed the memo's
-  // `now` dep every render, so `proposal`/`overflow` were re-derived with a fresh
-  // array identity each time. That churn reset the entry landing's local review
-  // state (TodaysPathView keys `workingProposal`/`poolCursor` off `proposal`
-  // identity) and is the "needs a manual refresh to populate" QA report. Mirrors
-  // RunningPath's stable `nowIso` for the running view. Tests pin it via nowOverride.
-  const [capturedNow] = useState(() => new Date().toISOString());
+  // Capture `now` once at mount rather than reading the clock on every render. A
+  // per-render default (`new Date().toISOString()`) changed the memo's `now` dep
+  // every render, so `proposal`/`overflow` were re-derived with a fresh array
+  // identity each time. That churn reset the entry landing's local review state
+  // (TodaysPathView keys `workingProposal`/`poolCursor` off `proposal` identity)
+  // and was the "needs a manual refresh to populate" QA report (R3-B1). Tests pin
+  // it via nowOverride.
+  const [capturedNow, setCapturedNow] = useState(() => new Date().toISOString());
   const now = nowOverride ?? capturedNow;
   const pathDate = localDateOf(now);
+
+  // Refresh `now` to the wall clock whenever the rep RETURNS to the Path screen
+  // (tab/app focus, or the document becoming visible again). Robert's QA: the
+  // day's "Starts at" + remaining capacity must reflect the CURRENT time, not the
+  // instant the screen first mounted. This is event-driven, NOT a per-render
+  // clock read, so it does not reintroduce the R3-B1 churn: within a single
+  // wall-clock minute the old identity is kept, so a quick tab-away-and-back does
+  // not rebuild the proposal; it refreshes only once the clock has actually
+  // advanced. Disabled when a test pins the clock via nowOverride.
+  useEffect(() => {
+    if (nowOverride != null) return;
+    const refresh = () =>
+      setCapturedNow((prev) => {
+        const next = new Date().toISOString();
+        return prev.slice(0, 16) === next.slice(0, 16) ? prev : next;
+      });
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [nowOverride]);
 
   // Tier 1: fixed calendar anchors.
   const meetings = useMeetingStops(pathDate, now);
@@ -257,6 +283,12 @@ export function useTodaysPath(
       dealId: null,
     }));
 
+    // The rep's timezone offset at `now` (minutes behind UTC), so the assembler
+    // anchors the working window to the device's wall clock, not UTC. Robert's
+    // QA: "Starts at" / capacity were computed on UTC business hours and showed
+    // the wrong time.
+    const tzOffsetMinutes = new Date(now).getTimezoneOffset();
+
     const { proposal, overflow, remainingMin, windowEndHour, startsAtIso } = assembleTodaysPath(
       {
         appointments,
@@ -264,6 +296,7 @@ export function useTodaysPath(
         dueToday,
         nearbyPool,
         origin,
+        tzOffsetMinutes,
         // Thread the rep's EOD as a minute-precise window close; endHour is the
         // coarse fallback the assembler floors to for the label.
         dayWindow: {
