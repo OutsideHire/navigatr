@@ -82,6 +82,24 @@ describe("computeFollowUpDiscipline", () => {
     expect(result.hasSample).toBe(false);
   });
 
+  it("resolves the on-time day in the rep's zone (evening West-Coast touch counts on time)", () => {
+    const deals = [deal({ id: "d1" })];
+    const activities = [
+      activity({ id: "a1", dealId: "d1", occurredAt: "2026-06-09T00:00:00.000Z", followUpDate: "2026-06-10" }),
+      // Kept at 9pm Los Angeles on 06-10 == 2026-06-11T04:00Z. UTC date is 06-11
+      // (late); America/Los_Angeles date is 06-10 (on time).
+      activity({ id: "a2", dealId: "d1", occurredAt: "2026-06-11T04:00:00.000Z", followUpDate: null }),
+    ];
+    const utc = computeFollowUpDiscipline(deals, activities, OWNER, WINDOW_START, WINDOW_END, "UTC");
+    const la = computeFollowUpDiscipline(deals, activities, OWNER, WINDOW_START, WINDOW_END, "America/Los_Angeles");
+    expect(utc.completionRate).toBe(0);
+    expect(la.completionRate).toBe(1);
+    expect(la.points).toBeGreaterThan(utc.points);
+    // Default (no zone) stays UTC.
+    const dflt = computeFollowUpDiscipline(deals, activities, OWNER, WINDOW_START, WINDOW_END);
+    expect(dflt.points).toBe(utc.points);
+  });
+
   it("does not count a touch that lands after the due date as on-time", () => {
     const deals = [deal({ id: "d1" })];
     const activities = [
