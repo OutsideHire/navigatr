@@ -9,7 +9,7 @@
  * the two implementations cannot silently drift apart.
  */
 
-import { dateInZone } from "./zonedDate";
+import { dateInZone } from "./zonedDate.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
