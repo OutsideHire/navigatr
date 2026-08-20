@@ -72,6 +72,7 @@ import { DiscoverMeetingBanner } from "../components/DiscoverMeetingBanner";
 import { useQueryClient } from "@tanstack/react-query";
 import { useOwedVisits } from "../hooks/useOwedVisits";
 import { useTodaysPath } from "../hooks/useTodaysPath";
+import { useCaptureTimezone } from "../hooks/useCaptureTimezone";
 import { useBackfillOwedCoords } from "../hooks/useBackfillOwedCoords";
 import type { OrderedStop } from "../lib/todaysPath";
 import { OwedVisitsList, type OwedVisitRow } from "../components/OwedVisitsList";
@@ -223,6 +224,10 @@ export function PathPage() {
   // ordering/selection; here we only read it and hand its flexible stops to the
   // same create+start mechanism `handleStartPath` uses.
   const todaysPath = useTodaysPath(origin);
+
+  // Capture the rep's device timezone once (backfills existing reps on next
+  // visit). Stored on path_preferences; day boundaries resolve in this zone.
+  useCaptureTimezone();
 
   // Lazy geocode: owed drop-ins that surfaced in "No location yet" BUT carry a
   // street address get geocoded once (per dealId, per session) and their lat/lng
