@@ -15,6 +15,7 @@ import { useProfile } from "@/features/auth/useProfile";
 import { useAuth } from "@/stores/auth";
 import { useTeamLeaderboard } from "@/features/admin/hooks/useTeamLeaderboard";
 import { resolveScopeLevel, type ScopeLevel } from "./scope";
+import { deriveTeams, spansMultipleTeams, type Team } from "./teams";
 
 export interface Seller {
   id: string;
@@ -27,6 +28,10 @@ export interface ViewerScope {
   /** Active members of the viewer's subtree (including the viewer), for the
    *  Slice 2 seller filter. Sorted by name. */
   sellers: Seller[];
+  /** The teams beneath the viewer (Slice 3 team filter + partner grouping). */
+  teams: Team[];
+  /** True when the viewer spans more than one team (FR-HIER-21/25 trigger). */
+  multiTeam: boolean;
   /** The viewer's own display name, for rendering their avatar on "You" cards. */
   viewerName: string | null;
 }
@@ -43,10 +48,13 @@ export function useViewerScope(): ViewerScope {
     const sellers: Seller[] = active
       .map((r) => ({ id: r.agent_id, name: r.full_name ?? r.email }))
       .sort((a, b) => a.name.localeCompare(b.name));
+    const teams = deriveTeams(rows, userId);
     return {
       scopeLevel: resolveScopeLevel(profile.data?.role_level ?? null, hasReports),
       hasReports,
       sellers,
+      teams,
+      multiTeam: spansMultipleTeams(teams),
       viewerName: profile.data?.full_name ?? null,
     };
   }, [leaderboard.data, profile.data?.role_level, profile.data?.full_name, userId]);
