@@ -22,6 +22,7 @@ import { InviteAgentModal } from "../components/InviteAgentModal";
 import { RevokeAgentDialog } from "../components/RevokeAgentDialog";
 import { OrgChartTree } from "../components/OrgChartTree";
 import { AppointmentsAwaitingCard } from "@/features/appointments/components/AppointmentsAwaitingCard";
+import { LocationCaptureHealthCard } from "../components/LocationCaptureHealthCard";
 
 type SortKey =
   | keyof Pick<
@@ -343,6 +344,9 @@ export function AgentsPage() {
 
       {/* Secondary insight: appointments awaiting an outcome, below the roster */}
       <AppointmentsAwaitingCard />
+
+      {/* Operational: is location capture actually working during beta? (FR-HIER-37) */}
+      <LocationCaptureHealthCard />
 
       <InviteAgentModal open={inviteOpen} onOpenChange={setInviteOpen} />
 
