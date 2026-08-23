@@ -58,6 +58,14 @@ export interface Partner {
    *  Optional: only fetched by usePartners; used to gate the Edit button
    *  against RLS. null/undefined when unknown → treated as "not the owner". */
   createdBy?: string | null;
+  /** auth uid of the partner's owner (partners.owner_id). Drives hierarchy
+   *  visibility server-side; used client-side to decide whether to surface the
+   *  owner (only when it isn't the viewer). Optional: only fetched by
+   *  usePartners. */
+  ownerId?: string | null;
+  /** Owner's display name, embedded from profiles in usePartners (Bundle 2,
+   *  FR-HIER-05). Null when unknown or not embedded. */
+  ownerName?: string | null;
   /** ISO timestamp the partner row was created (partners.created_at).
    *  Optional: only fetched by usePartners. Anchors the cadence clock for a
    *  never-touched partner. */

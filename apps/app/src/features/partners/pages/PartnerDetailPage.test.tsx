@@ -101,6 +101,8 @@ function partner(args: {
   attributedDealIds?: string[];
   outboundDealIds?: string[];
   createdBy?: string | null;
+  ownerId?: string | null;
+  ownerName?: string | null;
   lastTouch?: string | null;
   createdAt?: string;
   followupCadenceDays?: number | null;
@@ -120,6 +122,8 @@ function partner(args: {
     outboundDealIds: args.outboundDealIds ?? [],
     notes: "",
     createdBy: args.createdBy ?? "creator-9",
+    ownerId: args.ownerId ?? null,
+    ownerName: args.ownerName ?? null,
     createdAt: args.createdAt,
     followupCadenceDays: args.followupCadenceDays,
   };
@@ -259,6 +263,21 @@ describe("PartnerDetailPage / Edit button gating", () => {
     renderPage({ partners, deals: [], partnerId: "p1" });
     fireEvent.click(within(heroActions()).getByRole("button", { name: /^Edit$/ }));
     expect(screen.getByTestId("edit-partner-sheet")).toBeTruthy();
+  });
+
+  // FR-HIER-05: owner surfaced only when it isn't the viewer's own partner.
+  it("shows the owner when the partner belongs to someone else", () => {
+    authUserId = "someone-else";
+    const partners = [partner({ id: "p1", ownerId: "owner-7", ownerName: "Olive Owner" })];
+    renderPage({ partners, deals: [], partnerId: "p1" });
+    expect(screen.getByText(/Owner: Olive Owner/)).toBeTruthy();
+  });
+
+  it("hides the owner on the viewer's own partner", () => {
+    authUserId = "owner-7";
+    const partners = [partner({ id: "p1", ownerId: "owner-7", ownerName: "Olive Owner" })];
+    renderPage({ partners, deals: [], partnerId: "p1" });
+    expect(screen.queryByText(/Owner: Olive Owner/)).toBeNull();
   });
 });
 

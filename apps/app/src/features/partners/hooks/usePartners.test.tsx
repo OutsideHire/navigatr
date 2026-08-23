@@ -50,6 +50,7 @@ describe("usePartners", () => {
           next_followup_at: "2026-05-22T00:00:00Z",
           notes: "Best CPA in network",
           created_by: "creator-9",
+          owner_id: "owner-7",
           created_at: "2026-05-01T00:00:00Z",
           followup_cadence_days: 30,
           partner_deals: [
@@ -59,6 +60,7 @@ describe("usePartners", () => {
             // excluded from attribution.
             { deal_id: "d-999", direction: "outbound" },
           ],
+          owner: { full_name: "Owen Owner" },
         },
       ],
       error: null,
@@ -82,6 +84,8 @@ describe("usePartners", () => {
         outboundDealIds: ["d-999"],
         notes: "Best CPA in network",
         createdBy: "creator-9",
+        ownerId: "owner-7",
+        ownerName: "Owen Owner",
         createdAt: "2026-05-01T00:00:00Z",
         followupCadenceDays: 30,
       },
@@ -120,6 +124,9 @@ describe("usePartners", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.[0].attributedDealIds).toEqual(["in1", "in2"]);
     expect(result.current.data?.[0].outboundDealIds).toEqual(["out1"]);
+    // No owner embed on this row → owner fields null-coalesce (FR-HIER-05).
+    expect(result.current.data?.[0].ownerId).toBeNull();
+    expect(result.current.data?.[0].ownerName).toBeNull();
   });
 
   it("partner with no attributed deals produces empty attributedDealIds (not undefined)", async () => {

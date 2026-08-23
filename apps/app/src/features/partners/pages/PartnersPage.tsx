@@ -44,6 +44,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAuth } from "@/stores/auth";
 
 import {
   STATUS_BADGE_KIND,
@@ -101,7 +102,13 @@ function useRevenueByPartner(
 
 function PartnerCard({ partner, revenue }: { partner: Partner; revenue: number }) {
   const navigate = useNavigate();
+  const currentUserId = useAuth((s) => s.user?.id);
   const referrals = partner.attributedDealIds.length;
+  // FR-HIER-05: surface the owner only when it isn't the viewer's own partner,
+  // so a manager scanning the team's partners sees who owns each one.
+  const showOwner = Boolean(
+    partner.ownerName && partner.ownerId && partner.ownerId !== currentUserId,
+  );
   const cadenceSignal = cadenceSignalLabel(
     computeCadenceStatus(
       {
@@ -167,6 +174,12 @@ function PartnerCard({ partner, revenue }: { partner: Partner; revenue: number }
               <span className="inline-flex items-center gap-1">
                 <MapPin className="h-3 w-3" aria-hidden />
                 {partner.city}
+              </span>
+            )}
+            {showOwner && (
+              <span className="inline-flex items-center gap-1.5">
+                <Avatar alt={partner.ownerName!} size="xs" />
+                <span className="truncate">{partner.ownerName}</span>
               </span>
             )}
           </div>
