@@ -17,6 +17,7 @@ import { useAuth } from "@/stores/auth";
 import { useProfile } from "@/features/auth/useProfile";
 import { ACTIVITIES_ORG_QUERY_KEY, ACTIVITIES_QUERY_KEY } from "./useActivities";
 import { DEALS_QUERY_KEY } from "@/features/pipeline/hooks/useDeals";
+import { captureAndStoreGeostamp } from "../lib/captureGeostamp";
 import { taskFromOutcome } from "../lib/taskFromOutcome";
 import { bandsFromTarget } from "../lib/taskBands";
 import type { LogConfirmation, LogConfirmationTask } from "../lib/logConfirmation";
@@ -85,6 +86,19 @@ export function useLogActivity() {
         .single();
       if (error) throw error;
       const activityId = data.id as string;
+
+      // Location geostamp (Bundle 5, FR-HIER-33/34/35). Fire-and-forget: the
+      // activity is already saved, so this best-effort side effect must never
+      // be awaited in the critical path nor be able to fail the log. It checks
+      // the rep's consent, captures position ONCE, and writes a row (even on a
+      // denial/timeout) for the capture-health figure.
+      void captureAndStoreGeostamp({
+        supabase,
+        userId,
+        orgId: profile.data.org_id,
+        activityId,
+        dealId: input.dealId,
+      });
 
       // Post-log confirmation summary (SP2/Screen Content Spec §5): what the log
       // actually created, returned so the sheet can explain it to the rep.
