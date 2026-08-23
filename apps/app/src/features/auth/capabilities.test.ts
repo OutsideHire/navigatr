@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CAPABILITIES, ROLE_LEVEL_OPTIONS, can, profileCan, type RoleLevel, type Capability } from "./capabilities";
+import { CAPABILITIES, ROLE_LEVEL_OPTIONS, roleLevelLabel, can, profileCan, type RoleLevel, type Capability } from "./capabilities";
 
 const ALL: RoleLevel[] = [
   "administrator","cso_cro","svp_sales","vp_sales","director_sales","sales_manager","sales_professional",
@@ -62,6 +62,18 @@ describe("ROLE_LEVEL_OPTIONS", () => {
   it("covers every role level value exactly once", () => {
     const values = ROLE_LEVEL_OPTIONS.map((o) => o.value).sort();
     expect(values).toEqual([...ALL].sort());
+  });
+});
+
+describe("roleLevelLabel (FR-HIER-26/27)", () => {
+  it("returns the canonical label for each level", () => {
+    expect(roleLevelLabel("sales_professional")).toBe("Sales Professional");
+    expect(roleLevelLabel("administrator")).toBe("Administrator");
+    expect(roleLevelLabel("cso_cro")).toBe("CSO / CRO");
+  });
+  it("dashes null / undefined", () => {
+    expect(roleLevelLabel(null)).toBe("—");
+    expect(roleLevelLabel(undefined)).toBe("—");
   });
 });
 

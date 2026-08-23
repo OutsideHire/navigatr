@@ -22,6 +22,8 @@ import { settableRoles, roleChangeLabel, type UserRole } from "../lib/roleAction
 import { formatMoney } from "@/features/pipeline/mockData";
 import { cn } from "@/lib/utils";
 import { isZeroMetric } from "../lib/metricDisplay";
+import { formatWinRate } from "../lib/winRate";
+import { roleLevelLabel } from "@/features/auth/capabilities";
 
 const STATUS_BADGE: Record<LeaderboardRow["status"], { label: string; kind: BadgeKind }> = {
   active:  { label: "Active",  kind: "status-on-track" },
@@ -30,8 +32,7 @@ const STATUS_BADGE: Record<LeaderboardRow["status"], { label: string; kind: Badg
 };
 
 function winRateLabel(row: LeaderboardRow): string {
-  const denom = row.won_deals_window + row.lost_deals_window;
-  return denom === 0 ? "—" : `${Math.round((row.won_deals_window / denom) * 100)}%`;
+  return formatWinRate(row.won_deals_window, row.lost_deals_window);
 }
 
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
@@ -115,7 +116,7 @@ export function AgentCard({
 
       <div className="flex flex-wrap items-center gap-2">
         <Badge kind={status.kind}>{status.label}</Badge>
-        <Badge kind="priority-low" className="capitalize">{row.role}</Badge>
+        <Badge kind="priority-low">{roleLevelLabel(row.role_level)}</Badge>
       </div>
 
       <div className="grid grid-cols-3 gap-3">

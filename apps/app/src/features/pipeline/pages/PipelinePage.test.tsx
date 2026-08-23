@@ -216,8 +216,10 @@ describe("parseStageParam", () => {
     expect(parseStageParam("won")).toBe("won");
     expect(parseStageParam("all")).toBe("all");
   });
+  it("accepts 'lost' now that it is a chip stage (FR-HIER-28)", () => {
+    expect(parseStageParam("lost")).toBe("lost");
+  });
   it("falls back to 'all' for unknown or missing values", () => {
-    expect(parseStageParam("lost")).toBe("all"); // not a chip stage
     expect(parseStageParam("bogus")).toBe("all");
     expect(parseStageParam(null)).toBe("all");
   });
