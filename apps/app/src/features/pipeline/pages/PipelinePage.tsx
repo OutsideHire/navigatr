@@ -48,6 +48,7 @@ import { PipelineFilterPopover } from "../components/PipelineFilterPopover";
 
 import { useDeals } from "../hooks/useDeals";
 import { useStageHistory, type StageHistoryRow } from "../hooks/useStageHistory";
+import { usePipelineMetrics } from "../hooks/usePipelineMetrics";
 import {
   STAGE_LABEL,
   formatShortDate,
@@ -375,15 +376,13 @@ const KPI_DOT: Record<string, string> = {
 };
 
 function KpiStrip({
-  deals,
+  kpis,
   filtered,
-  wonAtByDeal,
 }: {
-  deals: Deal[] | undefined;
+  kpis: PipelineKpis;
   filtered: boolean;
-  wonAtByDeal: Map<string, string>;
 }) {
-  const k = React.useMemo(() => computeKpis(deals, wonAtByDeal), [deals, wonAtByDeal]);
+  const k = kpis;
   const noValueCaveat =
     k.noValueActiveDeals > 0
       ? `${k.noValueActiveDeals} ${k.noValueActiveDeals === 1 ? "deal carries" : "deals carry"} no value`
@@ -553,6 +552,11 @@ export function PipelinePage() {
   // falls back to updatedAt.
   const { data: stageHistory } = useStageHistory();
   const wonAtByDeal = React.useMemo(() => buildWonAtMap(stageHistory), [stageHistory]);
+  // FR-HIER-03: totals summed server-side across the full RLS-scoped set, so
+  // the KPIs stay correct even when the deals list is capped at PostgREST's
+  // default max rows. Used for the unfiltered view; the owner-filtered view
+  // (a single agent, already loaded) stays client-computed below.
+  const { data: serverKpis } = usePipelineMetrics();
   const update = useUpdateDeal();
   const [pendingDrop, setPendingDrop] = React.useState<{ deal: Deal; toStage: DealStage } | null>(null);
 
@@ -594,11 +598,15 @@ export function PipelinePage() {
     [filtered, filters, sortKey],
   );
 
-  const headerKpis = React.useMemo(
+  const clientKpis = React.useMemo(
     () => computeKpis(ownerFilter ? filtered : deals, wonAtByDeal),
     [deals, filtered, ownerFilter, wonAtByDeal],
   );
-  const subhead = `${headerKpis.activeDeals} active deals · ${fmtMoneyShort(headerKpis.weighted)} weighted`;
+  // Prefer the server totals for the unfiltered book (correct across every
+  // visible deal, not just the loaded page). Fall back to the client sum until
+  // the RPC resolves, or whenever an owner filter narrows to one agent.
+  const kpis = ownerFilter ? clientKpis : (serverKpis ?? clientKpis);
+  const subhead = `${kpis.activeDeals} active deals · ${fmtMoneyShort(kpis.weighted)} weighted`;
 
   // Live stage-chip counts, owner-scoped to agree with the KPI strip.
   const stageCounts = React.useMemo(() => countByStage(deals, ownerFilter), [deals, ownerFilter]);
@@ -653,7 +661,7 @@ export function PipelinePage() {
           onSortChange={setSortKey}
         />
 
-        <KpiStrip deals={ownerFilter ? filtered : deals} filtered={Boolean(ownerFilter)} wonAtByDeal={wonAtByDeal} />
+        <KpiStrip kpis={kpis} filtered={Boolean(ownerFilter)} />
 
         {/* Stage chips: when kanban is the active view AND we're at lg+,
             the columns ARE the stages, so the chip filter is redundant.
