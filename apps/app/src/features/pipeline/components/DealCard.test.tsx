@@ -109,4 +109,22 @@ describe("DealCard", () => {
     fireEvent.click(screen.getByRole("button", { name: /call/i }));
     expect(navigate).not.toHaveBeenCalled();
   });
+
+  // FR-HIER-05: owner surfaced only when it isn't the viewer's own deal.
+  it("shows the owner name when the deal belongs to someone else", () => {
+    renderCard(deal({ owner_id: "user-2", ownerName: "Jane Doe" }));
+    expect(screen.getByText("Jane Doe")).toBeInTheDocument();
+  });
+
+  it("hides the owner on the viewer's own deal", () => {
+    // Mock auth resolves the viewer to "user-1".
+    renderCard(deal({ owner_id: "user-1", ownerName: "Me Myself" }));
+    expect(screen.queryByText("Me Myself")).not.toBeInTheDocument();
+  });
+
+  it("hides the owner when no owner name is present", () => {
+    renderCard(deal({ owner_id: "user-2", ownerName: null }));
+    // No owner row rendered; the only avatar-less footer stays intact.
+    expect(screen.queryByText(/Jane|owner/i)).not.toBeInTheDocument();
+  });
 });

@@ -63,6 +63,12 @@ interface DealRow {
    *  within the trailing lookback (it never had a fair chance to go silent
    *  under its current owner). */
   owner_changed_at?: string | null;
+  /** FR-HIER-05: the owner's display name, embedded from profiles via the
+   *  deals.owner_id FK. Lets a manager viewing the team's pipeline see whose
+   *  deal each card is without a second lookup. profiles_select is org-wide,
+   *  so the embed resolves for every owner in the org. Null for legacy rows
+   *  with no owner. PostgREST returns the embed as an object (single FK). */
+  owner?: { full_name: string | null } | null;
 }
 
 /**
@@ -120,38 +126,62 @@ export function toDeal(row: DealRow): Deal {
     timeToLostCalendarDays: row.time_to_lost_calendar_days ?? null,
     industry: row.industry ?? null,
     owner_changed_at: row.owner_changed_at ?? null,
+    ownerName: row.owner?.full_name ?? null,
   };
 }
 
 export const DEALS_QUERY_KEY = (userId: string | undefined) =>
   ["deals", "list", userId ?? "anon"] as const;
 
+const DEALS_SELECT =
+  "id, company_name, contact_name, contact_phone, contact_phone_invalid, contact_email, " +
+  "value_cents, stage, probability, last_activity_at, " +
+  "next_followup_at, address, employee_count_range, lead_source, " +
+  "lead_source_note, source_path_id, created_at, " +
+  "updated_at, owner_id, lost_reason_category, lost_reason_notes, " +
+  "notes, profession_data, followup_calendar_sync_status, " +
+  "closed_won_at, first_activity_at, activity_count_total, " +
+  "activity_count_call, activity_count_email, activity_count_dropin, " +
+  "activity_count_appointment, time_to_win_business_days, " +
+  "time_to_win_calendar_days, closed_lost_at, " +
+  "time_to_lost_business_days, time_to_lost_calendar_days, industry, " +
+  "owner_changed_at, owner:profiles!deals_owner_id_fkey(full_name)";
+
+/** PostgREST caps a single response at its default max rows (1000). This is the
+ *  shared org-wide deals cache — every dashboard roll-up, the Path, and the
+ *  pipeline list read it — so a silent 1000-row truncation would understate
+ *  those aggregates for a large org. FR-HIER-07: page through the full RLS-
+ *  scoped set in fixed-size batches until a short batch signals the end, so the
+ *  cache is complete regardless of org size. At beta scale (<1000 deals) this
+ *  is a single request; the loop only adds round-trips once an org is large. */
+const DEALS_PAGE_SIZE = 1000;
+// Backstop against an unbounded loop (50k deals). If ever hit, the list is
+// capped rather than looping forever; revisit paging the UI at that point.
+const DEALS_MAX_PAGES = 50;
+
+async function fetchAllDeals(): Promise<Deal[]> {
+  const rows: DealRow[] = [];
+  for (let page = 0; page < DEALS_MAX_PAGES; page++) {
+    const from = page * DEALS_PAGE_SIZE;
+    const { data, error } = await supabase
+      .from("deals")
+      .select(DEALS_SELECT)
+      .order("updated_at", { ascending: false })
+      .range(from, from + DEALS_PAGE_SIZE - 1);
+    if (error) throw error;
+    const batch = (data ?? []) as unknown as DealRow[];
+    rows.push(...batch);
+    if (batch.length < DEALS_PAGE_SIZE) break;
+  }
+  return rows.map(toDeal);
+}
+
 export function useDeals() {
   const userId = useAuth((s) => s.user?.id);
   return useQuery({
     queryKey: DEALS_QUERY_KEY(userId),
     enabled: Boolean(userId),
-    queryFn: async (): Promise<Deal[]> => {
-      const { data, error } = await supabase
-        .from("deals")
-        .select(
-          "id, company_name, contact_name, contact_phone, contact_phone_invalid, contact_email, " +
-            "value_cents, stage, probability, last_activity_at, " +
-            "next_followup_at, address, employee_count_range, lead_source, " +
-            "lead_source_note, source_path_id, created_at, " +
-            "updated_at, owner_id, lost_reason_category, lost_reason_notes, " +
-            "notes, profession_data, followup_calendar_sync_status, " +
-            "closed_won_at, first_activity_at, activity_count_total, " +
-            "activity_count_call, activity_count_email, activity_count_dropin, " +
-            "activity_count_appointment, time_to_win_business_days, " +
-            "time_to_win_calendar_days, closed_lost_at, " +
-            "time_to_lost_business_days, time_to_lost_calendar_days, industry, " +
-            "owner_changed_at",
-        )
-        .order("updated_at", { ascending: false });
-      if (error) throw error;
-      return (data ?? []).map((row) => toDeal(row as unknown as DealRow));
-    },
+    queryFn: fetchAllDeals,
     staleTime: 30_000,
   });
 }
