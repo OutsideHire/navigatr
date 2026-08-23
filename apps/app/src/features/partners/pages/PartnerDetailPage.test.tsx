@@ -273,10 +273,11 @@ describe("PartnerDetailPage / Edit button gating", () => {
     expect(screen.getByText(/Owner: Olive Owner/)).toBeTruthy();
   });
 
-  it("hides the owner on the viewer's own partner", () => {
+  it("shows 'Owner: You' on the viewer's own partner", () => {
     authUserId = "owner-7";
     const partners = [partner({ id: "p1", ownerId: "owner-7", ownerName: "Olive Owner" })];
     renderPage({ partners, deals: [], partnerId: "p1" });
+    expect(screen.getByText(/Owner: You/)).toBeTruthy();
     expect(screen.queryByText(/Owner: Olive Owner/)).toBeNull();
   });
 });

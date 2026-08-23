@@ -109,10 +109,12 @@ function HeroCard({
   onEdit: () => void;
 }) {
   const currentUserId = useAuth((s) => s.user?.id);
-  // FR-HIER-05: show the owner only when it isn't the viewer's own partner.
-  const showOwner = Boolean(
-    partner.ownerName && partner.ownerId && partner.ownerId !== currentUserId,
-  );
+  const viewerName = useProfile().data?.full_name ?? null;
+  // FR-HIER-18/19: always show the owner; the viewer's own partner reads "You".
+  const isOwnPartner = Boolean(partner.ownerId && partner.ownerId === currentUserId);
+  const ownerText = isOwnPartner ? "You" : partner.ownerName;
+  const ownerAvatarAlt = isOwnPartner ? (viewerName ?? "You") : partner.ownerName ?? "";
+  const showOwner = Boolean(ownerText);
   const cadence = computeCadenceStatus(
     {
       followupCadenceDays: partner.followupCadenceDays,
@@ -137,8 +139,8 @@ function HeroCard({
           </p>
           {showOwner && (
             <p className="mt-0.5 inline-flex items-center gap-1.5 text-body-sm text-text-muted">
-              <Avatar alt={partner.ownerName!} size="xs" />
-              <span className="truncate">Owner: {partner.ownerName}</span>
+              <Avatar alt={ownerAvatarAlt} size="xs" />
+              <span className="truncate">Owner: {ownerText}</span>
             </p>
           )}
         </div>

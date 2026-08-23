@@ -59,6 +59,9 @@ import { computeCadenceStatus, cadenceSignalLabel } from "../partnerCadence";
 import { AddPartnerSheet } from "../components/AddPartnerSheet";
 import { usePartners } from "../hooks/usePartners";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
+import { useViewerScope } from "@/features/scope/useViewerScope";
+import { scopePhrase } from "@/features/scope/scope";
+import { useProfile } from "@/features/auth/useProfile";
 
 type StatusFilter = "all" | PartnerStatus;
 const STATUS_FILTERS: StatusFilter[] = ["all", "active", "cooling", "inactive"];
@@ -103,12 +106,14 @@ function useRevenueByPartner(
 function PartnerCard({ partner, revenue }: { partner: Partner; revenue: number }) {
   const navigate = useNavigate();
   const currentUserId = useAuth((s) => s.user?.id);
+  const viewerName = useProfile().data?.full_name ?? null;
   const referrals = partner.attributedDealIds.length;
-  // FR-HIER-05: surface the owner only when it isn't the viewer's own partner,
-  // so a manager scanning the team's partners sees who owns each one.
-  const showOwner = Boolean(
-    partner.ownerName && partner.ownerId && partner.ownerId !== currentUserId,
-  );
+  // FR-HIER-18/19: every card shows its owner; the viewer's own partners read
+  // "You". Own-record avatar uses the viewer's name for correct initials.
+  const isOwnPartner = Boolean(partner.ownerId && partner.ownerId === currentUserId);
+  const ownerLabel = isOwnPartner ? "You" : partner.ownerName;
+  const ownerAvatarAlt = isOwnPartner ? (viewerName ?? "You") : partner.ownerName ?? "";
+  const showOwner = Boolean(ownerLabel);
   const cadenceSignal = cadenceSignalLabel(
     computeCadenceStatus(
       {
@@ -178,8 +183,8 @@ function PartnerCard({ partner, revenue }: { partner: Partner; revenue: number }
             )}
             {showOwner && (
               <span className="inline-flex items-center gap-1.5">
-                <Avatar alt={partner.ownerName!} size="xs" />
-                <span className="truncate">{partner.ownerName}</span>
+                <Avatar alt={ownerAvatarAlt} size="xs" />
+                <span className="truncate">{ownerLabel}</span>
               </span>
             )}
           </div>
@@ -210,6 +215,7 @@ export function PartnersPage() {
   // success, so newly added partners surface without a refreshKey hack.
   const { data: partners = [] } = usePartners();
   const { data: deals = [] } = useDeals();
+  const scope = useViewerScope();
 
   // Single shared lookup map — every "what's their revenue" question
   // resolves with one O(1) lookup instead of rebuilding per render.
@@ -281,6 +287,7 @@ export function PartnersPage() {
           <div className="flex flex-col gap-1">
             <h1 className="text-heading-lg text-text-default">Partners</h1>
             <p className="text-body-md text-text-muted">
+              {scopePhrase("partners", scope.scopeLevel)} ·{" "}
               {partners.length} {partners.length === 1 ? "partner" : "partners"}
               {totalAttributed > 0 && (
                 <>
