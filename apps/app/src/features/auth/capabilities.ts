@@ -24,6 +24,24 @@ export const ROLE_LEVEL_OPTIONS: { value: RoleLevel; label: string }[] = [
   { value: "sales_professional", label: "Sales Professional" },
 ];
 
+const ROLE_LEVEL_LABELS: Record<RoleLevel, string> = ROLE_LEVEL_OPTIONS.reduce(
+  (acc, o) => {
+    acc[o.value] = o.label;
+    return acc;
+  },
+  {} as Record<RoleLevel, string>,
+);
+
+/**
+ * The canonical display label for a role level (PRD 6.12.A D-01 / FR-HIER-26/27).
+ * Every user-facing surface that shows a role name resolves it through here so
+ * the seven labels stay consistent (never the abbreviated legacy "Rep"). Null /
+ * unknown renders an em-dash placeholder.
+ */
+export function roleLevelLabel(level: RoleLevel | null | undefined): string {
+  return level ? ROLE_LEVEL_LABELS[level] ?? "—" : "—";
+}
+
 export type Capability =
   | "inviteUsers" | "assignRoleLevels" | "setReportingLines" | "deactivateUsers"
   | "editOrgSettings" | "manageIntegrations" | "manageBilling" | "useDemoTools"

@@ -24,6 +24,8 @@ import { settableRoles, roleChangeLabel, type UserRole } from "../lib/roleAction
 import { formatMoney, formatRelative } from "@/features/pipeline/mockData";
 import { cn } from "@/lib/utils";
 import { isZeroMetric } from "../lib/metricDisplay";
+import { formatWinRate, hasWinRate } from "../lib/winRate";
+import { roleLevelLabel } from "@/features/auth/capabilities";
 
 const STATUS_BADGE: Record<LeaderboardRow["status"], { label: string; kind: BadgeKind }> = {
   active:  { label: "Active",  kind: "status-on-track" },
@@ -69,7 +71,7 @@ export function AgentListRow({
         <span className="block max-w-[220px] truncate" title={row.email}>{row.email}</span>
       </td>
       <td className="px-3 py-2"><Badge kind={status.kind}>{status.label}</Badge></td>
-      <td className="px-3 py-2 text-body-md capitalize">{row.role}</td>
+      <td className="px-3 py-2 text-body-md">{roleLevelLabel(row.role_level)}</td>
       <td className={cn("px-3 py-2 text-body-md tabular-nums", isZeroMetric(row.open_deals) && "text-text-subtle")}>{row.open_deals}</td>
       <td className={cn("px-3 py-2 text-body-md tabular-nums", isZeroMetric(row.pipeline_cents) && "text-text-subtle")}>{formatMoney(row.pipeline_cents)}</td>
       <td className={cn("px-3 py-2 text-body-md tabular-nums", row.won_cents_window === 0 && row.won_deals_window === 0 && "text-text-subtle")}>
@@ -84,11 +86,8 @@ export function AgentListRow({
           <span className="text-text-muted"> ({row.lost_deals_window})</span>
         )}
       </td>
-      <td className={cn("px-3 py-2 text-body-md tabular-nums", (row.won_deals_window + row.lost_deals_window) === 0 && "text-text-subtle")}>
-        {(() => {
-          const denom = row.won_deals_window + row.lost_deals_window;
-          return denom === 0 ? "—" : `${Math.round((row.won_deals_window / denom) * 100)}%`;
-        })()}
+      <td className={cn("px-3 py-2 text-body-md tabular-nums", !hasWinRate(row.won_deals_window, row.lost_deals_window) && "text-text-subtle")}>
+        {formatWinRate(row.won_deals_window, row.lost_deals_window)}
       </td>
       <td className={cn("px-3 py-2 text-body-md tabular-nums", isZeroMetric(row.activities_window) && "text-text-subtle")}>{row.activities_window}</td>
       <td className="px-3 py-2 text-body-md text-text-muted">{lastActive}</td>

@@ -154,7 +154,7 @@ function fmtMoneyShort(cents: number): string {
 // ───────────────────────────────────────────────────────────────────────
 
 type StageFilter = "all" | DealStage;
-const STAGE_FILTERS: StageFilter[] = ["all", "new", "contacted", "qualified", "proposal", "submitted", "won"];
+const STAGE_FILTERS: StageFilter[] = ["all", "new", "contacted", "qualified", "proposal", "submitted", "won", "lost"];
 
 /** Validate a ?stage= URL param against the real chip stages. Unknown or
  *  missing → "all" so a deep-link never produces a hidden, unclearable
