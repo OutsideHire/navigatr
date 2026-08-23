@@ -51,6 +51,7 @@ import { useStageHistory, type StageHistoryRow } from "../hooks/useStageHistory"
 import { usePipelineMetrics } from "../hooks/usePipelineMetrics";
 import { useViewerScope } from "@/features/scope/useViewerScope";
 import { scopePhrase, scopeTagLabel } from "@/features/scope/scope";
+import { SellerFilter } from "@/features/scope/SellerFilter";
 import {
   STAGE_LABEL,
   formatShortDate,
@@ -633,6 +634,18 @@ export function PipelinePage() {
   const scopeTag = scopeTagLabel(scope.scopeLevel, filteredSellerName);
   const subhead = `${scopeLine} · ${kpis.activeDeals} active · ${fmtMoneyShort(kpis.totalPipeline)} pipeline`;
 
+  // Seller filter (FR-HIER-20): writes ?owner=, which every scoped value on the
+  // page already keys off, so selecting a seller recomputes the whole screen.
+  const setOwner = React.useCallback(
+    (ownerId: string | null) => {
+      const next = new URLSearchParams(searchParams);
+      if (ownerId) next.set("owner", ownerId);
+      else next.delete("owner");
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+
   // Live stage-chip counts, owner-scoped to agree with the KPI strip.
   const stageCounts = React.useMemo(() => countByStage(deals, ownerFilter), [deals, ownerFilter]);
 
@@ -685,6 +698,13 @@ export function PipelinePage() {
           sortKey={sortKey}
           onSortChange={setSortKey}
         />
+
+        {scope.hasReports && (
+          <div className="flex items-center gap-2">
+            <span className="text-caption font-medium uppercase tracking-wide text-text-muted">Seller</span>
+            <SellerFilter sellers={scope.sellers} value={ownerFilter} onChange={setOwner} />
+          </div>
+        )}
 
         <KpiStrip kpis={kpis} filtered={Boolean(ownerFilter)} scopeTag={scopeTag} />
 
