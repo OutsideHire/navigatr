@@ -49,6 +49,8 @@ import { PipelineFilterPopover } from "../components/PipelineFilterPopover";
 import { useDeals } from "../hooks/useDeals";
 import { useStageHistory, type StageHistoryRow } from "../hooks/useStageHistory";
 import { usePipelineMetrics } from "../hooks/usePipelineMetrics";
+import { useViewerScope } from "@/features/scope/useViewerScope";
+import { scopePhrase, scopeTagLabel } from "@/features/scope/scope";
 import {
   STAGE_LABEL,
   formatShortDate,
@@ -378,9 +380,13 @@ const KPI_DOT: Record<string, string> = {
 function KpiStrip({
   kpis,
   filtered,
+  scopeTag,
 }: {
   kpis: PipelineKpis;
   filtered: boolean;
+  /** Scope tag beside each metric label (FR-HIER-17): You / Team / Org, or the
+   *  filtered seller's first name. */
+  scopeTag: string;
 }) {
   const k = kpis;
   const noValueCaveat =
@@ -400,6 +406,9 @@ function KpiStrip({
           <span className="inline-flex items-center gap-2 text-caption font-medium uppercase tracking-wide text-text-muted">
             <span className={cn("h-2 w-2 rounded-radius-full", KPI_DOT[t.dot])} aria-hidden />
             {t.eyebrow}
+            <span className="ml-auto rounded-radius-full bg-surface-sunken px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-text-subtle">
+              {scopeTag}
+            </span>
           </span>
           <span className="text-heading-lg tabular-nums text-text-default">{t.value}</span>
           {t.caveat && <span className="text-caption text-text-muted">{t.caveat}</span>}
@@ -606,7 +615,23 @@ export function PipelinePage() {
   // visible deal, not just the loaded page). Fall back to the client sum until
   // the RPC resolves, or whenever an owner filter narrows to one agent.
   const kpis = ownerFilter ? clientKpis : (serverKpis ?? clientKpis);
-  const subhead = `${kpis.activeDeals} active deals · ${fmtMoneyShort(kpis.weighted)} weighted`;
+
+  // Scope line + metric tags (FR-HIER-16/17). When an owner filter is active
+  // the scope line and every tag reflect that seller, so nothing on screen
+  // contradicts the filtered set (FR-HIER-22). The owner's display name is
+  // resolved from the subtree roster, falling back to the loaded deals.
+  const scope = useViewerScope();
+  const filteredSellerName = React.useMemo(() => {
+    if (!ownerFilter) return null;
+    return (
+      scope.sellers.find((s) => s.id === ownerFilter)?.name ??
+      deals?.find((d) => d.owner_id === ownerFilter)?.ownerName ??
+      null
+    );
+  }, [ownerFilter, scope.sellers, deals]);
+  const scopeLine = scopePhrase("pipeline", scope.scopeLevel, filteredSellerName);
+  const scopeTag = scopeTagLabel(scope.scopeLevel, filteredSellerName);
+  const subhead = `${scopeLine} · ${kpis.activeDeals} active · ${fmtMoneyShort(kpis.totalPipeline)} pipeline`;
 
   // Live stage-chip counts, owner-scoped to agree with the KPI strip.
   const stageCounts = React.useMemo(() => countByStage(deals, ownerFilter), [deals, ownerFilter]);
@@ -661,7 +686,7 @@ export function PipelinePage() {
           onSortChange={setSortKey}
         />
 
-        <KpiStrip kpis={kpis} filtered={Boolean(ownerFilter)} />
+        <KpiStrip kpis={kpis} filtered={Boolean(ownerFilter)} scopeTag={scopeTag} />
 
         {/* Stage chips: when kanban is the active view AND we're at lg+,
             the columns ARE the stages, so the chip filter is redundant.

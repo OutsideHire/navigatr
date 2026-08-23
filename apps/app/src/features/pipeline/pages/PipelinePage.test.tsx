@@ -232,18 +232,16 @@ describe("PipelinePage", () => {
       </QueryClientProvider>,
     );
   }
-  it("renders a computed header subhead with active deals + weighted", () => {
+  it("renders a scope-aware header subhead (FR-HIER-16)", () => {
     renderPage();
-    // The subhead is the single element matching the full "N active deals ·
-    // … weighted" sentence; the KPI tiles render "Active deals"/"Weighted"
-    // as separate eyebrow nodes, so scope to the combined-sentence node.
-    expect(screen.getByText(/active deals · .* weighted/i)).toBeInTheDocument();
+    // Scope line: "{Your pipeline} · {N} active · {$X} pipeline". No reports
+    // mocked here, so the viewer scope resolves to "you".
+    expect(screen.getByText(/Your pipeline · \d+ active · .* pipeline/i)).toBeInTheDocument();
   });
   it("renders the four KPI tiles", () => {
     renderPage();
     expect(screen.getByText(/total pipeline/i)).toBeInTheDocument();
-    // "Active deals" appears in both the subhead and a KPI eyebrow.
-    expect(screen.getAllByText(/active deals/i).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/^Active deals$/i)).toBeInTheDocument();
     expect(screen.getByText(/won this month/i)).toBeInTheDocument();
   });
   it("renders deal cards for the loaded deals", () => {

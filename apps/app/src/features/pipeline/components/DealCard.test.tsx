@@ -110,21 +110,21 @@ describe("DealCard", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  // FR-HIER-05: owner surfaced only when it isn't the viewer's own deal.
+  // FR-HIER-18/19: every card shows its owner; own deals read "You".
   it("shows the owner name when the deal belongs to someone else", () => {
     renderCard(deal({ owner_id: "user-2", ownerName: "Jane Doe" }));
     expect(screen.getByText("Jane Doe")).toBeInTheDocument();
   });
 
-  it("hides the owner on the viewer's own deal", () => {
+  it("shows 'You' on the viewer's own deal instead of their name", () => {
     // Mock auth resolves the viewer to "user-1".
     renderCard(deal({ owner_id: "user-1", ownerName: "Me Myself" }));
+    expect(screen.getByText("You")).toBeInTheDocument();
     expect(screen.queryByText("Me Myself")).not.toBeInTheDocument();
   });
 
-  it("hides the owner when no owner name is present", () => {
+  it("hides the owner only when it is another rep with no name embedded", () => {
     renderCard(deal({ owner_id: "user-2", ownerName: null }));
-    // No owner row rendered; the only avatar-less footer stays intact.
-    expect(screen.queryByText(/Jane|owner/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Jane|You/)).not.toBeInTheDocument();
   });
 });

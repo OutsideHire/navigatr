@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { formatCalendarDate } from "@/lib/calendarDate";
 import { Avatar, CardWithStatusBand } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
+import { useProfile } from "@/features/auth/useProfile";
 import { DealCallButton } from "@/features/activities/components/DealCallButton";
 import { FollowupChip } from "./FollowupChip";
 import {
@@ -28,15 +29,17 @@ import {
 export function DealCard({ deal }: { deal: Deal }) {
   const navigate = useNavigate();
   const currentUserId = useAuth((s) => s.user?.id);
+  const viewerName = useProfile().data?.full_name ?? null;
   const tone = STAGE_TONE[deal.stage];
   const verb = STAGE_NEXT_VERB[deal.stage];
   const pct = Math.max(0, Math.min(100, deal.probability));
-  // FR-HIER-05: surface the owner only when it isn't the viewer's own deal, so
-  // a manager browsing the team's pipeline sees whose deal each card is while a
-  // rep's own list stays uncluttered.
-  const showOwner = Boolean(
-    deal.ownerName && deal.owner_id && deal.owner_id !== currentUserId,
-  );
+  // FR-HIER-18/19: every card shows its owner; the viewer's own deals read
+  // "You" (the scope line already says whose book it is). Own-record avatar uses
+  // the viewer's name for correct initials.
+  const isOwnDeal = Boolean(deal.owner_id && deal.owner_id === currentUserId);
+  const ownerLabel = isOwnDeal ? "You" : deal.ownerName;
+  const ownerAvatarAlt = isOwnDeal ? (viewerName ?? "You") : deal.ownerName ?? "";
+  const showOwner = Boolean(ownerLabel);
 
   return (
     <CardWithStatusBand
@@ -96,8 +99,8 @@ export function DealCard({ deal }: { deal: Deal }) {
 
         {showOwner && (
           <div className="flex items-center gap-1.5 text-caption text-text-muted">
-            <Avatar alt={deal.ownerName!} size="xs" />
-            <span className="truncate">{deal.ownerName}</span>
+            <Avatar alt={ownerAvatarAlt} size="xs" />
+            <span className="truncate">{ownerLabel}</span>
           </div>
         )}
 
