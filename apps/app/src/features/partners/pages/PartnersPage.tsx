@@ -61,6 +61,7 @@ import { usePartners } from "../hooks/usePartners";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { useViewerScope } from "@/features/scope/useViewerScope";
 import { scopePhrase } from "@/features/scope/scope";
+import { SellerFilter } from "@/features/scope/SellerFilter";
 import { useProfile } from "@/features/auth/useProfile";
 
 type StatusFilter = "all" | PartnerStatus;
@@ -217,6 +218,31 @@ export function PartnersPage() {
   const { data: deals = [] } = useDeals();
   const scope = useViewerScope();
 
+  // Seller filter (FR-HIER-20) via ?owner=. Everything below scopes to it so
+  // the whole screen recomputes from the same set (FR-HIER-22).
+  const ownerFilter = searchParams.get("owner");
+  const setOwner = React.useCallback(
+    (ownerId: string | null) => {
+      const next = new URLSearchParams(searchParams);
+      if (ownerId) next.set("owner", ownerId);
+      else next.delete("owner");
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+  const scoped = React.useMemo(
+    () => (ownerFilter ? partners.filter((p) => p.ownerId === ownerFilter) : partners),
+    [partners, ownerFilter],
+  );
+  const filteredSellerName = React.useMemo(() => {
+    if (!ownerFilter) return null;
+    return (
+      scope.sellers.find((s) => s.id === ownerFilter)?.name ??
+      partners.find((p) => p.ownerId === ownerFilter)?.ownerName ??
+      null
+    );
+  }, [ownerFilter, scope.sellers, partners]);
+
   // Single shared lookup map — every "what's their revenue" question
   // resolves with one O(1) lookup instead of rebuilding per render.
   const revenueByPartner = useRevenueByPartner(partners, deals);
@@ -238,7 +264,7 @@ export function PartnersPage() {
 
   const filtered = React.useMemo(() => {
     const q = debouncedSearch.trim().toLowerCase();
-    const base = partners.filter((p) => {
+    const base = scoped.filter((p) => {
       if (statusFilter !== "all" && p.status !== statusFilter) return false;
       if (q && !`${p.name} ${p.company}`.toLowerCase().includes(q)) return false;
       return true;
@@ -260,24 +286,26 @@ export function PartnersPage() {
       });
     }
     return sorted;
-  }, [partners, statusFilter, debouncedSearch, sortMode, getRevenue]);
+  }, [scoped, statusFilter, debouncedSearch, sortMode, getRevenue]);
 
+  // Status chip counts + header aggregate scope to the seller-filtered set so
+  // no on-screen value is drawn from a wider set than the list (FR-HIER-22).
   const counts = React.useMemo(() => {
     const c: Record<StatusFilter, number> = {
-      all: partners.length,
+      all: scoped.length,
       active: 0,
       cooling: 0,
       inactive: 0,
     };
-    for (const p of partners) c[p.status]++;
+    for (const p of scoped) c[p.status]++;
     return c;
-  }, [partners]);
+  }, [scoped]);
 
   const totalAttributed = React.useMemo(() => {
     let sum = 0;
-    for (const v of revenueByPartner.values()) sum += v;
+    for (const p of scoped) sum += revenueByPartner.get(p.id) ?? 0;
     return sum;
-  }, [revenueByPartner]);
+  }, [scoped, revenueByPartner]);
 
   return (
     <div className="mx-auto w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
@@ -287,8 +315,8 @@ export function PartnersPage() {
           <div className="flex flex-col gap-1">
             <h1 className="text-heading-lg text-text-default">Partners</h1>
             <p className="text-body-md text-text-muted">
-              {scopePhrase("partners", scope.scopeLevel)} ·{" "}
-              {partners.length} {partners.length === 1 ? "partner" : "partners"}
+              {scopePhrase("partners", scope.scopeLevel, filteredSellerName)} ·{" "}
+              {scoped.length} {scoped.length === 1 ? "partner" : "partners"}
               {totalAttributed > 0 && (
                 <>
                   {" "}
@@ -324,6 +352,9 @@ export function PartnersPage() {
                 />
               </FormField>
             </div>
+            {scope.hasReports && (
+              <SellerFilter sellers={scope.sellers} value={ownerFilter} onChange={setOwner} />
+            )}
             <Button
               variant="secondary"
               size="md"
