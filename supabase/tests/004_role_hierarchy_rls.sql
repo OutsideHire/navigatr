@@ -34,7 +34,8 @@ insert into auth.users (id, email, aud, role, created_at, updated_at, email_conf
   ('40000000-0000-0000-0000-000000000004', 'rep2@h.example',  'authenticated', 'authenticated', now(), now(), now()),
   ('40000000-0000-0000-0000-000000000005', 'vp2@h.example',   'authenticated', 'authenticated', now(), now(), now()),
   ('40000000-0000-0000-0000-000000000006', 'rep3@h.example',  'authenticated', 'authenticated', now(), now(), now()),
-  ('40000000-0000-0000-0000-000000000007', 'loner@h.example', 'authenticated', 'authenticated', now(), now(), now());
+  ('40000000-0000-0000-0000-000000000007', 'loner@h.example', 'authenticated', 'authenticated', now(), now(), now()),
+  ('40000000-0000-0000-0000-000000000008', 'boss@h.example',  'authenticated', 'authenticated', now(), now(), now());
 
 -- profiles.email is NOT NULL since 20260523000001_admin_portal. Seed must
 -- include it. The values mirror the auth.users emails above.
@@ -45,7 +46,8 @@ insert into profiles (id, org_id, role, full_name, email, role_path) values
   ('40000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-0000000000b1', 'rep',     'Rep 2', 'rep2@h.example',  'ceo.vp.rep2'::ltree),
   ('40000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-0000000000b1', 'manager', 'VP 2',  'vp2@h.example',   'ceo.vp2'::ltree),
   ('40000000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-0000000000b1', 'rep',     'Rep 3', 'rep3@h.example',  'ceo.vp2.rep3'::ltree),
-  ('40000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-0000000000b1', 'rep',     'Loner', 'loner@h.example', null);
+  ('40000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-0000000000b1', 'rep',     'Loner', 'loner@h.example', null),
+  ('40000000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-0000000000b1', 'admin',   'Boss',  'boss@h.example',  null);
 
 -- One deal per user, owned by that user.
 insert into deals (
@@ -87,34 +89,32 @@ begin
 end $$;
 
 -- ───────────────────────────────────────────────────────────────────
--- Case 1: leaf user (rep1) sees own deal + loner's deal
+-- Case 1: leaf user (rep1) sees ONLY their own deal
 -- ───────────────────────────────────────────────────────────────────
--- The loner has NULL role_path. Per Decision D2 (priority 3 in
--- user_can_see_owner), a NULL-role_path target is visible to everyone
--- as the backward-compatibility fallback. So rep1 sees:
---   own (priority 1) + loner (priority 3) = 2
--- This is intentional. Without it, rolling out role_path one user at a
--- time would silently make unplaced users disappear mid-rollout.
+-- FAIL CLOSED (PRD 6.12.A D-15 / FR-HIER-49). rep1 is a placed leaf with no
+-- descendants. The loner has NULL role_path (unplaced) and is now HIDDEN from
+-- placed non-admins (the old NULL-target fallback is removed). So rep1 sees:
+--   own only = 1.
 do $$
 declare n int;
 begin
   n := _test_visible_deal_count('40000000-0000-0000-0000-000000000003');
-  if n <> 2 then
-    raise exception 'case1: rep1 should see 2 (own + loner via NULL fallback), got %', n;
+  if n <> 1 then
+    raise exception 'case1: rep1 should see 1 (own only; unplaced loner hidden), got %', n;
   end if;
 end $$;
 
 -- ───────────────────────────────────────────────────────────────────
--- Case 2: middle user (vp) sees own + 2 descendants + loner
+-- Case 2: middle user (vp) sees own + 2 descendants (NOT the unplaced loner)
 -- ───────────────────────────────────────────────────────────────────
--- vp sees: own (priority 1) + rep1 + rep2 (priority 4, ltree descendants)
---          + loner (priority 3, NULL fallback) = 4
+-- vp sees: own + rep1 + rep2 (ltree descendants) = 3. The unplaced loner is
+-- now hidden (fail closed).
 do $$
 declare n int;
 begin
   n := _test_visible_deal_count('40000000-0000-0000-0000-000000000002');
-  if n <> 4 then
-    raise exception 'case2: vp should see 4 (own + 2 reps + loner), got %', n;
+  if n <> 3 then
+    raise exception 'case2: vp should see 3 (own + 2 reps; loner hidden), got %', n;
   end if;
 end $$;
 
@@ -125,11 +125,11 @@ do $$
 declare n int;
 begin
   n := _test_visible_deal_count('40000000-0000-0000-0000-000000000001');
-  -- ceo sees: ceo + vp + rep1 + rep2 + vp2 + rep3 = 6.
-  -- loner has NULL role_path so user_can_see_owner returns TRUE for
-  -- backward compat → ceo sees loner's deal too. Total = 7.
+  -- ceo is role=admin -> caller_is_admin() -> EXEMPT, full-org visibility
+  -- (FR-HIER-49). Sees every deal in the org: ceo + vp + rep1 + rep2 + vp2 +
+  -- rep3 + loner = 7. (boss owns no deal.)
   if n <> 7 then
-    raise exception 'case3: ceo should see 7 deals (own subtree + loner via backward-compat NULL), got %', n;
+    raise exception 'case3: admin ceo should see all 7 deals (admin-exempt), got %', n;
   end if;
 end $$;
 
@@ -140,24 +140,41 @@ do $$
 declare n int;
 begin
   n := _test_visible_deal_count('40000000-0000-0000-0000-000000000005');
-  -- vp2 sees: own (vp2) + rep3 = 2, plus loner (NULL fallback) = 3.
+  -- vp2 sees: own (vp2) + rep3 = 2. The unplaced loner is hidden (fail closed).
   -- Critically, vp2 does NOT see vp, rep1, rep2, ceo.
-  if n <> 3 then
-    raise exception 'case4: vp2 should see 3 (own subtree + loner), got %', n;
+  if n <> 2 then
+    raise exception 'case4: vp2 should see 2 (own subtree only; loner hidden), got %', n;
   end if;
 end $$;
 
 -- ───────────────────────────────────────────────────────────────────
--- Case 5: backward compat — loner (NULL role_path) sees org-wide
+-- Case 5: fail closed — loner (unplaced, non-admin) sees ONLY their own
 -- ───────────────────────────────────────────────────────────────────
+-- The core of FR-HIER-49 / D-15, and the regression case for FR-HIER-54
+-- (a user with no placement, whether never-placed or placement-removed —
+-- both are NULL role_path — resolves to self-only, never org-wide).
 do $$
 declare n int;
 begin
   n := _test_visible_deal_count('40000000-0000-0000-0000-000000000007');
-  -- Caller has NULL role_path → user_can_see_owner returns TRUE for
-  -- every target. Loner sees all 7 deals.
+  if n <> 1 then
+    raise exception 'case5: unplaced non-admin loner should see 1 (own only), got %', n;
+  end if;
+end $$;
+
+-- ───────────────────────────────────────────────────────────────────
+-- Case 5b: an UNPLACED administrator is still exempt (FR-HIER-49)
+-- ───────────────────────────────────────────────────────────────────
+-- boss is role=admin with NULL role_path. The admin exemption is checked
+-- BEFORE the unplaced-caller fail-closed branch, so an org is never locked
+-- out of its own data by an admin who has not been slotted into the tree.
+-- boss sees every deal in the org (7; boss owns none).
+do $$
+declare n int;
+begin
+  n := _test_visible_deal_count('40000000-0000-0000-0000-000000000008');
   if n <> 7 then
-    raise exception 'case5: loner (NULL role_path) should see 7 deals org-wide, got %', n;
+    raise exception 'case5b: unplaced admin boss should see all 7 deals (admin-exempt), got %', n;
   end if;
 end $$;
 
@@ -296,10 +313,10 @@ begin
   perform set_config('request.jwt.claim.sub', '40000000-0000-0000-0000-000000000003'::text, true);
   perform set_config('role', 'authenticated', true);
   select count(*) into n from profiles where org_id = '00000000-0000-0000-0000-0000000000b1';
-  -- rep1 should still see all 7 profiles in the org (no hierarchy gate
-  -- on profiles_select per design decision).
-  if n <> 7 then
-    raise exception 'case11: rep1 should see 7 org profiles, got % (profiles must stay org-wide)', n;
+  -- rep1 should still see all 8 profiles in the org (no hierarchy gate
+  -- on profiles_select per design decision). 8 = the original 7 + boss.
+  if n <> 8 then
+    raise exception 'case11: rep1 should see 8 org profiles, got % (profiles must stay org-wide)', n;
   end if;
 end $$;
 
