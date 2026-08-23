@@ -47,6 +47,10 @@ import { supabase } from "@/lib/supabase";
 import { profileCan } from "@/features/auth/capabilities";
 import { useOrganization } from "@/features/auth/useOrganization";
 import { useProfile } from "@/features/auth/useProfile";
+import {
+  useActivityGeostampSetting,
+  useUpdateActivityGeostampSetting,
+} from "../hooks/useActivityGeostampSetting";
 import { useRotateInviteCode } from "@/features/admin/hooks/useRotateInviteCode";
 import { useUpdateOrgValueBands } from "@/features/settings/hooks/useUpdateOrgValueBands";
 import { useDemoResetEnabled } from "@/features/settings/hooks/useDemoResetEnabled";
@@ -887,6 +891,40 @@ export function DemoToolsSection() {
   );
 }
 
+// ── Location ─────────────────────────────────────────────────────────
+// The rep's "record my location when I log an activity" consent (Bundle 5,
+// FR-HIER-32). Default on / opt-out. This governs ONLY the geostamp on a
+// logged activity; Path routing uses the OS location prompt and is unaffected.
+function LocationSection() {
+  const enabled = useActivityGeostampSetting().data ?? true;
+  const update = useUpdateActivityGeostampSetting();
+
+  const onChange = (value: boolean) => {
+    update.mutate(value, {
+      onSuccess: () => toast.success("Saved"),
+      onError: () => toast.error("Couldn't save location preference"),
+    });
+  };
+
+  return (
+    <Card padding="md">
+      <SectionHeader
+        title="Location"
+        subtitle="Control whether the app records where you are when you log a visit."
+      />
+      <div className="mt-4">
+        <Checkbox
+          id="location-activity-geostamp"
+          label="Record my location on logged activities"
+          helper="Adds a location stamp to each activity you log, so visits can be mapped later. Captured only at the moment you log, never in the background. Turning this off stops new stamps; it does not affect Path directions."
+          checked={enabled}
+          onCheckedChange={onChange}
+        />
+      </div>
+    </Card>
+  );
+}
+
 export function SettingsPage() {
   const profile = useProfile().data;
   const showTeamSection = profileCan(profile, "inviteUsers");
@@ -900,6 +938,7 @@ export function SettingsPage() {
       <ProfessionSection />
       <AppearanceSection />
       <NotificationsSection />
+      <LocationSection />
       {showTeamSection && <TeamSection />}
       {canEditBands && <ValueBandsSection />}
       <SessionSection />
