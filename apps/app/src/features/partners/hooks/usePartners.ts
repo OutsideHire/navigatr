@@ -27,10 +27,14 @@ interface PartnerRow {
   next_followup_at: string | null;
   notes: string;
   created_by: string | null;
+  owner_id: string | null;
   created_at: string;
   followup_cadence_days: number | null;
   // Nested via PostgREST embedded resource
   partner_deals: Array<{ deal_id: string; direction?: string }> | null;
+  // Owner display name, embedded from profiles via the partners.owner_id FK
+  // (Bundle 2, FR-HIER-05). profiles_select is org-wide so it resolves.
+  owner: { full_name: string | null } | null;
 }
 
 function toPartner(row: PartnerRow): Partner {
@@ -54,6 +58,8 @@ function toPartner(row: PartnerRow): Partner {
       .map((l) => l.deal_id),
     notes: row.notes,
     createdBy: row.created_by ?? null,
+    ownerId: row.owner_id ?? null,
+    ownerName: row.owner?.full_name ?? null,
     createdAt: row.created_at,
     followupCadenceDays: row.followup_cadence_days ?? null,
   };
@@ -72,9 +78,10 @@ export function usePartners() {
         .from("partners")
         .select(
           "id, name, company, type, status, phone, email, city, " +
-            "last_touch_at, next_followup_at, notes, created_by, " +
+            "last_touch_at, next_followup_at, notes, created_by, owner_id, " +
             "created_at, followup_cadence_days, " +
-            "partner_deals(deal_id, direction)",
+            "partner_deals(deal_id, direction), " +
+            "owner:profiles!partners_owner_id_fkey(full_name)",
         )
         .order("updated_at", { ascending: false });
       if (error) throw error;
