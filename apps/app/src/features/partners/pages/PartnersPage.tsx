@@ -62,6 +62,9 @@ import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { useViewerScope } from "@/features/scope/useViewerScope";
 import { scopePhrase } from "@/features/scope/scope";
 import { SellerFilter } from "@/features/scope/SellerFilter";
+import { TeamFilter } from "@/features/scope/TeamFilter";
+import { teamMemberIds } from "@/features/scope/teams";
+import { groupPartnersByTeam } from "./partnerTeamGroups";
 import { useProfile } from "@/features/auth/useProfile";
 
 type StatusFilter = "all" | PartnerStatus;
@@ -217,10 +220,16 @@ export function PartnersPage() {
   const { data: partners = [] } = usePartners();
   const { data: deals = [] } = useDeals();
   const scope = useViewerScope();
+  const currentUserId = useAuth((s) => s.user?.id);
 
-  // Seller filter (FR-HIER-20) via ?owner=. Everything below scopes to it so
-  // the whole screen recomputes from the same set (FR-HIER-22).
+  // Seller (?owner=) + team (?team=) filters. Everything below scopes to them
+  // so the whole screen recomputes from the same set (FR-HIER-20/21/22).
   const ownerFilter = searchParams.get("owner");
+  const teamFilter = searchParams.get("team");
+  const teamMembers = React.useMemo(
+    () => teamMemberIds(scope.teams, teamFilter),
+    [scope.teams, teamFilter],
+  );
   const setOwner = React.useCallback(
     (ownerId: string | null) => {
       const next = new URLSearchParams(searchParams);
@@ -230,9 +239,28 @@ export function PartnersPage() {
     },
     [searchParams, setSearchParams],
   );
+  const setTeam = React.useCallback(
+    (teamId: string | null) => {
+      const next = new URLSearchParams(searchParams);
+      if (teamId) next.set("team", teamId);
+      else next.delete("team");
+      next.delete("owner"); // changing team resets the seller filter (FR-HIER-21)
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+  const sellerOptions = React.useMemo(
+    () => (teamMembers ? scope.sellers.filter((s) => teamMembers.includes(s.id)) : scope.sellers),
+    [teamMembers, scope.sellers],
+  );
   const scoped = React.useMemo(
-    () => (ownerFilter ? partners.filter((p) => p.ownerId === ownerFilter) : partners),
-    [partners, ownerFilter],
+    () =>
+      partners.filter((p) => {
+        if (ownerFilter) return p.ownerId === ownerFilter;
+        if (teamMembers) return p.ownerId != null && teamMembers.includes(p.ownerId);
+        return true;
+      }),
+    [partners, ownerFilter, teamMembers],
   );
   const filteredSellerName = React.useMemo(() => {
     if (!ownerFilter) return null;
@@ -242,6 +270,11 @@ export function PartnersPage() {
       null
     );
   }, [ownerFilter, scope.sellers, partners]);
+  const teamName = React.useMemo(
+    () => (teamFilter ? scope.teams.find((t) => t.id === teamFilter)?.name ?? null : null),
+    [teamFilter, scope.teams],
+  );
+  const scopeName = filteredSellerName ?? teamName;
 
   // Single shared lookup map — every "what's their revenue" question
   // resolves with one O(1) lookup instead of rebuilding per render.
@@ -315,7 +348,7 @@ export function PartnersPage() {
           <div className="flex flex-col gap-1">
             <h1 className="text-heading-lg text-text-default">Partners</h1>
             <p className="text-body-md text-text-muted">
-              {scopePhrase("partners", scope.scopeLevel, filteredSellerName)} ·{" "}
+              {scopePhrase("partners", scope.scopeLevel, scopeName)} ·{" "}
               {scoped.length} {scoped.length === 1 ? "partner" : "partners"}
               {totalAttributed > 0 && (
                 <>
@@ -352,8 +385,11 @@ export function PartnersPage() {
                 />
               </FormField>
             </div>
+            {scope.multiTeam && (
+              <TeamFilter teams={scope.teams} value={teamFilter} onChange={setTeam} />
+            )}
             {scope.hasReports && (
-              <SellerFilter sellers={scope.sellers} value={ownerFilter} onChange={setOwner} />
+              <SellerFilter sellers={sellerOptions} value={ownerFilter} onChange={setOwner} />
             )}
             <Button
               variant="secondary"
@@ -475,6 +511,26 @@ export function PartnersPage() {
               )}
             </Card>
           )
+        ) : scope.multiTeam && !ownerFilter && !teamFilter ? (
+          // FR-HIER-25: multi-team viewers see partners grouped under team
+          // headings with per-team subtotals. Suppressed once a team or seller
+          // filter narrows the view to a single team (handled by the branch
+          // below).
+          <div className="flex flex-col gap-6">
+            {groupPartnersByTeam(filtered, scope.teams, currentUserId).map((g) => (
+              <div key={g.key} className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-body-strong text-text-default">{g.name}</h2>
+                  <span className="text-caption tabular-nums text-text-muted">
+                    {g.partners.length} {g.partners.length === 1 ? "partner" : "partners"}
+                  </span>
+                </div>
+                {g.partners.map((p) => (
+                  <PartnerCard key={p.id} partner={p} revenue={getRevenue(p)} />
+                ))}
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="flex flex-col gap-3">
             {filtered.map((p) => (

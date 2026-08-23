@@ -52,6 +52,8 @@ import { usePipelineMetrics } from "../hooks/usePipelineMetrics";
 import { useViewerScope } from "@/features/scope/useViewerScope";
 import { scopePhrase, scopeTagLabel } from "@/features/scope/scope";
 import { SellerFilter } from "@/features/scope/SellerFilter";
+import { TeamFilter } from "@/features/scope/TeamFilter";
+import { teamMemberIds } from "@/features/scope/teams";
 import {
   STAGE_LABEL,
   formatShortDate,
@@ -548,6 +550,8 @@ export function PipelinePage() {
   // ?owner=<id> filter — set by the admin portal when drilling into one
   // agent's pipeline. A banner is shown at the top with a "Clear filter" link.
   const ownerFilter = searchParams.get("owner");
+  // ?team=<id> filter (FR-HIER-21) — a manager narrowing to one of their teams.
+  const teamFilter = searchParams.get("team");
   // ?source=<label> filter — Dashboard "Lead sources" widget. Buckets
   // identically to the dashboard (empty leadSource → "Other").
   const sourceFilter = searchParams.get("source");
@@ -587,11 +591,31 @@ export function PipelinePage() {
     }
   };
 
+  // Viewer scope (FR-HIER-16..21). A seller filter (?owner=) narrows to one
+  // rep; a team filter (?team=) narrows to a team's members. Owner wins when
+  // both are present. inOwnerScope is the single predicate every scoped value
+  // keys off, so the whole screen recomputes from the same set (FR-HIER-22).
+  const scope = useViewerScope();
+  const teamMembers = React.useMemo(
+    () => teamMemberIds(scope.teams, teamFilter),
+    [scope.teams, teamFilter],
+  );
+  const inOwnerScope = React.useCallback(
+    (ownerId: string | null | undefined): boolean => {
+      if (ownerFilter) return ownerId === ownerFilter;
+      if (teamMembers) return ownerId != null && teamMembers.includes(ownerId);
+      return true;
+    },
+    [ownerFilter, teamMembers],
+  );
+  const scopedDeals = React.useMemo(
+    () => (deals ?? []).filter((d) => inOwnerScope(d.owner_id)),
+    [deals, inOwnerScope],
+  );
+
   const filtered = React.useMemo(() => {
-    if (!deals) return [];
     const q = debouncedSearch.trim().toLowerCase();
-    return deals.filter((d) => {
-      if (ownerFilter && d.owner_id !== ownerFilter) return false;
+    return scopedDeals.filter((d) => {
       if (stageFilter !== "all" && d.stage !== stageFilter) return false;
       if (sourceFilter) {
         const raw = (d.leadSource ?? "").trim();
@@ -601,27 +625,27 @@ export function PipelinePage() {
       if (q && !d.companyName.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [deals, stageFilter, debouncedSearch, ownerFilter, sourceFilter]);
+  }, [scopedDeals, stageFilter, debouncedSearch, sourceFilter]);
 
   const visible = React.useMemo(
     () => sortDeals(applyDealFilters(filtered, filters), sortKey),
     [filtered, filters, sortKey],
   );
 
+  const anyScopeFilter = Boolean(ownerFilter || teamFilter);
   const clientKpis = React.useMemo(
-    () => computeKpis(ownerFilter ? filtered : deals, wonAtByDeal),
-    [deals, filtered, ownerFilter, wonAtByDeal],
+    () => computeKpis(anyScopeFilter ? filtered : deals, wonAtByDeal),
+    [deals, filtered, anyScopeFilter, wonAtByDeal],
   );
   // Prefer the server totals for the unfiltered book (correct across every
   // visible deal, not just the loaded page). Fall back to the client sum until
-  // the RPC resolves, or whenever an owner filter narrows to one agent.
-  const kpis = ownerFilter ? clientKpis : (serverKpis ?? clientKpis);
+  // the RPC resolves, or whenever a seller/team filter narrows the set.
+  const kpis = anyScopeFilter ? clientKpis : (serverKpis ?? clientKpis);
 
-  // Scope line + metric tags (FR-HIER-16/17). When an owner filter is active
-  // the scope line and every tag reflect that seller, so nothing on screen
-  // contradicts the filtered set (FR-HIER-22). The owner's display name is
-  // resolved from the subtree roster, falling back to the loaded deals.
-  const scope = useViewerScope();
+  // Scope line + metric tags (FR-HIER-16/17). The line names the filtered
+  // seller or team; the tag stays You/Team/Org except for a single seller,
+  // whose first name it shows (per spec). Nothing on screen contradicts the
+  // filtered set (FR-HIER-22).
   const filteredSellerName = React.useMemo(() => {
     if (!ownerFilter) return null;
     return (
@@ -630,7 +654,12 @@ export function PipelinePage() {
       null
     );
   }, [ownerFilter, scope.sellers, deals]);
-  const scopeLine = scopePhrase("pipeline", scope.scopeLevel, filteredSellerName);
+  const teamName = React.useMemo(
+    () => (teamFilter ? scope.teams.find((t) => t.id === teamFilter)?.name ?? null : null),
+    [teamFilter, scope.teams],
+  );
+  const scopeName = filteredSellerName ?? teamName;
+  const scopeLine = scopePhrase("pipeline", scope.scopeLevel, scopeName);
   const scopeTag = scopeTagLabel(scope.scopeLevel, filteredSellerName);
   const subhead = `${scopeLine} · ${kpis.activeDeals} active · ${fmtMoneyShort(kpis.totalPipeline)} pipeline`;
 
@@ -645,9 +674,26 @@ export function PipelinePage() {
     },
     [searchParams, setSearchParams],
   );
+  // Team filter (FR-HIER-21): changing the team resets the seller filter.
+  const setTeam = React.useCallback(
+    (teamId: string | null) => {
+      const next = new URLSearchParams(searchParams);
+      if (teamId) next.set("team", teamId);
+      else next.delete("team");
+      next.delete("owner");
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+  // Seller options narrow to the selected team's members (FR-HIER-21).
+  const sellerOptions = React.useMemo(
+    () => (teamMembers ? scope.sellers.filter((s) => teamMembers.includes(s.id)) : scope.sellers),
+    [teamMembers, scope.sellers],
+  );
 
-  // Live stage-chip counts, owner-scoped to agree with the KPI strip.
-  const stageCounts = React.useMemo(() => countByStage(deals, ownerFilter), [deals, ownerFilter]);
+  // Live stage-chip counts over the seller/team-scoped set, so chips agree with
+  // the KPI strip and the list (FR-HIER-22).
+  const stageCounts = React.useMemo(() => countByStage(scopedDeals), [scopedDeals]);
 
   return (
     <div className="mx-auto w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
@@ -700,9 +746,15 @@ export function PipelinePage() {
         />
 
         {scope.hasReports && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {scope.multiTeam && (
+              <>
+                <span className="text-caption font-medium uppercase tracking-wide text-text-muted">Team</span>
+                <TeamFilter teams={scope.teams} value={teamFilter} onChange={setTeam} />
+              </>
+            )}
             <span className="text-caption font-medium uppercase tracking-wide text-text-muted">Seller</span>
-            <SellerFilter sellers={scope.sellers} value={ownerFilter} onChange={setOwner} />
+            <SellerFilter sellers={sellerOptions} value={ownerFilter} onChange={setOwner} />
           </div>
         )}
 
