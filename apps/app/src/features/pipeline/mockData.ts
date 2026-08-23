@@ -74,6 +74,10 @@ export interface Deal {
    *  before owner tracking was added. Used by the admin portal's
    *  per-agent pipeline filter (?owner=<id>). */
   owner_id: string | null;
+  /** FR-HIER-05: owner's display name, embedded from profiles in useDeals so a
+   *  manager viewing the team's pipeline sees whose deal each card is. Null for
+   *  legacy rows with no owner, or when the payload didn't embed it. */
+  ownerName?: string | null;
   /** Structured reason category for why this deal was lost.
    *  Null for non-lost deals and historical lost deals created before
    *  this column was added. */

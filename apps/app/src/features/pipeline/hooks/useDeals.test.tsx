@@ -13,12 +13,17 @@ import { useDeals } from "./useDeals";
 
 // ---- mocks ----
 
-const orderMock = vi.fn();
+// useDeals pages through the full set: from().select().order().range(from,to),
+// looping until a short batch. The mock terminates at .range(); tests queue
+// batches with rangeMock.mockResolvedValueOnce(...).
+const rangeMock = vi.fn();
 vi.mock("@/lib/supabase", () => ({
   supabase: {
     from: () => ({
       select: () => ({
-        order: (col: string, opts: { ascending: boolean }) => orderMock(col, opts),
+        order: () => ({
+          range: (from: number, to: number) => rangeMock(from, to),
+        }),
       }),
     }),
   },
@@ -38,13 +43,13 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 beforeEach(() => {
-  orderMock.mockReset();
+  rangeMock.mockReset();
   authUserId = "user-1";
 });
 
 describe("useDeals", () => {
   it("maps Supabase rows to the frontend Deal shape", async () => {
-    orderMock.mockResolvedValueOnce({
+    rangeMock.mockResolvedValueOnce({
       data: [
         {
           id: "deal-1",
@@ -107,6 +112,8 @@ describe("useDeals", () => {
         industry: null,
         // Persistence Index Wave 1 addendum column, absent on this row, so null.
         owner_changed_at: null,
+        // FR-HIER-05: no owner embed on this row → ownerName null.
+        ownerName: null,
         // LS-1 lead-source metadata — absent on this row → null.
         leadSourceNote: null,
         sourcePathId: null,
@@ -116,7 +123,7 @@ describe("useDeals", () => {
   });
 
   it("maps owner_changed_at through for the Persistence Index re-engagement exclusion", async () => {
-    orderMock.mockResolvedValueOnce({
+    rangeMock.mockResolvedValueOnce({
       data: [
         {
           id: "deal-4",
@@ -150,7 +157,7 @@ describe("useDeals", () => {
     // overwrote deals.notes with "" or just the new stage line, destroying
     // the rep's saved notes on every transition. The loaded value must
     // survive the mapping so the append preserves it.
-    orderMock.mockResolvedValueOnce({
+    rangeMock.mockResolvedValueOnce({
       data: [
         {
           id: "deal-notes",
@@ -177,8 +184,99 @@ describe("useDeals", () => {
     expect(result.current.data?.[0].notes).toBe("keep me");
   });
 
+  it("maps the embedded owner name to ownerName (FR-HIER-05)", async () => {
+    rangeMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: "deal-owner",
+          company_name: "Owned Co",
+          contact_name: "O",
+          contact_phone: "+12025550004",
+          contact_email: "o@c.co",
+          value_cents: 100_000,
+          stage: "qualified",
+          probability: 40,
+          last_activity_at: "2026-05-18T12:00:00Z",
+          next_followup_at: null,
+          employee_count_range: "1-10",
+          lead_source: "Referral",
+          updated_at: "2026-05-19T08:00:00Z",
+          owner_id: "u2",
+          owner: { full_name: "Jane Rep" },
+        },
+      ],
+      error: null,
+    });
+    const { result } = renderHook(() => useDeals(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0].ownerName).toBe("Jane Rep");
+  });
+
+  it("null-coalesces a missing owner embed to ownerName null", async () => {
+    rangeMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: "deal-no-owner",
+          company_name: "No Owner Co",
+          contact_name: "N",
+          contact_phone: "+12025550005",
+          contact_email: "n2@c.co",
+          value_cents: 0,
+          stage: "new",
+          probability: 10,
+          last_activity_at: null,
+          next_followup_at: null,
+          employee_count_range: null,
+          lead_source: null,
+          updated_at: "2026-05-19T08:00:00Z",
+          owner_id: null,
+          owner: null,
+        },
+      ],
+      error: null,
+    });
+    const { result } = renderHook(() => useDeals(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0].ownerName).toBeNull();
+  });
+
+  it("pages past the 1000-row cap and concatenates every batch (FR-HIER-07)", async () => {
+    // Build a first full page (exactly the page size) so the loop continues,
+    // then a short second page that ends it.
+    const makeRow = (i: number) => ({
+      id: `d-${i}`,
+      company_name: `Co ${i}`,
+      contact_name: "C",
+      contact_phone: "+12025550000",
+      contact_email: "c@c.co",
+      value_cents: 1000,
+      stage: "new",
+      probability: 10,
+      last_activity_at: "2026-05-18T12:00:00Z",
+      next_followup_at: null,
+      employee_count_range: "1-10",
+      lead_source: "Referral",
+      updated_at: "2026-05-19T08:00:00Z",
+      owner_id: null,
+    });
+    const firstPage = Array.from({ length: 1000 }, (_, i) => makeRow(i));
+    const secondPage = [makeRow(1000)];
+    rangeMock
+      .mockResolvedValueOnce({ data: firstPage, error: null })
+      .mockResolvedValueOnce({ data: secondPage, error: null });
+
+    const { result } = renderHook(() => useDeals(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data).toHaveLength(1001);
+    expect(rangeMock).toHaveBeenCalledTimes(2);
+    // Offsets: batch 0 -> [0, 999], batch 1 -> [1000, 1999].
+    expect(rangeMock).toHaveBeenNthCalledWith(1, 0, 999);
+    expect(rangeMock).toHaveBeenNthCalledWith(2, 1000, 1999);
+  });
+
   it("maps followup_calendar_sync_status through to followupCalendarSyncStatus", async () => {
-    orderMock.mockResolvedValueOnce({
+    rangeMock.mockResolvedValueOnce({
       data: [
         {
           id: "deal-3",
@@ -206,14 +304,14 @@ describe("useDeals", () => {
   });
 
   it("returns an empty array when there are no deals", async () => {
-    orderMock.mockResolvedValueOnce({ data: [], error: null });
+    rangeMock.mockResolvedValueOnce({ data: [], error: null });
     const { result } = renderHook(() => useDeals(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([]);
   });
 
   it("surfaces Supabase errors via React Query's isError", async () => {
-    orderMock.mockResolvedValueOnce({
+    rangeMock.mockResolvedValueOnce({
       data: null,
       error: { message: "permission denied for table deals" },
     });
@@ -229,11 +327,11 @@ describe("useDeals", () => {
     authUserId = undefined;
     const { result } = renderHook(() => useDeals(), { wrapper });
     expect(result.current.fetchStatus).toBe("idle");
-    expect(orderMock).not.toHaveBeenCalled();
+    expect(rangeMock).not.toHaveBeenCalled();
   });
 
   it("coerces nullable employee_count_range to empty string", async () => {
-    orderMock.mockResolvedValueOnce({
+    rangeMock.mockResolvedValueOnce({
       data: [
         {
           id: "deal-2",

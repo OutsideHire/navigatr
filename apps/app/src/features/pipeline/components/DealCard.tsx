@@ -12,7 +12,8 @@ import { Mail } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { formatCalendarDate } from "@/lib/calendarDate";
-import { CardWithStatusBand } from "@/components/navigatr";
+import { Avatar, CardWithStatusBand } from "@/components/navigatr";
+import { useAuth } from "@/stores/auth";
 import { DealCallButton } from "@/features/activities/components/DealCallButton";
 import { FollowupChip } from "./FollowupChip";
 import {
@@ -26,9 +27,16 @@ import {
 
 export function DealCard({ deal }: { deal: Deal }) {
   const navigate = useNavigate();
+  const currentUserId = useAuth((s) => s.user?.id);
   const tone = STAGE_TONE[deal.stage];
   const verb = STAGE_NEXT_VERB[deal.stage];
   const pct = Math.max(0, Math.min(100, deal.probability));
+  // FR-HIER-05: surface the owner only when it isn't the viewer's own deal, so
+  // a manager browsing the team's pipeline sees whose deal each card is while a
+  // rep's own list stays uncluttered.
+  const showOwner = Boolean(
+    deal.ownerName && deal.owner_id && deal.owner_id !== currentUserId,
+  );
 
   return (
     <CardWithStatusBand
@@ -85,6 +93,13 @@ export function DealCard({ deal }: { deal: Deal }) {
         </div>
 
         <FollowupChip date={deal.nextFollowup} />
+
+        {showOwner && (
+          <div className="flex items-center gap-1.5 text-caption text-text-muted">
+            <Avatar alt={deal.ownerName!} size="xs" />
+            <span className="truncate">{deal.ownerName}</span>
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-2 border-t border-border-subtle pt-3 text-caption text-text-muted">
           <span className="truncate">
