@@ -4,6 +4,11 @@
  * RLS with-check enforces org_id = user_org_id() and created_by = auth.uid()
  * server-side. We send what we have and trust the gate.
  *
+ * owner_id is stamped to the creating rep (Bundle 2, FR-HIER-05). It is NOT
+ * NULL on the table, drives hierarchy visibility (partners_select ->
+ * user_can_see_owner), and starts equal to created_by; a later bundle can add
+ * reassignment. created_by stays as the immutable audit trail.
+ *
  * On success: invalidate the partners list so the new row appears.
  */
 
@@ -40,6 +45,7 @@ export function useCreatePartner() {
         .insert({
           org_id:     profile.data.org_id,
           created_by: userId,
+          owner_id:   userId,
           name:       input.name,
           company:    input.company,
           type:       input.type,

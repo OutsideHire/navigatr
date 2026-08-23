@@ -63,6 +63,8 @@ describe("useCreatePartner", () => {
     expect(payload).toMatchObject({
       org_id: "org-1",
       created_by: "user-1",
+      // Bundle 2 (FR-HIER-05): owner starts equal to the creating rep.
+      owner_id: "user-1",
       name: "Sarah Johnson",
       company: "Johnson & Boyle CPAs",
       type: "cpa_bookkeeper",
