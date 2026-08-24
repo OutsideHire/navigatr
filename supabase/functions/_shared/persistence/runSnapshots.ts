@@ -96,12 +96,19 @@ export async function runSnapshots(deps: SnapshotDeps, now: Date): Promise<RunSu
     summary.orgs += 1;
     const windowStartDate = isoDate(new Date(now.getTime() - org.config.windowDays * DAY_MS));
 
-    const [deals, activities, repIds, repTz] = await Promise.all([
+    const [deals, allActivities, repIds, repTz] = await Promise.all([
       deps.fetchOrgDeals(org.id),
       deps.fetchOrgActivities(org.id),
       deps.listRepIds(org.id),
       deps.fetchRepTimezones(org.id),
     ]);
+
+    // Beta policy: auto-captured activities (e.g. confirmed email suggestions,
+    // capture_source='automatic') are excluded from Persistence Index scoring
+    // until their precision is proven. They remain real, rep-confirmed
+    // activities everywhere else; they just don't move the score yet. Absent
+    // captureSource is treated as manual (all pre-feature rows).
+    const activities = allActivities.filter((a) => a.captureSource !== "automatic");
 
     const composites: number[] = [];
     for (const repId of repIds) {

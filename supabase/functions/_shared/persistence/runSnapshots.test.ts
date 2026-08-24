@@ -98,6 +98,37 @@ describe("runSnapshots", () => {
     expect(summary).toEqual({ orgs: 1, reps: 3, repSnapshots: 3, companySnapshots: 1, failures: 0 });
   });
 
+  it("excludes auto-captured activities from scoring (beta policy)", async () => {
+    // Same fixture as the baseline, plus one extra touch on rep-1's deal that
+    // was captured automatically. If it were scored it would raise rep-1's
+    // cadence sample; because it is auto-captured it is dropped and rep-1's
+    // composite stays exactly at the manual-only baseline (78).
+    const autoTouch: ScoreActivity = {
+      dealId: "d1",
+      occurredAt: iso(1),
+      followUpDate: null,
+      captureSource: "automatic",
+    };
+    const d = deps({
+      listRepIds: vi.fn(async () => ["rep-1"]),
+      fetchOrgActivities: vi.fn(async () => [...activities, autoTouch]),
+    });
+    await runSnapshots(d, NOW);
+
+    const rep1 = (d.upsertRepSnapshot as any).mock.calls[0][0] as RepSnapshotRow;
+    expect(rep1.composite).toBe(78);
+    expect(rep1.cadence_points).toBe(17);
+  });
+
+  it("treats an activity with no captureSource as manual (pre-feature rows still score)", async () => {
+    // The baseline fixture carries no captureSource; it must still score as
+    // before, so the exclusion never silently drops legitimate manual history.
+    const d = deps({ listRepIds: vi.fn(async () => ["rep-1"]) });
+    await runSnapshots(d, NOW);
+    const rep1 = (d.upsertRepSnapshot as any).mock.calls[0][0] as RepSnapshotRow;
+    expect(rep1.composite).toBe(78);
+  });
+
   it("counts a failing rep without aborting the batch, and still writes the company snapshot", async () => {
     const d = deps({
       upsertRepSnapshot: vi.fn(async (row: RepSnapshotRow) => {

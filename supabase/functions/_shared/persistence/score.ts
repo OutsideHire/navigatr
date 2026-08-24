@@ -31,6 +31,10 @@ export interface ScoreActivity {
   dealId: string;
   occurredAt: string;
   followUpDate: string | null;
+  /** How the activity was captured ('manual' | 'automatic'). Absent = manual
+   *  (all pre-feature rows). The scorer ignores this; runSnapshots uses it to
+   *  keep auto-captured activities out of Persistence scoring during beta. */
+  captureSource?: string;
 }
 
 export interface ScoreParams {
