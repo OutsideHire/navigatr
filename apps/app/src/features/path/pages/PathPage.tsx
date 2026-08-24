@@ -78,7 +78,9 @@ import type { OrderedStop } from "../lib/todaysPath";
 import { OwedVisitsList, type OwedVisitRow } from "../components/OwedVisitsList";
 import type { OwedVisit } from "../lib/owedVisits";
 import { useTaskMutations } from "@/features/activities/hooks/useTaskMutations";
-import { usePathPreferences } from "../hooks/usePathPreferences";
+import { usePathPreferences, usePathStartOfDayMinutes, usePathEndOfDayMinutes } from "../hooks/usePathPreferences";
+import { DEFAULT_START_OF_DAY_MINUTES, DEFAULT_END_OF_DAY_MINUTES } from "../lib/pathCapacityDefaults";
+import { endOfDayLabel } from "../lib/endOfDayControl";
 import { selectedCategories } from "../lib/industrySelection";
 
 // Phase 2: discovered prospects are all cold leads, so the old deal-lifecycle
@@ -224,6 +226,11 @@ export function PathPage() {
   // ordering/selection; here we only read it and hand its flexible stops to the
   // same create+start mechanism `handleStartPath` uses.
   const todaysPath = useTodaysPath(origin);
+  // Configured workday window (per-rep override, else the 8:00 AM / 6:00 PM
+  // defaults), formatted for the "Your day: 8:00 AM to 6:00 PM" landing subhead.
+  // Always reflects the saved setting, never a live clock.
+  const workdayStartLabel = endOfDayLabel(usePathStartOfDayMinutes().data ?? DEFAULT_START_OF_DAY_MINUTES);
+  const workdayEndLabel = endOfDayLabel(usePathEndOfDayMinutes().data ?? DEFAULT_END_OF_DAY_MINUTES);
 
   // Capture the rep's device timezone once (backfills existing reps on next
   // visit). Stored on path_preferences; day boundaries resolve in this zone.
@@ -779,9 +786,9 @@ export function PathPage() {
                     screen. */}
                 {daySubhead({
                   stopCount: todaysPath.proposal.length,
-                  startsAt: todaysPath.startsAt,
+                  workdayStart: workdayStartLabel,
+                  workdayEnd: workdayEndLabel,
                   started: false,
-                  notYetOpen: todaysPath.dayNotYetOpen,
                 })}
               </p>
             </>

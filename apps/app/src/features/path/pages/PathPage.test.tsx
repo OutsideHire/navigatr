@@ -1170,7 +1170,9 @@ describe("PathPage 'Your day' landing header (v2.2 A6)", () => {
     };
     render(<PathPage />, { wrapper });
     expect(screen.getByRole("heading", { name: /^your day$/i })).toBeInTheDocument();
-    expect(screen.getByText("8 stops. Starts at 9:15.")).toBeInTheDocument();
+    // Subhead states the count + the CONFIGURED workday window (defaults here),
+    // never a live clock. Prefix regex so Intl's AM/PM spacing can't make it flaky.
+    expect(screen.getByText(/^8 stops\. Your day: .+ to .+\.$/)).toBeInTheDocument();
     // The old "Path" title is gone from the landing.
     expect(screen.queryByRole("heading", { name: /^path$/i })).not.toBeInTheDocument();
   });
@@ -1182,7 +1184,7 @@ describe("PathPage 'Your day' landing header (v2.2 A6)", () => {
       startsAt: "9:15",
     };
     render(<PathPage />, { wrapper });
-    expect(screen.getByText("1 stop. Starts at 9:15.")).toBeInTheDocument();
+    expect(screen.getByText(/^1 stop\. Your day: .+ to .+\.$/)).toBeInTheDocument();
   });
 
   it("shows the nothing-planned subhead when the day is empty", () => {
