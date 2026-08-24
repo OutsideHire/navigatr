@@ -267,7 +267,8 @@ function HeroCard({ deal, onLogActivity, onCreateTask, onEdit }: { deal: Deal; o
           </p>
           <h1 className="text-heading-lg text-text-default">{deal.companyName}</h1>
           <p className="text-body-md text-text-muted">
-            {deal.contactName} · Owner
+            {deal.contactName}
+            {deal.contactTitle ? ` · ${deal.contactTitle}` : ""}
           </p>
         </div>
 

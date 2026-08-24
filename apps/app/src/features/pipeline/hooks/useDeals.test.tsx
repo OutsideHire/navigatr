@@ -79,6 +79,7 @@ describe("useDeals", () => {
         id: "deal-1",
         companyName: "Acme",
         contactName: "Jane",
+        contactTitle: null,
         phone: "+12025550100",
         phoneInvalid: false,
         email: "j@acme.com",

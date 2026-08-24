@@ -24,6 +24,7 @@ interface DealRow {
   id: string;
   company_name: string;
   contact_name: string;
+  contact_title?: string | null;
   contact_phone: string;
   contact_phone_invalid?: boolean;
   contact_email: string;
@@ -87,6 +88,7 @@ export function toDeal(row: DealRow): Deal {
     id: row.id,
     companyName: row.company_name,
     contactName: row.contact_name,
+    contactTitle: row.contact_title ?? null,
     phone: row.contact_phone,
     phoneInvalid: row.contact_phone_invalid ?? false,
     email: row.contact_email,
@@ -134,7 +136,7 @@ export const DEALS_QUERY_KEY = (userId: string | undefined) =>
   ["deals", "list", userId ?? "anon"] as const;
 
 const DEALS_SELECT =
-  "id, company_name, contact_name, contact_phone, contact_phone_invalid, contact_email, " +
+  "id, company_name, contact_name, contact_title, contact_phone, contact_phone_invalid, contact_email, " +
   "value_cents, stage, probability, last_activity_at, " +
   "next_followup_at, address, employee_count_range, lead_source, " +
   "lead_source_note, source_path_id, created_at, " +
