@@ -19,10 +19,10 @@ import {
   useDismissEmailSuggestion,
 } from "../hooks/useEmailSuggestionActions";
 import { relativeTime } from "./UnloggedCallsSection";
+import { EMAIL_CAPTURE_UI_ENABLED } from "@/lib/emailCaptureFlag";
 
-/** Client flag: the suggestion surface is off until VITE_EMAIL_CAPTURE=true. */
-export const EMAIL_CAPTURE_UI_ENABLED =
-  import.meta.env.VITE_EMAIL_CAPTURE === "true";
+// Re-export so existing importers of this module keep resolving the flag.
+export { EMAIL_CAPTURE_UI_ENABLED };
 
 export function EmailSuggestionsSection({
   enabled = EMAIL_CAPTURE_UI_ENABLED,
