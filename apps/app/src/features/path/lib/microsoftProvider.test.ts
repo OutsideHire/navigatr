@@ -356,11 +356,13 @@ describe("microsoftProvider.refreshAccessToken", () => {
     expect(body).toContain("refresh_token=r1");
     expect(body).toContain("client_id=ms-cid");
     expect(body).toContain("client_secret=ms-sec");
-    // scopes joined with spaces → URL-encoded '+'/%20 in the body.
+    // Regression guard (email-capture): the refresh grant must NOT send `scope`.
+    // Microsoft refreshes with whatever the connection originally consented to
+    // when scope is omitted; sending oauth.scopes would over-request once the
+    // EMAIL_CAPTURE_ENABLED flag adds Mail.ReadBasic and break refresh for
+    // pre-existing calendar-only connections (AADSTS65001).
     const parsed = new URLSearchParams(body);
-    expect(parsed.get("scope")).toBe(
-      "offline_access openid profile email User.Read Calendars.ReadWrite",
-    );
+    expect(parsed.get("scope")).toBeNull();
   });
 
   it("adopts a rotated refresh_token when Microsoft returns one", async () => {

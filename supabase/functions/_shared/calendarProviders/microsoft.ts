@@ -26,6 +26,32 @@ function graphBodyFor(input: CalendarEventInput): GraphEventBody {
 
 const AUTHORITY = "https://login.microsoftonline.com/organizations/oauth2/v2.0";
 
+// Base delegated scopes: calendar read/write + sign-in. Unchanged from launch.
+const MICROSOFT_BASE_SCOPES = [
+  "offline_access", "openid", "profile", "email", "User.Read", "Calendars.ReadWrite",
+] as const;
+
+/**
+ * The Microsoft delegated scope set. Auto email capture (PRD) adds the
+ * read-only mail-metadata scope `Mail.ReadBasic` when enabled, so a single
+ * Outlook connection can also poll Sent Items. Pure + unit-tested; the flag is
+ * resolved from the environment by the provider below.
+ */
+export function buildMicrosoftScopes(emailCaptureEnabled: boolean): string[] {
+  const scopes: string[] = [...MICROSOFT_BASE_SCOPES];
+  if (emailCaptureEnabled) scopes.push("Mail.ReadBasic");
+  return scopes;
+}
+
+// Read the email-capture flag without a bare `Deno` reference, so this file
+// stays importable under both Deno (edge functions) and Node (vitest/tsc). The
+// flag is OFF unless the EMAIL_CAPTURE_ENABLED edge secret is exactly "1", so
+// production's calendar OAuth scopes are byte-identical until it is set.
+export function emailCaptureEnabledFromEnv(): boolean {
+  const env = (globalThis as { Deno?: { env?: { get(k: string): string | undefined } } }).Deno?.env;
+  return env?.get("EMAIL_CAPTURE_ENABLED") === "1";
+}
+
 interface GraphEvent {
   id: string; subject?: string; isAllDay?: boolean; isCancelled?: boolean;
   sensitivity?: string;             // normal | personal | private | confidential
@@ -66,7 +92,7 @@ export const microsoftProvider: CalendarProvider = {
     authUrl: `${AUTHORITY}/authorize`,
     tokenUrl: `${AUTHORITY}/token`,
     revokeUrl: null, // Microsoft has no token-revoke endpoint; disconnect just drops our stored tokens.
-    scopes: ["offline_access", "openid", "profile", "email", "User.Read", "Calendars.ReadWrite"],
+    scopes: buildMicrosoftScopes(emailCaptureEnabledFromEnv()),
     clientIdEnv: "MICROSOFT_CALENDAR_CLIENT_ID",
     clientSecretEnv: "MICROSOFT_CALENDAR_CLIENT_SECRET",
     extraAuthParams: { response_mode: "query" },
@@ -76,11 +102,19 @@ export const microsoftProvider: CalendarProvider = {
     if (!isExpired(bundle.expiry, now)) {
       return { accessToken: bundle.access_token, bundle, refreshed: false };
     }
+    // Deliberately NO `scope` on the refresh grant. Microsoft refreshes with
+    // whatever the connection originally consented to when `scope` is omitted
+    // (OAuth2 §6). Sending oauth.scopes here would over-request once
+    // EMAIL_CAPTURE_ENABLED adds Mail.ReadBasic: a pre-existing calendar-only
+    // connection would be asked for a scope it never consented to, which
+    // Microsoft rejects (AADSTS65001), breaking calendar refresh until the rep
+    // reconnects. Omitting it lets old connections keep refreshing (calendar
+    // only) and new/reconnected ones refresh with their granted mail scope.
+    // Mirrors the Google provider, which also omits scope on refresh.
     const refreshed = await msTokenPost(
       new URLSearchParams({
         grant_type: "refresh_token", refresh_token: bundle.refresh_token,
         client_id: deps.clientId, client_secret: deps.clientSecret,
-        scope: this.oauth.scopes.join(" "),
       }),
       deps,
     );
