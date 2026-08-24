@@ -22,16 +22,20 @@ import {
 import { useProfile } from "@/features/auth/useProfile";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
+import { EMAIL_CAPTURE_UI_ENABLED } from "@/lib/emailCaptureFlag";
+import { EmailCaptureDisclosure } from "@/features/integrations/EmailCaptureDisclosure";
 import { TabHeader } from "./TabHeader";
 
 interface CalendarProviderCardProps {
   provider: CalendarProviderId;
   /** Human-facing calendar name, e.g. "Google Calendar" / "Outlook Calendar". */
   label: string;
+  /** Show the Automatic Email Capture disclosure (Outlook + flag on). */
+  showEmailCapture?: boolean;
 }
 
 /** A single provider's connect/disconnect/status card. */
-function CalendarProviderCard({ provider, label }: CalendarProviderCardProps) {
+function CalendarProviderCard({ provider, label, showEmailCapture = false }: CalendarProviderCardProps) {
   const { status, isLoading, connect, disconnect, isDisconnecting } =
     useCalendarConnection(provider);
 
@@ -58,6 +62,7 @@ function CalendarProviderCard({ provider, label }: CalendarProviderCardProps) {
               Disconnect
             </Button>
           </div>
+          {showEmailCapture && <EmailCaptureDisclosure connected />}
           {/* TODO(calendar-oauth-task): per-calendar personal toggle once the
               calendar list endpoint exists. Lists the rep's calendars with a
               per-calendar "treat as personal" switch so the Path builds around
@@ -70,6 +75,7 @@ function CalendarProviderCard({ provider, label }: CalendarProviderCardProps) {
           <p className="text-body-md text-text-muted">
             Connect {label} so your Path builds around your meetings.
           </p>
+          {showEmailCapture && <EmailCaptureDisclosure connected={false} />}
           <div>
             <Button variant="primary" size="md" onClick={() => connect()}>
               Connect {label}
@@ -157,7 +163,11 @@ export function IntegrationsTab() {
       />
       <div className="flex flex-col gap-4">
         <CalendarProviderCard provider="google" label="Google Calendar" />
-        <CalendarProviderCard provider="microsoft" label="Outlook Calendar" />
+        <CalendarProviderCard
+          provider="microsoft"
+          label="Outlook Calendar"
+          showEmailCapture={EMAIL_CAPTURE_UI_ENABLED}
+        />
         {bothConnected && <PrimaryCalendarControl />}
       </div>
     </>
