@@ -30,6 +30,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getFreshAccessToken, type TokenBundle } from "../_shared/googleToken.ts";
 import { getProvider, type CalendarProviderId } from "../_shared/calendarProviders/index.ts";
+import {
+  emailConnectionRowForConnect,
+  shouldRemoveEmailConnectionOnDisconnect,
+} from "../_shared/emailConnection.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -39,6 +43,9 @@ const GOOGLE_CLIENT_SECRET = Deno.env.get("GOOGLE_CALENDAR_CLIENT_SECRET") ?? ""
 // Where to bounce the browser after the callback completes. Falls back to the
 // request's referer origin, then to localhost dev — see resolveAppUrl().
 const APP_URL = Deno.env.get("APP_URL") ?? "";
+// Automatic Email Activity Capture: when on, connecting Outlook also registers
+// the mailbox for the sent-mail poll (see _shared/emailConnection.ts).
+const EMAIL_CAPTURE_ENABLED = Deno.env.get("EMAIL_CAPTURE_ENABLED") === "1";
 
 // Base origin used to build the OAuth callback the browser is redirected back
 // to. Defaults to the project's Supabase URL (…supabase.co). Set
@@ -301,6 +308,22 @@ async function handleCallback(req: Request): Promise<Response> {
     });
     if (tokenErr) return redirect(errUrl);
 
+    // Register the mailbox for the sent-mail poll when Outlook connects with
+    // email capture on. Non-fatal: a failure here must not break the calendar
+    // connect the user actually asked for, so we log and still redirect ok.
+    const emailRow = emailConnectionRowForConnect({
+      provider,
+      orgId: profile.org_id,
+      userId,
+      emailCaptureEnabled: EMAIL_CAPTURE_ENABLED,
+    });
+    if (emailRow) {
+      const { error: ecErr } = await svc
+        .from("email_connection")
+        .upsert(emailRow, { onConflict: "user_id,provider" });
+      if (ecErr) console.error("email_connection provision failed:", ecErr.message);
+    }
+
     return redirect(okUrl);
   } catch {
     return redirect(errUrl);
@@ -383,6 +406,17 @@ async function handleDisconnect(req: Request): Promise<Response> {
     .update({ status: "revoked" })
     .eq("provider", provider)
     .eq("user_id", auth.userId);
+
+  // Drop the mailbox's email_connection row on Outlook disconnect so the poll
+  // stops and it leaves the admin health card. Best-effort; independent of the
+  // capture flag (cleaning up on disconnect is always correct).
+  if (shouldRemoveEmailConnectionOnDisconnect(provider)) {
+    await svc
+      .from("email_connection")
+      .delete()
+      .eq("user_id", auth.userId)
+      .eq("provider", "outlook");
+  }
 
   return json({ ok: true });
 }
