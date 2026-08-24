@@ -104,13 +104,16 @@ function makeDeps(db: SupabaseClient): SnapshotDeps {
       // (activities_enforce_org_consistency_trg), so we can filter directly.
       const { data, error } = await db
         .from("activities")
-        .select("deal_id, occurred_at, follow_up_date")
+        .select("deal_id, occurred_at, follow_up_date, capture_source")
         .eq("org_id", orgId);
       if (error) throw error;
       return (data ?? []).map((r) => ({
         dealId: r.deal_id as string,
         occurredAt: r.occurred_at as string,
         followUpDate: r.follow_up_date as string | null,
+        // Beta: auto-captured activities are filtered out of scoring in
+        // runSnapshots; carry the source through so it can.
+        captureSource: (r.capture_source as string | null) ?? "manual",
       }));
     },
     async upsertRepSnapshot(row) {
