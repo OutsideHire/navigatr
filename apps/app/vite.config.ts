@@ -25,10 +25,12 @@ export default defineConfig({
         "apple-touch-icon.png",
       ],
       workbox: {
-        // Prompt on update — the new SW waits; src/pwa.ts shows a Refresh toast
-        // that calls updateSW(true). We deliberately DON'T set skipWaiting so the
-        // new SW stays in "waiting" and onNeedRefresh fires; the toast's
-        // updateSW(true) skip-waits and reloads on the user's click.
+        // Auto-apply on update — the new SW waits (registerType "prompt" +
+        // no skipWaiting here), so onNeedRefresh fires and src/pwa.ts decides
+        // WHEN to apply: it calls updateSW(true) automatically at the next safe
+        // moment (app backgrounded or reopened), never mid-interaction. Keeping
+        // the SW "waiting" rather than skipWaiting here is what hands pwa.ts that
+        // timing control.
         clientsClaim: true,
         cleanupOutdatedCaches: true,
         // Don't precache the giant maskable icon — only ship it when needed.
