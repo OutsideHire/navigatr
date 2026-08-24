@@ -23,6 +23,8 @@ import { RevokeAgentDialog } from "../components/RevokeAgentDialog";
 import { OrgChartTree } from "../components/OrgChartTree";
 import { AppointmentsAwaitingCard } from "@/features/appointments/components/AppointmentsAwaitingCard";
 import { LocationCaptureHealthCard } from "../components/LocationCaptureHealthCard";
+import { EmailConnectionHealthCard } from "../components/EmailConnectionHealthCard";
+import { EMAIL_CAPTURE_UI_ENABLED } from "@/lib/emailCaptureFlag";
 
 type SortKey =
   | keyof Pick<
@@ -347,6 +349,9 @@ export function AgentsPage() {
 
       {/* Operational: is location capture actually working during beta? (FR-HIER-37) */}
       <LocationCaptureHealthCard />
+
+      {/* Operational: is email capture polling healthy? (Email Capture Slice 5d, dark by default) */}
+      {EMAIL_CAPTURE_UI_ENABLED && <EmailConnectionHealthCard />}
 
       <InviteAgentModal open={inviteOpen} onOpenChange={setInviteOpen} />
 
