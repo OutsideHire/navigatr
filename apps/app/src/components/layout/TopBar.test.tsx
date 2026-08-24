@@ -117,4 +117,19 @@ describe("TopBar AvatarMenu admin shortcuts", () => {
     expect(screen.queryByRole("menuitem", { name: /team/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: /insights/i })).not.toBeInTheDocument();
   });
+
+  // Profile + Settings menu items must navigate, not fire dead-end toasts
+  // (beta day-one dead-end fix). Profile -> the Personal settings tab.
+  it("navigates from the Profile and Settings menu items instead of toasting", async () => {
+    profileReturn = { data: { role: "rep" } };
+    renderTopBar();
+
+    await openMenu(0);
+    fireEvent.click(screen.getByRole("menuitem", { name: /profile/i }));
+    expect(navigateSpy).toHaveBeenCalledWith("/settings/personal");
+
+    await openMenu(0);
+    fireEvent.click(screen.getByRole("menuitem", { name: /^settings$/i }));
+    expect(navigateSpy).toHaveBeenCalledWith("/settings");
+  });
 });
