@@ -41,9 +41,16 @@ export function SignUpForm() {
 
   const onSubmit = async (values: Values) => {
     try {
-      const { needsEmailConfirmation } = await signUp(
+      const { needsEmailConfirmation, alreadyRegistered } = await signUp(
         values.email, values.password, values.fullName, values.inviteCode.trim(),
       );
+      // Email already has an account (Supabase sends no email in this case):
+      // point them to sign in rather than a "check your email" that never comes.
+      if (alreadyRegistered) {
+        toast.error("An account with this email already exists. Please sign in.");
+        navigate("/login");
+        return;
+      }
       // Confirmation ON: no session yet, so show "check your email" instead of
       // bouncing to /auth/callback (which would render a bare no-session error).
       // Confirmation OFF: the SDK signed them in; route through /auth/callback

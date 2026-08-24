@@ -74,7 +74,16 @@ export function AcceptInvitePage() {
       // Matches the same pattern OAuth uses (where state is lost across
       // the auth-provider hop).
       sessionStorage.setItem("pending_invite", token);
-      const { needsEmailConfirmation } = await signUp(values.email, values.password, values.fullName, token);
+      const { needsEmailConfirmation, alreadyRegistered } = await signUp(values.email, values.password, values.fullName, token);
+      // Already have an account: signing up sends no email, so don't strand
+      // them on "check your email". Send them to sign in. (Drop the stashed
+      // token so it can't be claimed spuriously later.)
+      if (alreadyRegistered) {
+        sessionStorage.removeItem("pending_invite");
+        toast.error("You already have an account. Please sign in to accept the invite.");
+        navigate("/login");
+        return;
+      }
       // Confirmation ON: show "check your email". The token also rides in
       // user_metadata, so AuthCallbackPage can claim it after confirmation even
       // if the link opens in a new tab (see resolveInviteCode). Confirmation
