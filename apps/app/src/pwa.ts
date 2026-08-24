@@ -1,45 +1,56 @@
 /**
- * Service-worker registration + update UX.
+ * Service-worker registration + update behavior.
  *
- * vite-plugin-pwa is configured `registerType: "prompt"` (the new SW waits), so when
- * a deploy is detected we show a sonner "Refresh" toast; tapping it calls
- * updateSW(true), which skip-waits the new SW and reloads. We keep the prompt model
- * (no surprise reloads) but make it reliable: we check for a newer SW on tab focus
- * (visibilitychange) — not just the hourly poll — and re-surface the Refresh toast
- * if a pending update was dismissed. Imported once from main.tsx.
+ * vite-plugin-pwa is configured `registerType: "prompt"` (the new SW waits), which
+ * hands us control over WHEN a published update is applied. We apply it
+ * AUTOMATICALLY, but only at a moment that can't interrupt the user:
  *
- * Dev note: in `pnpm dev` (no devOptions.enabled) the virtual registration is a
- * no-op until `pnpm --filter app build` + `preview`.
+ *   - detected while the app is backgrounded  -> apply now (invisible reload)
+ *   - detected while the app is in foreground  -> wait, then apply on the next
+ *     visibility change (backgrounding = silent; reopening = a reload before the
+ *     user interacts). We never reload mid-interaction, so unsaved input in a
+ *     note or form is safe.
+ *
+ * On mobile the app is backgrounded constantly, so an update lands within
+ * seconds either way. We also poll hourly and re-check on tab focus so a fresh
+ * deploy is noticed promptly in long-lived sessions. Imported once from main.tsx.
+ *
+ * Applying = updateSW(true): skip-waits the waiting SW and reloads to the new
+ * bundle. Dev note: in `pnpm dev` (no devOptions.enabled) the virtual
+ * registration is a no-op until `pnpm --filter app build` + `preview`.
  */
 import { registerSW } from "virtual:pwa-register";
-import { toast } from "sonner";
 
 /** Poll interval for a newer deployed SW (long-lived sessions). */
 const UPDATE_CHECK_MS = 60 * 60 * 1000;
-/** Stable toast id so re-showing the prompt replaces it instead of stacking. */
-const UPDATE_TOAST_ID = "pwa-update";
 
 let pendingUpdate = false;
 let registration: ServiceWorkerRegistration | undefined;
 
-// `let` (not `const`) so onNeedRefresh — invoked later, once a waiting SW exists —
+// `let` (not `const`) so the callbacks — invoked later, once a waiting SW exists —
 // can call the assigned updateSW. registerSW only stores the callbacks at call time.
 let updateSW: (reloadPage?: boolean) => Promise<void>;
 
-function showRefreshToast() {
-  toast("New version available", {
-    id: UPDATE_TOAST_ID,
-    description: "Refresh to get the latest.",
-    duration: Infinity,
-    action: { label: "Refresh", onClick: () => { void updateSW(true); } },
-  });
+function appHidden(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
+/** Apply a waiting update: skip-waiting + reload to the new bundle. The reload
+ *  wipes module state in the browser; the guard also stops a delayed reload from
+ *  firing twice. */
+function applyUpdate() {
+  if (!pendingUpdate) return;
+  pendingUpdate = false;
+  void updateSW(true);
 }
 
 updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {
     pendingUpdate = true;
-    showRefreshToast();
+    // Apply now only if the user isn't looking. In the foreground we defer to the
+    // next visibility change so a reload never lands mid-interaction.
+    if (appHidden()) applyUpdate();
   },
   onOfflineReady() {
     console.info("%c[pwa]%c ready to work offline", "color:#10b981;font-weight:600", "color:inherit");
@@ -56,20 +67,16 @@ updateSW = registerSW({
   },
 });
 
-// Returning to the tab is the moment to catch a fresh deploy: check for a newer SW
-// immediately (much faster than the hourly poll) and re-show the Refresh prompt if a
-// pending update was dismissed.
+// A visibility change is the safe moment to apply a pending update: backgrounding
+// applies it invisibly; returning checks for a fresh deploy and applies a waiting
+// one before the user starts interacting.
 if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "visible") return;
-    void registration?.update();
-    if (pendingUpdate) showRefreshToast();
+    if (document.visibilityState === "visible") {
+      void registration?.update();
+    }
+    applyUpdate();
   });
 }
 
 export { updateSW };
-
-/** Whether a new SW is waiting (a Refresh toast is showing). */
-export function isUpdatePending(): boolean {
-  return pendingUpdate;
-}
