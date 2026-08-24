@@ -26,6 +26,32 @@ function graphBodyFor(input: CalendarEventInput): GraphEventBody {
 
 const AUTHORITY = "https://login.microsoftonline.com/organizations/oauth2/v2.0";
 
+// Base delegated scopes: calendar read/write + sign-in. Unchanged from launch.
+const MICROSOFT_BASE_SCOPES = [
+  "offline_access", "openid", "profile", "email", "User.Read", "Calendars.ReadWrite",
+] as const;
+
+/**
+ * The Microsoft delegated scope set. Auto email capture (PRD) adds the
+ * read-only mail-metadata scope `Mail.ReadBasic` when enabled, so a single
+ * Outlook connection can also poll Sent Items. Pure + unit-tested; the flag is
+ * resolved from the environment by the provider below.
+ */
+export function buildMicrosoftScopes(emailCaptureEnabled: boolean): string[] {
+  const scopes: string[] = [...MICROSOFT_BASE_SCOPES];
+  if (emailCaptureEnabled) scopes.push("Mail.ReadBasic");
+  return scopes;
+}
+
+// Read the email-capture flag without a bare `Deno` reference, so this file
+// stays importable under both Deno (edge functions) and Node (vitest/tsc). The
+// flag is OFF unless the EMAIL_CAPTURE_ENABLED edge secret is exactly "1", so
+// production's calendar OAuth scopes are byte-identical until it is set.
+function emailCaptureEnabledFromEnv(): boolean {
+  const env = (globalThis as { Deno?: { env?: { get(k: string): string | undefined } } }).Deno?.env;
+  return env?.get("EMAIL_CAPTURE_ENABLED") === "1";
+}
+
 interface GraphEvent {
   id: string; subject?: string; isAllDay?: boolean; isCancelled?: boolean;
   sensitivity?: string;             // normal | personal | private | confidential
@@ -66,7 +92,7 @@ export const microsoftProvider: CalendarProvider = {
     authUrl: `${AUTHORITY}/authorize`,
     tokenUrl: `${AUTHORITY}/token`,
     revokeUrl: null, // Microsoft has no token-revoke endpoint; disconnect just drops our stored tokens.
-    scopes: ["offline_access", "openid", "profile", "email", "User.Read", "Calendars.ReadWrite"],
+    scopes: buildMicrosoftScopes(emailCaptureEnabledFromEnv()),
     clientIdEnv: "MICROSOFT_CALENDAR_CLIENT_ID",
     clientSecretEnv: "MICROSOFT_CALENDAR_CLIENT_SECRET",
     extraAuthParams: { response_mode: "query" },
