@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { buildMicrosoftScopes, microsoftProvider } from "./microsoft";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { buildMicrosoftScopes, microsoftProvider, emailCaptureEnabledFromEnv } from "./microsoft";
 
 describe("buildMicrosoftScopes", () => {
   const BASE = ["offline_access", "openid", "profile", "email", "User.Read", "Calendars.ReadWrite"];
@@ -21,5 +21,25 @@ describe("buildMicrosoftScopes", () => {
   it("provider default (no Deno env in vitest) is calendar-only, so prod OAuth is unchanged", () => {
     // Under Node/vitest there is no Deno env, so the flag resolves false.
     expect(microsoftProvider.oauth.scopes).toEqual(BASE);
+  });
+});
+
+describe("emailCaptureEnabledFromEnv (cross-runtime flag read)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("false when there is no Deno global (Node/vitest)", () => {
+    expect(emailCaptureEnabledFromEnv()).toBe(false);
+  });
+
+  it("true only when Deno env EMAIL_CAPTURE_ENABLED is exactly '1'", () => {
+    vi.stubGlobal("Deno", { env: { get: (k: string) => (k === "EMAIL_CAPTURE_ENABLED" ? "1" : undefined) } });
+    expect(emailCaptureEnabledFromEnv()).toBe(true);
+  });
+
+  it("false for any other Deno env value", () => {
+    vi.stubGlobal("Deno", { env: { get: () => "0" } });
+    expect(emailCaptureEnabledFromEnv()).toBe(false);
+    vi.stubGlobal("Deno", { env: { get: () => undefined } });
+    expect(emailCaptureEnabledFromEnv()).toBe(false);
   });
 });
