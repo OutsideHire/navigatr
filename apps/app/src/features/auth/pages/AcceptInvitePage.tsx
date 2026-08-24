@@ -24,6 +24,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { AuthSplitShell } from "../components/AuthShell";
+import { CheckYourEmailNotice } from "../components/CheckYourEmailNotice";
 import { Button, FormField, Input } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
 import { supabase } from "@/lib/supabase";
@@ -41,6 +42,7 @@ export function AcceptInvitePage() {
   const token = params.get("token") ?? "";
   const signUp = useAuth((s) => s.signUp);
   const user = useAuth((s) => s.user);
+  const [sentTo, setSentTo] = React.useState<string | null>(null);
 
   // If somehow signed in already, run claim and bounce.
   React.useEffect(() => {
@@ -72,7 +74,15 @@ export function AcceptInvitePage() {
       // Matches the same pattern OAuth uses (where state is lost across
       // the auth-provider hop).
       sessionStorage.setItem("pending_invite", token);
-      await signUp(values.email, values.password, values.fullName, token);
+      const { needsEmailConfirmation } = await signUp(values.email, values.password, values.fullName, token);
+      // Confirmation ON: show "check your email". The token also rides in
+      // user_metadata, so AuthCallbackPage can claim it after confirmation even
+      // if the link opens in a new tab (see resolveInviteCode). Confirmation
+      // OFF: signed in already, go straight to the callback to claim + land.
+      if (needsEmailConfirmation) {
+        setSentTo(values.email);
+        return;
+      }
       navigate("/auth/callback");
     } catch (err) {
       sessionStorage.removeItem("pending_invite");
@@ -88,6 +98,9 @@ export function AcceptInvitePage() {
       heroTitle="Two minutes to your pipeline."
       heroBody="Set up your account and start logging activities."
     >
+      {sentTo ? (
+        <CheckYourEmailNotice email={sentTo} />
+      ) : (
       <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
         <FormField label="Full name" htmlFor="ai-name" error={errors.fullName?.message}>
           <Input id="ai-name" autoFocus {...register("fullName")} />
@@ -100,6 +113,7 @@ export function AcceptInvitePage() {
         </FormField>
         <Button type="submit" size="lg" fullWidth loading={isSubmitting}>Create my account</Button>
       </form>
+      )}
     </AuthSplitShell>
   );
 }

@@ -29,7 +29,7 @@ interface AuthState {
   verifyMagicLinkCode: (email: string, code: string) => Promise<void>;
   signInWithGoogle: (inviteCode?: string) => Promise<void>;
   signInWithMicrosoft: (inviteCode?: string) => Promise<void>;
-  signUp: (email: string, password: string, fullName: string, inviteCode: string) => Promise<void>;
+  signUp: (email: string, password: string, fullName: string, inviteCode: string) => Promise<{ needsEmailConfirmation: boolean }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
@@ -211,7 +211,7 @@ export const useAuth = create<AuthState>((set) => ({
     // Email/password path: invite_code travels in user_metadata. The
     // handle_new_user_signup trigger reads it server-side and creates the
     // profiles row (or raises, rolling back the auth.users insert).
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -223,6 +223,11 @@ export const useAuth = create<AuthState>((set) => ({
       set({ error: error.message });
       throw error;
     }
+    // No session means the project requires email confirmation: the caller
+    // shows a "check your email" state instead of routing to /auth/callback
+    // (which has no session yet). Session present = confirm disabled, sign in
+    // completed, proceed to the callback.
+    return { needsEmailConfirmation: !data.session };
   },
 
   signOut: async () => {
