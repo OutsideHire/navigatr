@@ -234,13 +234,20 @@ export function App() {
               not profession. */}
           <Route path="/select-profession" element={<ProfessionSelectorPage />} />
 
-          {/* ===== Component preview (dev) — no auth, no AppLayout ===== */}
-          <Route path="/component-preview/button" element={<ButtonStories />} />
-          <Route path="/component-preview/form-fields" element={<FormFieldStories />} />
-          <Route path="/component-preview/cards" element={<CardStories />} />
-          <Route path="/component-preview/atoms" element={<AtomsStories />} />
-          <Route path="/component-preview/layout" element={<LayoutStories />} />
-          <Route path="/component-preview/dashboard-empty" element={<DashboardEmptyStories />} />
+          {/* ===== Component preview — DEV builds only ===== */}
+          {/* Internal component galleries. Gated to dev so they are never
+              registered in the production bundle; in prod these URLs fall
+              through to the catch-all redirect. No auth, no AppLayout. */}
+          {import.meta.env.DEV && (
+            <>
+              <Route path="/component-preview/button" element={<ButtonStories />} />
+              <Route path="/component-preview/form-fields" element={<FormFieldStories />} />
+              <Route path="/component-preview/cards" element={<CardStories />} />
+              <Route path="/component-preview/atoms" element={<AtomsStories />} />
+              <Route path="/component-preview/layout" element={<LayoutStories />} />
+              <Route path="/component-preview/dashboard-empty" element={<DashboardEmptyStories />} />
+            </>
+          )}
 
           {/* ===== Protected screens (each wrapped in AppLayout) ===== */}
           <Route

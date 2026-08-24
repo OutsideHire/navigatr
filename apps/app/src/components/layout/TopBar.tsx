@@ -272,11 +272,11 @@ function AvatarMenu({ user, theme, resolvedTheme, setTheme, ThemeIcon, handleSig
             <DropdownMenuSeparator />
           </>
         )}
-        <DropdownMenuItem onSelect={() => toast("Profile lands in a later session")}>
+        <DropdownMenuItem onSelect={() => navigate("/settings/personal")}>
           <UserIcon />
           Profile
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => toast("Settings page lands in this session — try /settings")}>
+        <DropdownMenuItem onSelect={() => navigate("/settings")}>
           <SettingsIcon />
           Settings
         </DropdownMenuItem>
