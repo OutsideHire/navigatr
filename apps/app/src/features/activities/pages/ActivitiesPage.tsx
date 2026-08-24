@@ -50,6 +50,7 @@ import { LogActivitySheet } from "../components/LogActivitySheet";
 import { EditActivitySheet } from "../components/EditActivitySheet";
 import { CreateTaskSheet } from "../components/CreateTaskSheet";
 import { UnloggedCallsSection } from "../components/UnloggedCallsSection";
+import { EmailSuggestionsSection } from "../components/EmailSuggestionsSection";
 import { AppointmentsAwaitingOutcome } from "@/features/appointments/components/AppointmentsAwaitingOutcome";
 import { useMyAppointments } from "@/features/appointments/useAppointments";
 import { useActivitiesForOrg } from "../hooks/useActivities";
@@ -840,6 +841,8 @@ export function ActivitiesPage() {
         </header>
 
         <UnloggedCallsSection />
+
+        <EmailSuggestionsSection />
 
         <AppointmentsAwaitingOutcome />
 
