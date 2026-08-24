@@ -29,7 +29,7 @@ interface AuthState {
   verifyMagicLinkCode: (email: string, code: string) => Promise<void>;
   signInWithGoogle: (inviteCode?: string) => Promise<void>;
   signInWithMicrosoft: (inviteCode?: string) => Promise<void>;
-  signUp: (email: string, password: string, fullName: string, inviteCode: string) => Promise<void>;
+  signUp: (email: string, password: string, fullName: string, inviteCode: string) => Promise<{ needsEmailConfirmation: boolean; alreadyRegistered: boolean }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
@@ -211,7 +211,7 @@ export const useAuth = create<AuthState>((set) => ({
     // Email/password path: invite_code travels in user_metadata. The
     // handle_new_user_signup trigger reads it server-side and creates the
     // profiles row (or raises, rolling back the auth.users insert).
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -223,6 +223,19 @@ export const useAuth = create<AuthState>((set) => ({
       set({ error: error.message });
       throw error;
     }
+    // Supabase anti-enumeration: signing up an email that already has a
+    // CONFIRMED account returns no error, no session, and an obfuscated user
+    // with an empty `identities` array (and sends NO email). Detect that so the
+    // caller says "sign in instead" rather than a "check your email" that never
+    // arrives and strands the user. A genuinely new (confirmation-pending) user
+    // has exactly one identity and no session; the `?? 1` guards the impossible
+    // undefined case so we never falsely flag already-registered.
+    const alreadyRegistered = !data.session && (data.user?.identities?.length ?? 1) === 0;
+    // No session AND a real new identity = confirmation is required: the caller
+    // shows "check your email". Session present = confirm disabled, sign-in
+    // completed, proceed to /auth/callback.
+    const needsEmailConfirmation = !data.session && !alreadyRegistered;
+    return { needsEmailConfirmation, alreadyRegistered };
   },
 
   signOut: async () => {

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -6,6 +7,7 @@ import { toast } from "sonner";
 import { Button, FormField, Input } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
 import { OAuthButtons, OrDivider } from "./OAuthButtons";
+import { CheckYourEmailNotice } from "./CheckYourEmailNotice";
 
 const schema = z.object({
   fullName: z.string().trim().min(2, "Please enter your full name"),
@@ -23,6 +25,7 @@ export function SignUpForm() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const codeFromUrl = params.get("code") ?? "";
+  const [sentTo, setSentTo] = useState<string | null>(null);
 
   const {
     register,
@@ -38,16 +41,31 @@ export function SignUpForm() {
 
   const onSubmit = async (values: Values) => {
     try {
-      await signUp(values.email, values.password, values.fullName, values.inviteCode.trim());
-      // Email/password: confirmation email lands the user on /auth/callback;
-      // if the project has email confirm disabled, the SDK signs them in
-      // immediately and the auth state change will route them through
-      // RequireProfile → /auth/callback → /dashboard.
+      const { needsEmailConfirmation, alreadyRegistered } = await signUp(
+        values.email, values.password, values.fullName, values.inviteCode.trim(),
+      );
+      // Email already has an account (Supabase sends no email in this case):
+      // point them to sign in rather than a "check your email" that never comes.
+      if (alreadyRegistered) {
+        toast.error("An account with this email already exists. Please sign in.");
+        navigate("/login");
+        return;
+      }
+      // Confirmation ON: no session yet, so show "check your email" instead of
+      // bouncing to /auth/callback (which would render a bare no-session error).
+      // Confirmation OFF: the SDK signed them in; route through /auth/callback
+      // (→ claim invite / create org → /dashboard).
+      if (needsEmailConfirmation) {
+        setSentTo(values.email);
+        return;
+      }
       navigate("/auth/callback");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Sign up failed");
     }
   };
+
+  if (sentTo) return <CheckYourEmailNotice email={sentTo} />;
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>

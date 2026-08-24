@@ -1,9 +1,8 @@
-// apps/app/src/features/auth/pages/AcceptInvitePage.test.tsx
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { AcceptInvitePage } from "./AcceptInvitePage";
+import { SignUpForm } from "./SignUpForm";
 
 const { signUpMock, navigateMock, toastErrorMock } = vi.hoisted(() => ({
   signUpMock: vi.fn(),
@@ -11,65 +10,60 @@ const { signUpMock, navigateMock, toastErrorMock } = vi.hoisted(() => ({
   toastErrorMock: vi.fn(),
 }));
 vi.mock("@/stores/auth", () => ({
-  useAuth: (sel: (s: { user: null; signUp: typeof signUpMock }) => unknown) =>
-    sel({ user: null, signUp: signUpMock }),
+  useAuth: (sel: (s: { signUp: typeof signUpMock }) => unknown) => sel({ signUp: signUpMock }),
 }));
-vi.mock("@/lib/supabase", () => ({ supabase: { rpc: vi.fn() } }));
+// The OAuth buttons pull in their own auth/supabase wiring; stub them out so
+// this test focuses on the email/password submit branches.
+vi.mock("./OAuthButtons", () => ({ OAuthButtons: () => null, OrDivider: () => null }));
 vi.mock("react-router-dom", async (orig) => {
   const actual = await orig<typeof import("react-router-dom")>();
   return { ...actual, useNavigate: () => navigateMock };
 });
 vi.mock("sonner", () => ({ toast: { error: toastErrorMock, success: vi.fn() } }));
 
-async function fillAndSubmit() {
+async function fillAndSubmit(email = "new@company.com") {
   const user = userEvent.setup();
-  await user.type(screen.getByLabelText(/full name/i), "Sarah Lim");
-  await user.type(screen.getByLabelText(/work email/i), "sarah@x.com");
+  await user.type(screen.getByLabelText(/full name/i), "Jamie Rivera");
+  await user.type(screen.getByLabelText(/work email/i), email);
   await user.type(screen.getByLabelText(/password/i), "longenoughpw");
-  await user.click(screen.getByRole("button", { name: /create my account/i }));
+  await user.click(screen.getByRole("button", { name: /create account/i }));
+}
+
+function renderForm() {
+  render(
+    <MemoryRouter>
+      <SignUpForm />
+    </MemoryRouter>,
+  );
 }
 
 beforeEach(() => {
   signUpMock.mockReset();
   navigateMock.mockReset();
   toastErrorMock.mockReset();
-  signUpMock.mockResolvedValue({ needsEmailConfirmation: false, alreadyRegistered: false });
 });
 
-describe("AcceptInvitePage", () => {
-  it("calls signUp with the token from URL and routes to the callback", async () => {
-    render(
-      <MemoryRouter initialEntries={["/accept-invite?token=abc123"]}>
-        <AcceptInvitePage />
-      </MemoryRouter>,
-    );
+describe("SignUpForm submit branches", () => {
+  it("routes to /auth/callback when confirmation is off (session already created)", async () => {
+    signUpMock.mockResolvedValue({ needsEmailConfirmation: false, alreadyRegistered: false });
+    renderForm();
     await fillAndSubmit();
-    expect(signUpMock).toHaveBeenCalledWith("sarah@x.com", "longenoughpw", "Sarah Lim", "abc123");
     expect(navigateMock).toHaveBeenCalledWith("/auth/callback");
   });
 
-  it("shows the check-your-email notice when confirmation is required (not a raw callback error)", async () => {
+  it("shows the check-your-email notice when confirmation is required", async () => {
     signUpMock.mockResolvedValue({ needsEmailConfirmation: true, alreadyRegistered: false });
-    render(
-      <MemoryRouter initialEntries={["/accept-invite?token=abc123"]}>
-        <AcceptInvitePage />
-      </MemoryRouter>,
-    );
-    await fillAndSubmit();
+    renderForm();
+    await fillAndSubmit("brand.new@company.com");
     expect(await screen.findByText(/check your email/i)).toBeInTheDocument();
-    expect(screen.getByText(/sarah@x\.com/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /create my account/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/brand\.new@company\.com/)).toBeInTheDocument();
     expect(navigateMock).not.toHaveBeenCalledWith("/auth/callback");
   });
 
   it("sends an already-registered email to sign in instead of stranding on check-your-email", async () => {
     signUpMock.mockResolvedValue({ needsEmailConfirmation: false, alreadyRegistered: true });
-    render(
-      <MemoryRouter initialEntries={["/accept-invite?token=abc123"]}>
-        <AcceptInvitePage />
-      </MemoryRouter>,
-    );
-    await fillAndSubmit();
+    renderForm();
+    await fillAndSubmit("existing@company.com");
     expect(navigateMock).toHaveBeenCalledWith("/login");
     expect(toastErrorMock).toHaveBeenCalled();
     expect(screen.queryByText(/check your email/i)).not.toBeInTheDocument();

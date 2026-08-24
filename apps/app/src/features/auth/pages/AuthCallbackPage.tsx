@@ -22,6 +22,7 @@ import { Loader2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
+import { resolveInviteCode } from "../lib/resolveInviteCode";
 
 export function AuthCallbackPage() {
   const [params] = useSearchParams();
@@ -43,15 +44,20 @@ export function AuthCallbackPage() {
         return;
       }
 
-      // Primary carrier: URL (?invite=). Fallback: sessionStorage.
-      const urlInvite = params.get("invite");
-      const stashedInvite = sessionStorage.getItem("pending_invite");
-      const code = urlInvite ?? stashedInvite ?? "";
-      // Did the user INTEND to be here? "Intent" = the URL or sessionStorage
-      // carried an invite hint. Without either, the user is here by accident
-      // (stale tab, back button, post-sign-out redirect chain) and the
-      // alarming error UI is wrong — they should just go back to /login.
-      const intentionallyHere = Boolean(urlInvite || stashedInvite);
+      // Carriers, in precedence order: URL (?invite=), sessionStorage, then
+      // user_metadata.invite_code. The metadata carrier is load-bearing when
+      // email confirmation is ON: an invited rep confirming in a new tab or on
+      // another device has no URL param and no sessionStorage, and only the
+      // metadata (set at signUp) still carries the token. Without it the rep
+      // would land on /create-organization and make their own org. Server-side
+      // claim_invite_code still validates the code, so this grants nothing
+      // beyond a genuine invite.
+      const metaInvite = (session.user.user_metadata?.invite_code as string | undefined) ?? null;
+      const { code, intentional: intentionallyHere } = resolveInviteCode({
+        urlInvite: params.get("invite"),
+        stashedInvite: sessionStorage.getItem("pending_invite"),
+        metaInvite,
+      });
 
       const { error: rpcError } = await supabase.rpc("claim_invite_code", { p_code: code });
       if (rpcError) {
