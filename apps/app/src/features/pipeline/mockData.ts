@@ -37,6 +37,9 @@ export interface Deal {
   id: string;
   companyName: string;
   contactName: string;
+  /** Contact's title / role at the business (deals.contact_title), e.g.
+   *  "Owner", "Manager". Optional: only loaded by useDeals; null when unset. */
+  contactTitle?: string | null;
   /** E.164 format — PhoneWithClickToCall will display formatted. */
   phone: string;
   /** SP2: set by a "Bad number" call outcome; disables click-to-call. */
