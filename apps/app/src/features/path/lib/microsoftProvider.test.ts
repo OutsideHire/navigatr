@@ -88,15 +88,18 @@ describe("microsoftProvider.oauth", () => {
     ]);
   });
 
-  it("has the MS env-var names + response_mode", () => {
+  it("has the MS env-var names + response_mode + forces consent", () => {
     expect(microsoftProvider.oauth.clientIdEnv).toBe(
       "MICROSOFT_CALENDAR_CLIENT_ID",
     );
     expect(microsoftProvider.oauth.clientSecretEnv).toBe(
       "MICROSOFT_CALENDAR_CLIENT_SECRET",
     );
+    // prompt=consent so a reconnect re-prompts for newly-added scopes
+    // (e.g. Mail.ReadBasic when email capture is enabled).
     expect(microsoftProvider.oauth.extraAuthParams).toEqual({
       response_mode: "query",
+      prompt: "consent",
     });
   });
 });
