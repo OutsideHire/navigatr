@@ -92,6 +92,16 @@ export interface ProcessInput {
   personalDomains: string[];
   /** Thread ids already captured (from a prior poll) for this sender/org. */
   capturedThreadIds: Set<string>;
+  /** provider_message_ids already recorded in EITHER table (email_activity or
+   *  email_unmatched_queue), so a re-polled message is never double-handled or
+   *  duplicated across the two tables. */
+  seenMessageIds: Set<string>;
+  /** No historical backfill (PRD): messages sent before this are skipped. Null
+   *  disables the bound. */
+  captureStartDate: string | null;
+  /** Fallback for a message with no parseable sentDateTime, so the NOT NULL
+   *  sent_at column is always satisfied (the poll passes its own now()). */
+  nowIso: string;
   bulkRecipientThreshold?: number;
 }
 
@@ -114,6 +124,21 @@ export function processSentMessages(input: ProcessInput): ProcessOutput {
 
   for (const msg of input.messages) {
     const meta = mapGraphMessage(msg, input.provider);
+
+    // Idempotency across re-polls AND across both tables: a message already
+    // recorded anywhere is left alone (never re-handled or duplicated).
+    if (input.seenMessageIds.has(meta.providerMessageId)) {
+      out.skipped.push({ providerMessageId: meta.providerMessageId, reason: "already_processed" });
+      continue;
+    }
+    // No historical backfill: skip anything sent before the connection's
+    // capture start (a null sentAt can't be judged, so it is not skipped here).
+    if (input.captureStartDate && meta.sentAt && meta.sentAt < input.captureStartDate) {
+      out.skipped.push({ providerMessageId: meta.providerMessageId, reason: "before_capture_start" });
+      continue;
+    }
+
+    const sentAt = meta.sentAt ?? input.nowIso; // NOT NULL column; coalesce
     const threadAlreadyCaptured = meta.threadId != null && seenThreads.has(meta.threadId);
     const decision = decideIngest({
       meta,
@@ -133,7 +158,7 @@ export function processSentMessages(input: ProcessInput): ProcessOutput {
         internet_message_id: meta.internetMessageId,
         thread_id: meta.threadId,
         recipients: meta.recipients,
-        sent_at: meta.sentAt,
+        sent_at: sentAt,
         subject: meta.subject,
         has_attachments: meta.hasAttachments,
         deep_link_url: meta.deepLinkUrl,
@@ -152,7 +177,7 @@ export function processSentMessages(input: ProcessInput): ProcessOutput {
         internet_message_id: meta.internetMessageId,
         thread_id: meta.threadId,
         recipients: meta.recipients,
-        sent_at: meta.sentAt,
+        sent_at: sentAt,
         subject: meta.subject,
         has_attachments: meta.hasAttachments,
         deep_link_url: meta.deepLinkUrl,
@@ -164,24 +189,40 @@ export function processSentMessages(input: ProcessInput): ProcessOutput {
   return out;
 }
 
+/** Thrown when Graph reports the delta token expired (410 resyncRequired). The
+ *  caller resets the stored cursor to null so the next poll does a fresh sync. */
+export class DeltaResyncRequired extends Error {
+  constructor() {
+    super("resync_required");
+    this.name = "DeltaResyncRequired";
+  }
+}
+
 /**
  * Follow the Sent Items delta from `startUrl` (buildSentDeltaUrl) across pages,
  * accumulating messages until Graph returns the final deltaLink. Injectable
  * fetch for tests; bounded by maxPages so a pathological nextLink loop can't run
- * forever. Throws on a non-OK Graph response (the caller marks the connection
- * unhealthy).
+ * forever.
+ *
+ * Returns `cursor` = the value to STORE for the next poll: the deltaLink once
+ * the sweep finishes, or the last nextLink if maxPages was hit mid-sweep (so a
+ * long initial sync RESUMES next invocation and makes progress instead of
+ * restarting and getting stuck). Throws DeltaResyncRequired on a 410 (expired
+ * token) and a plain Error on any other non-OK response.
  */
 export async function collectSentDelta(
   accessToken: string,
   startUrl: string,
   fetchImpl: typeof fetch = fetch,
-  maxPages = 25,
-): Promise<{ messages: GraphSentMessage[]; deltaLink: string | null }> {
+  maxPages = 40,
+): Promise<{ messages: GraphSentMessage[]; cursor: string | null }> {
   const messages: GraphSentMessage[] = [];
   let url: string | null = startUrl;
   let deltaLink: string | null = null;
+  let lastNextLink: string | null = null;
   for (let page = 0; page < maxPages && url; page++) {
     const res = await fetchImpl(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (res.status === 410) throw new DeltaResyncRequired();
     if (!res.ok) throw new Error(`graph sent delta http ${res.status}`);
     const parsed = parseDeltaPage(await res.json());
     messages.push(...parsed.messages);
@@ -189,8 +230,11 @@ export async function collectSentDelta(
       deltaLink = parsed.deltaLink;
       url = null;
     } else {
+      lastNextLink = parsed.nextLink;
       url = parsed.nextLink;
     }
   }
-  return { messages, deltaLink };
+  // deltaLink = sweep complete (incremental next time); else resume from the
+  // last nextLink so the next invocation continues rather than restarting.
+  return { messages, cursor: deltaLink ?? lastNextLink };
 }

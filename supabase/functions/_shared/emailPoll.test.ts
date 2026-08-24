@@ -60,6 +60,9 @@ function input(messages: GraphSentMessage[], over: Partial<ProcessInput> = {}): 
     internalDomains: ["getnavigatr.io"],
     personalDomains: ["gmail.com"],
     capturedThreadIds: new Set(),
+    seenMessageIds: new Set(),
+    captureStartDate: null,
+    nowIso: "2026-08-06T04:00:00.000Z",
     ...over,
   };
 }
@@ -108,22 +111,61 @@ describe("processSentMessages", () => {
   });
 });
 
-import { collectSentDelta } from "./emailPoll";
+import { collectSentDelta, DeltaResyncRequired } from "./emailPoll";
 
 describe("collectSentDelta", () => {
-  it("follows nextLink across pages and returns the final deltaLink", async () => {
+  const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
+
+  it("follows nextLink across pages and stores the final deltaLink as the cursor", async () => {
     const pages = [
       { value: [{ id: "m1" }], "@odata.nextLink": "https://p2" },
       { value: [{ id: "m2" }], "@odata.deltaLink": "https://delta" },
     ];
     let call = 0;
-    const fetchImpl = (async () => ({ ok: true, json: async () => pages[call++] })) as unknown as typeof fetch;
+    const fetchImpl = (async () => ok(pages[call++])) as unknown as typeof fetch;
     const res = await collectSentDelta("tok", "https://p1", fetchImpl);
     expect(res.messages.map((m) => m.id)).toEqual(["m1", "m2"]);
-    expect(res.deltaLink).toBe("https://delta");
+    expect(res.cursor).toBe("https://delta");
   });
-  it("throws on a non-OK Graph response", async () => {
+
+  it("resumes from the last nextLink when maxPages is hit mid-sweep (no message loss / no restart)", async () => {
+    // Every page returns a nextLink and no deltaLink -> sweep never finishes.
+    const fetchImpl = (async (url: string) =>
+      ok({ value: [{ id: url }], "@odata.nextLink": "https://after-" + url })) as unknown as typeof fetch;
+    const res = await collectSentDelta("tok", "https://start", fetchImpl, 3);
+    expect(res.messages).toHaveLength(3);
+    // cursor is the last nextLink, so the next invocation continues here.
+    expect(res.cursor).toBe("https://after-https://after-https://after-https://start");
+  });
+
+  it("throws DeltaResyncRequired on a 410 (expired token)", async () => {
+    const fetchImpl = (async () => ({ ok: false, status: 410, json: async () => ({}) })) as unknown as typeof fetch;
+    await expect(collectSentDelta("tok", "https://p1", fetchImpl)).rejects.toBeInstanceOf(DeltaResyncRequired);
+  });
+
+  it("throws a plain error on other non-OK responses", async () => {
     const fetchImpl = (async () => ({ ok: false, status: 401, json: async () => ({}) })) as unknown as typeof fetch;
     await expect(collectSentDelta("tok", "https://p1", fetchImpl)).rejects.toThrow(/graph sent delta http 401/);
+  });
+});
+
+describe("processSentMessages — review-hardening", () => {
+  it("skips a message already recorded in either table (seenMessageIds)", () => {
+    const out = processSentMessages(input([msg({ id: "m1" })], { seenMessageIds: new Set(["m1"]) }));
+    expect(out.suggestions).toHaveLength(0);
+    expect(out.skipped).toEqual([{ providerMessageId: "m1", reason: "already_processed" }]);
+  });
+
+  it("skips a message sent before capture_start_date (no backfill)", () => {
+    const out = processSentMessages(input([msg({ id: "m1", sentDateTime: "2026-01-01T00:00:00Z" })], {
+      captureStartDate: "2026-08-01T00:00:00.000Z",
+    }));
+    expect(out.suggestions).toHaveLength(0);
+    expect(out.skipped).toEqual([{ providerMessageId: "m1", reason: "before_capture_start" }]);
+  });
+
+  it("coalesces a missing sentDateTime to nowIso so the NOT NULL column is satisfied", () => {
+    const out = processSentMessages(input([msg({ id: "m1", sentDateTime: undefined })]));
+    expect(out.suggestions[0].sent_at).toBe("2026-08-06T04:00:00.000Z");
   });
 });
