@@ -95,7 +95,14 @@ export const microsoftProvider: CalendarProvider = {
     scopes: buildMicrosoftScopes(emailCaptureEnabledFromEnv()),
     clientIdEnv: "MICROSOFT_CALENDAR_CLIENT_ID",
     clientSecretEnv: "MICROSOFT_CALENDAR_CLIENT_SECRET",
-    extraAuthParams: { response_mode: "query" },
+    // prompt=consent forces Microsoft to show the consent screen on every
+    // connect/reconnect (mirrors Google's params). Without it, a rep who
+    // already connected Outlook for calendar reuses that prior consent on
+    // reconnect and is NEVER re-prompted for a newly-added scope, so enabling
+    // email capture (which adds Mail.ReadBasic) does not take effect until they
+    // re-consent. Forcing consent also re-issues a refresh token carrying the
+    // full requested scope set.
+    extraAuthParams: { response_mode: "query", prompt: "consent" },
   },
   async refreshAccessToken(bundle, deps): Promise<RefreshResult> {
     const now = deps.now ? deps.now() : Date.now();
