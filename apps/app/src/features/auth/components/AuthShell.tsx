@@ -81,7 +81,7 @@ function RouteMotif() {
 /**
  * Two-column shell — form on the left, brand hero on the right. The hero is a
  * fixed brand surface (same in light + dark); only the form panel themes. Hero
- * collapses below `md`. Used by Login and InvitationAcceptance.
+ * collapses below `md`. Used by Login, signup, create-org and accept-invite.
  *
  * `heroTitle` is the plain part of the headline; the optional `heroTitleAccent`
  * is appended in the blue→violet gradient so the accent lands on the payoff

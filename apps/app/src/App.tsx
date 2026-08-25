@@ -41,9 +41,6 @@ const ForgotPasswordPage = lazy(() =>
 const ResetPasswordPage = lazy(() =>
   import("@/features/auth/pages/ResetPasswordPage").then((m) => ({ default: m.ResetPasswordPage })),
 );
-const InvitationAcceptancePage = lazy(() =>
-  import("@/features/auth/pages/InvitationAcceptancePage").then((m) => ({ default: m.InvitationAcceptancePage })),
-);
 const ProfessionSelectorPage = lazy(() =>
   import("@/features/auth/pages/ProfessionSelectorPage").then((m) => ({ default: m.ProfessionSelectorPage })),
 );
@@ -219,7 +216,6 @@ export function App() {
           />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route path="/accept-invitation" element={<InvitationAcceptancePage />} />
           <Route path="/accept-invite" element={<AcceptInvitePage />} />
 
           {/* Legal — public, no auth, no AppLayout */}
