@@ -74,18 +74,19 @@ begin
   if n <> 0 then raise exception 'nudged org should no longer be a candidate, got % candidates', n; end if;
 end $$;
 
--- ── The function is NOT callable by the authenticated role (cross-org PII). ──
+-- ── The function is NOT executable by anon/authenticated (it returns admin
+--    emails across orgs), but IS by the service_role cron. Asserted via the
+--    catalog rather than by switching session roles. ──
 do $$
-declare denied boolean := false;
 begin
-  perform set_config('role', 'authenticated', true);
-  begin
-    perform * from orgs_needing_no_deals_nudge(3);
-  exception when others then denied := true;
-  end;
-  perform set_config('role', 'postgres', true);
-  if not denied then
-    raise exception 'authenticated must NOT be able to execute orgs_needing_no_deals_nudge';
+  if has_function_privilege('authenticated', 'public.orgs_needing_no_deals_nudge(int)', 'EXECUTE') then
+    raise exception 'authenticated must NOT have EXECUTE on orgs_needing_no_deals_nudge';
+  end if;
+  if has_function_privilege('anon', 'public.orgs_needing_no_deals_nudge(int)', 'EXECUTE') then
+    raise exception 'anon must NOT have EXECUTE on orgs_needing_no_deals_nudge';
+  end if;
+  if not has_function_privilege('service_role', 'public.orgs_needing_no_deals_nudge(int)', 'EXECUTE') then
+    raise exception 'service_role (the cron) MUST have EXECUTE on orgs_needing_no_deals_nudge';
   end if;
 end $$;
 
