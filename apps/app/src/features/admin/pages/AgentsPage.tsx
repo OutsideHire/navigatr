@@ -15,6 +15,8 @@ import { useSetMemberRole } from "../hooks/useSetMemberRole";
 import type { UserRole } from "../lib/roleActions";
 import { hasNoReports } from "../lib/teamScope";
 import { useAuth } from "@/stores/auth";
+import { useProfile } from "@/features/auth/useProfile";
+import { profileCan } from "@/features/auth/capabilities";
 import { AgentListRow } from "../components/AgentListRow";
 import { AgentCard } from "../components/AgentCard";
 import { SeatUsageBadge } from "../components/SeatUsageBadge";
@@ -97,6 +99,10 @@ export function AgentsPage() {
   const setRole = useSetMemberRole();
 
   const userId = useAuth((s) => s.user?.id);
+  // Only administrator / cso_cro can actually invite (the admin_bulk_invite /
+  // per-agent-invite RPCs enforce this). Gate the affordances on the same
+  // capability so a mid-tier manager doesn't click through to a raw "forbidden".
+  const canInvite = profileCan(useProfile().data, "inviteUsers");
   const soloTeam = !isLoading && hasNoReports(rows, userId);
   const callerRole = rows.find((r) => r.agent_id === userId)?.role as UserRole | undefined;
   const activeAdminCount = rows.filter((r) => r.role === "admin" && r.status === "active").length;
@@ -193,22 +199,26 @@ export function AgentsPage() {
           <SeatUsageBadge />
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button
-            variant="primary"
-            size="md"
-            leadingIcon={Plus}
-            onClick={() => setInviteOpen(true)}
-          >
-            Invite agent
-          </Button>
-          <Button
-            variant="secondary"
-            size="md"
-            leadingIcon={Upload}
-            onClick={() => navigate("/admin/agents/import")}
-          >
-            Import CSV
-          </Button>
+          {canInvite && (
+            <>
+              <Button
+                variant="primary"
+                size="md"
+                leadingIcon={Plus}
+                onClick={() => setInviteOpen(true)}
+              >
+                Invite agent
+              </Button>
+              <Button
+                variant="secondary"
+                size="md"
+                leadingIcon={Upload}
+                onClick={() => navigate("/admin/agents/import")}
+              >
+                Import CSV
+              </Button>
+            </>
+          )}
           <div className="ml-2 flex items-center gap-1 border-l border-border-subtle pl-2">
             <Button
               variant={view === "list" ? "secondary" : "tertiary"}

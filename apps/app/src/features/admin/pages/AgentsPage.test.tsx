@@ -58,6 +58,12 @@ vi.mock("@/stores/auth", () => ({
     selector({ user: { id: authUserId.current } }),
 }));
 vi.mock("../hooks/useSeatUsage", () => ({ useSeatUsage: () => ({ data: { used: 1, limit: 10, remaining: 9 }, isLoading: false }) }));
+// Caller's role_level drives whether the invite affordances show. Default
+// administrator so the existing tests keep the prior (buttons-visible) behavior.
+const profileRoleLevel = { current: "administrator" as string };
+vi.mock("@/features/auth/useProfile", () => ({
+  useProfile: () => ({ data: { role_level: profileRoleLevel.current } }),
+}));
 
 describe("AgentsPage", () => {
   // Reset all mutable module-level state to its default after every test so
@@ -65,6 +71,7 @@ describe("AgentsPage", () => {
   afterEach(() => {
     leaderboardRows = DEFAULT_ROWS;
     authUserId.current = "self";
+    profileRoleLevel.current = "administrator";
   });
 
   it("renders agent rows and seat usage", () => {
@@ -81,6 +88,34 @@ describe("AgentsPage", () => {
     expect(within(table).getByText("Alice")).toBeInTheDocument();
     expect(within(table).getByText("a@x.com")).toBeInTheDocument();
     expect(screen.getByText("1 / 10")).toBeInTheDocument();
+  });
+
+  it("shows the invite affordances for a caller who can invite (administrator)", () => {
+    profileRoleLevel.current = "administrator";
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <AgentsPage />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("button", { name: /invite agent/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /import csv/i })).toBeInTheDocument();
+  });
+
+  it("hides the invite affordances for a mid-tier manager who cannot invite", () => {
+    // sales_manager is in the manager band -> reaches the Team page, but the
+    // invite RPCs forbid them, so the buttons must not be shown (no dead-end).
+    profileRoleLevel.current = "sales_manager";
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <AgentsPage />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole("button", { name: /invite agent/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /import csv/i })).not.toBeInTheDocument();
   });
 
   it("renders a mobile card per agent with name, a key field, and an action", () => {
