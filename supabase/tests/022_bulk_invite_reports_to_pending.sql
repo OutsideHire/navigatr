@@ -11,6 +11,13 @@
 --
 -- Org A: manager accepts before the rep (forward-resolve at rep accept).
 -- Org B: rep accepts before the manager (backfill at manager accept).
+--
+-- Note on roles: admin_bulk_invite and claim_invite_code are SECURITY DEFINER
+-- and gate on auth.uid() (the request.jwt.claim.sub GUC), NOT on the session
+-- role. This script therefore stays as the (superuser) test role so its direct
+-- fixture reads/writes bypass RLS, and only sets the jwt claim to choose which
+-- user each RPC call acts as. (Switching to role=authenticated here would make
+-- the direct `select ... from org_invites` reads RLS-gated and return nothing.)
 
 begin;
 
@@ -39,7 +46,6 @@ do $$
 declare n_ok int; n_fail int;
 begin
   perform set_config('request.jwt.claim.sub', 'da000000-0000-0000-0000-000000000001', true);
-  perform set_config('role', 'authenticated', true);
   select count(*) filter (where ok), count(*) filter (where not ok) into n_ok, n_fail
     from admin_bulk_invite('[
       {"email":"aliceA@t.example","full_name":"Alice A","role_level":"sales_professional","reports_to":"miaA@t.example"},
@@ -68,7 +74,6 @@ begin
   select token into v_tok from org_invites
    where org_id = '00000000-0000-0000-0000-0000000000da' and lower(email) = 'miaa@t.example';
   perform set_config('request.jwt.claim.sub', 'da000000-0000-0000-0000-000000000002', true);
-  perform set_config('role', 'authenticated', true);
   perform * from claim_invite_code(v_tok);
 end $$;
 
@@ -78,7 +83,6 @@ begin
   select token into v_tok from org_invites
    where org_id = '00000000-0000-0000-0000-0000000000da' and lower(email) = 'alicea@t.example';
   perform set_config('request.jwt.claim.sub', 'da000000-0000-0000-0000-000000000003', true);
-  perform set_config('role', 'authenticated', true);
   perform * from claim_invite_code(v_tok);
 end $$;
 
@@ -100,7 +104,6 @@ do $$
 declare n_ok int;
 begin
   perform set_config('request.jwt.claim.sub', 'db000000-0000-0000-0000-000000000001', true);
-  perform set_config('role', 'authenticated', true);
   select count(*) filter (where ok) into n_ok
     from admin_bulk_invite('[
       {"email":"aliceB@t.example","full_name":"Alice B","role_level":"sales_professional","reports_to":"miaB@t.example"},
@@ -116,7 +119,6 @@ begin
   select token into v_tok from org_invites
    where org_id = '00000000-0000-0000-0000-0000000000db' and lower(email) = 'aliceb@t.example';
   perform set_config('request.jwt.claim.sub', 'db000000-0000-0000-0000-000000000003', true);
-  perform set_config('role', 'authenticated', true);
   perform * from claim_invite_code(v_tok);
   select manager_id into v_mgr from profiles where id = 'db000000-0000-0000-0000-000000000003';
   if v_mgr is not null then raise exception 'B: alice should be unplaced before mia accepts, got manager %', v_mgr; end if;
@@ -129,7 +131,6 @@ begin
   select token into v_tok from org_invites
    where org_id = '00000000-0000-0000-0000-0000000000db' and lower(email) = 'miab@t.example';
   perform set_config('request.jwt.claim.sub', 'db000000-0000-0000-0000-000000000002', true);
-  perform set_config('role', 'authenticated', true);
   perform * from claim_invite_code(v_tok);
 
   select manager_id, role_path into v_amgr, v_apath from profiles where id = 'db000000-0000-0000-0000-000000000003';
@@ -147,7 +148,6 @@ do $$
 declare v_err text;
 begin
   perform set_config('request.jwt.claim.sub', 'da000000-0000-0000-0000-000000000001', true);
-  perform set_config('role', 'authenticated', true);
 
   select error into v_err from admin_bulk_invite(
     '[{"email":"ghost@t.example","reports_to":"nobody@nowhere.example"}]'::jsonb);
