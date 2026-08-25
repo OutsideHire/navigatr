@@ -24,6 +24,7 @@ import { OrgChartTree } from "../components/OrgChartTree";
 import { AppointmentsAwaitingCard } from "@/features/appointments/components/AppointmentsAwaitingCard";
 import { LocationCaptureHealthCard } from "../components/LocationCaptureHealthCard";
 import { EmailConnectionHealthCard } from "../components/EmailConnectionHealthCard";
+import { CronHealthCard } from "../components/CronHealthCard";
 import { EMAIL_CAPTURE_UI_ENABLED } from "@/lib/emailCaptureFlag";
 
 type SortKey =
@@ -352,6 +353,9 @@ export function AgentsPage() {
 
       {/* Operational: is email capture polling healthy? (Email Capture Slice 5d, dark by default) */}
       {EMAIL_CAPTURE_UI_ENABLED && <EmailConnectionHealthCard />}
+
+      {/* Operational: are the scheduled background jobs running + fresh? */}
+      <CronHealthCard />
 
       <InviteAgentModal open={inviteOpen} onOpenChange={setInviteOpen} />
 
