@@ -21,6 +21,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/stores/auth";
 import { useProfile } from "@/features/auth/useProfile";
+import { useOrgSuspended } from "@/features/auth/useOrgSuspended";
 import { AppLayout } from "./AppLayout";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { BrandProvider } from "@/features/branding/BrandProvider";
@@ -34,10 +35,40 @@ function Spinner() {
   );
 }
 
+/**
+ * Terminal wall shown when the caller's org has been suspended
+ * (organizations.is_disabled). Every authenticated route renders this instead
+ * of its content, so a suspended org is fully locked out. A Sign out affordance
+ * lets the user leave (or switch accounts); we do NOT auto-sign-out, which would
+ * bounce to /login and hide this explanation.
+ */
+function OrgSuspendedWall() {
+  const signOut = useAuth((s) => s.signOut);
+  return (
+    <div className="flex min-h-dvh items-center justify-center bg-surface-canvas px-6">
+      <div className="max-w-md text-center">
+        <h1 className="text-heading-lg text-text-default">Access paused</h1>
+        <p className="mt-3 text-body-md text-text-muted">
+          Your organization's navigatr access has been paused. Please contact your
+          Navigatr account manager to restore it.
+        </p>
+        <button
+          type="button"
+          onClick={() => void signOut()}
+          className="mt-6 text-body-sm font-medium text-text-default underline underline-offset-2 hover:text-text-muted"
+        >
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function ProtectedRoute({ children }: { children: ReactNode }) {
   const user = useAuth((s) => s.user);
   const loading = useAuth((s) => s.loading);
   const profile = useProfile();
+  const suspended = useOrgSuspended();
   const location = useLocation();
 
   if (loading) return <Spinner />;
@@ -83,6 +114,19 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
     const target = stashed ? `/auth/callback?invite=${encodeURIComponent(stashed)}` : "/auth/callback";
     return <Navigate to={target} replace />;
   }
+
+  // Commercial hard block. A suspended org (organizations.is_disabled = true,
+  // set by the Navigatr operator) locks its users out of every authed surface.
+  // The value is server-authoritative (organizations_select RLS exposes only
+  // the caller's own org row). Hold the spinner only on the FIRST load (no
+  // cached status yet) so the app never flashes before the initial check; do
+  // NOT gate on background refetches (isFetching), or every window refocus would
+  // flash a full-screen spinner over a working app. A fresh suspend still takes
+  // effect on the next render once the refetch resolves. Fail OPEN on a
+  // transient read error: a network blip must not lock out a paying org, so ONLY
+  // an explicit is_disabled === true blocks.
+  if (suspended.isLoading) return <Spinner />;
+  if (suspended.data === true) return <OrgSuspendedWall />;
 
   const fullName =
     (user.user_metadata?.full_name as string | undefined) ?? user.email ?? "—";

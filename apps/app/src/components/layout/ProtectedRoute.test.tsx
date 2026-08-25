@@ -20,6 +20,11 @@ vi.mock("@/features/auth/useProfile", () => ({
   useProfile: () => profileShape,
 }));
 
+// Mock the org-suspended status hook so we can drive the commercial hard block.
+vi.mock("@/features/auth/useOrgSuspended", () => ({
+  useOrgSuspended: () => suspendedShape,
+}));
+
 // AppLayout pulls in TopBar / SidebarNav / data-fetching hooks; stub it
 // so this test stays focused on ProtectedRoute's branching.
 vi.mock("./AppLayout", () => ({
@@ -46,6 +51,12 @@ let profileShape: {
   isFetching: boolean;
   isError: boolean;
   error: unknown;
+};
+let suspendedShape: {
+  data: boolean | undefined;
+  isLoading: boolean;
+  isFetching: boolean;
+  isError: boolean;
 };
 
 function renderAt(path: string) {
@@ -84,6 +95,8 @@ describe("ProtectedRoute", () => {
       isError: false,
       error: null,
     };
+    // Default: org is active (not suspended) and the status read is settled.
+    suspendedShape = { data: false, isLoading: false, isFetching: false, isError: false };
   });
 
   it("renders the error UI (not a redirect) when the profile fetch errors", () => {
@@ -128,6 +141,71 @@ describe("ProtectedRoute", () => {
     renderAt("/dashboard");
     expect(screen.getByTestId("app-layout")).toBeInTheDocument();
     expect(screen.getByText("dashboard content")).toBeInTheDocument();
+  });
+
+  it("hard-blocks a suspended org with the access-paused wall (not the app)", () => {
+    profileShape = {
+      data: { id: "user-1", org_id: "org-1", role: "manager", full_name: "U", created_at: "now" },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+    };
+    suspendedShape = { data: true, isLoading: false, isFetching: false, isError: false };
+    renderAt("/dashboard");
+    expect(screen.getByText(/access paused/i)).toBeInTheDocument();
+    // The app shell and route content must NOT render for a suspended org.
+    expect(screen.queryByTestId("app-layout")).not.toBeInTheDocument();
+    expect(screen.queryByText("dashboard content")).not.toBeInTheDocument();
+  });
+
+  it("holds the spinner on the FIRST org-suspended status load", () => {
+    profileShape = {
+      data: { id: "user-1", org_id: "org-1", role: "manager", full_name: "U", created_at: "now" },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+    };
+    suspendedShape = { data: undefined, isLoading: true, isFetching: true, isError: false };
+    const { container } = renderAt("/dashboard");
+    // Neither the app nor the wall renders until the first status resolves.
+    expect(screen.queryByTestId("app-layout")).not.toBeInTheDocument();
+    expect(screen.queryByText(/access paused/i)).not.toBeInTheDocument();
+    expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+  });
+
+  it("does NOT spinner-flash on a background suspend-status refetch", () => {
+    // Refocus refetch: cached status is known (active) but a fetch is in flight.
+    // The app must keep rendering rather than flashing a full-screen spinner.
+    profileShape = {
+      data: { id: "user-1", org_id: "org-1", role: "manager", full_name: "U", created_at: "now" },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+    };
+    suspendedShape = { data: false, isLoading: false, isFetching: true, isError: false };
+    const { container } = renderAt("/dashboard");
+    expect(screen.getByTestId("app-layout")).toBeInTheDocument();
+    expect(screen.getByText("dashboard content")).toBeInTheDocument();
+    expect(container.querySelector(".animate-spin")).not.toBeInTheDocument();
+  });
+
+  it("fails OPEN: renders the app when the suspend-status read errors", () => {
+    profileShape = {
+      data: { id: "user-1", org_id: "org-1", role: "manager", full_name: "U", created_at: "now" },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+    };
+    // Transient read failure -> data undefined; must not lock out a paying org.
+    suspendedShape = { data: undefined, isLoading: false, isFetching: false, isError: true };
+    renderAt("/dashboard");
+    expect(screen.getByTestId("app-layout")).toBeInTheDocument();
+    expect(screen.getByText("dashboard content")).toBeInTheDocument();
+    expect(screen.queryByText(/access paused/i)).not.toBeInTheDocument();
   });
 
   it("shows a spinner while the profile is fetching", () => {
