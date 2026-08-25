@@ -8,6 +8,7 @@ import {
 } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
+import { RouteErrorBoundary } from "@/components/layout/RouteErrorBoundary";
 import { RequireRole } from "@/components/layout/RequireRole";
 import { setUnauthorizedHandler } from "@/api";
 import { CookieBanner } from "@/features/legal/CookieBanner";
@@ -188,6 +189,11 @@ export function App() {
   return (
     <BrowserRouter>
       <AuthRouterBridge />
+      {/* Top-level safety net: catches render crashes on the PRE-AUTH routes
+          (login/signup/callback/create-org) and lazy chunk-load failures that
+          the inner AppLayout boundary (authed routes only) never sees. Without
+          it, such a crash blanks the whole #root (ISSUE-001 class). */}
+      <RouteErrorBoundary>
       {/* Single Suspense boundary at the route layer — keeps the spinner
           centered on viewport regardless of which page is loading. Per-
           route boundaries would let us scope fallbacks to the main pane,
@@ -413,6 +419,7 @@ export function App() {
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Suspense>
+      </RouteErrorBoundary>
 
       {/* Cookie banner — sits inside <BrowserRouter> because it links to
           /privacy via <Link>. Self-hides once the user records a consent

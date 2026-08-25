@@ -39,12 +39,16 @@ beforeAll(() => {
 // existing subhead/KPI/card tests are unchanged; individual tests can
 // override it (e.g. the filter test below) and afterEach restores it.
 let mockDeals: Deal[] = MOCK_DEALS;
+let mockDealsIsError = false;
+const mockRefetch = vi.fn();
 afterEach(() => {
   mockDeals = MOCK_DEALS;
+  mockDealsIsError = false;
+  mockRefetch.mockReset();
 });
 
 vi.mock("../hooks/useDeals", () => ({
-  useDeals: () => ({ data: mockDeals, isLoading: false }),
+  useDeals: () => ({ data: mockDeals, isLoading: false, isError: mockDealsIsError, refetch: mockRefetch }),
 }));
 // Stage history is a network read; the page uses it for won-this-month. Keep
 // it empty here so the render tests are deterministic (computeKpis falls back
@@ -240,6 +244,15 @@ describe("PipelinePage", () => {
     // mocked here, so the viewer scope resolves to "you".
     expect(screen.getByText(/Your pipeline · \d+ active · .* pipeline/i)).toBeInTheDocument();
   });
+  it("shows an error state (not an empty pipeline) when the deals load fails", () => {
+    mockDealsIsError = true;
+    renderPage();
+    // A failed load must read as an error, not "add your first deal".
+    expect(screen.getByText(/couldn't load your pipeline/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+    expect(mockRefetch).toHaveBeenCalled();
+  });
+
   it("renders the four KPI tiles", () => {
     renderPage();
     expect(screen.getByText(/total pipeline/i)).toBeInTheDocument();

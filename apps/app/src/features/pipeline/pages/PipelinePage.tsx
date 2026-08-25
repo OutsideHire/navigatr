@@ -559,7 +559,7 @@ export function PipelinePage() {
   // Reads from Supabase via RLS — server scopes to the user's org_id.
   // Stage/search filters still applied in-memory below; dataset is small
   // enough that round-tripping per chip click would be wasteful.
-  const { data: deals, isLoading } = useDeals();
+  const { data: deals, isLoading, isError, refetch } = useDeals();
   // Stage-transition log (org-scoped via RLS) — authoritative for when a deal
   // reached "won", so "won this month" doesn't re-count deals merely edited
   // this month. Undefined until loaded / when signed out; computeKpis then
@@ -771,6 +771,14 @@ export function PipelinePage() {
 
         {isLoading ? (
           <LoadingList />
+        ) : isError ? (
+          // A failed load must NOT look like an empty pipeline — a rep with a
+          // full pipeline would think their deals vanished. Offer a retry.
+          <Card padding="xl" className="flex flex-col items-center gap-3 text-center">
+            <p className="text-body-md text-text-default">We couldn&apos;t load your pipeline.</p>
+            <p className="text-body-sm text-text-muted">Check your connection and try again.</p>
+            <Button variant="secondary" size="md" onClick={() => void refetch()}>Try again</Button>
+          </Card>
         ) : visible.length === 0 ? (
           <EmptyState onAddDeal={onAddDeal} />
         ) : effectiveViewMode === "kanban" ? (
