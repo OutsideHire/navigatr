@@ -7,9 +7,10 @@
  *
  * On submit: calls create_organization(), which atomically creates the
  * org + a manager profile for the caller, then we navigate to /dashboard.
- * The invite_code returned by the RPC is shown briefly as a success toast
- * so the user can share it with teammates from the get-go (full
- * "invite teammates" UI is a later session).
+ * The invite_code returned by the RPC is surfaced as a persistent, copyable
+ * success toast so the user can share it with teammates from the get-go (the
+ * fuller "invite teammates" onboarding step is a later session; the code also
+ * lives permanently in Settings > Team).
  */
 
 import { useEffect } from "react";
@@ -68,10 +69,17 @@ export function CreateOrganizationPage() {
   const onSubmit = async (values: Values) => {
     try {
       const result = await createOrg.mutateAsync(values.name);
-      toast.success(
-        `Workspace created. Your invite code: ${result.invite_code}`,
-        { duration: 8000 },
-      );
+      // Persist (not an 8s flash) with a one-tap Copy, so the admin never loses
+      // the code they need to bring their team on. It also lives permanently in
+      // Settings > Team, but this is the moment they're most likely to share it.
+      toast.success(`Workspace created. Your team invite code: ${result.invite_code}`, {
+        duration: Infinity,
+        closeButton: true,
+        action: {
+          label: "Copy code",
+          onClick: () => void navigator.clipboard?.writeText(result.invite_code),
+        },
+      });
       navigate("/dashboard", { replace: true });
     } catch (err) {
       toast.error(

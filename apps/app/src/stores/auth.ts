@@ -30,6 +30,7 @@ interface AuthState {
   signInWithGoogle: (inviteCode?: string) => Promise<void>;
   signInWithMicrosoft: (inviteCode?: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string, inviteCode: string) => Promise<{ needsEmailConfirmation: boolean; alreadyRegistered: boolean }>;
+  resendSignupEmail: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
@@ -236,6 +237,23 @@ export const useAuth = create<AuthState>((set) => ({
     // completed, proceed to /auth/callback.
     const needsEmailConfirmation = !data.session && !alreadyRegistered;
     return { needsEmailConfirmation, alreadyRegistered };
+  },
+
+  // Re-send the signup confirmation email (the "check your email" screen calls
+  // this so a lost or spam-filtered first email is not a dead-end). Uses the
+  // same emailRedirectTo as signUp; the invite_code already lives in the user's
+  // metadata from signUp, so the re-sent link resolves the invite identically.
+  resendSignupEmail: async (email) => {
+    set({ error: null });
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+    });
+    if (error) {
+      set({ error: error.message });
+      throw error;
+    }
   },
 
   signOut: async () => {
