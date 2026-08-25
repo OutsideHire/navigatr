@@ -9,12 +9,51 @@
  * — can live coherently.
  */
 import * as React from "react";
+import { useNavigate } from "react-router-dom";
 import { Button, Card } from "@/components/navigatr";
 import {
   useLostReasonRollup,
   LOST_REASON_LABELS,
   type LostReasonRow,
 } from "../hooks/useLostReasonRollup";
+
+// The three deep reports live under /dashboard/* and were previously only
+// reachable by clicking a dashboard widget, so the Insights hub read as thin.
+// Surface them here so an admin (and an evaluating buyer) discovers the full
+// analytics suite from one place.
+const REPORTS: { to: string; title: string; desc: string }[] = [
+  { to: "/dashboard/activity-to-win", title: "Activity-To-Win", desc: "How prospecting activity converts into won deals." },
+  { to: "/dashboard/persistence-index", title: "Persistence Index", desc: "Follow-up discipline and re-engagement, scored." },
+  { to: "/dashboard/lead-source", title: "Lead source performance", desc: "Which lead sources produce pipeline and revenue." },
+];
+
+function ReportsSection() {
+  const navigate = useNavigate();
+  return (
+    <section className="flex flex-col gap-2" aria-label="Reports">
+      <h2 className="text-body-strong text-text-default">Reports</h2>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {REPORTS.map((r) => (
+          <Card
+            key={r.to}
+            padding="md"
+            role="link"
+            tabIndex={0}
+            aria-label={r.title}
+            onClick={() => navigate(r.to)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate(r.to); }
+            }}
+            className="flex cursor-pointer flex-col gap-1 transition hover:border-border-default"
+          >
+            <span className="text-body-strong text-text-default">{r.title}</span>
+            <span className="text-caption text-text-muted">{r.desc}</span>
+          </Card>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 const WINDOW_OPTIONS: { label: string; value: number }[] = [
   { label: "7 days", value: 7 },
@@ -109,24 +148,31 @@ export function InsightsPage() {
 
   return (
     <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
-      <div className="w-full max-w-3xl flex flex-col gap-4">
+      <div className="w-full max-w-3xl flex flex-col gap-6">
         <header className="flex flex-wrap items-center gap-3">
           <h1 className="text-heading-lg text-text-default">Insights</h1>
-          <div className="ml-auto flex items-center gap-1 border-l border-border-subtle pl-2">
-            {WINDOW_OPTIONS.map((opt) => (
-              <Button
-                key={opt.value}
-                variant={windowDays === opt.value ? "secondary" : "tertiary"}
-                size="sm"
-                onClick={() => setWindowDays(opt.value)}
-              >
-                {opt.label}
-              </Button>
-            ))}
-          </div>
         </header>
 
-        <LostReasonRollupCard windowDays={windowDays} />
+        <ReportsSection />
+
+        <section className="flex flex-col gap-2" aria-label="Why deals are lost">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-body-strong text-text-default">Lost deals</h2>
+            <div className="ml-auto flex items-center gap-1 border-l border-border-subtle pl-2">
+              {WINDOW_OPTIONS.map((opt) => (
+                <Button
+                  key={opt.value}
+                  variant={windowDays === opt.value ? "secondary" : "tertiary"}
+                  size="sm"
+                  onClick={() => setWindowDays(opt.value)}
+                >
+                  {opt.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+          <LostReasonRollupCard windowDays={windowDays} />
+        </section>
       </div>
     </div>
   );
