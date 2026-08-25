@@ -40,10 +40,14 @@ export function useOrgSuspended() {
       if (error) throw error;
       return Boolean((data as { is_disabled: boolean }).is_disabled);
     },
-    // Suspension is rare and operator-driven, but a live session should notice a
-    // fresh suspend reasonably soon (React Query refetches on window focus once
-    // stale), so keep the staleTime short rather than the 5-minute org default.
+    // Suspension is rare and operator-driven, but a live session must notice a
+    // fresh suspend within a bounded window. staleTime keeps mounts/refocus
+    // cheap; refetchInterval guarantees an upper bound even for a session that
+    // stays on one focused route all day and never triggers a mount/focus
+    // refetch. (Default refetchIntervalInBackground=false, so a hidden tab does
+    // not poll but still re-checks on refocus.)
     staleTime: 60_000,
     gcTime: 5 * 60_000,
+    refetchInterval: 3 * 60_000,
   });
 }
