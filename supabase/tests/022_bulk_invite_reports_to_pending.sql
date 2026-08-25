@@ -23,7 +23,8 @@ begin;
 
 insert into organizations (id, name, slug, invite_code) values
   ('00000000-0000-0000-0000-0000000000da', 'Bulk A', 'bulk-a', 'bulk-a-code'),
-  ('00000000-0000-0000-0000-0000000000db', 'Bulk B', 'bulk-b', 'bulk-b-code');
+  ('00000000-0000-0000-0000-0000000000db', 'Bulk B', 'bulk-b', 'bulk-b-code'),
+  ('00000000-0000-0000-0000-0000000000dc', 'Bulk C', 'bulk-c', 'bulk-c-code');
 
 -- Admin callers + the (accountless-until-accept) invitees. All get an
 -- auth.users row up front; only the admins get a profile in the seed.
@@ -34,11 +35,15 @@ insert into auth.users (id, email, aud, role, created_at, updated_at, email_conf
   ('da000000-0000-0000-0000-000000000004', 'bobA@t.example',   'authenticated', 'authenticated', now(), now(), now()),
   ('db000000-0000-0000-0000-000000000001', 'adminB@t.example', 'authenticated', 'authenticated', now(), now(), now()),
   ('db000000-0000-0000-0000-000000000002', 'miaB@t.example',   'authenticated', 'authenticated', now(), now(), now()),
-  ('db000000-0000-0000-0000-000000000003', 'aliceB@t.example', 'authenticated', 'authenticated', now(), now(), now());
+  ('db000000-0000-0000-0000-000000000003', 'aliceB@t.example', 'authenticated', 'authenticated', now(), now(), now()),
+  ('dc000000-0000-0000-0000-000000000001', 'adminC@t.example', 'authenticated', 'authenticated', now(), now(), now()),
+  ('dc000000-0000-0000-0000-000000000002', 'coX@t.example',    'authenticated', 'authenticated', now(), now(), now()),
+  ('dc000000-0000-0000-0000-000000000003', 'coY@t.example',    'authenticated', 'authenticated', now(), now(), now());
 
 insert into profiles (id, org_id, role, role_level, full_name, email, role_path) values
   ('da000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000da', 'admin', 'administrator', 'Admin A', 'adminA@t.example', 'adminA'::ltree),
-  ('db000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000db', 'admin', 'administrator', 'Admin B', 'adminB@t.example', 'adminB'::ltree);
+  ('db000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000db', 'admin', 'administrator', 'Admin B', 'adminB@t.example', 'adminB'::ltree),
+  ('dc000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000dc', 'admin', 'administrator', 'Admin C', 'adminC@t.example', 'adminC'::ltree);
 
 -- ── Org A bulk invite: reps listed BEFORE the manager (the sample shape).
 --    All three rows must succeed; the rep rows defer to reports_to_email. ──
@@ -140,6 +145,52 @@ begin
   end if;
   if v_apath is null or not (v_apath <@ v_mpath) or v_apath = v_mpath then
     raise exception 'B backfill: alice.role_path (%) should be a strict descendant of mia (%)', v_apath, v_mpath;
+  end if;
+end $$;
+
+-- ── Org C: two co-managers who list EACH OTHER as reports_to (a plausible
+--    spreadsheet mistake). Both invites succeed; both accept without hanging;
+--    and the result must NOT be a manager_id cycle -- the accept-time backfill
+--    refuses to re-parent auth.uid()'s own ancestor onto it. If the cycle guard
+--    were missing, the second claim_invite_code would recurse forever in
+--    rebuild_role_path_subtree and this block would time out / error. ──
+do $$
+declare n_ok int;
+begin
+  perform set_config('request.jwt.claim.sub', 'dc000000-0000-0000-0000-000000000001', true);
+  select count(*) filter (where ok) into n_ok
+    from admin_bulk_invite('[
+      {"email":"coX@t.example","full_name":"Co X","role_level":"sales_manager","reports_to":"coY@t.example"},
+      {"email":"coY@t.example","full_name":"Co Y","role_level":"sales_manager","reports_to":"coX@t.example"}
+    ]'::jsonb);
+  if n_ok <> 2 then raise exception 'bulk C: expected 2 ok (mutual refs both deferred), got %', n_ok; end if;
+end $$;
+
+do $$
+declare v_tok text;
+begin
+  select token into v_tok from org_invites
+   where org_id = '00000000-0000-0000-0000-0000000000dc' and lower(email) = 'cox@t.example';
+  perform set_config('request.jwt.claim.sub', 'dc000000-0000-0000-0000-000000000002', true);
+  perform * from claim_invite_code(v_tok);
+
+  select token into v_tok from org_invites
+   where org_id = '00000000-0000-0000-0000-0000000000dc' and lower(email) = 'coy@t.example';
+  perform set_config('request.jwt.claim.sub', 'dc000000-0000-0000-0000-000000000003', true);
+  perform * from claim_invite_code(v_tok);
+end $$;
+
+do $$
+declare v_x uuid; v_y uuid; v_xmgr uuid; v_ymgr uuid;
+begin
+  select id, manager_id into v_x, v_xmgr from profiles where id = 'dc000000-0000-0000-0000-000000000002';
+  select id, manager_id into v_y, v_ymgr from profiles where id = 'dc000000-0000-0000-0000-000000000003';
+  if v_x is null or v_y is null then
+    raise exception 'C: both co-managers should have accepted (x=%, y=%)', v_x, v_y;
+  end if;
+  -- No 2-node cycle: they must not each point at the other.
+  if v_xmgr = v_y and v_ymgr = v_x then
+    raise exception 'C: manager_id cycle formed (x->y=% , y->x=%)', v_xmgr, v_ymgr;
   end if;
 end $$;
 

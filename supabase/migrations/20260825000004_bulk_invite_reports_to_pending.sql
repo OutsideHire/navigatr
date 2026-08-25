@@ -183,6 +183,7 @@ declare
   v_existing profiles%rowtype;
   v_email    text;
   v_mgr      uuid;
+  v_ancestors uuid[];
 begin
   if auth.uid() is null then raise exception 'not_authenticated'; end if;
 
@@ -238,11 +239,29 @@ begin
     -- Backfill: anyone invited reporting to THIS person (by email) who accepted
     -- before this person existed is now re-parented onto them. Only touches
     -- still-unplaced rows, so it never overrides a manager already resolved.
+    --
+    -- Exclude this person's OWN manager chain: re-parenting an ancestor onto
+    -- auth.uid() would close a manager_id cycle (e.g. two people who list each
+    -- other as reports_to in the same CSV). Such a node stays unplaced for an
+    -- admin to resolve rather than corrupting the tree. (Active profiles are
+    -- acyclic by invariant, so this upward walk terminates.)
+    select coalesce(array_agg(id), '{}'::uuid[]) into v_ancestors
+      from (
+        with recursive up as (
+          select v_mgr as id
+          union all
+          select p.manager_id from profiles p join up on p.id = up.id
+           where p.manager_id is not null
+        )
+        select id from up where id is not null
+      ) s;
+
     update profiles p set manager_id = auth.uid()
      where p.org_id = v_invite.org_id
        and p.id <> auth.uid()
        and p.manager_id is null
-       and lower(p.reports_to_email) = lower(v_email);
+       and lower(p.reports_to_email) = lower(v_email)
+       and p.id <> all(v_ancestors);
 
     perform public.rebuild_role_path_subtree(auth.uid());
     return query select v_invite.org_id as out_org_id, v_invite.role as out_role;
@@ -268,3 +287,41 @@ begin
   return query select v_org.id as out_org_id, v_role as out_role;
 end $$;
 grant execute on function claim_invite_code(text) to authenticated;
+
+-- 4) Defense in depth: make rebuild_role_path_subtree cycle-safe. It walks the
+-- subtree DOWN the manager_id chain with no termination guard; a manager_id
+-- cycle (which the accept-time backfill above now prevents, but which any
+-- future write path could still introduce) would recurse forever and hang the
+-- caller. The CYCLE clause stops the recursion the moment an id repeats along a
+-- path. Behavior is byte-for-byte identical for acyclic trees (every id appears
+-- exactly once), so this is a pure safety net. `create or replace` preserves the
+-- existing ACL; the revokes are re-stated to keep the function off the PostgREST
+-- surface regardless.
+create or replace function public.rebuild_role_path_subtree(p_root uuid)
+returns void language sql as $$
+  with recursive tree as (
+    select m.id,
+           case
+             when m.role = 'admin' then null::ltree
+             when parent.role_path is null then public.profile_role_label(m.id)
+             else parent.role_path || public.profile_role_label(m.id)
+           end as new_path
+    from profiles m
+    left join profiles parent on parent.id = m.manager_id
+    where m.id = p_root
+    union all
+    select c.id,
+           case
+             when c.role = 'admin' then null::ltree
+             when t.new_path is null then public.profile_role_label(c.id)
+             else t.new_path || public.profile_role_label(c.id)
+           end
+    from profiles c
+    join tree t on c.manager_id = t.id
+  ) cycle id set is_cycle using cycle_path
+  update profiles p set role_path = tree.new_path
+  from tree where tree.id = p.id;
+$$;
+revoke all on function public.rebuild_role_path_subtree(uuid) from public;
+revoke all on function public.rebuild_role_path_subtree(uuid) from anon;
+revoke all on function public.rebuild_role_path_subtree(uuid) from authenticated;
