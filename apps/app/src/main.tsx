@@ -1,16 +1,21 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryCache, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { Toaster } from "sonner";
 import { App } from "@/App";
-import { initObservability } from "@/lib/observability";
+import { initObservability, captureException } from "@/lib/observability";
+import { installChunkReloadHandler } from "@/lib/chunkReload";
 import "@/index.css";
 
 // Observability MUST init before any other side-effect import — otherwise
 // errors thrown during auth bootstrap or service-worker registration
 // would happen before Sentry is listening. No-op if VITE_SENTRY_DSN unset.
 initObservability();
+
+// Reload once if a lazy route chunk 404s after a deploy (stale hashed chunk),
+// instead of showing a blank page.
+installChunkReloadHandler();
 
 // Side-effect imports — order matters:
 //   1. theme:   applies persisted light/dark to <html> before first paint
@@ -25,6 +30,15 @@ import "@/api";
 import "@/pwa";
 
 const queryClient = new QueryClient({
+  // Report query load failures to Sentry so a silently-failing read (which
+  // otherwise just renders a spinner or empty state) is visible. Skip offline
+  // errors — they're expected and noisy; Sentry groups the rest.
+  queryCache: new QueryCache({
+    onError: (error) => {
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+      captureException(error, { source: "react-query" });
+    },
+  }),
   defaultOptions: {
     queries: {
       retry: 1,
