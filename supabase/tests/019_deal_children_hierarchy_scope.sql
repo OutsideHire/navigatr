@@ -3,15 +3,22 @@
 --   psql "$SUPABASE_DB_URL" -f supabase/tests/019_deal_children_hierarchy_scope.sql
 --
 -- Self-cleans via the wrapping ROLLBACK. Verifies that the deal CHILD tables
--- (deal_contacts / deal_notes / deal_files / deal_stage_history) and the
--- deal-files storage blobs inherit the parent deal's hierarchy visibility:
--- if you can see the deal, you see its children; if you can't, you don't.
+-- (deal_contacts / deal_notes / deal_files / deal_stage_history) inherit the
+-- parent deal's hierarchy visibility for BOTH reads and writes: if you can see
+-- the deal you see (and may write) its children; if you can't, you can't.
+--
+-- Storage note: the deal-files storage.objects policies get the same gate in
+-- the migration, but this DB-test harness runs postgres WITHOUT the storage
+-- service (test.yml: -x storage-api) and the psql role does not OWN
+-- storage.objects, so its RLS cannot be toggled or reliably exercised here. The
+-- storage policies mirror the deal_files table policies verbatim and are
+-- validated by inspection; only the table policies are asserted below.
 --
 -- Hierarchy:
 --   ceo (admin)
 --    └─ vp (manager, ceo.vp)
 --        └─ rep1 (rep, ceo.vp.rep1)   ← owns the deal + all child rows
---    └─ vp2 (manager, ceo.vp2)        ← sibling subtree, must NOT see rep1's children
+--    └─ vp2 (manager, ceo.vp2)        ← sibling subtree, must NOT see/write rep1's children
 
 begin;
 
@@ -41,21 +48,12 @@ insert into deal_notes (deal_id, body, created_by) values
   ('c9d00000-0000-0000-0000-000000000001', 'private note on rep1 deal', 'c9000000-0000-0000-0000-000000000003');
 insert into deal_files (deal_id, path, name, size_bytes, uploaded_by) values
   ('c9d00000-0000-0000-0000-000000000001', 'c9d00000-0000-0000-0000-000000000001/doc.pdf', 'doc.pdf', 100, 'c9000000-0000-0000-0000-000000000003');
-insert into storage.objects (id, bucket_id, name, owner) values
-  ('c9f00000-0000-0000-0000-000000000001', 'deal-files', 'c9d00000-0000-0000-0000-000000000001/doc.pdf', 'c9000000-0000-0000-0000-000000000003');
-
--- Force RLS on storage.objects for this test. The DB-test CI harness starts
--- postgres WITHOUT the storage service (test.yml: -x storage-api), so RLS on
--- storage.objects may be off there; enabling it here (idempotent, rolled back
--- with the transaction) makes the deal_files_obj_select assertion below a REAL
--- check in every environment instead of silently no-opping.
-alter table storage.objects enable row level security;
 
 -- Assert the visible child-row counts for a given user against the expected
 -- value (1 = visible for in-scope users, 0 = hidden for cross-subtree).
 create or replace function _dc_assert(p_user uuid, p_expected int, p_label text)
 returns void language plpgsql as $$
-declare c int; f int; s int;
+declare c int; s int;
 begin
   perform set_config('request.jwt.claim.sub', p_user::text, true);
   perform set_config('role', 'authenticated', true);
@@ -74,11 +72,6 @@ begin
   select count(*) into s from deal_stage_history where deal_id = 'c9d00000-0000-0000-0000-000000000001';
   if p_expected = 0 and s <> 0 then raise exception '%: deal_stage_history expected 0, got %', p_label, s; end if;
   if p_expected > 0 and s < 1 then raise exception '%: deal_stage_history expected >=1, got %', p_label, s; end if;
-
-  -- storage blob follows the same gate (RLS forced on above so this is real).
-  select count(*) into f from storage.objects
-    where bucket_id = 'deal-files' and name = 'c9d00000-0000-0000-0000-000000000001/doc.pdf';
-  if f <> p_expected then raise exception '%: deal-files storage blob expected %, got %', p_label, p_expected, f; end if;
 end $$;
 
 -- rep1 owns the deal -> sees everything.
@@ -91,8 +84,8 @@ do $$ begin perform _dc_assert('c9000000-0000-0000-0000-000000000001', 1, 'ceo (
 do $$ begin perform _dc_assert('c9000000-0000-0000-0000-000000000004', 0, 'vp2 (cross-subtree)'); end $$;
 
 -- WRITE gate: vp2 must NOT be able to write into rep1's out-of-scope deal.
--- (The companion hole the reviewer flagged: even knowing the deal_id, an
--- out-of-scope rep must not be able to INSERT a note/contact or a file blob.)
+-- (The companion hole the review flagged: even knowing the deal_id, an
+-- out-of-scope rep must not be able to INSERT a note/contact.)
 do $$
 declare blocked boolean;
 begin
@@ -114,26 +107,16 @@ begin
   exception when others then blocked := true;
   end;
   if not blocked then raise exception 'vp2 must NOT be able to insert a contact on rep1 out-of-scope deal'; end if;
-
-  blocked := false;
-  begin
-    insert into storage.objects (id, bucket_id, name, owner)
-      values ('c9f00000-0000-0000-0000-000000000002', 'deal-files',
-              'c9d00000-0000-0000-0000-000000000001/intrusion.pdf', 'c9000000-0000-0000-0000-000000000004');
-  exception when others then blocked := true;
-  end;
-  if not blocked then raise exception 'vp2 must NOT be able to upload a file blob into rep1 out-of-scope deal'; end if;
 end $$;
 
--- Positive control: rep1 (owner) CAN write to their own deal's children.
+-- Positive control: rep1 (owner) CAN write to their own deal's children. If the
+-- write gate wrongly blocked the owner, this insert would raise and fail.
 do $$
 begin
   perform set_config('request.jwt.claim.sub', 'c9000000-0000-0000-0000-000000000003'::text, true);
   perform set_config('role', 'authenticated', true);
   insert into deal_notes (deal_id, body, created_by)
     values ('c9d00000-0000-0000-0000-000000000001', 'owner note', 'c9000000-0000-0000-0000-000000000003');
-  -- If the write gate wrongly blocked the owner, the insert above would raise
-  -- and fail the test.
 end $$;
 
 rollback;
