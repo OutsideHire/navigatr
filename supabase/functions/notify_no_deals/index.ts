@@ -79,17 +79,29 @@ Deno.serve(async (req) => {
 
   for (const org of candidates) {
     try {
+      // Each admin send is isolated: one bad/rejected admin address must not
+      // abort the org before it is stamped, or the org would stay a candidate
+      // and re-nudge its OTHER (working) admins every day, forever. A per-admin
+      // failure just means that one admin misses this one-time nudge.
       for (const email of org.admin_emails ?? []) {
         if (!email) continue;
         if (!shouldSend(APP_ENV, EMAIL_ALLOWLIST, email)) {
           console.log(`[notify_no_deals][emailGuard] dropped ${email} in APP_ENV=${APP_ENV ?? "(unset)"}`);
           continue;
         }
-        await send(email, nudgeEmail(org.org_name, APP_BASE_URL));
-        customerEmails += 1;
+        try {
+          await send(email, nudgeEmail(org.org_name, APP_BASE_URL));
+          customerEmails += 1;
+        } catch (e) {
+          console.error(
+            `[notify_no_deals] nudge to ${email} (org ${org.org_id}) failed:`,
+            e instanceof Error ? e.message : String(e),
+          );
+        }
       }
-      // Stamp only after a clean pass, so a transient send failure retries the
-      // whole org tomorrow rather than marking it nudged with nothing sent.
+      // Stamp once the org has been ATTEMPTED (regardless of individual send
+      // outcomes), so it is nudged at most once. A failed stamp (rare DB error)
+      // throws and leaves the org unmarked to retry next run.
       const { error: markErr } = await db
         .from("organizations")
         .update({ no_deals_nudged_at: new Date().toISOString() })
@@ -102,8 +114,8 @@ Deno.serve(async (req) => {
       );
       nudged.push({ name: org.org_name, ageDays });
     } catch (e) {
-      // Leave unmarked (retry next run); exclude from the digest since it was
-      // not successfully nudged.
+      // Stamp/unexpected failure: leave unmarked (retry next run), exclude from
+      // the digest since its state is ambiguous.
       console.error(
         `[notify_no_deals] org ${org.org_id} failed:`,
         e instanceof Error ? e.message : String(e),
