@@ -433,6 +433,14 @@ verify_jwt = false
 [functions.refresh_place_ids]
 verify_jwt = false
 
+# Same reasoning as the two above. notify_no_deals is the daily activation
+# heads-up: pg_cron invokes it with CRON_SECRET (a raw string, not a JWT) to find
+# orgs with no deals and email their admins + the operator. verify_jwt=true would
+# 401 the scheduler at the gateway. requireCronCaller in the function is the real
+# gate.
+[functions.notify_no_deals]
+verify_jwt = false
+
 # --- verify_jwt = false for a reason other than cron ---------------------------
 #
 # calendar_oauth: its /callback route is a provider redirect (GET, no session,
