@@ -416,6 +416,16 @@ verify_jwt = false
 [functions.compute_persistence_snapshots]
 verify_jwt = false
 
+# Same reasoning as the two above. capture_sent_email is the Automatic Email
+# Activity Capture poll: pg_cron invokes it every 2 minutes with CRON_SECRET (a
+# raw string, not a JWT), so platform verify_jwt would reject the scheduler with
+# UNAUTHORIZED_INVALID_JWT_FORMAT before the function runs. Omitting this entry
+# (default true) is exactly what blocked the poll: every cron call 401'd at the
+# gateway and last_poll_at never advanced (observed in prod net._http_response,
+# 2026-08-25). requireCronCaller in the function is the real gate.
+[functions.capture_sent_email]
+verify_jwt = false
+
 # Same reasoning as the two above. refresh_place_ids is cron-driven, updates
 # place_id across every org with the service-role key, and each run spends
 # Google Places calls. It authenticates with CRON_SECRET, a raw string rather
