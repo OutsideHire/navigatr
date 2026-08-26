@@ -32,7 +32,11 @@ export default defineConfig({
     command: `pnpm dev -- --host 127.0.0.1 --port ${PORT} --strictPort`,
     url: BASE,
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    timeout: 180_000,
+    // Surface vite's own output so a startup crash / wrong port is visible in
+    // the CI log instead of just a webServer timeout.
+    stdout: "pipe",
+    stderr: "pipe",
     env: {
       VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ?? "",
       VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY ?? "",
