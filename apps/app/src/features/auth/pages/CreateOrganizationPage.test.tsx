@@ -37,7 +37,7 @@ beforeEach(() => {
 });
 
 describe("CreateOrganizationPage invite code", () => {
-  it("surfaces the invite code as a persistent, copyable toast (not an 8s flash)", async () => {
+  it("routes to the invite step (/welcome) after creating the workspace", async () => {
     mutateAsyncMock.mockResolvedValue({ invite_code: "ABC123" });
     const user = userEvent.setup();
 
@@ -46,15 +46,8 @@ describe("CreateOrganizationPage invite code", () => {
     await user.click(screen.getByRole("button", { name: /create workspace/i }));
 
     await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
-    const [message, opts] = toastSuccess.mock.calls[0];
-    expect(message).toContain("ABC123");
-    // Persistent (never auto-dismisses) + explicitly closable, with a Copy action
-    // (the 8s-flash was the bug). The action's clipboard write is a thin browser
-    // call not worth stubbing jsdom for.
-    expect(opts).toMatchObject({ duration: Infinity, closeButton: true });
-    expect(opts.action.label).toMatch(/copy/i);
-    expect(typeof opts.action.onClick).toBe("function");
-
-    expect(navigateMock).toHaveBeenCalledWith("/dashboard", { replace: true });
+    // The invite code is now shown on /welcome (not a toast), so we just confirm
+    // a success + the route into the activation step.
+    expect(navigateMock).toHaveBeenCalledWith("/welcome", { replace: true });
   });
 });

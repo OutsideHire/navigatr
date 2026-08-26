@@ -5,19 +5,14 @@
  *   - Figma `mobile · Merchant Services`  234:525 (360 × 3164)
  *   - Figma `desktop · Merchant Services` 238:4   (1280 × 1910)
  *
- * Source for empty state (Session 11):
- *   - Figma `06a · First dashboard (mobile)` 148:358
- *   - Figma `06b · First dashboard (desktop)` 148:464
- *
- * Branching:
- *   - Sprint 1: hardcoded to render the populated state from mockData.ts
- *     UNLESS the user has explicitly tapped "Skip the setup" yet has no
- *     real data (no API yet). The empty state from Session 11 is rendered
- *     when `hasDismissedOnboarding(user) === false`, matching the
- *     first-time-user flow.
- *   - Sprint 2 TODO: wire TanStack Query hooks that count deals /
- *     partners / activities; render empty when all === 0 AND not
- *     dismissed; populated otherwise.
+ * Branching (onboarding A1):
+ *   - A persistent Get-Started checklist (useOnboardingProgress) rides above
+ *     the page while any activation step is incomplete, driven by REAL counts
+ *     (invites sent, org members, first deal/activity), not a dismiss flag. It
+ *     auto-retires once every step is done.
+ *   - A brand-new org (solo admin, no deals/activity) gets a selling zero-state
+ *     preview instead of a dashboard of $0; any real signal shows the populated
+ *     dashboard from useDashboardData.
  *
  * Gradient discipline (DESIGN.md):
  *   The Activities-to-Win hero KpiCard is the ONLY gradient surface in
@@ -26,20 +21,16 @@
  */
 
 import * as React from "react";
-import { toast } from "sonner";
 import {
   AlertCircle,
   ArrowRight,
   Briefcase,
   Check,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Clock,
   Clock4,
-  Compass,
   DollarSign,
-  Handshake,
   MapPin,
   TrendingUp,
   Users,
@@ -63,7 +54,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   getFirstName,
-  hasDismissedOnboarding,
   useAuth,
 } from "@/stores/auth";
 import { cn } from "@/lib/utils";
@@ -89,65 +79,51 @@ import { useActivitiesForOrg } from "@/features/activities/hooks/useActivities";
 import { leadSourceColor } from "@/features/pipeline/lib/leadSources";
 import { computeLeadSourcePerformance } from "../lib/leadSourcePerformance";
 import { useOrgMemberNames } from "../hooks/useOrgMemberNames";
+import { useOnboardingProgress } from "../hooks/useOnboardingProgress";
+import { GetStartedChecklist } from "../components/GetStartedChecklist";
 import { KpiBreakdownPanel } from "../components/KpiBreakdownPanel";
 import { type KpiMetric } from "../lib/kpiBreakdown";
 import { PersistenceIndexWidget } from "../components/PersistenceIndexWidget";
 
 // ───────────────────────────────────────────────────────────────────────
-// Empty state — copied from Session 11. Lives here so the page picks
-// either populated or empty in one component.
-// ───────────────────────────────────────────────────────────────────────
-
-interface SetupCard {
-  key: string;
-  title: string;
-  description: string;
-  icon: LucideIcon;
-  accent: { bg: string; fg: string };
-  to: string;
-  requiresInvitePermission?: boolean;
-}
-
-const SETUP_CARDS: SetupCard[] = [
-  { key: "partner",  title: "Add your first partner",   description: "A CPA, banker, or referral source you trust.",     icon: Handshake,     accent: { bg: "bg-accent-teal-20",   fg: "text-accent-teal"   }, to: "/partners?action=add" },
-  { key: "path",     title: "Run your first Path",      description: "Discover prospects in your area.",                  icon: Compass,       accent: { bg: "bg-accent-violet-20", fg: "text-accent-violet" }, to: "/path" },
-  { key: "activity", title: "Log your first activity",  description: "Email, call, drop-in, or appointment.",             icon: CheckCircle2,  accent: { bg: "bg-accent-orange-20", fg: "text-accent-orange" }, to: "/activities?action=log" },
-  { key: "team",     title: "Invite your team",         description: "Bring your reps and managers on board.",            icon: Users,         accent: { bg: "bg-accent-blue-20",   fg: "text-accent-blue"   }, to: "/admin/agents", requiresInvitePermission: true },
+// Selling zero-state for a brand-new org (solo admin, no deals/activity yet):
+// instead of a dashboard of $0, preview what fills in once the team is working.
+// No fake data. The Get-Started checklist above owns the primary invite CTA;
+// this keeps a soft fallback in case it's collapsed.
+const ZERO_PREVIEW: { icon: LucideIcon; title: string; body: string }[] = [
+  { icon: TrendingUp, title: "Your pipeline", body: "Deals and stage movement appear here as your reps work accounts." },
+  { icon: Zap, title: "Activity that converts", body: "Calls, drop-ins, and follow-ups roll up into your Activity-to-Win view." },
+  { icon: DollarSign, title: "Wins and revenue", body: "Closed deals and MRR light up once the team starts booking." },
 ];
 
-function EmptyDashboard({ firstName, onSkip }: { firstName: string; onSkip: () => void }) {
-  const profile = useProfile().data;
-  const showInvite = profileCan(profile, "inviteUsers");
-  const cards = SETUP_CARDS.filter((c) => !c.requiresInvitePermission || showInvite);
-  const navigate = useNavigate();
+function SellingEmptyDashboard({ firstName, onInvite }: { firstName: string; onInvite: () => void }) {
+  const canInvite = profileCan(useProfile().data, "inviteUsers");
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+    <div className="mx-auto w-full max-w-4xl px-4 pb-8 sm:px-6 lg:px-8">
       <header className="flex flex-col gap-2">
         <h1 className="text-heading-lg text-text-default">Welcome, {firstName}</h1>
         <p className="text-body-md text-text-muted">
-          Let&apos;s get you set up. {cards.length} {cards.length === 1 ? "step" : "steps"} to get the
-          most out of navigatr.
+          Your dashboard comes alive as your team works. Here&apos;s what you&apos;ll see.
         </p>
       </header>
-      <div className={cn("mt-6 grid gap-3 grid-cols-1", cards.length >= 2 && "md:grid-cols-2 md:gap-4")}>
-        {cards.map((card) => (
-          <Card key={card.key} padding="md" shadow="sm" onClick={() => navigate(card.to)}>
-            <div className="flex items-center gap-4">
-              <span className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-radius-md", card.accent.bg, card.accent.fg)} aria-hidden>
-                <card.icon className="h-6 w-6" />
+      <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4">
+        {ZERO_PREVIEW.map((p) => (
+          <Card key={p.title} padding="md">
+            <div className="flex flex-col gap-2">
+              <span className="flex h-10 w-10 items-center justify-center rounded-radius-md bg-surface-sunken text-text-muted" aria-hidden>
+                <p.icon className="h-5 w-5" />
               </span>
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="text-body-strong text-text-default">{card.title}</span>
-                <span className="text-caption text-text-muted">{card.description}</span>
-              </div>
-              <ChevronRight className="h-5 w-5 shrink-0 text-text-subtle" aria-hidden />
+              <span className="text-body-strong text-text-default">{p.title}</span>
+              <span className="text-caption text-text-muted">{p.body}</span>
             </div>
           </Card>
         ))}
       </div>
-      <div className="mt-6 flex justify-center">
-        <Button variant="tertiary" size="md" onClick={onSkip}>Skip the setup and explore</Button>
-      </div>
+      {canInvite && (
+        <div className="mt-6 flex justify-center">
+          <Button variant="secondary" size="md" onClick={onInvite}>Invite your team</Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1080,38 +1056,60 @@ function PopulatedDashboard({ firstName: _firstName }: { firstName: string }) {
 // Top-level page — picks empty vs populated
 // ───────────────────────────────────────────────────────────────────────
 
+const CHECKLIST_COLLAPSED_KEY = "navigatr.getStarted.collapsed";
+
 export function DashboardPage() {
   const user = useAuth((s) => s.user);
-  const dismissOnboarding = useAuth((s) => s.dismissOnboarding);
   const firstName = getFirstName(user);
+  const navigate = useNavigate();
 
-  // Branching:
-  //   - Empty state: render Session-11 setup-cards screen until user
-  //     dismisses onboarding.
-  //   - Populated state: this page from mockData.ts.
-  //
-  // Sprint 2 TODO: replace `hasDismissedOnboarding` gate with a real
-  // count check via TanStack Query — if user has 0 deals + 0 partners +
-  // 0 activities AND not dismissed → empty, else populated.
-  const dismissed = hasDismissedOnboarding(user);
+  // Real-count activation state (no dismiss flag). The checklist auto-retires
+  // when every step is done; until then it rides above the dashboard.
+  const { steps, counts, allComplete } = useOnboardingProgress();
+  const [collapsed, setCollapsed] = React.useState(() => {
+    try {
+      return typeof window !== "undefined" && window.localStorage.getItem(CHECKLIST_COLLAPSED_KEY) === "1";
+    } catch {
+      // localStorage unavailable (private mode / disabled) — collapse is a
+      // preference, not critical.
+      return false;
+    }
+  });
+  const toggleCollapsed = () =>
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        window.localStorage.setItem(CHECKLIST_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        /* private mode / storage disabled — collapse is a preference, not critical */
+      }
+      return next;
+    });
 
-  if (!dismissed) {
-    return (
-      <EmptyDashboard
-        firstName={firstName}
-        onSkip={async () => {
-          try {
-            await dismissOnboarding();
-            toast.success("Welcome to the dashboard.");
-          } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Couldn't save preference");
-          }
-        }}
-      />
-    );
-  }
+  // A truly brand-new org (solo admin, nothing logged) gets the selling
+  // zero-state instead of a dashboard of $0; any real signal shows the real one.
+  const hasSignal =
+    counts.orgDealCount > 0 || counts.orgActivityCount > 0 || counts.orgMemberCount > 1;
 
-  return <PopulatedDashboard firstName={firstName} />;
+  return (
+    <>
+      {!allComplete && (
+        <div className="mx-auto w-full max-w-4xl px-4 pt-6 sm:px-6 lg:px-8">
+          <GetStartedChecklist
+            steps={steps}
+            collapsed={collapsed}
+            onToggleCollapse={toggleCollapsed}
+            onStepCta={(to) => navigate(to)}
+          />
+        </div>
+      )}
+      {hasSignal ? (
+        <PopulatedDashboard firstName={firstName} />
+      ) : (
+        <SellingEmptyDashboard firstName={firstName} onInvite={() => navigate("/welcome")} />
+      )}
+    </>
+  );
 }
 
 export default DashboardPage;
