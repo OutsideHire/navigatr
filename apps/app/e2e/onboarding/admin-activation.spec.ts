@@ -18,12 +18,17 @@ test("admin sign-up flows into create-org, the invite step, and the dashboard ch
   await page.getByLabel("Full name").fill("E2E Admin");
   await page.getByLabel("Work email").fill(email);
   await page.getByLabel("Password").fill("navigatr-e2e-123");
+  // Terms/Privacy clickwrap gates account creation.
+  await page.getByRole("checkbox", { name: /i agree to the terms/i }).click();
   await page.getByRole("button", { name: /create account/i }).click();
 
   // Confirmation is off locally, so signup returns a session and the app walks
   // through /auth/callback into name-your-workspace.
   await expect(page.getByLabel(/workspace name/i)).toBeVisible({ timeout: 20_000 });
   await page.getByLabel(/workspace name/i).fill("E2E Payments");
+  // Consent is captured again at the account-completion step (covers Google
+  // signups that never saw the /signup checkbox).
+  await page.getByRole("checkbox", { name: /i agree to the terms/i }).click();
   await page.getByRole("button", { name: /create workspace/i }).click();
 
   // A1: the dedicated invite step, with both paths present.

@@ -182,7 +182,7 @@ export function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
-      <OAuthButtons disabled={isSubmitting} />
+      <OAuthButtons disabled={isSubmitting} consentNote />
       <OrDivider />
 
       <FormField label="Work email" htmlFor="login-email" error={errors.email?.message}>

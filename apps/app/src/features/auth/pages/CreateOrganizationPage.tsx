@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useRef } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useNavigate } from "react-router-dom";
@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
 import { AuthSplitShell } from "../components/AuthShell";
+import { TermsConsent } from "../components/TermsConsent";
 import { Button, FormField, Input } from "@/components/navigatr";
 import { useCreateOrganization } from "../useCreateOrganization";
 import { useAuth } from "@/stores/auth";
@@ -31,6 +32,12 @@ const schema = z.object({
     .trim()
     .min(2, "Pick a name with at least 2 characters")
     .max(80, "Pick a name shorter than 80 characters"),
+  // Clickwrap: this is the account-completion step for self-serve signup,
+  // including a brand-new user who authenticated via Google (from /signup OR
+  // /login), so consent is captured here for every self-serve path.
+  agreedToTerms: z
+    .boolean()
+    .refine((v) => v === true, { message: "Please agree to the Terms and Privacy Policy" }),
 });
 type Values = z.infer<typeof schema>;
 
@@ -64,10 +71,11 @@ export function CreateOrganizationPage() {
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { name: "" },
+    defaultValues: { name: "", agreedToTerms: false },
   });
 
   const onSubmit = async (values: Values) => {
@@ -116,6 +124,20 @@ export function CreateOrganizationPage() {
             {...register("name")}
           />
         </FormField>
+
+        <Controller
+          name="agreedToTerms"
+          control={control}
+          render={({ field, fieldState }) => (
+            <TermsConsent
+              ref={field.ref}
+              checked={field.value}
+              onCheckedChange={field.onChange}
+              error={fieldState.error?.message}
+              disabled={isSubmitting}
+            />
+          )}
+        />
 
         <Button type="submit" size="lg" fullWidth loading={isSubmitting}>
           {isSubmitting ? "Creating workspace…" : "Create workspace"}

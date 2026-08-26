@@ -19,12 +19,13 @@
  */
 import * as React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { AuthSplitShell } from "../components/AuthShell";
 import { CheckYourEmailNotice } from "../components/CheckYourEmailNotice";
+import { TermsConsent } from "../components/TermsConsent";
 import { Button, FormField, Input } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
 import { supabase } from "@/lib/supabase";
@@ -34,6 +35,10 @@ const schema = z.object({
   email: z.string().email("Enter a valid email"),
   password: z.string().min(8, "At least 8 characters"),
   fullName: z.string().trim().min(2, "Enter your name"),
+  // Clickwrap: creating an account requires accepting Terms + Privacy.
+  agreedToTerms: z
+    .boolean()
+    .refine((v) => v === true, { message: "Please agree to the Terms and Privacy Policy" }),
 });
 type Values = z.infer<typeof schema>;
 
@@ -70,9 +75,9 @@ export function AcceptInvitePage() {
     })();
   }, [user, token, navigate]);
 
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<Values>({
+  const { register, handleSubmit, reset, control, formState: { errors, isSubmitting } } = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { email: "", password: "", fullName: "" },
+    defaultValues: { email: "", password: "", fullName: "", agreedToTerms: false },
   });
 
   // Not signed in: look up who/org/role by token so the screen has real context
@@ -94,7 +99,7 @@ export function AcceptInvitePage() {
         return;
       }
       setPeek({ status: "ok", data: row });
-      reset({ email: row.invitee_email, fullName: row.invitee_full_name ?? "", password: "" });
+      reset({ email: row.invitee_email, fullName: row.invitee_full_name ?? "", password: "", agreedToTerms: false });
     })();
     return () => {
       cancelled = true;
@@ -194,6 +199,18 @@ export function AcceptInvitePage() {
             <FormField label="Password" htmlFor="ai-pw" error={errors.password?.message} helper="At least 8 characters.">
               <Input id="ai-pw" type="password" autoComplete="new-password" {...register("password")} />
             </FormField>
+            <Controller
+              name="agreedToTerms"
+              control={control}
+              render={({ field, fieldState }) => (
+                <TermsConsent
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                  error={fieldState.error?.message}
+                  disabled={isSubmitting}
+                />
+              )}
+            />
             <Button type="submit" size="lg" fullWidth loading={isSubmitting}>Create my account</Button>
           </form>
         </div>

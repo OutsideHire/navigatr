@@ -38,10 +38,12 @@ function renderAt(token = "abc123") {
   );
 }
 
-// email + name are pre-filled from the invite; just set a password + submit.
+// email + name are pre-filled from the invite; set a password, agree to the
+// Terms clickwrap, then submit.
 async function submitPassword() {
   const user = userEvent.setup();
   await user.type(await screen.findByLabelText(/password/i), "longenoughpw");
+  await user.click(screen.getByRole("checkbox", { name: /i agree to the terms/i }));
   await user.click(screen.getByRole("button", { name: /create my account/i }));
 }
 
@@ -86,6 +88,16 @@ describe("AcceptInvitePage", () => {
     await submitPassword();
     expect(navigateMock).toHaveBeenCalledWith("/login");
     expect(toastErrorMock).toHaveBeenCalled();
+  });
+
+  it("blocks account creation until Terms are agreed", async () => {
+    renderAt("abc123");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/password/i), "longenoughpw");
+    // Submit WITHOUT checking the consent box.
+    await user.click(screen.getByRole("button", { name: /create my account/i }));
+    expect(signUpMock).not.toHaveBeenCalled();
+    expect(await screen.findByText(/please agree to the terms/i)).toBeInTheDocument();
   });
 
   it("shows an invalid-invite message (no form) when the token doesn't resolve", async () => {

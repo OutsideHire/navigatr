@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { Button } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
 import { toast } from "sonner";
@@ -33,6 +34,7 @@ function GoogleIcon() {
 export function OAuthButtons({
   disabled,
   inviteCode,
+  consentNote = false,
 }: {
   disabled?: boolean;
   /**
@@ -41,6 +43,14 @@ export function OAuthButtons({
    * has a profile. The /auth/callback page reads it and calls claim_invite_code.
    */
   inviteCode?: string;
+  /**
+   * Show a passive "by continuing you agree" consent line under the button.
+   * Google OAuth auto-provisions an account for a brand-new user, so on pages
+   * WITHOUT an explicit consent checkbox (i.e. /login) this covers the
+   * account-creation edge. Signup + create-workspace pages leave it off; their
+   * required checkbox already captures consent for that path.
+   */
+  consentNote?: boolean;
 }) {
   const signInWithGoogle = useAuth((s) => s.signInWithGoogle);
 
@@ -61,6 +71,29 @@ export function OAuthButtons({
         <GoogleIcon />
         Continue with Google
       </Button>
+      {consentNote && (
+        <p className="text-center text-caption text-text-muted">
+          By continuing, you agree to our{" "}
+          <Link
+            to="/terms"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-brand-primary underline underline-offset-2"
+          >
+            Terms of Service
+          </Link>{" "}
+          and{" "}
+          <Link
+            to="/privacy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-brand-primary underline underline-offset-2"
+          >
+            Privacy Policy
+          </Link>
+          .
+        </p>
+      )}
     </div>
   );
 }

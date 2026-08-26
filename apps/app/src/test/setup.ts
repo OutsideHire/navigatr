@@ -18,3 +18,15 @@ if (typeof window !== "undefined" && !window.matchMedia) {
     }),
   });
 }
+
+// jsdom doesn't implement ResizeObserver. Radix primitives (e.g. the Checkbox
+// bubble input used for native form submission) construct one on render, which
+// throws in tests without this shim. A no-op observer is enough for jsdom.
+if (typeof globalThis !== "undefined" && !("ResizeObserver" in globalThis)) {
+  class ResizeObserverStub {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = ResizeObserverStub;
+}

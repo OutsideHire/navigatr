@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
@@ -8,6 +8,7 @@ import { Button, FormField, Input } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
 import { OAuthButtons, OrDivider } from "./OAuthButtons";
 import { CheckYourEmailNotice } from "./CheckYourEmailNotice";
+import { TermsConsent } from "./TermsConsent";
 
 const schema = z.object({
   fullName: z.string().trim().min(2, "Please enter your full name"),
@@ -16,6 +17,10 @@ const schema = z.object({
   // Optional — blank means "create a new workspace" (self-serve path).
   // The auth callback routes profile-less users to /create-organization.
   inviteCode: z.string().trim().optional().default(""),
+  // Clickwrap: creating an account requires accepting Terms + Privacy.
+  agreedToTerms: z
+    .boolean()
+    .refine((v) => v === true, { message: "Please agree to the Terms and Privacy Policy" }),
 });
 
 type Values = z.infer<typeof schema>;
@@ -31,10 +36,11 @@ export function SignUpForm() {
     register,
     handleSubmit,
     watch,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { fullName: "", email: "", password: "", inviteCode: codeFromUrl },
+    defaultValues: { fullName: "", email: "", password: "", inviteCode: codeFromUrl, agreedToTerms: false },
   });
 
   const inviteCode = watch("inviteCode");
@@ -111,6 +117,20 @@ export function SignUpForm() {
           {...register("inviteCode")}
         />
       </FormField>
+
+      <Controller
+        name="agreedToTerms"
+        control={control}
+        render={({ field, fieldState }) => (
+          <TermsConsent
+            ref={field.ref}
+            checked={field.value}
+            onCheckedChange={field.onChange}
+            error={fieldState.error?.message}
+            disabled={isSubmitting}
+          />
+        )}
+      />
 
       <Button type="submit" size="lg" fullWidth loading={isSubmitting}>
         {isSubmitting ? "Creating account…" : "Create account"}
