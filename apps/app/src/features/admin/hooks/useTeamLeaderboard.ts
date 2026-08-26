@@ -13,6 +13,14 @@ export interface LeaderboardRow {
   role_level: RoleLevel | null;
   status: LeaderboardStatus;
   manager_id: string | null;
+  /**
+   * Deferred reporting line (email) for a row whose manager has no profile id
+   * yet: a pending invite reporting to a manager who is also a pending invite,
+   * or a rep who accepted before their manager. The RPC always returns this
+   * column (null when there's no deferred line); optional here so partial test
+   * fixtures need not set it. Consumed by buildOrgTree to nest pre-accept.
+   */
+  reports_to_email?: string | null;
   open_deals: number;
   pipeline_cents: number;
   won_deals_window: number;

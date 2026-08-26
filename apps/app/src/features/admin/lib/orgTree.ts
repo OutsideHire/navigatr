@@ -27,6 +27,15 @@ export interface OrgTreeInput {
   role_level: RoleLevel | null;
   manager_id: string | null;
   status: "active" | "invited" | "revoked";
+  /**
+   * Deferred reporting line as an email, for a row whose manager has no profile
+   * id yet (a pending CSV invite reporting to a manager who is ALSO a pending
+   * invite, or a rep who accepted before their manager). When `manager_id`
+   * doesn't resolve to an in-list node, the tree falls back to matching this
+   * email to whichever node owns it, so same-file teams nest pre-accept instead
+   * of rendering flat. Optional: absent/null means "no deferred line".
+   */
+  reports_to_email?: string | null;
 }
 
 export interface OrgTreeNode<T extends OrgTreeInput = OrgTreeInput> {
@@ -68,12 +77,42 @@ export function buildOrgTree<T extends OrgTreeInput>(rows: T[]): OrgTreeNode<T>[
   const byId = new Map<string, T>();
   for (const r of rows) byId.set(r.agent_id, r);
 
+  // email -> agent_id, so a deferred reporting line (reports_to_email) can be
+  // matched to whichever node owns that email. When an email is shared by an
+  // active member and a stale pending invite, the ACTIVE member wins so a
+  // reporting line resolves to the real manager, not the leftover invite.
+  const idByEmail = new Map<string, string>();
+  for (const r of rows) {
+    const key = r.email?.toLowerCase();
+    if (!key) continue;
+    const existing = idByEmail.get(key);
+    if (existing == null) {
+      idByEmail.set(key, r.agent_id);
+    } else if (byId.get(existing)?.status !== "active" && r.status === "active") {
+      idByEmail.set(key, r.agent_id);
+    }
+  }
+
+  // The parent node id for a row, or null if it's a root. Prefer the real
+  // manager_id edge; fall back to reports_to_email only when manager_id doesn't
+  // resolve to an in-list node (a pending invite whose manager is also pending,
+  // or a rep who accepted before their manager). Never self-parent.
+  const parentOf = (r: T): string | null => {
+    if (r.manager_id != null && byId.has(r.manager_id)) return r.manager_id;
+    const rte = r.reports_to_email?.toLowerCase();
+    if (rte) {
+      const pid = idByEmail.get(rte);
+      if (pid != null && pid !== r.agent_id) return pid;
+    }
+    return null;
+  };
+
   // Group provisional children under their (in-list) manager; collect roots.
   const childrenOf = new Map<string, T[]>();
   const roots: T[] = [];
   for (const r of rows) {
-    const mgr = r.manager_id;
-    if (mgr == null || !byId.has(mgr)) {
+    const mgr = parentOf(r);
+    if (mgr == null) {
       roots.push(r);
     } else {
       const bucket = childrenOf.get(mgr);

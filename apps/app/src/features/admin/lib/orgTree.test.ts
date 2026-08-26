@@ -127,4 +127,118 @@ describe("buildOrgTree", () => {
     expect(tree.map((n) => n.row.agent_id)).toEqual(["solo"]);
     expect(tree[0].depth).toBe(0);
   });
+
+  // ── reports_to_email fallback: pending CSV invites nest pre-accept ──
+
+  it("nests a pending invite under a pending-invite manager via reports_to_email", () => {
+    // Both manager + rep are pending invites (no manager_id yet); the rep's
+    // reporting line is only known as the manager's email.
+    const rows = [
+      row({ agent_id: "inv-mgr", role_level: "sales_manager", status: "invited", email: "mgr@x.com" }),
+      row({
+        agent_id: "inv-rep",
+        role_level: "sales_professional",
+        status: "invited",
+        email: "rep@x.com",
+        manager_id: null,
+        reports_to_email: "mgr@x.com",
+      }),
+    ];
+    const tree = buildOrgTree(rows);
+    expect(flatten(tree)).toEqual(["inv-mgr@0", "inv-rep@1"]);
+  });
+
+  it("nests a rep who accepted early (active, manager_id null) under a still-pending manager by email", () => {
+    const rows = [
+      row({ agent_id: "inv-mgr", role_level: "sales_manager", status: "invited", email: "mgr@x.com" }),
+      row({
+        agent_id: "early-rep",
+        role_level: "sales_professional",
+        status: "active",
+        email: "rep@x.com",
+        manager_id: null,
+        reports_to_email: "mgr@x.com",
+      }),
+    ];
+    const tree = buildOrgTree(rows);
+    expect(flatten(tree)).toEqual(["inv-mgr@0", "early-rep@1"]);
+  });
+
+  it("prefers manager_id over reports_to_email when the manager_id resolves in-list", () => {
+    // Both an id edge and an email edge are present; the real manager_id wins.
+    const rows = [
+      row({ agent_id: "admin", role_level: "administrator", email: "admin@x.com" }),
+      row({ agent_id: "mgr", role_level: "sales_manager", manager_id: "admin", email: "mgr@x.com" }),
+      row({
+        agent_id: "rep",
+        role_level: "sales_professional",
+        manager_id: "mgr",
+        reports_to_email: "admin@x.com", // stale/other; must be ignored
+        email: "rep@x.com",
+      }),
+    ];
+    const tree = buildOrgTree(rows);
+    const mgr = tree[0].children.find((c) => c.row.agent_id === "mgr")!;
+    expect(mgr.children.map((c) => c.row.agent_id)).toEqual(["rep"]);
+  });
+
+  it("is case-insensitive on the reports_to_email match", () => {
+    const rows = [
+      row({ agent_id: "inv-mgr", role_level: "sales_manager", status: "invited", email: "Mgr@X.com" }),
+      row({
+        agent_id: "inv-rep",
+        role_level: "sales_professional",
+        status: "invited",
+        reports_to_email: "mgr@x.COM",
+      }),
+    ];
+    const tree = buildOrgTree(rows);
+    expect(flatten(tree)).toEqual(["inv-mgr@0", "inv-rep@1"]);
+  });
+
+  it("prefers an active profile over a pending invite when an email is shared", () => {
+    // Defensive: if the same email appears as both an active member and a
+    // stale pending invite, the reporting line resolves to the ACTIVE node.
+    const rows = [
+      row({ agent_id: "active-mgr", role_level: "sales_manager", status: "active", email: "mgr@x.com" }),
+      row({ agent_id: "ghost-invite", role_level: "sales_manager", status: "invited", email: "mgr@x.com" }),
+      row({
+        agent_id: "rep",
+        role_level: "sales_professional",
+        status: "invited",
+        reports_to_email: "mgr@x.com",
+      }),
+    ];
+    const tree = buildOrgTree(rows);
+    const activeMgr = tree.find((n) => n.row.agent_id === "active-mgr")!;
+    expect(activeMgr.children.map((c) => c.row.agent_id)).toEqual(["rep"]);
+  });
+
+  it("does not self-parent when reports_to_email equals the row's own email", () => {
+    const rows = [
+      row({ agent_id: "solo", role_level: "sales_manager", status: "invited", email: "me@x.com", reports_to_email: "me@x.com" }),
+    ];
+    const tree = buildOrgTree(rows);
+    expect(tree.map((n) => n.row.agent_id)).toEqual(["solo"]);
+    expect(tree[0].depth).toBe(0);
+  });
+
+  it("does not infinite-loop on a 2-node email cycle", () => {
+    const rows = [
+      row({ agent_id: "x", role_level: "sales_manager", status: "invited", email: "x@x.com", reports_to_email: "y@x.com" }),
+      row({ agent_id: "y", role_level: "sales_manager", status: "invited", email: "y@x.com", reports_to_email: "x@x.com" }),
+    ];
+    const tree = buildOrgTree(rows);
+    expect(flatten(tree).map((t) => t.split("@")[0]).sort()).toEqual(["x", "y"]);
+  });
+
+  it("stays a root when reports_to_email points at nobody in the list", () => {
+    const rows = [
+      row({ agent_id: "root", role_level: "administrator", email: "root@x.com" }),
+      row({ agent_id: "rep", role_level: "sales_professional", status: "invited", reports_to_email: "ghost@x.com" }),
+    ];
+    const tree = buildOrgTree(rows);
+    expect(tree.map((n) => n.row.agent_id).sort()).toEqual(["rep", "root"]);
+    expect(flatten(tree)).toHaveLength(2);
+  });
 });
