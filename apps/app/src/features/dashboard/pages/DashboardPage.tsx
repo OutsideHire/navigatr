@@ -81,6 +81,8 @@ import { computeLeadSourcePerformance } from "../lib/leadSourcePerformance";
 import { useOrgMemberNames } from "../hooks/useOrgMemberNames";
 import { useOnboardingProgress } from "../hooks/useOnboardingProgress";
 import { GetStartedChecklist } from "../components/GetStartedChecklist";
+import { useRepFirstAction } from "../hooks/useRepFirstAction";
+import { RepFirstActionNudge } from "../components/RepFirstActionNudge";
 import { KpiBreakdownPanel } from "../components/KpiBreakdownPanel";
 import { type KpiMetric } from "../lib/kpiBreakdown";
 import { PersistenceIndexWidget } from "../components/PersistenceIndexWidget";
@@ -1063,6 +1065,18 @@ export function DashboardPage() {
   const firstName = getFirstName(user);
   const navigate = useNavigate();
 
+  // Onboarding surface splits by what the role can actually do:
+  //   - inviters (Administrator / CSO) get the Get-Started checklist, whose
+  //     north star is "invite your team";
+  //   - a field rep (Sales Professional) gets a first-action nudge toward
+  //     their own loop (log a stop / add a deal) instead;
+  //   - everyone in between (mid-band managers, who can neither invite nor are
+  //     field reps) gets neither and lands straight on their team dashboard.
+  const profile = useProfile();
+  const canInvite = profileCan(profile.data, "inviteUsers");
+  const isFieldRep = profile.data?.role_level === "sales_professional";
+  const repAction = useRepFirstAction(Boolean(isFieldRep));
+
   // Real-count activation state (no dismiss flag). The checklist auto-retires
   // when every step is done; until then it rides above the dashboard.
   const { steps, counts, allComplete } = useOnboardingProgress();
@@ -1093,13 +1107,21 @@ export function DashboardPage() {
 
   return (
     <>
-      {!allComplete && (
+      {canInvite && !allComplete && (
         <div className="mx-auto w-full max-w-4xl px-4 pt-6 sm:px-6 lg:px-8">
           <GetStartedChecklist
             steps={steps}
             collapsed={collapsed}
             onToggleCollapse={toggleCollapsed}
             onStepCta={(to) => navigate(to)}
+          />
+        </div>
+      )}
+      {isFieldRep && !repAction.isLoading && !repAction.taken && (
+        <div className="mx-auto w-full max-w-4xl px-4 pt-6 sm:px-6 lg:px-8">
+          <RepFirstActionNudge
+            onLogStop={() => navigate("/path")}
+            onAddDeal={() => navigate("/pipeline?action=add")}
           />
         </div>
       )}
