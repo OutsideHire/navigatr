@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { settableRoles, roleChangeLabel, type UserRole } from "./roleActions";
+import { settableRoles, roleChangeLabel, isPendingRoleChange, type UserRole } from "./roleActions";
 
 const t = (over: Partial<{ id: string; role: UserRole; status: "active" | "invited" | "revoked" }> = {}) => ({
   id: "u2", role: "rep" as UserRole, status: "active" as const, ...over,
@@ -37,5 +37,20 @@ describe("roleChangeLabel", () => {
     expect(roleChangeLabel("rep", "admin")).toBe("Promote to admin");
     expect(roleChangeLabel("admin", "manager")).toBe("Demote to manager");
     expect(roleChangeLabel("manager", "rep")).toBe("Demote to rep");
+  });
+});
+
+describe("isPendingRoleChange", () => {
+  it("is true when an admin views a pending (invited) other member", () => {
+    expect(isPendingRoleChange("admin", { id: "u2", status: "invited" }, "me")).toBe(true);
+  });
+  it("is false for an active member (settableRoles handles those)", () => {
+    expect(isPendingRoleChange("admin", { id: "u2", status: "active" }, "me")).toBe(false);
+  });
+  it("is false for self, a revoked member, or a non-admin caller", () => {
+    expect(isPendingRoleChange("admin", { id: "me", status: "invited" }, "me")).toBe(false);
+    expect(isPendingRoleChange("admin", { id: "u2", status: "revoked" }, "me")).toBe(false);
+    expect(isPendingRoleChange("manager", { id: "u2", status: "invited" }, "me")).toBe(false);
+    expect(isPendingRoleChange(undefined, { id: "u2", status: "invited" }, "me")).toBe(false);
   });
 });

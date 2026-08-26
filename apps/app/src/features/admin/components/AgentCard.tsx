@@ -18,7 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { LeaderboardRow } from "../hooks/useTeamLeaderboard";
-import { settableRoles, roleChangeLabel, type UserRole } from "../lib/roleActions";
+import { settableRoles, roleChangeLabel, isPendingRoleChange, type UserRole } from "../lib/roleActions";
 import { formatMoney } from "@/features/pipeline/mockData";
 import { cn } from "@/lib/utils";
 import { isZeroMetric } from "../lib/metricDisplay";
@@ -110,6 +110,9 @@ export function AgentCard({
                 {roleChangeLabel(row.role, r)}
               </DropdownMenuItem>
             ))}
+            {isPendingRoleChange(callerRole, { id: row.agent_id, status: row.status }, selfId) && (
+              <DropdownMenuItem disabled>Set role after they accept</DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

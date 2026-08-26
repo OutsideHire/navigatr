@@ -30,3 +30,18 @@ export function settableRoles(
 export function roleChangeLabel(current: UserRole, target: UserRole): string {
   return RANK[target] > RANK[current] ? `Promote to ${target}` : `Demote to ${target}`;
 }
+
+/**
+ * True when an admin caller is looking at a still-PENDING (invited) member, so
+ * settableRoles is (correctly) empty. The UI shows a disabled explanatory item
+ * in this case rather than nothing, which otherwise reads as a broken feature
+ * ("I can't promote/demote them") when the real reason is the invite hasn't been
+ * accepted yet.
+ */
+export function isPendingRoleChange(
+  callerRole: UserRole | undefined,
+  target: { id: string; status: LeaderboardStatus },
+  selfId: string | undefined,
+): boolean {
+  return callerRole === "admin" && target.status === "invited" && target.id !== selfId;
+}
