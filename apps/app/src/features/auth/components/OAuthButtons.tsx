@@ -47,8 +47,8 @@ export function OAuthButtons({
    * Show a passive "by continuing you agree" consent line under the button.
    * Google OAuth auto-provisions an account for a brand-new user, so on pages
    * WITHOUT an explicit consent checkbox (i.e. /login) this covers the
-   * account-creation edge. Signup pages leave it off — their required checkbox
-   * already gates this button.
+   * account-creation edge. Signup + create-workspace pages leave it off; their
+   * required checkbox already captures consent for that path.
    */
   consentNote?: boolean;
 }) {

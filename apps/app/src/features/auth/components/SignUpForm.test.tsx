@@ -90,12 +90,4 @@ describe("SignUpForm submit branches", () => {
     expect(signUpMock).not.toHaveBeenCalled();
     expect(await screen.findByText(/please agree to the terms/i)).toBeInTheDocument();
   });
-
-  it("keeps Continue with Google disabled until Terms are agreed", async () => {
-    renderForm();
-    const google = screen.getByRole("button", { name: /continue with google/i });
-    expect(google).toBeDisabled();
-    await userEvent.click(screen.getByRole("checkbox", { name: /i agree to the terms/i }));
-    expect(google).toBeEnabled();
-  });
 });

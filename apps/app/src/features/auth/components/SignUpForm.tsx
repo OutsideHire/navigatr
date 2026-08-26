@@ -44,9 +44,6 @@ export function SignUpForm() {
   });
 
   const inviteCode = watch("inviteCode");
-  // Gate BOTH signup paths on consent: the email/password submit is blocked by
-  // the schema, and the OAuth buttons are disabled until the box is checked.
-  const agreedToTerms = watch("agreedToTerms");
 
   const onSubmit = async (values: Values) => {
     try {
@@ -78,19 +75,7 @@ export function SignUpForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
-      <Controller
-        name="agreedToTerms"
-        control={control}
-        render={({ field, fieldState }) => (
-          <TermsConsent
-            checked={field.value}
-            onCheckedChange={field.onChange}
-            error={fieldState.error?.message}
-            disabled={isSubmitting}
-          />
-        )}
-      />
-      <OAuthButtons disabled={isSubmitting || !agreedToTerms} inviteCode={inviteCode?.trim() ?? ""} />
+      <OAuthButtons disabled={isSubmitting} inviteCode={inviteCode?.trim() ?? ""} />
       <OrDivider />
 
       <FormField label="Full name" htmlFor="signup-name" error={errors.fullName?.message}>
@@ -132,6 +117,20 @@ export function SignUpForm() {
           {...register("inviteCode")}
         />
       </FormField>
+
+      <Controller
+        name="agreedToTerms"
+        control={control}
+        render={({ field, fieldState }) => (
+          <TermsConsent
+            ref={field.ref}
+            checked={field.value}
+            onCheckedChange={field.onChange}
+            error={fieldState.error?.message}
+            disabled={isSubmitting}
+          />
+        )}
+      />
 
       <Button type="submit" size="lg" fullWidth loading={isSubmitting}>
         {isSubmitting ? "Creating account…" : "Create account"}

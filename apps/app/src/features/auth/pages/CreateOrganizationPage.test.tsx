@@ -43,11 +43,24 @@ describe("CreateOrganizationPage invite code", () => {
 
     render(<MemoryRouter><CreateOrganizationPage /></MemoryRouter>);
     await user.type(screen.getByLabelText(/workspace name/i), "Acme Payments");
+    // Consent is captured at this account-completion step (covers a brand-new
+    // user who authenticated via Google, who never saw the signup checkbox).
+    await user.click(screen.getByRole("checkbox", { name: /i agree to the terms/i }));
     await user.click(screen.getByRole("button", { name: /create workspace/i }));
 
     await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
     // The invite code is now shown on /welcome (not a toast), so we just confirm
     // a success + the route into the activation step.
     expect(navigateMock).toHaveBeenCalledWith("/welcome", { replace: true });
+  });
+
+  it("does not create a workspace until Terms are agreed", async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter><CreateOrganizationPage /></MemoryRouter>);
+    await user.type(screen.getByLabelText(/workspace name/i), "Acme Payments");
+    // Submit WITHOUT agreeing.
+    await user.click(screen.getByRole("button", { name: /create workspace/i }));
+    expect(mutateAsyncMock).not.toHaveBeenCalled();
+    expect(await screen.findByText(/please agree to the terms/i)).toBeInTheDocument();
   });
 });

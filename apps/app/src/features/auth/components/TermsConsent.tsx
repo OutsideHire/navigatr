@@ -1,14 +1,16 @@
 /**
- * TermsConsent — the "I agree to the Terms of Service and Privacy Policy"
- * clickwrap shown on every account-creation form (self-serve signup + invited
- * rep). Purely presentational: it reports the checkbox state via callback and
- * renders the error it's given, so the form owns validation + wiring and this
- * stays trivial to unit-test.
+ * TermsConsent, the "I agree to the Terms of Service and Privacy Policy"
+ * clickwrap shown on every account-creation form (self-serve signup, invited
+ * rep, create-workspace). Purely presentational: it reports the checkbox state
+ * via callback and renders the error it's given, so the form owns validation +
+ * wiring and this stays trivial to unit-test.
  *
  * The checkbox's own label carries the full agreement sentence (its accessible
  * name); the Terms / Privacy documents open in a new tab so the reader never
- * loses their half-filled signup form.
+ * loses their half-filled signup form. The ref forwards to the checkbox control
+ * so react-hook-form can focus + scroll to it when consent is the failed field.
  */
+import * as React from "react";
 import { Link } from "react-router-dom";
 import { Checkbox } from "@/components/navigatr";
 
@@ -22,16 +24,14 @@ export interface TermsConsentProps {
   id?: string;
 }
 
-export function TermsConsent({
-  checked,
-  onCheckedChange,
-  error,
-  disabled,
-  id = "agree-terms",
-}: TermsConsentProps) {
+export const TermsConsent = React.forwardRef<HTMLButtonElement, TermsConsentProps>(function TermsConsent(
+  { checked, onCheckedChange, error, disabled, id = "agree-terms" },
+  ref,
+) {
   return (
     <div className="flex flex-col gap-1">
       <Checkbox
+        ref={ref}
         id={id}
         checked={checked}
         onCheckedChange={onCheckedChange}
@@ -66,4 +66,4 @@ export function TermsConsent({
       )}
     </div>
   );
-}
+});

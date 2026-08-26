@@ -4,11 +4,11 @@
 --
 -- Self-cleans via ROLLBACK. Verifies the consent audit trigger:
 --   1. a REAL profile insert records exactly one terms_acceptances row with the
---      current document versions, the user's id/org/email;
+--      current document versions and the user's id/org (no PII stored);
 --   2. a profile inserted under session_replication_role = replica (how demo
 --      users are seeded) records NOTHING -- synthetic users get no false consent;
---   3. the email falls back to auth.users.email when the profile row omits it;
---   4. authenticated cannot write the table directly (append-only via trigger).
+--   3. no app role can read or write the audit table (ops/legal-only via the
+--      service role; rows come only from the SECURITY DEFINER trigger).
 
 begin;
 
@@ -17,14 +17,13 @@ insert into organizations (id, name, slug, invite_code) values
 
 insert into auth.users (id, email, aud, role, created_at, updated_at, email_confirmed_at) values
   ('fa000000-0000-0000-0000-000000000001', 'realuser@t.example', 'authenticated', 'authenticated', now(), now(), now()),
-  ('fa000000-0000-0000-0000-000000000002', 'demouser@t.example', 'authenticated', 'authenticated', now(), now(), now()),
-  ('fa000000-0000-0000-0000-000000000003', 'noemailrow@t.example', 'authenticated', 'authenticated', now(), now(), now());
+  ('fa000000-0000-0000-0000-000000000002', 'demouser@t.example', 'authenticated', 'authenticated', now(), now(), now());
 
 -- ── 1) A real profile insert records one row with the current versions. ──
 do $$
 declare
   n int;
-  v_terms text; v_privacy text; v_email text; v_org uuid;
+  v_terms text; v_privacy text; v_org uuid;
 begin
   insert into profiles (id, org_id, role, role_level, full_name, email, role_path) values
     ('fa000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000fa', 'admin', 'administrator', 'Real User', 'realuser@t.example', 'realuser'::ltree);
@@ -32,12 +31,11 @@ begin
   select count(*) into n from terms_acceptances where user_id = 'fa000000-0000-0000-0000-000000000001';
   if n <> 1 then raise exception 'expected exactly 1 acceptance row for the real user, got %', n; end if;
 
-  select terms_version, privacy_version, email, org_id
-    into v_terms, v_privacy, v_email, v_org
+  select terms_version, privacy_version, org_id
+    into v_terms, v_privacy, v_org
     from terms_acceptances where user_id = 'fa000000-0000-0000-0000-000000000001';
   if v_terms   is distinct from public.current_terms_version()   then raise exception 'terms_version mismatch: %', v_terms; end if;
   if v_privacy is distinct from public.current_privacy_version() then raise exception 'privacy_version mismatch: %', v_privacy; end if;
-  if v_email   is distinct from 'realuser@t.example'             then raise exception 'email mismatch: %', v_email; end if;
   if v_org     is distinct from '00000000-0000-0000-0000-0000000000fa'::uuid then raise exception 'org_id mismatch: %', v_org; end if;
 end $$;
 
@@ -54,22 +52,12 @@ begin
   if n <> 0 then raise exception 'replica-mode (demo) insert must NOT record consent, got % rows', n; end if;
 end $$;
 
--- ── 3) email falls back to auth.users.email when the profile omits it. ──
+-- ── 3) No app role can read or write the audit table directly. ──
 do $$
-declare v_email text;
 begin
-  insert into profiles (id, org_id, role, role_level, full_name, email, role_path) values
-    ('fa000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-0000000000fa', 'rep', 'sales_professional', 'No Email Row', null, 'realuser.noemail'::ltree);
-
-  select email into v_email from terms_acceptances where user_id = 'fa000000-0000-0000-0000-000000000003';
-  if v_email is distinct from 'noemailrow@t.example' then
-    raise exception 'expected email fallback to auth.users.email, got %', v_email;
+  if has_table_privilege('authenticated', 'public.terms_acceptances', 'SELECT') then
+    raise exception 'authenticated must NOT have SELECT on terms_acceptances (ops/legal-only)';
   end if;
-end $$;
-
--- ── 4) authenticated cannot write the audit table directly. ──
-do $$
-begin
   if has_table_privilege('authenticated', 'public.terms_acceptances', 'INSERT') then
     raise exception 'authenticated must NOT have INSERT on terms_acceptances (append-only via trigger)';
   end if;
