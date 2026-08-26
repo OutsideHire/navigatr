@@ -29,7 +29,10 @@ export default defineConfig({
   webServer: {
     // Vite dev reads VITE_* from the environment at startup, so the CI job
     // exports the local Supabase URL/anon key before Playwright launches this.
-    command: `pnpm dev -- --host 127.0.0.1 --port ${PORT} --strictPort`,
+    // `pnpm exec vite` (not `pnpm dev --`) so the --host/--port flags reach vite
+    // directly; the `--` form gets passed through literally and vite treats it
+    // as end-of-options, silently ignoring the port and serving on 5173.
+    command: `pnpm exec vite --host 127.0.0.1 --port ${PORT} --strictPort`,
     url: BASE,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
