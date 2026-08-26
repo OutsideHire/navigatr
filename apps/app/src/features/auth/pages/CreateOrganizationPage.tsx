@@ -11,7 +11,7 @@
  * code/link. The code also lives permanently in Settings > Team.
  */
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -41,19 +41,25 @@ export function CreateOrganizationPage() {
   const profile = useProfile();
   const createOrg = useCreateOrganization();
 
-  // Defensive routing: a user who somehow lands here while already
-  // having a profile shouldn't see the create-org form (the RPC would
-  // throw 'already_in_organization' anyway, but we shouldn't ask the
-  // question we already know the answer to).
+  // Defensive routing: a user who ARRIVES here already having a profile is
+  // already in an org and shouldn't see the create form -> send them to the
+  // dashboard. Only the AT-MOUNT state counts: after a successful create the
+  // profile appears here too, but onSubmit routes that user to /welcome (the
+  // invite step), and this effect must not race it to /dashboard.
+  const hadProfileAtMount = useRef<boolean | undefined>(undefined);
   useEffect(() => {
     if (!loading && !user) {
       navigate("/login", { replace: true });
       return;
     }
-    if (profile.data) {
+    if (profile.isLoading) return; // wait until the profile query settles
+    if (hadProfileAtMount.current === undefined) {
+      hadProfileAtMount.current = Boolean(profile.data);
+    }
+    if (hadProfileAtMount.current) {
       navigate("/dashboard", { replace: true });
     }
-  }, [loading, user, profile.data, navigate]);
+  }, [loading, user, profile.isLoading, profile.data, navigate]);
 
   const {
     register,
