@@ -12,9 +12,17 @@ const { signUpMock, navigateMock, toastErrorMock } = vi.hoisted(() => ({
 vi.mock("@/stores/auth", () => ({
   useAuth: (sel: (s: { signUp: typeof signUpMock }) => unknown) => sel({ signUp: signUpMock }),
 }));
-// The OAuth buttons pull in their own auth/supabase wiring; stub them out so
-// this test focuses on the email/password submit branches.
-vi.mock("./OAuthButtons", () => ({ OAuthButtons: () => null, OrDivider: () => null }));
+// The OAuth buttons pull in their own auth/supabase wiring; stub them with a
+// disabled-reflecting placeholder so we can assert the consent gate applies to
+// the Google path too, without dragging in supabase.
+vi.mock("./OAuthButtons", () => ({
+  OAuthButtons: ({ disabled }: { disabled?: boolean }) => (
+    <button type="button" disabled={disabled}>
+      Continue with Google
+    </button>
+  ),
+  OrDivider: () => null,
+}));
 vi.mock("react-router-dom", async (orig) => {
   const actual = await orig<typeof import("react-router-dom")>();
   return { ...actual, useNavigate: () => navigateMock };
@@ -26,6 +34,7 @@ async function fillAndSubmit(email = "new@company.com") {
   await user.type(screen.getByLabelText(/full name/i), "Jamie Rivera");
   await user.type(screen.getByLabelText(/work email/i), email);
   await user.type(screen.getByLabelText(/password/i), "longenoughpw");
+  await user.click(screen.getByRole("checkbox", { name: /i agree to the terms/i }));
   await user.click(screen.getByRole("button", { name: /create account/i }));
 }
 
@@ -67,5 +76,26 @@ describe("SignUpForm submit branches", () => {
     expect(navigateMock).toHaveBeenCalledWith("/login");
     expect(toastErrorMock).toHaveBeenCalled();
     expect(screen.queryByText(/check your email/i)).not.toBeInTheDocument();
+  });
+
+  it("blocks account creation until Terms are agreed", async () => {
+    signUpMock.mockResolvedValue({ needsEmailConfirmation: false, alreadyRegistered: false });
+    renderForm();
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/full name/i), "Jamie Rivera");
+    await user.type(screen.getByLabelText(/work email/i), "new@company.com");
+    await user.type(screen.getByLabelText(/password/i), "longenoughpw");
+    // Submit WITHOUT checking the consent box.
+    await user.click(screen.getByRole("button", { name: /create account/i }));
+    expect(signUpMock).not.toHaveBeenCalled();
+    expect(await screen.findByText(/please agree to the terms/i)).toBeInTheDocument();
+  });
+
+  it("keeps Continue with Google disabled until Terms are agreed", async () => {
+    renderForm();
+    const google = screen.getByRole("button", { name: /continue with google/i });
+    expect(google).toBeDisabled();
+    await userEvent.click(screen.getByRole("checkbox", { name: /i agree to the terms/i }));
+    expect(google).toBeEnabled();
   });
 });
