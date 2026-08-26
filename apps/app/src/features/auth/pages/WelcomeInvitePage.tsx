@@ -34,7 +34,12 @@ export function WelcomeInvitePage() {
   const [roleLevel, setRoleLevel] = React.useState<RoleLevel>("sales_professional");
   const [submitting, setSubmitting] = React.useState(false);
 
-  if (profile.isLoading) return null;
+  // Hold while the profile is loading OR refetching. create_organization
+  // invalidates ["profile"] right before routing here, so on the first render
+  // the cached value is a stale null; reading it now would wrongly bounce a
+  // just-created admin past the invite step. Wait for the fresh row, like
+  // ProtectedRoute does.
+  if (profile.isLoading || profile.isFetching) return null;
   // Inviting is an administrator/CSO capability; everyone else skips this step.
   if (!profileCan(profile.data, "inviteUsers")) return <Navigate to="/dashboard" replace />;
 

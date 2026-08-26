@@ -1,0 +1,69 @@
+name: e2e-onboarding
+
+# Onboarding rehearsal (onboarding program, B1): boots a LOCAL Supabase (email
+# confirmation off), serves the app against it, and drives the real create-org
+# -> invite -> first-run flow in a browser. This is the authenticated onboarding
+# coverage the deployed smoke test in promote-production.yml deliberately skips.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  onboarding:
+    # ARM + pinned CLI 2.98.2 to match the database job (same Postgres image and
+    # stock grants the migrations rely on).
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.98.2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Unlike the database job (Postgres only), the browser flow needs auth
+      # (gotrue), data (postgrest) and the gateway (kong). Everything else is
+      # excluded to keep the runner within memory.
+      - name: Start Supabase (auth + rest + gateway)
+        run: >
+          supabase start
+          -x realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+
+      - name: Apply migrations + seed
+        run: supabase db reset
+
+      # Resolve the local API URL + anon key for the app build. Prints the key
+      # NAMES (not values) so a CLI-format change is self-diagnosing on the
+      # first run rather than a silent empty env.
+      - name: Export local Supabase env
+        run: |
+          supabase status -o json > /tmp/sb.json
+          echo "status keys:"; jq -r 'keys[]' /tmp/sb.json
+          API_URL=$(jq -r '.API_URL // .api_url // empty' /tmp/sb.json)
+          ANON_KEY=$(jq -r '.ANON_KEY // .anon_key // empty' /tmp/sb.json)
+          test -n "$API_URL" || { echo "could not resolve API_URL from supabase status"; exit 1; }
+          test -n "$ANON_KEY" || { echo "could not resolve ANON_KEY from supabase status"; exit 1; }
+          echo "VITE_SUPABASE_URL=$API_URL" >> "$GITHUB_ENV"
+          echo "VITE_SUPABASE_ANON_KEY=$ANON_KEY" >> "$GITHUB_ENV"
+
+      - name: Install Playwright (chromium)
+        working-directory: apps/app
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Onboarding E2E
+        working-directory: apps/app
+        run: pnpm exec playwright test -c playwright.onboarding.config.ts
+
+      - name: Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-onboarding-report
+          path: apps/app/test-results
+          if-no-files-found: ignore

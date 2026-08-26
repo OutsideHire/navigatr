@@ -8,6 +8,10 @@ import { defineConfig } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./e2e",
+  // Only the deployed smoke spec. The onboarding E2E lives under e2e/onboarding
+  // and runs from playwright.onboarding.config.ts against a LOCAL stack; keeping
+  // it out here stops the deployed-URL run from picking it up.
+  testMatch: /smoke\.spec\.ts$/,
   timeout: 45_000,
   // A deploy can take a moment to propagate through the CDN, so one retry
   // absorbs that without masking a genuinely broken build.
