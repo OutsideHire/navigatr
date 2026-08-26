@@ -28,6 +28,7 @@ import { CheckYourEmailNotice } from "../components/CheckYourEmailNotice";
 import { Button, FormField, Input } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
 import { supabase } from "@/lib/supabase";
+import { ROLE_LEVEL_OPTIONS, type RoleLevel } from "@/features/auth/capabilities";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -36,6 +37,15 @@ const schema = z.object({
 });
 type Values = z.infer<typeof schema>;
 
+/** Minimal invite context shown before sign-in (from the peek_invite RPC). */
+interface InviteMeta {
+  org_name: string;
+  role_level: RoleLevel | null;
+  inviter_name: string | null;
+  invitee_email: string;
+  invitee_full_name: string | null;
+}
+
 export function AcceptInvitePage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -43,6 +53,9 @@ export function AcceptInvitePage() {
   const signUp = useAuth((s) => s.signUp);
   const user = useAuth((s) => s.user);
   const [sentTo, setSentTo] = React.useState<string | null>(null);
+  const [peek, setPeek] = React.useState<{ status: "loading" | "ok" | "invalid"; data?: InviteMeta }>({
+    status: "loading",
+  });
 
   // If somehow signed in already, run claim and bounce.
   React.useEffect(() => {
@@ -57,10 +70,36 @@ export function AcceptInvitePage() {
     })();
   }, [user, token, navigate]);
 
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<Values>({
+  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: { email: "", password: "", fullName: "" },
   });
+
+  // Not signed in: look up who/org/role by token so the screen has real context
+  // and the invited email is pre-filled. peek_invite returns nothing for an
+  // invalid / expired / already-accepted / revoked token.
+  React.useEffect(() => {
+    if (user) return; // signed-in users are handled by the claim effect above
+    if (!token) {
+      setPeek({ status: "invalid" });
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase.rpc("peek_invite", { p_token: token });
+      if (cancelled) return;
+      const row = (Array.isArray(data) ? data[0] : data) as InviteMeta | undefined;
+      if (error || !row) {
+        setPeek({ status: "invalid" });
+        return;
+      }
+      setPeek({ status: "ok", data: row });
+      reset({ email: row.invitee_email, fullName: row.invitee_full_name ?? "", password: "" });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, token, reset]);
 
   const onSubmit = async (values: Values) => {
     if (!token) {
@@ -99,6 +138,10 @@ export function AcceptInvitePage() {
     }
   };
 
+  const roleLabel =
+    (peek.data?.role_level && ROLE_LEVEL_OPTIONS.find((o) => o.value === peek.data!.role_level)?.label) ||
+    "teammate";
+
   return (
     <AuthSplitShell
       title="You're invited."
@@ -109,19 +152,51 @@ export function AcceptInvitePage() {
     >
       {sentTo ? (
         <CheckYourEmailNotice email={sentTo} />
+      ) : peek.status === "loading" ? (
+        <p className="text-body-md text-text-muted">Loading your invite…</p>
+      ) : peek.status === "invalid" ? (
+        <div className="flex flex-col gap-3 text-center">
+          <h2 className="text-heading-md text-text-default">This invite link isn&apos;t valid</h2>
+          <p className="text-body-md text-text-muted">
+            It may have expired or already been used. Ask your administrator to resend it.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate("/login")}
+            className="text-body-sm font-medium text-brand-primary underline underline-offset-2"
+          >
+            Go to sign in
+          </button>
+        </div>
       ) : (
-      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
-        <FormField label="Full name" htmlFor="ai-name" error={errors.fullName?.message}>
-          <Input id="ai-name" autoFocus {...register("fullName")} />
-        </FormField>
-        <FormField label="Work email" htmlFor="ai-email" error={errors.email?.message}>
-          <Input id="ai-email" type="email" autoComplete="email" {...register("email")} />
-        </FormField>
-        <FormField label="Password" htmlFor="ai-pw" error={errors.password?.message} helper="At least 8 characters.">
-          <Input id="ai-pw" type="password" autoComplete="new-password" {...register("password")} />
-        </FormField>
-        <Button type="submit" size="lg" fullWidth loading={isSubmitting}>Create my account</Button>
-      </form>
+        <div className="flex flex-col gap-5">
+          {/* Trust context: who invited them, which org, what role. */}
+          <div className="rounded-radius-md border border-border-subtle bg-surface-sunken p-4">
+            <p className="text-body-md text-text-default">
+              {peek.data?.inviter_name ? (
+                <>
+                  <span className="font-medium">{peek.data.inviter_name}</span> invited you to join{" "}
+                </>
+              ) : (
+                "You've been invited to join "
+              )}
+              <span className="font-medium">{peek.data?.org_name}</span> as a{" "}
+              <span className="font-medium">{roleLabel}</span>.
+            </p>
+          </div>
+          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
+            <FormField label="Full name" htmlFor="ai-name" error={errors.fullName?.message}>
+              <Input id="ai-name" autoFocus {...register("fullName")} />
+            </FormField>
+            <FormField label="Work email" htmlFor="ai-email" error={errors.email?.message} helper="From your invite.">
+              <Input id="ai-email" type="email" autoComplete="email" readOnly {...register("email")} />
+            </FormField>
+            <FormField label="Password" htmlFor="ai-pw" error={errors.password?.message} helper="At least 8 characters.">
+              <Input id="ai-pw" type="password" autoComplete="new-password" {...register("password")} />
+            </FormField>
+            <Button type="submit" size="lg" fullWidth loading={isSubmitting}>Create my account</Button>
+          </form>
+        </div>
       )}
     </AuthSplitShell>
   );
