@@ -389,6 +389,19 @@ describe("ActivitiesPage / Today's meetings (external calendar)", () => {
   });
 });
 
+describe("ActivitiesPage / task with an unavailable deal", () => {
+  // A task whose deal is not in the loaded org deals (deleted, or moved out of
+  // scope) can only be dismissed, and the note must not mislabel a real task as
+  // "Sample data" (staging QA finding, 2026-08-27).
+  it("explains the orphaned deal, does not say 'Sample data', and offers Dismiss", () => {
+    renderWithSeed({ tasks: [makeTask("t-orphan", "d-missing", todayDate())], deals: [deal("d-other", "Acme")] });
+    const row = screen.getByTestId("task-row");
+    expect(within(row).getByText(/linked deal isn't in your workspace/i)).toBeInTheDocument();
+    expect(within(row).queryByText(/sample data/i)).not.toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: /Dismiss/i })).toBeInTheDocument();
+  });
+});
+
 describe("ActivitiesPage / empty", () => {
   it("renders no task rows when there are no open tasks", () => {
     renderWithSeed({ tasks: [], deals: [deal("d-1", "Acme")] });

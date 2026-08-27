@@ -279,7 +279,7 @@ function TaskRow({
           {agenda && <p className="truncate text-caption text-text-muted">{agenda}</p>}
           {action.dealUnavailable && (
             <p className="text-caption text-status-warning">
-              Sample data. The linked deal isn't in your workspace, so it can't be logged.
+              The linked deal isn't in your workspace, so this can't be logged. Dismiss to clear it.
             </p>
           )}
           <p className="text-caption text-text-muted">
