@@ -107,7 +107,7 @@ describe("DropInSheet", () => {
     stops = [];
   });
 
-  it("renders the 9 tiles with casual rep labels (no formal labels, no intervals), a Log Stop button, and no Save/contact-name field", () => {
+  it("renders the 9 tiles with casual rep labels (no formal labels), a Log Stop button, and no Save/contact-name field", () => {
     renderSheet();
     // Casual rep-facing labels replace the formal DISPOSITIONS labels here.
     expect(screen.getByText("Got their statement")).toBeInTheDocument();
@@ -117,11 +117,23 @@ describe("DropInSheet", () => {
     // The formal manager-facing labels must NOT show on the rep logging grid.
     expect(screen.queryByText("Statement Secured")).not.toBeInTheDocument();
     expect(screen.queryByText("Not in office")).not.toBeInTheDocument();
-    // Interval / day-count subtitles are hidden on the rep logging grid.
-    expect(screen.queryByText(/\b\d+\s*days?\b/i)).not.toBeInTheDocument();
+    // The casual SUBTITLE stays interval-free; timing lives on its own meta line.
+    expect(screen.queryByText("Walked out with a statement · 1 day")).not.toBeInTheDocument();
     expect(logStopBtn()).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^save$/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/contact name/i)).not.toBeInTheDocument();
+  });
+
+  it("shows each outcome's follow-up timing on its tile (fixed intervals, rep-chosen, and terminal)", () => {
+    renderSheet();
+    // Fixed intervals surface the day count per outcome.
+    expect(screen.getByText(/1-day follow-up/i)).toBeInTheDocument(); // Got their statement
+    expect(screen.getByText(/5-day follow-up/i)).toBeInTheDocument(); // Left materials
+    expect(screen.getByText(/30-day follow-up/i)).toBeInTheDocument(); // Not now
+    // The rep-chosen outcome says so instead of showing the fallback interval.
+    expect(screen.getByText(/you pick the date/i)).toBeInTheDocument(); // Asked me to come back
+    // Both terminal outcomes read "No follow-up".
+    expect(screen.getAllByText(/no follow-up/i).length).toBeGreaterThanOrEqual(2);
   });
 
   it("renders an optional dictated note field (replaces the old 'Coming soon' placeholder)", () => {
@@ -190,7 +202,7 @@ describe("DropInSheet", () => {
   it("Asked me to come back: date picker shows; Log Stop commits with the chosen date", async () => {
     renderSheet();
     fireEvent.click(screen.getByText("Asked me to come back"));
-    const dateInput = screen.getByLabelText(/follow-up date/i);
+    const dateInput = screen.getByLabelText(/when are you coming back/i);
     fireEvent.change(dateInput, { target: { value: "2026-06-20" } });
     await act(async () => { fireEvent.click(logStopBtn()); });
     expect(logVisit).toHaveBeenCalledWith("m-1", "scheduled_callback", "");
@@ -203,10 +215,15 @@ describe("DropInSheet", () => {
     );
   });
 
-  it("Asked me to come back: Log Stop is disabled when the date is cleared", () => {
+  it("Asked me to come back: Log Stop stays disabled until the rep picks a return date", () => {
     renderSheet();
     fireEvent.click(screen.getByText("Asked me to come back"));
-    fireEvent.change(screen.getByLabelText(/follow-up date/i), { target: { value: "" } });
+    // No date is pre-filled — the owner named a time, so the rep must set it.
+    expect(logStopBtn()).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/when are you coming back/i), { target: { value: "2026-06-20" } });
+    expect(logStopBtn()).toBeEnabled();
+    // Clearing it disables Log Stop again.
+    fireEvent.change(screen.getByLabelText(/when are you coming back/i), { target: { value: "" } });
     expect(logStopBtn()).toBeDisabled();
   });
 
