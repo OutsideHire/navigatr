@@ -68,6 +68,13 @@ vi.mock("../hooks/useTodayPath", () => ({
   useTodayPath: () => ({ logVisit, markDealCreated, stops }),
 }));
 
+// The workspace profile (org_id) must be loaded before a deal-creating outcome
+// can commit. Mutable so tests can simulate "not loaded yet".
+let profileData: { org_id?: string } | null = { org_id: "org-1" };
+vi.mock("@/features/auth/useProfile", () => ({
+  useProfile: () => ({ data: profileData }),
+}));
+
 const { DropInSheet } = await import("./DropInSheet");
 import { toast } from "sonner";
 import type { Merchant } from "../mockData";
@@ -105,6 +112,7 @@ describe("DropInSheet", () => {
     markDealCreated.mockClear();
     onOpenChange.mockClear();
     stops = [];
+    profileData = { org_id: "org-1" };
   });
 
   it("renders the 9 tiles with casual rep labels (no formal labels), a Log Stop button, and no Save/contact-name field", () => {
@@ -225,6 +233,35 @@ describe("DropInSheet", () => {
     // Clearing it disables Log Stop again.
     fireEvent.change(screen.getByLabelText(/when are you coming back/i), { target: { value: "" } });
     expect(logStopBtn()).toBeDisabled();
+  });
+
+  it("blocks a deal-creating outcome until the workspace profile is loaded (no half-commit)", async () => {
+    // Regression: a drop-in on a fresh Path load, before useProfile resolves,
+    // used to log the visit and advance while createDeal threw 'Profile not
+    // loaded' — leaving the rep with a logged stop but no pipeline deal.
+    profileData = null;
+    const onLogged = vi.fn();
+    renderSheet({ onLogged });
+    fireEvent.click(screen.getByText("Got their statement")); // statement_secured (follow-up)
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    // Nothing was committed: no visit, no deal, no advance, sheet stays open.
+    expect(logVisit).not.toHaveBeenCalled();
+    expect(createDealMutateAsync).not.toHaveBeenCalled();
+    expect(onLogged).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(toast.info).toHaveBeenCalled();
+  });
+
+  it("still logs a terminal outcome when the profile is not loaded (no deal needed)", async () => {
+    profileData = null;
+    const onLogged = vi.fn();
+    renderSheet({ onLogged });
+    fireEvent.click(screen.getByText("Do not contact")); // terminal, creates no deal
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    expect(logVisit).toHaveBeenCalledWith("m-1", "do_not_contact", "");
+    expect(createDealMutateAsync).not.toHaveBeenCalled();
+    expect(onLogged).toHaveBeenCalledWith("do_not_contact");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   it("skips deal creation when the stop already has a deal", async () => {
