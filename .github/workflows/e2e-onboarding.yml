@@ -124,3 +124,63 @@ jobs:
           name: playwright-rep-report
           path: apps/app/test-results
           if-no-files-found: ignore
+
+  # Invite round-trip (regression protocol, Phase 2, golden path #4). Same local
+  # Supabase boot as `onboarding`, but drives admin-invites -> rep-accepts and
+  # reads the generated invite token from the DB with a service-role client (the
+  # local mail server is off). Non-blocking for now (a NEW check context is not
+  # required until added to branch protection); flips to required once proven.
+  invite-round-trip:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.98.2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Start Supabase (auth + rest + gateway)
+        run: >
+          supabase start
+          -x realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+
+      - name: Apply migrations + seed
+        run: supabase db reset
+
+      # Also resolve the SERVICE ROLE key (never prefixed VITE_, so it stays out
+      # of the browser bundle) for the spec's service-role DB reads.
+      - name: Export local Supabase env
+        run: |
+          supabase status -o json > /tmp/sb.json
+          echo "status keys:"; jq -r 'keys[]' /tmp/sb.json
+          API_URL=$(jq -r '.API_URL // .api_url // empty' /tmp/sb.json)
+          ANON_KEY=$(jq -r '.ANON_KEY // .anon_key // empty' /tmp/sb.json)
+          SERVICE_ROLE_KEY=$(jq -r '.SERVICE_ROLE_KEY // .service_role_key // empty' /tmp/sb.json)
+          test -n "$API_URL" || { echo "could not resolve API_URL"; exit 1; }
+          test -n "$ANON_KEY" || { echo "could not resolve ANON_KEY"; exit 1; }
+          test -n "$SERVICE_ROLE_KEY" || { echo "could not resolve SERVICE_ROLE_KEY"; exit 1; }
+          echo "::add-mask::$SERVICE_ROLE_KEY"
+          echo "VITE_SUPABASE_URL=$API_URL" >> "$GITHUB_ENV"
+          echo "VITE_SUPABASE_ANON_KEY=$ANON_KEY" >> "$GITHUB_ENV"
+          echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
+
+      - name: Install Playwright (chromium)
+        working-directory: apps/app
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Invite round-trip E2E
+        working-directory: apps/app
+        run: pnpm exec playwright test -c playwright.invite.config.ts
+
+      - name: Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-invite-report
+          path: apps/app/test-results
+          if-no-files-found: ignore
