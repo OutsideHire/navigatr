@@ -16,12 +16,13 @@ import * as React from "react";
 import { Upload, Check, X, AlertTriangle, Download } from "lucide-react";
 import { Button } from "@/components/navigatr";
 import { parseAgentsCsv, type ParsedAgent, type ParseError } from "../utils/parseAgentsCsv";
-import { useAdminBulkInvite, type InviteResult } from "../hooks/useAdminBulkInvite";
+import { useAdminBulkInvite, type InviteResult, type InviteInput } from "../hooks/useAdminBulkInvite";
 import { useSendInviteEmails } from "../hooks/useSendInviteEmails";
+import { RoleMappingReview } from "./RoleMappingReview";
 
 const CHUNK_SIZE = 200;
 
-type Step = "upload" | "preview" | "submitting" | "done";
+type Step = "upload" | "review" | "submitting" | "done";
 
 interface FinalResult {
   invited: number;
@@ -44,17 +45,18 @@ export function CsvImportWizard() {
     const text = await file.text();
     const result = parseAgentsCsv(text);
     setParsed(result);
-    setStep("preview");
+    setStep("review");
   };
 
-  const onSubmit = async () => {
+  // Receives the invite rows after the admin has mapped every role to a level.
+  const onConfirm = async (rows: InviteInput[]) => {
     setStep("submitting");
-    const total = parsed.valid.length;
+    const total = rows.length;
     setProgress({ done: 0, total });
 
     const allResults: InviteResult[] = [];
-    for (let i = 0; i < parsed.valid.length; i += CHUNK_SIZE) {
-      const chunk = parsed.valid.slice(i, i + CHUNK_SIZE);
+    for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+      const chunk = rows.slice(i, i + CHUNK_SIZE);
       try {
         const r = await bulkInvite.mutateAsync(chunk);
         allResults.push(...r);
@@ -112,36 +114,14 @@ export function CsvImportWizard() {
     );
   }
 
-  if (step === "preview") {
+  if (step === "review") {
     return (
-      <div className="space-y-4">
-        <div className="rounded-radius-md bg-surface-sunken p-4">
-          <div className="text-body-strong">We parsed {parsed.valid.length + parsed.errors.length} rows.</div>
-          <div className="mt-2 flex flex-col gap-1 text-body-md">
-            <span className="text-status-success">✓ {parsed.valid.length} ready to invite</span>
-            {parsed.errors.length > 0 && (
-              <span className="text-status-warning">⚠ {parsed.errors.length} issues</span>
-            )}
-          </div>
-        </div>
-        {parsed.errors.length > 0 && (
-          <details className="rounded-radius-md border border-border-subtle p-3">
-            <summary className="cursor-pointer text-body-md">Show row-level issues</summary>
-            <ul className="mt-2 max-h-48 overflow-y-auto text-caption text-text-muted">
-              {parsed.errors.slice(0, 100).map((e, i) => (
-                <li key={i}>Row {e.row}: {e.reason} ({e.raw})</li>
-              ))}
-              {parsed.errors.length > 100 && <li>… and {parsed.errors.length - 100} more</li>}
-            </ul>
-          </details>
-        )}
-        <div className="flex justify-between">
-          <Button variant="tertiary" size="md" onClick={() => setStep("upload")}>Choose a different file</Button>
-          <Button variant="primary" size="md" onClick={onSubmit} disabled={parsed.valid.length === 0}>
-            Send {parsed.valid.length} invites
-          </Button>
-        </div>
-      </div>
+      <RoleMappingReview
+        valid={parsed.valid}
+        errors={parsed.errors}
+        onBack={() => setStep("upload")}
+        onConfirm={onConfirm}
+      />
     );
   }
 

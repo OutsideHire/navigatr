@@ -6,8 +6,8 @@ describe("parseAgentsCsv", () => {
     const csv = "email,full_name\na@x.com,Alice\nb@x.com,Bob";
     const r = parseAgentsCsv(csv);
     expect(r.valid).toEqual([
-      { email: "a@x.com", full_name: "Alice", role_level: "sales_professional" },
-      { email: "b@x.com", full_name: "Bob", role_level: "sales_professional" },
+      { email: "a@x.com", full_name: "Alice", roleText: "" },
+      { email: "b@x.com", full_name: "Bob", roleText: "" },
     ]);
     expect(r.errors).toEqual([]);
   });
@@ -29,68 +29,25 @@ describe("parseAgentsCsv", () => {
   it("auto-detects 'Email Address' and 'Full Name' header variants", () => {
     const csv = "Email Address,Full Name\n a@x.com , Alice ";
     const r = parseAgentsCsv(csv);
-    expect(r.valid[0]).toEqual({ email: "a@x.com", full_name: "Alice", role_level: "sales_professional" });
+    expect(r.valid[0]).toEqual({ email: "a@x.com", full_name: "Alice", roleText: "" });
   });
 
-  it("defaults role_level to 'sales_professional' when the column is absent", () => {
-    const csv = "email\na@x.com";
-    expect(parseAgentsCsv(csv).valid[0].role_level).toBe("sales_professional");
-  });
-
-  it("accepts a valid role_level (case-insensitive)", () => {
-    const csv = "email,role_level\na@x.com,SALES_MANAGER\nb@x.com,vp_sales";
-    expect(parseAgentsCsv(csv).valid.map((v) => v.role_level)).toEqual([
-      "sales_manager",
-      "vp_sales",
+  it("carries the raw role_level text through as roleText (unvalidated, resolved later by the mapping step)", () => {
+    const csv = "email,role_level\na@x.com,Sales Professional\nb@x.com,anything at all";
+    expect(parseAgentsCsv(csv).valid.map((v) => v.roleText)).toEqual([
+      "Sales Professional",
+      "anything at all",
     ]);
   });
 
-  it("accepts human-readable role labels, which is what admins copy from the UI (Elavon beta bug)", () => {
-    const csv =
-      "email,role_level\n" +
-      "a@x.com,Sales Professional\n" +
-      "b@x.com,Sales Manager\n" +
-      "c@x.com,Director of Sales\n" +
-      "d@x.com,VP of Sales\n" +
-      "e@x.com,SVP of Sales\n" +
-      "f@x.com,CSO / CRO\n" +
-      "g@x.com,Administrator";
-    const r = parseAgentsCsv(csv);
-    expect(r.errors).toEqual([]);
-    expect(r.valid.map((v) => v.role_level)).toEqual([
-      "sales_professional",
-      "sales_manager",
-      "director_sales",
-      "vp_sales",
-      "svp_sales",
-      "cso_cro",
-      "administrator",
-    ]);
+  it("trims surrounding whitespace on roleText", () => {
+    const csv = "email,role_level\na@x.com,  VP of Sales  ";
+    expect(parseAgentsCsv(csv).valid[0].roleText).toBe("VP of Sales");
   });
 
-  it("is tolerant of label case, extra spaces, and slash spacing", () => {
-    const csv =
-      "email,role_level\n" +
-      "a@x.com,  VP  of  Sales  \n" +
-      "b@x.com,cso/cro\n" +
-      "c@x.com,SALES PROFESSIONAL";
-    expect(parseAgentsCsv(csv).valid.map((v) => v.role_level)).toEqual([
-      "vp_sales",
-      "cso_cro",
-      "sales_professional",
-    ]);
-  });
-
-  it("rejects an unknown role_level value", () => {
-    const csv = "email,role_level\na@x.com,godmode";
-    const r = parseAgentsCsv(csv);
-    expect(r.valid).toEqual([]);
-    expect(r.errors[0].reason).toBe("invalid_role_level");
-  });
-
-  it("defaults role_level when the column is present but blank", () => {
-    const csv = "email,role_level\na@x.com,";
-    expect(parseAgentsCsv(csv).valid[0].role_level).toBe("sales_professional");
+  it("roleText is empty when the column is absent or blank", () => {
+    expect(parseAgentsCsv("email\na@x.com").valid[0].roleText).toBe("");
+    expect(parseAgentsCsv("email,role_level\na@x.com,").valid[0].roleText).toBe("");
   });
 
   it("carries reports_to_email through as reports_to", () => {

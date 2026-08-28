@@ -17,11 +17,13 @@ vi.mock("../hooks/useSendInviteEmails", () => ({
 async function runToDone() {
   const user = userEvent.setup();
   const { container } = render(<CsvImportWizard />);
+  // No role_level column -> the one row's role is blank, which auto-maps to
+  // Sales Professional, so the review step's Send button is ready immediately.
   const file = new File(["email,full_name\na@x.com,Alice"], "agents.csv", { type: "text/csv" });
   const input = container.querySelector('input[type="file"]') as HTMLInputElement;
   await user.upload(input, file);
-  expect(await screen.findByText(/ready to invite/i)).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: /send 1 invites/i }));
+  expect(await screen.findByText(/1 person found/i)).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /send 1 invite/i }));
   expect(await screen.findByText(/import complete/i)).toBeInTheDocument();
 }
 
@@ -30,7 +32,7 @@ beforeEach(() => {
 });
 
 describe("CsvImportWizard", () => {
-  it("walks upload → preview → submit → done", async () => {
+  it("walks upload → review → submit → done", async () => {
     sendEmailsMock.mockResolvedValue([{ id: "i1", ok: true }]);
     await runToDone();
     expect(screen.getByText(/1 invites sent/)).toBeInTheDocument();
