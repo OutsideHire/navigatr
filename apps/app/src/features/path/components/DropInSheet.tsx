@@ -48,6 +48,7 @@ import { todayISO } from "../lib/today";
 import { useCreateDeal, DuplicateDealError } from "@/features/pipeline/hooks/useCreateDeal";
 import { useLogActivity } from "@/features/activities/hooks/useLogActivity";
 import { useFollowupSync } from "@/features/appointments/useFollowupSync";
+import { useProfile } from "@/features/auth/useProfile";
 
 export interface DropInSheetProps {
   merchant: Merchant | null;
@@ -69,6 +70,12 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
   const createDeal = useCreateDeal();
   const logActivity = useLogActivity();
   const { syncFollowup } = useFollowupSync();
+  // A deal-creating outcome needs the workspace profile (org_id) loaded, or
+  // createDeal throws. Mounting the sheet subscribes to the query, so it is
+  // usually resolved by the time the rep taps Log Stop; the commit guard below
+  // covers the rare fresh-load race.
+  const profile = useProfile();
+  const profileReady = Boolean(profile.data?.org_id);
 
   const [selected, setSelected] = React.useState<Disposition | null>(null);
   const [customDate, setCustomDate] = React.useState("");
@@ -106,6 +113,14 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
 
   const commit = async (disposition: Disposition, customDateStr?: string) => {
     if (!merchant || savingRef.current) return;
+    // Deal-creating outcomes need the profile (org_id) loaded first. If it isn't
+    // ready yet (a drop-in on a fresh Path load, before useProfile resolves),
+    // prompt a retry instead of logging the visit and advancing with no deal.
+    // Self-heals: the profile resolves in a beat, so the next tap goes through.
+    if (schedulesFollowUp(disposition) && !alreadyDealCreated && !profileReady) {
+      toast.info("Just a moment, getting your workspace ready. Try again.");
+      return;
+    }
     savingRef.current = true;
     setSaving(true);
     try {
