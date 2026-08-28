@@ -21,7 +21,7 @@ export function AppointmentsAwaitingCard() {
   const total = awaiting.reduce((sum, r) => sum + r.awaitingCount, 0);
 
   return (
-    <Card padding="lg" shadow="sm" className="mt-6">
+    <Card padding="lg" shadow="sm">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="text-heading-sm text-text-default">Appointments awaiting outcome</h2>
         {awaiting.length > 0 && (
