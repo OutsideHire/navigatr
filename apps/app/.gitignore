@@ -25,6 +25,11 @@ dist-ssr
 # PWA generated files
 dev-dist/
 
+# Test/coverage output
+coverage/
+test-results/
+e2e/**/.auth/
+
 # Generated API client (regenerated from packages/contracts/openapi.yaml)
 src/api/generated/
 

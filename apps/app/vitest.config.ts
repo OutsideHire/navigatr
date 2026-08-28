@@ -31,5 +31,26 @@ export default defineConfig({
       "../../supabase/functions/_shared/**/*.{test,spec}.ts",
     ],
     css: false,
+    // Coverage is REPORT-ONLY in Phase 1 of the regression protocol (no
+    // thresholds, non-blocking in CI) so we establish a baseline first. Phase 2
+    // turns on a ratchet against the committed baseline with a hard floor on the
+    // pure-logic dirs (src/lib, src/features/*/lib, supabase/functions/_shared).
+    coverage: {
+      provider: "v8",
+      reporter: ["text-summary", "json-summary", "html"],
+      reportsDirectory: "./coverage",
+      include: [
+        "src/**/*.{ts,tsx}",
+        "../../supabase/functions/_shared/**/*.ts",
+      ],
+      exclude: [
+        "src/**/*.{test,spec}.{ts,tsx}",
+        "src/test/**",
+        "src/**/*.d.ts",
+        "src/generated/**",
+        "src/main.tsx",
+        "src/vite-env.d.ts",
+      ],
+    },
   },
 });
