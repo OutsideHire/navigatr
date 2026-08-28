@@ -99,15 +99,22 @@ jobs:
       - name: Apply migrations + seed
         run: supabase db reset
 
+      # Also resolve the SERVICE ROLE key (masked, never VITE-prefixed so it
+      # stays out of the browser bundle) for the carousel spec's service-role
+      # read of tomorrow's carried path.
       - name: Export local Supabase env
         run: |
           supabase status -o json > /tmp/sb.json
           API_URL=$(jq -r '.API_URL // .api_url // empty' /tmp/sb.json)
           ANON_KEY=$(jq -r '.ANON_KEY // .anon_key // empty' /tmp/sb.json)
+          SERVICE_ROLE_KEY=$(jq -r '.SERVICE_ROLE_KEY // .service_role_key // empty' /tmp/sb.json)
           test -n "$API_URL" || { echo "could not resolve API_URL from supabase status"; exit 1; }
           test -n "$ANON_KEY" || { echo "could not resolve ANON_KEY from supabase status"; exit 1; }
+          test -n "$SERVICE_ROLE_KEY" || { echo "could not resolve SERVICE_ROLE_KEY"; exit 1; }
+          echo "::add-mask::$SERVICE_ROLE_KEY"
           echo "VITE_SUPABASE_URL=$API_URL" >> "$GITHUB_ENV"
           echo "VITE_SUPABASE_ANON_KEY=$ANON_KEY" >> "$GITHUB_ENV"
+          echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
 
       - name: Install Playwright (chromium)
         working-directory: apps/app
