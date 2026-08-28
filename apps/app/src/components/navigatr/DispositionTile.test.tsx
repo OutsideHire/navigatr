@@ -35,4 +35,26 @@ describe("DispositionTile", () => {
     render(<DispositionTile tier="neutral" title="NoDesc" />);
     expect(screen.getByText("NoDesc")).toBeInTheDocument();
   });
+
+  it("renders the follow-up-timing meta line in its tone when meta is provided", () => {
+    render(
+      <DispositionTile tier="positive" title="Got their statement" description="x" meta="1-day follow-up" metaTone="success" />,
+    );
+    const node = screen.getByText(/1-day follow-up/);
+    expect(node).toBeInTheDocument();
+    expect(node.className).toMatch(/text-status-success/);
+  });
+
+  it("shows no meta line when meta is omitted", () => {
+    const { container } = render(<DispositionTile tier="neutral" title="No meta" description="x" />);
+    expect(screen.getByText("No meta")).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/follow-up/i);
+  });
+
+  it("does not render the meta line in the dense variant", () => {
+    const { container } = render(
+      <DispositionTile tier="positive" title="Dense" meta="1-day follow-up" metaTone="success" dense />,
+    );
+    expect(container.textContent).not.toMatch(/follow-up/i);
+  });
 });

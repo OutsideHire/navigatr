@@ -25,6 +25,7 @@
  */
 
 import * as React from "react";
+import { Calendar, Hand, Minus, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type DispositionTier = "positive" | "neutral" | "negative" | "cool";
@@ -36,17 +37,34 @@ const bandColor: Record<DispositionTier, string> = {
   cool: "bg-text-subtle",
 };
 
+/** Tone for the optional follow-up-timing meta line. Decoupled from `tier`
+ *  because a green outcome can still be rep-chosen (accent) rather than a fixed
+ *  interval. Callers derive it (see features/path/lib/outcomeFollowUpMeta). */
+export type DispositionMetaTone = "success" | "warning" | "danger" | "accent" | "muted";
+
+const META_TONE: Record<DispositionMetaTone, { className: string; Icon: LucideIcon }> = {
+  success: { className: "text-status-success", Icon: Calendar },
+  warning: { className: "text-status-warning", Icon: Calendar },
+  danger: { className: "text-status-danger", Icon: Calendar },
+  accent: { className: "text-brand-primary", Icon: Hand },
+  muted: { className: "text-text-muted", Icon: Minus },
+};
+
 export interface DispositionTileProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "title"> {
   tier: DispositionTier;
   title: string;
   description?: string;
+  /** Optional follow-up-timing line under the description (e.g. "1-day
+   *  follow-up", "You pick the date", "No follow-up"). Not shown in `dense`. */
+  meta?: string;
+  metaTone?: DispositionMetaTone;
   selected?: boolean;
   dense?: boolean;
 }
 
 export const DispositionTile = React.forwardRef<HTMLButtonElement, DispositionTileProps>(
   function DispositionTile(
-    { tier, title, description, selected = false, dense = false, disabled, className, type = "button", onClick, ...rest },
+    { tier, title, description, meta, metaTone = "muted", selected = false, dense = false, disabled, className, type = "button", onClick, ...rest },
     ref,
   ) {
     if (dense) {
@@ -109,6 +127,12 @@ export const DispositionTile = React.forwardRef<HTMLButtonElement, DispositionTi
         <div className="flex flex-col gap-0.5 px-4 py-3 pl-5">
           <span className="text-body-strong text-text-default">{title}</span>
           {description ? <span className="text-caption text-text-muted">{description}</span> : null}
+          {meta ? (
+            <span className={cn("mt-1.5 flex items-center gap-1 text-caption font-medium", META_TONE[metaTone].className)}>
+              {React.createElement(META_TONE[metaTone].Icon, { className: "h-3.5 w-3.5", "aria-hidden": true })}
+              {meta}
+            </span>
+          ) : null}
         </div>
       </button>
     );

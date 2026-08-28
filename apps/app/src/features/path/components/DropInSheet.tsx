@@ -9,9 +9,15 @@
  *     `drop_in` activity whose disposition auto-schedules the follow-up.
  *   - terminal outcomes: log the visit only — no deal.
  *
- * "Asked me to come back" (scheduled_callback) reveals an inline date picker
- * (default +7 calendar days, min = today) since the owner named a time; the
- * footer "Log Stop" button commits with the chosen date.
+ * Each outcome tile shows its follow-up timing (outcomeFollowUpMeta): a fixed
+ * N-day interval, "You pick the date" for scheduled_callback, or "No follow-up"
+ * for the two terminal outcomes. Outcomes drive all future follow-up, so the
+ * rep sees up front what each one schedules.
+ *
+ * "Asked me to come back" (scheduled_callback) reveals a prominent inline date
+ * picker (starts empty, min = today) since the owner named a time; selecting it
+ * scrolls the picker into view, and "Log Stop" stays disabled until the rep
+ * picks the return date, which becomes the follow-up.
  *
  * Notes: an optional dictated note (NotesFieldWithMic), captured on EVERY outcome
  * (stored on path_stops.notes via logVisit) and also forwarded to the deal's
@@ -22,7 +28,7 @@
  */
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
+import { CalendarClock, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button, Input, DispositionTile, NotesFieldWithMic } from "@/components/navigatr";
@@ -37,19 +43,11 @@ import type { Merchant } from "../mockData";
 import { useTodayPath } from "../hooks/useTodayPath";
 import { PATH_DISPOSITION_KEYS } from "../lib/pathDispositions";
 import { repOutcomeLabel, repOutcomeSubtitle } from "../lib/outcomeRepLabels";
+import { outcomeFollowUpMeta } from "../lib/outcomeFollowUpMeta";
 import { todayISO } from "../lib/today";
 import { useCreateDeal, DuplicateDealError } from "@/features/pipeline/hooks/useCreateDeal";
 import { useLogActivity } from "@/features/activities/hooks/useLogActivity";
 import { useFollowupSync } from "@/features/appointments/useFollowupSync";
-
-/** Default follow-up date for the inline picker: today + N calendar days, yyyy-mm-dd. */
-function plusDaysISODate(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${day}`;
-}
 
 export interface DropInSheetProps {
   merchant: Merchant | null;
@@ -80,12 +78,24 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
   // within a single tick, so a fast double-tap can fire commit() twice and
   // create two deals before React re-renders. The ref flips immediately.
   const savingRef = React.useRef(false);
+  // The date picker renders below the outcome grid; on a phone the grid can
+  // fill the sheet, so scroll the picker into view when the rep taps "Asked me
+  // to come back" — otherwise it appears off-screen and feels absent.
+  const pickerRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (selected === "scheduled_callback") {
+      pickerRef.current?.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [selected]);
 
   // Reset the form each time the sheet opens for a (possibly new) merchant.
   React.useEffect(() => {
     if (open) {
       setSelected(null);
-      setCustomDate(plusDaysISODate(7));
+      // Empty, not a pre-filled default: the owner named a time, so the rep must
+      // actively pick the return date (Log Stop stays disabled until they do).
+      setCustomDate("");
       setNotes("");
       setSaving(false);
       savingRef.current = false;
@@ -212,28 +222,46 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              {PATH_DISPOSITION_KEYS.map((key) => (
-                <DispositionTile
-                  key={key}
-                  tier={DISPOSITIONS[key].tier}
-                  title={repOutcomeLabel(key)}
-                  description={repOutcomeSubtitle(key)}
-                  selected={selected === key}
-                  onClick={() => setSelected(key)}
-                />
-              ))}
+              {PATH_DISPOSITION_KEYS.map((key) => {
+                const followUp = outcomeFollowUpMeta(key);
+                return (
+                  <DispositionTile
+                    key={key}
+                    tier={DISPOSITIONS[key].tier}
+                    title={repOutcomeLabel(key)}
+                    description={repOutcomeSubtitle(key)}
+                    meta={followUp.label}
+                    metaTone={followUp.tone}
+                    selected={selected === key}
+                    onClick={() => setSelected(key)}
+                  />
+                );
+              })}
             </div>
 
             {selected === "scheduled_callback" && (
-              <label className="flex flex-col gap-1.5">
-                <span className="text-caption font-medium text-text-muted">Follow-up date</span>
+              <div
+                ref={pickerRef}
+                className="flex flex-col gap-2 rounded-radius-md border border-brand-primary bg-brand-primary-10 p-3"
+              >
+                <label
+                  htmlFor="dropin-return-date"
+                  className="flex items-center gap-1.5 text-caption font-medium text-brand-primary"
+                >
+                  <CalendarClock className="h-4 w-4" aria-hidden />
+                  When are you coming back?
+                </label>
                 <Input
+                  id="dropin-return-date"
                   type="date"
                   value={customDate}
                   min={todayISO()}
                   onChange={(e) => setCustomDate(e.target.value)}
                 />
-              </label>
+                <span className="text-caption text-text-muted">
+                  Pick the day the owner asked you to return. Needed before you can log the stop.
+                </span>
+              </div>
             )}
           </div>
 
