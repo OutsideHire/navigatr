@@ -45,6 +45,42 @@ describe("parseAgentsCsv", () => {
     ]);
   });
 
+  it("accepts human-readable role labels, which is what admins copy from the UI (Elavon beta bug)", () => {
+    const csv =
+      "email,role_level\n" +
+      "a@x.com,Sales Professional\n" +
+      "b@x.com,Sales Manager\n" +
+      "c@x.com,Director of Sales\n" +
+      "d@x.com,VP of Sales\n" +
+      "e@x.com,SVP of Sales\n" +
+      "f@x.com,CSO / CRO\n" +
+      "g@x.com,Administrator";
+    const r = parseAgentsCsv(csv);
+    expect(r.errors).toEqual([]);
+    expect(r.valid.map((v) => v.role_level)).toEqual([
+      "sales_professional",
+      "sales_manager",
+      "director_sales",
+      "vp_sales",
+      "svp_sales",
+      "cso_cro",
+      "administrator",
+    ]);
+  });
+
+  it("is tolerant of label case, extra spaces, and slash spacing", () => {
+    const csv =
+      "email,role_level\n" +
+      "a@x.com,  VP  of  Sales  \n" +
+      "b@x.com,cso/cro\n" +
+      "c@x.com,SALES PROFESSIONAL";
+    expect(parseAgentsCsv(csv).valid.map((v) => v.role_level)).toEqual([
+      "vp_sales",
+      "cso_cro",
+      "sales_professional",
+    ]);
+  });
+
   it("rejects an unknown role_level value", () => {
     const csv = "email,role_level\na@x.com,godmode";
     const r = parseAgentsCsv(csv);
