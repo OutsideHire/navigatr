@@ -47,7 +47,8 @@ test("logging a drop-in outcome creates a deal that appears on the pipeline", as
   const resp = await dealPosted;
   expect(resp.ok(), `deal create POST failed: ${resp.status()}`).toBeTruthy();
 
-  // And it really renders on the pipeline board.
+  // And it really renders on the pipeline board (the name appears on the card
+  // and its aria-labelled wrapper, so match the first).
   await page.getByRole("link", { name: "Pipeline", exact: true }).click();
-  await expect(page.getByText(merchant, { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(merchant, { exact: true }).first()).toBeVisible({ timeout: 20_000 });
 });
