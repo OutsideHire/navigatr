@@ -66,7 +66,11 @@ from (values
   -- Owns NO deals on purpose, so their running Path has no owed / appointment
   -- cards competing with the seeded nearby stops, the drop-in spec lands
   -- deterministically on a nearby stop whose "I'm here" opens the DropInSheet.
-  ('5eed0000-0000-4000-8000-00000000000e'::uuid, 'repe2e@navigatr.test',  'Evan Tester')
+  ('5eed0000-0000-4000-8000-00000000000e'::uuid, 'repe2e@navigatr.test',  'Evan Tester'),
+  -- Second dedicated dealless rep, for the running-carousel + carry-to-tomorrow
+  -- E2E. It MUTATES its path (carry completes today + reparents stops to
+  -- tomorrow), so it must not share repe2e's path with the other rep specs.
+  ('5eed0000-0000-4000-8000-00000000000f'::uuid, 'repcarousel@navigatr.test', 'Cara Ruiz')
 ) as u(id, email, full_name)
 order by u.email = 'manager@navigatr.test' desc, u.email;
 
@@ -152,6 +156,24 @@ insert into paths (id, user_id, path_date, origin_label, origin_lat, origin_lng,
 insert into path_stops (path_id, prospect_id, name, address, lat, lng, category, primary_type, position, status)
 select
   '5eed0000-0000-4000-8000-0000000000f1',
+  p.id, p.name, p.address, p.lat, p.lng, p.category, null,
+  case p.place_id when 'seed_place_003' then 1 else 2 end,
+  'pending'
+from prospects p
+where p.place_id in ('seed_place_003', 'seed_place_005');
+
+-- Running-carousel + carry-to-tomorrow fixture: a SECOND rep (repcarousel) with
+-- its own today's path of two pending stops. Kept separate from repe2e's path
+-- because the carousel spec skips a stop and carries the rest to tomorrow
+-- (completing today's path), which would otherwise clobber the drop-in/path
+-- specs that run against repe2e in the same CI job.
+insert into paths (id, user_id, path_date, origin_label, origin_lat, origin_lng, status, started_at, name) values
+  ('5eed0000-0000-4000-8000-0000000000f2', '5eed0000-0000-4000-8000-00000000000f', current_date,
+   'Downtown Sacramento', 38.5816, -121.4944, 'planned', now(), 'E2E carousel day');
+
+insert into path_stops (path_id, prospect_id, name, address, lat, lng, category, primary_type, position, status)
+select
+  '5eed0000-0000-4000-8000-0000000000f2',
   p.id, p.name, p.address, p.lat, p.lng, p.category, null,
   case p.place_id when 'seed_place_003' then 1 else 2 end,
   'pending'
