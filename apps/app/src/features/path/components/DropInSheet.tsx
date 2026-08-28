@@ -9,8 +9,9 @@
  *     `drop_in` activity whose disposition auto-schedules the follow-up.
  *   - terminal outcomes: log the visit only — no deal.
  *
- * Follow-Up Requested reveals an inline date picker (default +7 calendar days,
- * min = today); the footer "Log Stop" button commits with the chosen date.
+ * "Asked me to come back" (scheduled_callback) reveals an inline date picker
+ * (default +7 calendar days, min = today) since the owner named a time; the
+ * footer "Log Stop" button commits with the chosen date.
  *
  * Notes: an optional dictated note (NotesFieldWithMic), captured on EVERY outcome
  * (stored on path_stops.notes via logVisit) and also forwarded to the deal's
@@ -169,7 +170,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
 
   const handleLog = () => {
     if (!selected) return;
-    void commit(selected, (selected === "followup_requested" || selected === "scheduled_callback") ? customDate : undefined);
+    void commit(selected, selected === "scheduled_callback" ? customDate : undefined);
   };
 
   return (
@@ -223,7 +224,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
               ))}
             </div>
 
-            {(selected === "followup_requested" || selected === "scheduled_callback") && (
+            {selected === "scheduled_callback" && (
               <label className="flex flex-col gap-1.5">
                 <span className="text-caption font-medium text-text-muted">Follow-up date</span>
                 <Input
@@ -243,7 +244,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
             <Button
               variant="primary"
               className="flex-1"
-              disabled={!selected || ((selected === "followup_requested" || selected === "scheduled_callback") && !customDate) || saving}
+              disabled={!selected || (selected === "scheduled_callback" && !customDate) || saving}
               loading={saving}
               onClick={handleLog}
             >
