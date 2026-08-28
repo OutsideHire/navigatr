@@ -67,3 +67,60 @@ jobs:
           name: playwright-onboarding-report
           path: apps/app/test-results
           if-no-files-found: ignore
+
+  # Rep golden paths (regression protocol, Phase 1). Same local-Supabase boot as
+  # `onboarding`, but drives the AUTHENTICATED field-rep journeys: the seed
+  # (supabase/seed.sql) creates a dealless rep + a today's Path, a setup project
+  # signs that rep in once, and the specs assert the day loads and a drop-in
+  # really creates a pipeline deal. Non-blocking for now (a NEW check context is
+  # not a required check until added to branch protection); it flips to required
+  # once it has run clean and isn't flaky. See
+  # docs/superpowers/specs/2026-08-28-regression-testing-protocol-design.md.
+  rep-golden-paths:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.98.2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Start Supabase (auth + rest + gateway)
+        run: >
+          supabase start
+          -x realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+
+      # Applies migrations + supabase/seed.sql (which seeds the E2E rep + path).
+      - name: Apply migrations + seed
+        run: supabase db reset
+
+      - name: Export local Supabase env
+        run: |
+          supabase status -o json > /tmp/sb.json
+          API_URL=$(jq -r '.API_URL // .api_url // empty' /tmp/sb.json)
+          ANON_KEY=$(jq -r '.ANON_KEY // .anon_key // empty' /tmp/sb.json)
+          test -n "$API_URL" || { echo "could not resolve API_URL from supabase status"; exit 1; }
+          test -n "$ANON_KEY" || { echo "could not resolve ANON_KEY from supabase status"; exit 1; }
+          echo "VITE_SUPABASE_URL=$API_URL" >> "$GITHUB_ENV"
+          echo "VITE_SUPABASE_ANON_KEY=$ANON_KEY" >> "$GITHUB_ENV"
+
+      - name: Install Playwright (chromium)
+        working-directory: apps/app
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Rep golden-path E2E
+        working-directory: apps/app
+        run: pnpm exec playwright test -c playwright.rep.config.ts
+
+      - name: Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-rep-report
+          path: apps/app/test-results
+          if-no-files-found: ignore

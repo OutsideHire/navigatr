@@ -61,7 +61,12 @@ from (values
   ('5eed0000-0000-4000-8000-00000000000a'::uuid, 'manager@navigatr.test', 'Dana Reyes'),
   ('5eed0000-0000-4000-8000-00000000000b'::uuid, 'rep1@navigatr.test',    'Marcus Hale'),
   ('5eed0000-0000-4000-8000-00000000000c'::uuid, 'rep2@navigatr.test',    'Priya Nandi'),
-  ('5eed0000-0000-4000-8000-00000000000d'::uuid, 'rep3@navigatr.test',    'Theo Brandt')
+  ('5eed0000-0000-4000-8000-00000000000d'::uuid, 'rep3@navigatr.test',    'Theo Brandt'),
+  -- Dedicated rep for the Playwright rep golden-path specs (apps/app/e2e/rep).
+  -- Owns NO deals on purpose, so their running Path has no owed / appointment
+  -- cards competing with the seeded nearby stops, the drop-in spec lands
+  -- deterministically on a nearby stop whose "I'm here" opens the DropInSheet.
+  ('5eed0000-0000-4000-8000-00000000000e'::uuid, 'repe2e@navigatr.test',  'Evan Tester')
 ) as u(id, email, full_name)
 order by u.email = 'manager@navigatr.test' desc, u.email;
 
@@ -129,3 +134,26 @@ from (values
   ('5eed0000-0000-4000-8000-0000000000d3'::uuid, '5eed0000-0000-4000-8000-00000000000d'::uuid, 'appointment', 'appt_verbal_commitment', 7, 'Verbal yes pending partner sign-off.'),
   ('5eed0000-0000-4000-8000-0000000000d3'::uuid, '5eed0000-0000-4000-8000-00000000000d'::uuid, 'appointment', 'appt_application_signed', 2, 'Signed. Submitted for boarding.')
 ) as a(deal_id, logged_by, type, disposition, days_ago, outcome_notes);
+
+-- ---------------------------------------------------------------------------
+-- E2E rep golden-path fixture (apps/app/e2e/rep). A saved TODAY path for the
+-- dedicated dealless rep (repe2e, …000e), with two nearby stops pointing at
+-- prospects that have NO active deal (Delta Print & Sign, Capitol Coffee), so a
+-- drop-in on them cleanly creates a new deal. `path_date = current_date` and
+-- `started_at = now()` land the rep straight in the running view (RunningPath);
+-- the stops are the only cards (no deals -> no owed/appointment cards), so the
+-- first "I'm here" opens the create-deal DropInSheet. path_stops copies the
+-- prospect's display snapshot; `prospect_id` is resolved by place_id.
+-- ---------------------------------------------------------------------------
+insert into paths (id, user_id, path_date, origin_label, origin_lat, origin_lng, status, started_at, name) values
+  ('5eed0000-0000-4000-8000-0000000000f1', '5eed0000-0000-4000-8000-00000000000e', current_date,
+   'Downtown Sacramento', 38.5816, -121.4944, 'planned', now(), 'E2E rep day');
+
+insert into path_stops (path_id, prospect_id, name, address, lat, lng, category, primary_type, position, status)
+select
+  '5eed0000-0000-4000-8000-0000000000f1',
+  p.id, p.name, p.address, p.lat, p.lng, p.category, null,
+  case p.place_id when 'seed_place_003' then 1 else 2 end,
+  'pending'
+from prospects p
+where p.place_id in ('seed_place_003', 'seed_place_005');
