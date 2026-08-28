@@ -1,5 +1,4 @@
 import { test, expect } from "@playwright/test";
-import { createClient } from "@supabase/supabase-js";
 
 /**
  * Golden path #4: the invite round-trip (admin invites, teammate accepts).
@@ -24,9 +23,26 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? "";
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 const BASE = "http://127.0.0.1:3000";
 
+/**
+ * Service-role read via PostgREST + fetch (bypasses RLS). We deliberately avoid
+ * @supabase/supabase-js here: its realtime client throws
+ * "Node.js 20 detected without native WebSocket support" at createClient time.
+ * A plain REST GET needs no WebSocket and no extra dependency.
+ */
+async function svcSelect(table: string, query: string): Promise<Array<Record<string, unknown>>> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, {
+    headers: {
+      apikey: SERVICE_KEY,
+      Authorization: `Bearer ${SERVICE_KEY}`,
+      Accept: "application/json",
+    },
+  });
+  if (!res.ok) throw new Error(`PostgREST ${table} ${res.status}: ${await res.text()}`);
+  return (await res.json()) as Array<Record<string, unknown>>;
+}
+
 test("admin invites a teammate; the teammate accepts via the token and lands in the admin's org", async ({ page, browser }) => {
   test.skip(!SUPABASE_URL || !SERVICE_KEY, "needs local Supabase URL + service-role key (CI only)");
-  const svc = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
   const stamp = Date.now();
   const adminEmail = `admin+${stamp}@e2e.navigatr.test`;
@@ -50,22 +66,19 @@ test("admin invites a teammate; the teammate accepts via the token and lands in 
   await expect(page.getByRole("button", { name: /send invites/i })).toBeVisible({ timeout: 20_000 });
   await page.getByLabel("Teammate email 1").fill(repEmail);
   await page.getByRole("button", { name: /send invites/i }).click();
-  await expect(page.getByText("Get started")).toBeVisible({ timeout: 20_000 });
+  // The invite RPC completes before the page navigates to the dashboard.
+  await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
 
   // --- Read the generated token straight from the DB (service role) ---
+  const emailFilter = `email=eq.${encodeURIComponent(repEmail.toLowerCase())}`;
   let token = "";
   let orgId = "";
   await expect
     .poll(
       async () => {
-        const { data } = await svc
-          .from("org_invites")
-          .select("token, org_id")
-          .eq("email", repEmail.toLowerCase())
-          .is("accepted_at", null)
-          .maybeSingle();
-        token = data?.token ?? "";
-        orgId = data?.org_id ?? "";
+        const rows = await svcSelect("org_invites", `${emailFilter}&accepted_at=is.null&select=token,org_id`);
+        token = (rows[0]?.token as string) ?? "";
+        orgId = (rows[0]?.org_id as string) ?? "";
         return token;
       },
       { timeout: 15_000, message: "invite token should be written to org_invites" },
@@ -90,20 +103,21 @@ test("admin invites a teammate; the teammate accepts via the token and lands in 
   await repContext.close();
 
   // --- Assert the rep is a real active member of the admin's org ---
-  const { data: repProfile } = await svc
-    .from("profiles")
-    .select("org_id, role_level, email")
-    .eq("email", repEmail.toLowerCase())
-    .maybeSingle();
-  expect(repProfile, "rep profile should exist after accepting").toBeTruthy();
-  expect(repProfile?.org_id, "rep should be in the admin's org").toBe(orgId);
+  // The claim (via /auth/callback) can land a beat after the redirect; poll.
+  let repProfile: Record<string, unknown> | undefined;
+  await expect
+    .poll(
+      async () => {
+        const rows = await svcSelect("profiles", `${emailFilter}&select=org_id,role_level,email`);
+        repProfile = rows[0];
+        return repProfile?.org_id ?? "";
+      },
+      { timeout: 15_000, message: "rep profile should exist in the admin's org after accepting" },
+    )
+    .toBe(orgId);
   expect(repProfile?.role_level).toBe("sales_professional");
 
   // And the invite is now consumed (accepted_at stamped).
-  const { data: consumed } = await svc
-    .from("org_invites")
-    .select("accepted_at")
-    .eq("email", repEmail.toLowerCase())
-    .maybeSingle();
-  expect(consumed?.accepted_at, "invite should be marked accepted").toBeTruthy();
+  const consumed = await svcSelect("org_invites", `${emailFilter}&select=accepted_at`);
+  expect(consumed[0]?.accepted_at, "invite should be marked accepted").toBeTruthy();
 });
