@@ -49,12 +49,12 @@ describe("EditActivitySheet — type-specific outcomes", () => {
     expect(screen.queryByText(/connected with dm/i)).not.toBeInTheDocument();
   });
 
-  it("still shows a legacy call disposition stored on a drop-in activity", () => {
-    // Cross-type legacy value: a call disposition on a drop_in row. The editor
-    // must surface it so the rep isn't silently shown the wrong selection.
-    // Rep-facing logging surfaces show the casual label ("Good conversation")
-    // instead of the formal "Positive Engagement" (that stays on manager reports).
+  it("still shows a legacy disposition stored on a drop-in activity", () => {
+    // Cross-type / legacy value: positive_engagement is no longer one of the
+    // field drop-in outcomes, but an old activity may still carry it. The editor
+    // must surface it (not blank) so the rep isn't silently shown the wrong
+    // selection; with no rep-facing override it falls back to the formal label.
     renderSheet(activity({ type: "drop_in", disposition: "positive_engagement" }));
-    expect(screen.getByText(/good conversation/i)).toBeInTheDocument();
+    expect(screen.getByText(/positive engagement/i)).toBeInTheDocument();
   });
 });

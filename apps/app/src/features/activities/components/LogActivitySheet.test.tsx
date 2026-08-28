@@ -160,6 +160,51 @@ describe("LogActivitySheet — submission payload by type", () => {
   });
 });
 
+describe("LogActivitySheet — 'Asked me to come back' date capture", () => {
+  // scheduled_callback ("Asked me to come back" / "He named a time") is a
+  // field drop-in outcome whose rep copy promises the rep names a return time.
+  // The manual drop-in sheet must therefore surface a date/time capture and use
+  // the entered value AS the follow-up (asserted), same as a phone `callback` —
+  // never silently fall back to the 2-business-day interval.
+  function openDropInShowAll() {
+    openSheet();
+    fireEvent.click(screen.getByText("Drop-In"));
+    fireEvent.click(screen.getByRole("button", { name: /show all/i }));
+    fireEvent.click(screen.getByText(/asked me to come back/i));
+  }
+
+  it("reveals the return date/time capture when the outcome is selected", () => {
+    openDropInShowAll();
+    expect(screen.getByLabelText(/when to come back/i)).toBeInTheDocument();
+  });
+
+  it("blocks submit and shows an error when no return time is entered", async () => {
+    openDropInShowAll();
+    fireEvent.click(screen.getByRole("button", { name: /log activity/i }));
+
+    expect(
+      await screen.findByText(/enter when they asked you to come back/i),
+    ).toBeInTheDocument();
+    expect(mutateAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it("submits the entered return time as an asserted follow-up", async () => {
+    openDropInShowAll();
+    fireEvent.change(screen.getByLabelText(/when to come back/i), {
+      target: { value: "2026-09-01T10:00" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /log activity/i }));
+
+    await waitFor(() => expect(mutateAsyncMock).toHaveBeenCalled());
+    expect(mutateAsyncMock.mock.calls[0][0]).toMatchObject({
+      type: "drop_in",
+      disposition: "scheduled_callback",
+      followUpDate: "2026-09-01T10:00",
+      followUpDateSource: "asserted",
+    });
+  });
+});
+
 describe("LogActivitySheet inline post-log confirmation", () => {
   it("renders the confirmation title and lines inline after a successful log", async () => {
     // The hook returns a confirmation summary alongside the new id; the sheet

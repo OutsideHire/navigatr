@@ -160,6 +160,16 @@ function nowLocalInput(): string {
 
 type FormValues = z.infer<typeof schemaWithDuration>;
 
+// Outcomes where the rep pins an explicit follow-up date/time rather than the
+// platform deriving one from the disposition's interval. Both surface the
+// datetime capture and store the entered value AS the follow-up (asserted):
+//   callback           — a phoned "I'll call you back at ..." commitment
+//   scheduled_callback — a field drop-in "come back at ..." ("Asked me to come
+//                        back / He named a time"); mirrors the Path drop-in,
+//                        which also makes the rep pick the date.
+const pinsFollowUpDate = (d: Disposition | undefined): boolean =>
+  d === "callback" || d === "scheduled_callback";
+
 /** Per-type config: does this type ask for duration, and what's the label? */
 const TYPE_CONFIG: Record<ActivityType, { needsDuration: boolean; verb: string; durationLabel: string; notesPlaceholder: string }> = {
   call: {
@@ -302,14 +312,19 @@ function ActivityForm({
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
     setCaptureError(null);
-    // Callback pins the promised date/time (asserted); it has no interval, so
-    // the captured date IS the follow-up.
-    const isCallback = values.disposition === "callback";
-    if (isCallback && !callbackAt) {
-      setCaptureError("Enter the promised callback date and time.");
+    // Date-pinning outcomes (callback, scheduled_callback) carry the rep's
+    // promised date/time (asserted); the captured value IS the follow-up, so it
+    // must be present before we can log.
+    const pinsDate = pinsFollowUpDate(values.disposition);
+    if (pinsDate && !callbackAt) {
+      setCaptureError(
+        values.disposition === "scheduled_callback"
+          ? "Enter when they asked you to come back."
+          : "Enter the promised callback date and time.",
+      );
       return;
     }
-    const followUpIso = isCallback ? callbackAt : calculateFollowUpDate(values.disposition);
+    const followUpIso = pinsDate ? callbackAt : calculateFollowUpDate(values.disposition);
     try {
       const { id, confirmation } = await logActivity.mutateAsync({
         dealId,
@@ -326,7 +341,7 @@ function ActivityForm({
           return new Date(Number.isNaN(t) ? Date.now() : Math.min(t, Date.now())).toISOString();
         })(),
         followUpDate: followUpIso,
-        followUpDateSource: isCallback ? "asserted" : "interval",
+        followUpDateSource: pinsDate ? "asserted" : "interval",
         // Verbal commitment's next step becomes the To-do title.
         taskTitle: values.disposition === "verbal_commitment" ? nextStep.trim() || undefined : undefined,
         // Close the exact task the rep opened this from (Activities list), so it
@@ -501,12 +516,18 @@ function ActivityForm({
             )}
           />
 
-          {/* SP2 capture steps — conditional on the selected outcome. */}
-          {watch("disposition") === "callback" && (
+          {/* SP2 capture steps — conditional on the selected outcome. Both
+              callback and scheduled_callback pin a rep-named date/time as the
+              follow-up (see pinsFollowUpDate); the label adapts to the outcome. */}
+          {pinsFollowUpDate(watch("disposition")) && (
             <FormField
               htmlFor="callbackAt"
-              label="Promised callback"
-              helper="The date and time you agreed to call back"
+              label={watch("disposition") === "scheduled_callback" ? "When to come back" : "Promised callback"}
+              helper={
+                watch("disposition") === "scheduled_callback"
+                  ? "The date and time they asked you to return"
+                  : "The date and time you agreed to call back"
+              }
               error={captureError ?? undefined}
             >
               <Input

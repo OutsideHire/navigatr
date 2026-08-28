@@ -2,18 +2,20 @@ import { describe, it, expect } from "vitest";
 import { PATH_DISPOSITION_KEYS, isEngagedDisposition } from "./pathDispositions";
 
 describe("path dispositions", () => {
-  it("lists the 10 redesigned dispositions in screenshot order", () => {
+  it("lists the field drop-in outcomes in the desired order", () => {
     expect(PATH_DISPOSITION_KEYS).toEqual([
-      "statement_secured","positive_engagement","connected_with_dm",
-      "dm_unavailable","followup_requested","future_potential",
-      "low_probability","wrong_number","not_interested","closed_lost",
+      "statement_secured", "met_dm", "scheduled_callback",
+      "gatekeeper", "left_collateral", "not_in_office",
+      "closed_locked", "do_not_contact", "out_of_business",
     ]);
   });
-  it("treats any disposition that schedules a follow-up as engaged (creates a deal)", () => {
-    for (const d of ["statement_secured","positive_engagement","connected_with_dm","dm_unavailable","followup_requested","future_potential","low_probability"] as const) {
+  it("treats any outcome that schedules a follow-up as engaged (creates a deal)", () => {
+    // Every outcome with a follow-up interval creates a deal; only the two
+    // terminal Red outcomes (do_not_contact, out_of_business) do not.
+    for (const d of ["statement_secured","met_dm","scheduled_callback","gatekeeper","left_collateral","not_in_office","closed_locked"] as const) {
       expect(isEngagedDisposition(d)).toBe(true);
     }
-    for (const d of ["wrong_number","not_interested","closed_lost"] as const) {
+    for (const d of ["do_not_contact","out_of_business"] as const) {
       expect(isEngagedDisposition(d)).toBe(false);
     }
   });
