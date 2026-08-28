@@ -70,7 +70,7 @@ Full protocol: [docs/superpowers/specs/2026-08-28-regression-testing-protocol-de
 
 On every PR and push to `main`:
 
-- `test.yml`: typecheck, production build, unit tests, lint (non-blocking), coverage report (non-blocking), destructive-migration check, secrets-manifest audit.
+- `test.yml`: typecheck, production build, unit tests, lint (non-blocking), coverage ratchet (enforced; floors in `apps/app/vitest.config.ts`), destructive-migration check, secrets-manifest audit.
 - `database` job: builds the DB from zero and runs the RLS + cross-tenant isolation scripts.
 - `e2e-onboarding.yml`: boots a local Supabase and drives the browser golden paths (admin onboarding + rep).
 

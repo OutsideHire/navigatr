@@ -35,16 +35,18 @@ jobs:
       - name: Unit tests
         run: pnpm --filter app test
 
-      # Regression protocol Phase 1: non-blocking (continue-on-error) so they
-      # report without gating merges yet. Lint flips to required once the
-      # existing backlog is cleared; coverage flips to a ratchet once a baseline
-      # is committed (see docs/superpowers/specs/2026-08-28-regression-testing-protocol-design.md).
+      # Lint stays non-blocking (continue-on-error) until the existing backlog is
+      # cleared, then it flips to required. See
+      # docs/superpowers/specs/2026-08-28-regression-testing-protocol-design.md.
       - name: Lint (non-blocking)
         continue-on-error: true
         run: pnpm --filter app lint
 
-      - name: Coverage report (non-blocking, baseline)
-        continue-on-error: true
+      # Regression protocol Phase 2: the coverage ratchet is now ENFORCED. The
+      # floors live in apps/app/vitest.config.ts (just under the committed
+      # baseline, with a harder floor on src/lib); a change that meaningfully
+      # drops coverage fails this step and blocks the merge.
+      - name: Coverage ratchet
         run: pnpm --filter app test:coverage
 
       - name: Destructive migration check

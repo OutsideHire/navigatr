@@ -31,10 +31,12 @@ export default defineConfig({
       "../../supabase/functions/_shared/**/*.{test,spec}.ts",
     ],
     css: false,
-    // Coverage is REPORT-ONLY in Phase 1 of the regression protocol (no
-    // thresholds, non-blocking in CI) so we establish a baseline first. Phase 2
-    // turns on a ratchet against the committed baseline with a hard floor on the
-    // pure-logic dirs (src/lib, src/features/*/lib, supabase/functions/_shared).
+    // Coverage ratchet (regression protocol, Phase 2). v8 coverage is
+    // deterministic run-to-run, so these are fixed floors set just under the
+    // committed baseline (statements ~77%, branches ~70%, functions ~75%,
+    // lines ~78%). A change that meaningfully drops coverage fails CI; a small
+    // margin tolerates incidental churn. Raise the floors as coverage improves.
+    // src/lib (the money/logic dir) carries a harder floor.
     coverage: {
       provider: "v8",
       reporter: ["text-summary", "json-summary", "html"],
@@ -51,6 +53,20 @@ export default defineConfig({
         "src/main.tsx",
         "src/vite-env.d.ts",
       ],
+      thresholds: {
+        statements: 76,
+        branches: 68,
+        functions: 73,
+        lines: 76,
+        // src/lib measured in CI at ~stmts 95 / branches 79.6 / fns 93 / lines 97;
+        // floors sit a couple points under, with real margin on branches.
+        "src/lib/**": {
+          statements: 88,
+          branches: 77,
+          functions: 85,
+          lines: 90,
+        },
+      },
     },
   },
 });
