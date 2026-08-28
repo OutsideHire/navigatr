@@ -169,7 +169,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
 
   const handleLog = () => {
     if (!selected) return;
-    void commit(selected, selected === "followup_requested" ? customDate : undefined);
+    void commit(selected, (selected === "followup_requested" || selected === "scheduled_callback") ? customDate : undefined);
   };
 
   return (
@@ -223,7 +223,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
               ))}
             </div>
 
-            {selected === "followup_requested" && (
+            {(selected === "followup_requested" || selected === "scheduled_callback") && (
               <label className="flex flex-col gap-1.5">
                 <span className="text-caption font-medium text-text-muted">Follow-up date</span>
                 <Input
@@ -243,7 +243,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
             <Button
               variant="primary"
               className="flex-1"
-              disabled={!selected || (selected === "followup_requested" && !customDate) || saving}
+              disabled={!selected || ((selected === "followup_requested" || selected === "scheduled_callback") && !customDate) || saving}
               loading={saving}
               onClick={handleLog}
             >

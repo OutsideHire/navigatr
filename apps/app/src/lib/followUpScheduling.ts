@@ -310,16 +310,16 @@ export const DISPOSITIONS: Record<Disposition, DispositionSpec> = {
   not_in_office: {
     key: "not_in_office",
     label: "Not in office",
-    rationale: "No one available · no follow-up",
+    rationale: "Wrong time of day · 2 day follow-up",
     tier: "neutral",
-    businessDays: null,
+    businessDays: 2,
   },
   closed_locked: {
     key: "closed_locked",
     label: "Closed / locked",
-    rationale: "Location closed · no follow-up",
+    rationale: "Locked in or not ready · 30 day follow-up",
     tier: "neutral",
-    businessDays: null,
+    businessDays: 30,
   },
   do_not_contact: {
     key: "do_not_contact",
