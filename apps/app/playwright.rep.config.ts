@@ -55,6 +55,13 @@ export default defineConfig({
       name: "kanban",
       testMatch: /kanban-drag\.spec\.ts$/,
     },
+    {
+      // The carousel spec MUTATES its rep's path (carry-to-tomorrow), so it runs
+      // as its own seeded rep (repcarousel) via inline login, isolated from the
+      // repe2e specs that share one path.
+      name: "carousel",
+      testMatch: /carousel-carry\.spec\.ts$/,
+    },
   ],
   webServer: {
     // Vite dev reads VITE_* from the environment at startup, so the CI job
