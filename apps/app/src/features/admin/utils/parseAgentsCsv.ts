@@ -2,8 +2,12 @@
  * Parse a CSV string of agent invitations into validated rows + errors.
  *
  * Required column: email. Optional: full_name, role_level, reports_to_email.
- * Accepted role_level values: the 7 hierarchy levels (see ROLE_LEVEL_OPTIONS),
- * case-insensitive; defaults to "sales_professional" when absent/blank.
+ * Accepted role_level values: any of the 7 hierarchy levels, given EITHER by
+ * its display label ("Sales Professional", "VP of Sales", "CSO / CRO", ...) OR
+ * its internal code ("sales_professional", ...). Matching ignores case,
+ * spacing, and punctuation, so what an admin naturally copies from the UI works
+ * (a real Elavon beta file failed every row because it used the labels).
+ * Defaults to "sales_professional" when absent/blank.
  * reports_to_email carries through as reports_to (an existing member's email);
  * the RPC validates it resolves — the parser does not check existence.
  *
@@ -15,7 +19,18 @@
 import Papa from "papaparse";
 import { ROLE_LEVEL_OPTIONS, type RoleLevel } from "@/features/auth/capabilities";
 
-const VALID_ROLE_LEVELS = new Set<RoleLevel>(ROLE_LEVEL_OPTIONS.map((o) => o.value));
+// Normalize a role-level string for matching: lowercase, drop everything that
+// isn't a letter or digit. This collapses "Sales Professional",
+// "sales_professional", and "SALES  PROFESSIONAL" to one key, and "CSO / CRO"
+// / "cso_cro" to another.
+const normRoleLevel = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+// Look up a role level by its normalized label OR code -> the internal value.
+const ROLE_LEVEL_LOOKUP = new Map<string, RoleLevel>();
+for (const o of ROLE_LEVEL_OPTIONS) {
+  ROLE_LEVEL_LOOKUP.set(normRoleLevel(o.value), o.value);
+  ROLE_LEVEL_LOOKUP.set(normRoleLevel(o.label), o.value);
+}
 
 export interface ParsedAgent {
   email: string;
@@ -75,14 +90,15 @@ export function parseAgentsCsv(csv: string): ParseResult {
       return;
     }
 
-    const rawRoleLevel = (row.rolelevel ?? "").trim().toLowerCase();
+    const rawRoleLevel = (row.rolelevel ?? "").trim();
     let role_level: RoleLevel = "sales_professional";
     if (rawRoleLevel) {
-      if (!VALID_ROLE_LEVELS.has(rawRoleLevel as RoleLevel)) {
+      const mapped = ROLE_LEVEL_LOOKUP.get(normRoleLevel(rawRoleLevel));
+      if (!mapped) {
         errors.push({ row: rowNumber, reason: "invalid_role_level", raw: rawText });
         return;
       }
-      role_level = rawRoleLevel as RoleLevel;
+      role_level = mapped;
     }
 
     const fullName =
