@@ -355,17 +355,21 @@ export function AgentsPage() {
         </>
       )}
 
-      {/* Secondary insight: appointments awaiting an outcome, below the roster */}
-      <AppointmentsAwaitingCard />
+      {/* Secondary insight + operational health cards, stacked below the roster
+          with consistent vertical rhythm (they carry no margins of their own). */}
+      <div className="mt-6 flex flex-col gap-4">
+        {/* Secondary insight: appointments awaiting an outcome */}
+        <AppointmentsAwaitingCard />
 
-      {/* Operational: is location capture actually working during beta? (FR-HIER-37) */}
-      <LocationCaptureHealthCard />
+        {/* Operational: is location capture actually working during beta? (FR-HIER-37) */}
+        <LocationCaptureHealthCard />
 
-      {/* Operational: is email capture polling healthy? (Email Capture Slice 5d, dark by default) */}
-      {EMAIL_CAPTURE_UI_ENABLED && <EmailConnectionHealthCard />}
+        {/* Operational: is email capture polling healthy? (Email Capture Slice 5d, dark by default) */}
+        {EMAIL_CAPTURE_UI_ENABLED && <EmailConnectionHealthCard />}
 
-      {/* Operational: are the scheduled background jobs running + fresh? */}
-      <CronHealthCard />
+        {/* Operational: are the scheduled background jobs running + fresh? */}
+        <CronHealthCard />
+      </div>
 
       <InviteAgentModal open={inviteOpen} onOpenChange={setInviteOpen} />
 
