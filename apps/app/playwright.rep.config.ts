@@ -43,10 +43,17 @@ export default defineConfig({
   projects: [
     { name: "setup", testMatch: /auth\.setup\.ts/ },
     {
+      // The dealless rep (repe2e), signed in once via the setup project.
       name: "rep",
-      testMatch: /.*\.spec\.ts/,
+      testMatch: /(path-load|dropin-fanout)\.spec\.ts$/,
       dependencies: ["setup"],
       use: { storageState: STORAGE },
+    },
+    {
+      // Kanban needs a rep WITH deals, so it logs in inline as the seeded rep1
+      // (repe2e is deliberately dealless) and uses no shared storageState.
+      name: "kanban",
+      testMatch: /kanban-drag\.spec\.ts$/,
     },
   ],
   webServer: {
