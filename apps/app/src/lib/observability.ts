@@ -19,6 +19,7 @@
  * did anyone notice."
  */
 import * as Sentry from "@sentry/react";
+import { IGNORED_ERROR_PATTERNS, isExpectedPermissionError, normalizeError } from "./errorFilter";
 
 let initialized = false;
 
@@ -52,6 +53,10 @@ export function initObservability(): void {
       // ResizeObserver loop warnings — benign browser noise.
       "ResizeObserver loop completed with undelivered notifications",
       "ResizeObserver loop limit exceeded",
+      // Third-party / environmental noise (browser extensions, PWA
+      // service-worker update churn, stale-tab-after-deploy chunk loads,
+      // transient auth-lock contention). See errorFilter.ts.
+      ...IGNORED_ERROR_PATTERNS,
     ],
     // Strip tokens AND user PII (emails, phone numbers) from every part
     // of the event before it leaves the browser. Sentry events are shared
@@ -100,7 +105,18 @@ export function captureException(
   context?: Record<string, unknown>,
 ): void {
   if (!initialized) return;
-  Sentry.captureException(err, context ? { extra: context } : undefined);
+  // Authz working as designed (a user hit a report RLS/an RPC gate forbids) is
+  // not a bug — the data is protected and the UI degrades to an empty widget.
+  if (isExpectedPermissionError(err)) return;
+  // A raw Supabase error object would log as the useless "Object captured as
+  // exception with keys: code, details, hint, message" — normalize it to a
+  // readable, groupable Error and move the raw fields to extra.
+  const { error, extra } = normalizeError(err);
+  const merged = { ...(extra ?? {}), ...(context ?? {}) };
+  Sentry.captureException(
+    error,
+    Object.keys(merged).length > 0 ? { extra: merged } : undefined,
+  );
 }
 
 /**
