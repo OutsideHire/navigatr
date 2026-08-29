@@ -60,16 +60,22 @@ export function isSupabaseError(err: unknown): err is SupabaseLikeError {
 }
 
 /**
- * A Supabase error that is authz working as designed: the caller asked for
- * something an RLS policy or an RPC gate forbids. The data is protected and the
- * UI degrades to an empty widget, so it is not a bug worth paging on.
- *   - 42501: Postgres insufficient_privilege (a blocked table read)
- *   - P0001 + forbidden / not_authenticated: our RPC gates' raised message
+ * A Supabase error that is authz working as designed: the caller hit one of our
+ * RPC gates that raises `forbidden` (e.g. a rep opening a manager-only report).
+ * The data is protected and the UI degrades to an empty widget, so it is not a
+ * bug worth paging on.
+ *
+ * Deliberately NARROW — only `P0001 forbidden`. We do NOT suppress:
+ *   - `42501 "permission denied for table X"`: that is a FORGOTTEN `GRANT` in a
+ *     migration (a recurring deploy bug in this repo), which must stay visible.
+ *     (An RLS row-read denial returns zero rows, not 42501, so 42501 is never
+ *     the "expected" case.)
+ *   - `P0001 not_authenticated`: for a query on an authed screen that means the
+ *     app thinks it is signed in but the token did not attach — a real bug.
+ * Those still flow through and are made readable by normalizeError().
  */
 export function isExpectedPermissionError(err: unknown): boolean {
-  if (!isSupabaseError(err)) return false;
-  if (err.code === "42501") return true;
-  return err.code === "P0001" && /\b(forbidden|not_authenticated)\b/i.test(err.message);
+  return isSupabaseError(err) && err.code === "P0001" && /\bforbidden\b/i.test(err.message);
 }
 
 /**

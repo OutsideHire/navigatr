@@ -42,10 +42,16 @@ describe("isSupabaseError", () => {
 });
 
 describe("isExpectedPermissionError", () => {
-  it("is true for a P0001 forbidden and insufficient_privilege (42501)", () => {
+  it("is true ONLY for a P0001 'forbidden' RPC-gate denial", () => {
     expect(isExpectedPermissionError({ code: "P0001", message: "forbidden", details: null, hint: null })).toBe(true);
-    expect(isExpectedPermissionError({ code: "P0001", message: "not_authenticated", details: null, hint: null })).toBe(true);
-    expect(isExpectedPermissionError({ code: "42501", message: "permission denied for table deals", details: null, hint: null })).toBe(true);
+  });
+  it("does NOT suppress a 42501 missing-GRANT error (a real deploy bug must stay visible)", () => {
+    // A forgotten `GRANT ... TO authenticated` raises 42501 for every user; an
+    // RLS row-read denial returns zero rows, not 42501. So 42501 is never noise.
+    expect(isExpectedPermissionError({ code: "42501", message: "permission denied for table deals", details: null, hint: null })).toBe(false);
+  });
+  it("does NOT suppress P0001 'not_authenticated' (a signed-in tokenless request is a real bug)", () => {
+    expect(isExpectedPermissionError({ code: "P0001", message: "not_authenticated", details: null, hint: null })).toBe(false);
   });
   it("is false for any other Supabase error or non-Supabase value", () => {
     expect(isExpectedPermissionError({ code: "23505", message: "duplicate key value", details: null, hint: null })).toBe(false);
