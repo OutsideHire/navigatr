@@ -82,6 +82,47 @@ describe("observability", () => {
     });
   });
 
+  it("captureException drops an expected Supabase permission error (authz noise)", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { initObservability, captureException } = await import("./observability");
+    initObservability();
+    captureException({ code: "P0001", message: "forbidden", details: null, hint: null }, { source: "react-query" });
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it("captureException normalizes a raw Supabase error into a readable Error", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { initObservability, captureException } = await import("./observability");
+    initObservability();
+    captureException({ code: "23505", message: "duplicate key value", details: "d", hint: null }, { source: "react-query" });
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    const call = (Sentry.captureException as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(call[0]).toBeInstanceOf(Error);
+    expect((call[0] as Error).message).toBe("[23505] duplicate key value");
+    expect((call[1] as { extra: Record<string, unknown> }).extra).toMatchObject({
+      supabase_code: "23505",
+      source: "react-query",
+    });
+  });
+
+  it("init registers the environmental noise patterns in ignoreErrors", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { initObservability } = await import("./observability");
+    initObservability();
+    const arg = (Sentry.init as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as { ignoreErrors: string[] };
+    expect(arg.ignoreErrors).toEqual(
+      expect.arrayContaining([
+        "Failed to fetch dynamically imported module",
+        "LockManager lock",
+        "Object Not Found Matching Id",
+        "Failed to update a ServiceWorker",
+      ]),
+    );
+  });
+
   it("setUser tags user and org when initialized", async () => {
     vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
     const Sentry = await import("@sentry/react");
