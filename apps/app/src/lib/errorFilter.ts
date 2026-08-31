@@ -104,3 +104,62 @@ export function normalizeError(err: unknown): { error: unknown; extra?: Record<s
   }
   return { error: err };
 }
+
+/** Minimal shape of a Sentry event we mutate in beforeSend. Kept structural so
+ *  it accepts the real Sentry ErrorEvent and a test fixture alike. */
+export interface SentryEventLike {
+  exception?: { values?: Array<{ type?: string; value?: string }> };
+  extra?: Record<string, unknown>;
+}
+
+/**
+ * Normalize a Sentry event whose ORIGINAL exception is a raw Supabase error
+ * object that reached Sentry OUTSIDE our captureException wrapper.
+ *
+ * When a raw {code,message,details,hint} object rejects unhandled, Sentry's
+ * global handlers capture it and synthesize the useless "Object captured as
+ * exception with keys: code, details, hint, message" event (NAVIGATR-APP-7).
+ * captureException never runs for that path, so normalizeError never sees it.
+ * beforeSend, however, runs for EVERY event and receives the original throwable
+ * via `hint.originalException`, so this rewrites the synthesized event in place
+ * into a readable, groupable SupabaseError, or signals to drop it (authz working
+ * as designed, matching the wrapper's suppression).
+ *
+ * No-op (drop:false, event untouched) when `originalException` is not a RAW
+ * Supabase object, in particular an Error the wrapper already normalized
+ * (isSupabaseError rejects Error instances), so the wrapper path is never
+ * double-processed.
+ */
+export function normalizeSupabaseSentryEvent(
+  event: SentryEventLike,
+  originalException: unknown,
+): { drop: boolean } {
+  if (!isSupabaseError(originalException)) return { drop: false };
+  if (isExpectedPermissionError(originalException)) return { drop: true };
+
+  const readable = `[${originalException.code}] ${originalException.message}`;
+  const values = event.exception?.values;
+  if (values && values.length > 0) {
+    values[0].type = "SupabaseError";
+    values[0].value = readable;
+  } else {
+    // Exception-less synthesized event (rare): fabricate one so the title is
+    // readable rather than silently staying "Object captured...".
+    event.exception = { values: [{ type: "SupabaseError", value: readable }] };
+  }
+  // Deliberately set NO fingerprint. Sentry groups by the rewritten type +
+  // value ("SupabaseError: [code] message"), which redactPii scrubs before the
+  // event ships. Keying a fingerprint on the raw message would (a) ship that
+  // message UNREDACTED, since redactPii historically did not walk fingerprint,
+  // and (b) fragment on Postgres errors that interpolate a value (e.g. 22P02
+  // "invalid input syntax for type uuid: <value>"). Value-grouping avoids both:
+  // it groups on the scrubbed message and matches how the captureException
+  // wrapper path (normalizeError) already groups the caught case.
+  event.extra = {
+    ...(event.extra ?? {}),
+    supabase_code: originalException.code,
+    supabase_details: originalException.details ?? null,
+    supabase_hint: originalException.hint ?? null,
+  };
+  return { drop: false };
+}

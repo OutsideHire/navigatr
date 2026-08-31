@@ -185,4 +185,57 @@ describe("observability", () => {
     expect(event.request.url).not.toContain("SECRET123");
     expect(event.request.url).toContain("page=2");
   });
+
+  it("beforeSend normalizes an UNHANDLED raw Supabase error (via hint) and scrubs PII in the rewritten value + extra", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { initObservability } = await import("./observability");
+    initObservability();
+    const initArg = (Sentry.init as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+      beforeSend: (e: Record<string, unknown>, h?: { originalException?: unknown }) => Record<string, unknown> | null;
+    };
+    // The synthesized event Sentry builds from a raw-object unhandled rejection.
+    const event = {
+      exception: { values: [{ type: "Error", value: "Object captured as exception with keys: code, details, hint, message" }] },
+    };
+    const raw = { code: "23514", message: "value violates check for lead@acme.com", details: "row for owner@iso.com", hint: null };
+    const out = initArg.beforeSend(event, { originalException: raw }) as Record<string, unknown>;
+    const val = (out.exception as { values: { type: string; value: string }[] }).values[0];
+    expect(val.type).toBe("SupabaseError");
+    expect(val.value).toContain("[23514]");
+    expect(val.value).toContain("[email]");            // PII scrubbed in the title
+    expect(val.value).not.toContain("lead@acme.com");
+    expect((out.extra as { supabase_details: string }).supabase_details).toBe("row for [email]"); // and in extra
+    expect(out.fingerprint).toBeUndefined();           // no fingerprint carrying the raw message
+  });
+
+  it("beforeSend drops an UNHANDLED expected-permission Supabase error (P0001 forbidden)", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { initObservability } = await import("./observability");
+    initObservability();
+    const initArg = (Sentry.init as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+      beforeSend: (e: Record<string, unknown>, h?: { originalException?: unknown }) => Record<string, unknown> | null;
+    };
+    const out = initArg.beforeSend(
+      { exception: { values: [{ value: "Object captured as exception with keys: code, details, hint, message" }] } },
+      { originalException: { code: "P0001", message: "forbidden", details: null, hint: null } },
+    );
+    expect(out).toBeNull();
+  });
+
+  it("beforeSend scrubs PII from a fingerprint (defense-in-depth for any custom grouping key)", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { initObservability } = await import("./observability");
+    initObservability();
+    const initArg = (Sentry.init as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+      beforeSend: (e: Record<string, unknown>) => Record<string, unknown>;
+    };
+    const event = { fingerprint: ["supabase", "P0001", "invalid email lead@acme.com"] };
+    const out = initArg.beforeSend(event);
+    const fp = out.fingerprint as string[];
+    expect(fp.some((s) => s.includes("lead@acme.com"))).toBe(false);
+    expect(fp.some((s) => s.includes("[email]"))).toBe(true);
+  });
 });

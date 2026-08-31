@@ -4,6 +4,8 @@ import {
   isSupabaseError,
   isExpectedPermissionError,
   normalizeError,
+  normalizeSupabaseSentryEvent,
+  type SentryEventLike,
 } from "./errorFilter";
 
 describe("IGNORED_ERROR_PATTERNS", () => {
@@ -82,5 +84,60 @@ describe("normalizeError", () => {
     const { error, extra } = normalizeError("plain string");
     expect(error).toBe("plain string");
     expect(extra).toBeUndefined();
+  });
+});
+
+describe("normalizeSupabaseSentryEvent", () => {
+  // Simulates the synthesized event Sentry's global handlers build from a raw
+  // {code,details,hint,message} object rejected UNHANDLED (NAVIGATR-APP-7).
+  const synthesizedEvent = (): SentryEventLike => ({
+    exception: { values: [{ type: "Error", value: "Object captured as exception with keys: code, details, hint, message" }] },
+  });
+  const rawError = { code: "42501", message: "permission denied for table deals", details: null, hint: null };
+
+  it("rewrites a raw-Supabase unhandled event into a readable SupabaseError (no fingerprint, so redactPii-scrubbed value drives grouping)", () => {
+    const event = synthesizedEvent();
+    const { drop } = normalizeSupabaseSentryEvent(event, rawError);
+    expect(drop).toBe(false);
+    expect(event.exception?.values?.[0]).toMatchObject({ type: "SupabaseError", value: "[42501] permission denied for table deals" });
+    // No fingerprint is set: a raw message in fingerprint would ship unredacted.
+    expect((event as { fingerprint?: unknown }).fingerprint).toBeUndefined();
+    expect(event.extra).toMatchObject({ supabase_code: "42501", supabase_details: null, supabase_hint: null });
+  });
+
+  it("keeps distinct 42501 tables in separate groups via the value (forgotten-GRANT visibility)", () => {
+    const a = synthesizedEvent();
+    const b = synthesizedEvent();
+    normalizeSupabaseSentryEvent(a, { code: "42501", message: "permission denied for table deals", details: null, hint: null });
+    normalizeSupabaseSentryEvent(b, { code: "42501", message: "permission denied for table notes", details: null, hint: null });
+    // Sentry groups exception events by type + value; distinct values => distinct issues.
+    expect(a.exception?.values?.[0]?.value).not.toBe(b.exception?.values?.[0]?.value);
+  });
+
+  it("signals DROP for an authz-working-as-designed P0001 forbidden", () => {
+    const event = synthesizedEvent();
+    const { drop } = normalizeSupabaseSentryEvent(event, { code: "P0001", message: "forbidden", details: null, hint: null });
+    expect(drop).toBe(true);
+  });
+
+  it("is a no-op for an already-normalized Error (the wrapper path is not double-processed)", () => {
+    const event = synthesizedEvent();
+    const before = JSON.stringify(event);
+    const { drop } = normalizeSupabaseSentryEvent(event, new Error("[42501] permission denied for table deals"));
+    expect(drop).toBe(false);
+    expect(JSON.stringify(event)).toBe(before);
+  });
+
+  it("is a no-op for a non-Supabase throwable", () => {
+    const event = synthesizedEvent();
+    const before = JSON.stringify(event);
+    normalizeSupabaseSentryEvent(event, new TypeError("cannot read 'id'"));
+    expect(JSON.stringify(event)).toBe(before);
+  });
+
+  it("fabricates an exception when the synthesized event has none", () => {
+    const event: SentryEventLike = {};
+    normalizeSupabaseSentryEvent(event, rawError);
+    expect(event.exception?.values?.[0]).toMatchObject({ type: "SupabaseError", value: "[42501] permission denied for table deals" });
   });
 });
