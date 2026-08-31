@@ -107,18 +107,36 @@ export function AuthCallbackPage() {
       }
 
       sessionStorage.removeItem("pending_invite");
-      // Profile just appeared server-side. Eagerly refetch + cache it
-      // BEFORE navigating, so ProtectedRoute on /dashboard sees real data
-      // on its first render instead of a stale cached null from earlier
-      // failed attempts. fetchQuery throws on error — wrap in try so we
-      // still navigate even if the read is slow.
+      // Eagerly refetch + cache the profile BEFORE navigating, so ProtectedRoute
+      // on /dashboard sees real data on its first render instead of a stale
+      // cached null from earlier failed attempts.
+      //
+      // We also use the result to decide whether it is SAFE to navigate. If
+      // claim_invite_code succeeded but the row still reads back null (e.g. an
+      // RLS gap that hides a user's own fresh profile), sending them to
+      // /dashboard would bounce straight back here: ProtectedRoute redirects a
+      // null-profile user to /auth/callback, we return to /dashboard, and the
+      // two ping-pong history.replaceState until the browser throws a
+      // SecurityError (NAVIGATR-APP-A). Stop with a clear message instead.
+      let profileRow: unknown; // stays undefined if the read threw
       try {
-        await queryClient.fetchQuery({
+        profileRow = await queryClient.fetchQuery({
           queryKey: ["profile", session.user.id],
+          // staleTime: 0 forces a LIVE read. ProtectedRoute's useProfile almost
+          // certainly just cached a null under this key (that null redirect is
+          // what sent the user here), and the app's global 30s staleTime would
+          // make fetchQuery return that cached null WITHOUT querying -- so a
+          // just-created profile would look unreadable and we'd wrongly dead-end
+          // a healthy user. Selecting the SAME columns as useProfile also warms
+          // the cache with a complete row (not a partial one that under-gates
+          // the UI until the next refetch).
+          staleTime: 0,
           queryFn: async () => {
             const { data, error: pErr } = await supabase
               .from("profiles")
-              .select("id, org_id, role, full_name, created_at")
+              .select(
+                "id, org_id, role, role_level, view_as_enabled, full_name, created_at, primary_calendar_provider",
+              )
               .eq("id", session.user.id)
               .maybeSingle();
             if (pErr) throw pErr;
@@ -126,9 +144,29 @@ export function AuthCallbackPage() {
           },
         });
       } catch {
-        // Non-fatal: ProtectedRoute will refetch. Worst case = a spinner.
+        // The read itself errored. ProtectedRoute's own isError branch shows a
+        // terminal error WITHOUT redirecting, so it is safe to proceed and let
+        // that path handle it consistently (no loop). profileRow stays undefined.
       }
-      if (!cancelled) navigate("/dashboard", { replace: true });
+      if (cancelled) return;
+      // Settled-null (live read completed, no visible row) is the loop case; a
+      // read that threw leaves profileRow undefined and is handled by
+      // ProtectedRoute's isError branch.
+      if (profileRow === null) {
+        // Authed but the profile is unreadable even after a successful claim:
+        // the same "stuck authed-but-no-profile" state the claim-error branch
+        // handles. Set the error FIRST, then sign out (signOut clears `user`
+        // via onAuthStateChange; doing it before setError would trip the
+        // Navigate-to-/login guard and hide this message). Signing out also
+        // lets "Back to sign-in" actually reach /login instead of bouncing
+        // straight back here through PublicOnlyRoute.
+        setError(
+          "We could not load your profile. Please sign in again, or contact your account owner if this keeps happening.",
+        );
+        void supabase.auth.signOut();
+        return;
+      }
+      navigate("/dashboard", { replace: true });
     })();
 
     return () => {
