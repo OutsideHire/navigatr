@@ -24,6 +24,9 @@ describe("IGNORED_ERROR_PATTERNS", () => {
   it("covers transient auth token-lock contention", () => {
     expect(matches('Acquiring an exclusive Navigator LockManager lock "lock:navigatr-auth" immediately failed')).toBe(true);
   });
+  it("covers Sentry's own event-drop narration", () => {
+    expect(matches("An event processor returned `null`, will not send event.")).toBe(true);
+  });
   it("does NOT match an ordinary application error", () => {
     expect(matches("TypeError: cannot read properties of undefined (reading 'id')")).toBe(false);
   });

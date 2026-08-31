@@ -23,6 +23,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
 import { resolveInviteCode } from "../lib/resolveInviteCode";
+import { parseAuthCallbackError } from "../lib/authCallbackError";
 
 export function AuthCallbackPage() {
   const [params] = useSearchParams();
@@ -32,6 +33,15 @@ export function AuthCallbackPage() {
   const user = useAuth((s) => s.user);
   const [error, setError] = useState<string | null>(null);
 
+  // An expired / invalid email link redirects here with the reason in the URL
+  // hash (Supabase puts it there, not the query, so useSearchParams misses it).
+  // Derive it SYNCHRONOUSLY so the render path can show a clear, actionable
+  // message rather than the guard silently bouncing to /login before an async
+  // effect could set it. Only for an unauthenticated visitor: a signed-in user
+  // who clicks a stale link keeps their session (auth-js does not drop it on a
+  // failed URL login) and proceeds to /dashboard via the effect below.
+  const linkError = !loading && !user ? parseAuthCallbackError(window.location.hash, params) : null;
+
   useEffect(() => {
     // Wait for Supabase to hydrate the session from the URL hash / cookie.
     if (loading) return;
@@ -40,7 +50,10 @@ export function AuthCallbackPage() {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        if (!cancelled) setError("Sign-in did not complete. Try again.");
+        // No session: the sign-in did not complete. The render path below
+        // decides what the user sees: a readable link error if the URL hash
+        // carried one (expired / invalid email link), otherwise a bounce to
+        // /login. Nothing to do here.
         return;
       }
 
@@ -123,18 +136,20 @@ export function AuthCallbackPage() {
     };
   }, [loading, params, navigate, queryClient]);
 
-  // If hydration finished and there's no session at all, the user landed
-  // here without ever signing in. Bounce to /login.
-  if (!loading && !user && !error) {
+  // If hydration finished and there's no session at all, the user landed here
+  // without ever signing in. Bounce to /login, UNLESS the URL carried a
+  // readable link error we should explain first (shown below).
+  if (!loading && !user && !error && !linkError) {
     return <Navigate to="/login" replace />;
   }
 
-  if (error) {
+  const shownError = error ?? linkError;
+  if (shownError) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-surface-canvas px-6">
         <div className="max-w-md text-center">
           <h1 className="text-heading-lg text-text-default">Sign-in failed</h1>
-          <p className="mt-3 text-body-md text-text-muted">{error}</p>
+          <p className="mt-3 text-body-md text-text-muted">{shownError}</p>
           <button
             type="button"
             className="mt-6 inline-flex h-10 items-center rounded-md bg-brand-primary px-4 text-sm font-medium text-white"
