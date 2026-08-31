@@ -28,11 +28,21 @@ vi.mock("@/stores/auth", () => ({
   useAuth: (selector: (s: { loading: boolean; user: unknown }) => unknown) => selector(authState),
 }));
 
+// A readable profile row is the default (a normal, healthy sign-in). Individual
+// tests override maybeSingle to simulate an unreadable / empty profile.
+const READABLE_PROFILE = {
+  id: "u1",
+  org_id: "o1",
+  role: "admin",
+  full_name: "Test User",
+  created_at: "2026-01-01T00:00:00Z",
+};
+
 vi.mock("@/lib/supabase", () => {
   const fromChain: Record<string, unknown> = {};
   fromChain.select = vi.fn(() => fromChain);
   fromChain.eq = vi.fn(() => fromChain);
-  fromChain.maybeSingle = vi.fn(() => Promise.resolve({ data: null, error: null }));
+  fromChain.maybeSingle = vi.fn(() => Promise.resolve({ data: READABLE_PROFILE, error: null }));
   return {
     supabase: {
       auth: {
@@ -49,14 +59,25 @@ vi.mock("@/lib/supabase", () => {
 import { AuthCallbackPage } from "./AuthCallbackPage";
 import { supabase } from "@/lib/supabase";
 
+// supabase.from() always returns the same mock chain object; grab it so tests
+// can steer the profile read (data: row -> proceed; data: null -> stop).
+const profileChain = (supabase.from as unknown as (t: string) => { maybeSingle: ReturnType<typeof vi.fn> })(
+  "profiles",
+);
+
 const EXPIRED_HASH =
   "#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired";
 
-function renderCallback(hash: string) {
+/** A live session for a signed-in user id. */
+function sessionFor(id: string) {
+  return { data: { session: { user: { id, user_metadata: {} } } }, error: null } as never;
+}
+
+function renderCallback(hash: string, client?: QueryClient) {
   window.location.hash = hash;
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const qc = client ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <QueryClientProvider client={client}>
+    <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={["/auth/callback"]}>
         <Routes>
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
@@ -77,6 +98,9 @@ describe("AuthCallbackPage", () => {
     // Default: no session (each test overrides as needed).
     vi.mocked(supabase.auth.getSession).mockResolvedValue({ data: { session: null }, error: null } as never);
     vi.mocked(supabase.rpc).mockResolvedValue({ error: null } as never);
+    // Default: profile reads back a real row (a healthy sign-in). clearAllMocks
+    // wiped the factory default's call state, so re-assert the implementation.
+    profileChain.maybeSingle.mockResolvedValue({ data: READABLE_PROFILE, error: null } as never);
   });
 
   afterEach(() => {
@@ -99,6 +123,55 @@ describe("AuthCallbackPage", () => {
     expect(await screen.findByText("DASHBOARD SENTINEL")).toBeInTheDocument();
     expect(screen.queryByText(/expired or is no longer valid/i)).not.toBeInTheDocument();
     expect(screen.queryByText("LOGIN SENTINEL")).not.toBeInTheDocument();
+  });
+
+  it("stops with a clear message when the profile stays unreadable after claim (no /dashboard bounce loop)", async () => {
+    // Regression guard for NAVIGATR-APP-A: a signed-in user whose profile row
+    // reads back null even after claim_invite_code succeeds. Navigating to
+    // /dashboard would bounce right back here (ProtectedRoute redirects a
+    // null-profile user to /auth/callback), hammering history.replaceState until
+    // the browser throws a SecurityError. The callback must stop instead.
+    authState.user = { id: "u1", user_metadata: {} };
+    vi.mocked(supabase.auth.getSession).mockResolvedValue(sessionFor("u1"));
+    vi.mocked(supabase.rpc).mockResolvedValue({ error: null } as never); // claim succeeds
+    profileChain.maybeSingle.mockResolvedValue({ data: null, error: null } as never); // but profile unreadable
+
+    renderCallback("");
+
+    expect(await screen.findByText(/could not load your profile/i)).toBeInTheDocument();
+    expect(screen.queryByText("DASHBOARD SENTINEL")).not.toBeInTheDocument();
+    // Signs out so the user is not stuck authed-but-no-profile and "Back to
+    // sign-in" can actually reach /login.
+    expect(supabase.auth.signOut).toHaveBeenCalled();
+  });
+
+  it("reads the profile LIVE even when a stale null is cached, so a just-provisioned user is not dead-ended", async () => {
+    // Finding 1 guard: ProtectedRoute caches a null under ["profile", uid] right
+    // before redirecting here. With the app's global 30s staleTime, fetchQuery
+    // would serve that cached null WITHOUT re-querying -- falsely dead-ending a
+    // user whose profile the claim just created. The callback must force a live
+    // read (staleTime: 0).
+    authState.user = { id: "u1", user_metadata: {} };
+    vi.mocked(supabase.auth.getSession).mockResolvedValue(sessionFor("u1"));
+    profileChain.maybeSingle.mockResolvedValue({ data: READABLE_PROFILE, error: null } as never); // DB has the row now
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 } } });
+    client.setQueryData(["profile", "u1"], null); // stale null already cached, < 30s old
+
+    renderCallback("", client);
+
+    expect(await screen.findByText("DASHBOARD SENTINEL")).toBeInTheDocument();
+    expect(screen.queryByText(/could not load your profile/i)).not.toBeInTheDocument();
+  });
+
+  it("proceeds to /dashboard when the profile reads back after a successful claim", async () => {
+    authState.user = { id: "u1", user_metadata: {} };
+    vi.mocked(supabase.auth.getSession).mockResolvedValue(sessionFor("u1"));
+    // profileChain default returns READABLE_PROFILE (set in beforeEach).
+
+    renderCallback("");
+
+    expect(await screen.findByText("DASHBOARD SENTINEL")).toBeInTheDocument();
+    expect(screen.queryByText(/could not load your profile/i)).not.toBeInTheDocument();
   });
 
   it("shows a clear expired-link message to an unauthenticated visitor (not a silent /login bounce)", async () => {
