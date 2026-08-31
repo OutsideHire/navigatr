@@ -36,6 +36,12 @@ export const IGNORED_ERROR_PATTERNS: string[] = [
   "Importing a module script failed",
   // Transient Supabase auth token-lock contention (multiple tabs / Safari).
   "LockManager lock",
+  // Sentry narrating its OWN filtering: when an event we told it to ignore is
+  // dropped, the SDK can surface "An event processor returned `null`, will not
+  // send event." That is a note about the filter working, not an app error.
+  // (Safe today: observability.ts registers no console-capturing integration,
+  // so this SDK log is never itself re-captured. If one is ever added, revisit.)
+  "An event processor returned",
 ];
 
 /** The raw PostgREST/Supabase error object shape (not an Error instance). */
