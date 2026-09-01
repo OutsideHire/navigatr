@@ -107,6 +107,41 @@ describe("observability", () => {
     });
   });
 
+  it("reportCacheError reports a non-offline error tagged by its source", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { initObservability, reportCacheError } = await import("./observability");
+    initObservability();
+    const err = new Error("read failed");
+    reportCacheError("react-query")(err);
+    expect(Sentry.captureException).toHaveBeenCalledWith(err, { extra: { source: "react-query" } });
+  });
+
+  it("reportCacheError tags a mutation failure with the mutation source (closes the report gap)", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { initObservability, reportCacheError } = await import("./observability");
+    initObservability();
+    reportCacheError("react-query-mutation")(new Error("save failed"));
+    expect(Sentry.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      extra: { source: "react-query-mutation" },
+    });
+  });
+
+  it("reportCacheError skips offline errors (expected + noisy)", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { initObservability, reportCacheError } = await import("./observability");
+    initObservability();
+    Object.defineProperty(navigator, "onLine", { configurable: true, get: () => false });
+    try {
+      reportCacheError("react-query")(new Error("offline"));
+      expect(Sentry.captureException).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(navigator, "onLine", { configurable: true, get: () => true });
+    }
+  });
+
   it("init registers the environmental noise patterns in ignoreErrors", async () => {
     vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
     const Sentry = await import("@sentry/react");
