@@ -12,6 +12,7 @@
 
 import * as React from "react";
 import { useProfile } from "@/features/auth/useProfile";
+import { profileCan } from "@/features/auth/capabilities";
 import { useAuth } from "@/stores/auth";
 import { useTeamLeaderboard } from "@/features/admin/hooks/useTeamLeaderboard";
 import { resolveScopeLevel, type ScopeLevel } from "./scope";
@@ -39,7 +40,14 @@ export interface ViewerScope {
 export function useViewerScope(): ViewerScope {
   const userId = useAuth((s) => s.user?.id);
   const profile = useProfile();
-  const leaderboard = useTeamLeaderboard();
+  // team_leaderboard is a manager-only RPC that raises P0001 forbidden for reps.
+  // Only call it when the viewer's role_level can view the team (viewTeamPage ==
+  // the RPC's own `role in (manager,admin)` gate, kept in sync by the
+  // profiles_fill_role_level trigger). A rep resolves to self-scope from their
+  // profile alone, so we skip the request the server would forbid rather than
+  // firing it on every Pipeline/Partners load. See NAVIGATR-APP-7.
+  const canSeeTeam = profileCan(profile.data, "viewTeamPage");
+  const leaderboard = useTeamLeaderboard(30, { enabled: canSeeTeam });
 
   return React.useMemo(() => {
     const rows = leaderboard.data ?? [];
