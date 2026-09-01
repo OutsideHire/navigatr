@@ -19,7 +19,12 @@
  * did anyone notice."
  */
 import * as Sentry from "@sentry/react";
-import { IGNORED_ERROR_PATTERNS, isExpectedPermissionError, normalizeError } from "./errorFilter";
+import {
+  IGNORED_ERROR_PATTERNS,
+  isExpectedPermissionError,
+  normalizeError,
+  normalizeSupabaseSentryEvent,
+} from "./errorFilter";
 
 let initialized = false;
 
@@ -62,7 +67,16 @@ export function initObservability(): void {
     // of the event before it leaves the browser. Sentry events are shared
     // across the dev team + retained by Sentry; an email or phone in an
     // error payload is a privacy leak any audit will flag.
-    beforeSend(event) {
+    beforeSend(event, hint) {
+      // Normalize a RAW Supabase error that reached Sentry OUTSIDE our
+      // captureException wrapper (an unhandled promise rejection captured by
+      // Sentry's global handlers). Without this it logs as the useless "Object
+      // captured as exception with keys: code, details, hint, message"
+      // (NAVIGATR-APP-7). Runs BEFORE redactPii so the raw details/hint it moves
+      // into event.extra get PII-scrubbed. No-op for errors the wrapper already
+      // normalized (their originalException is an Error, not a raw object).
+      const { drop } = normalizeSupabaseSentryEvent(event, hint?.originalException);
+      if (drop) return null;
       if (event.request?.url) {
         event.request.url = stripTokensFromUrl(event.request.url);
       }
@@ -225,6 +239,8 @@ function redactDeep(value: unknown, seen: WeakSet<object>): unknown {
  *   - event.extra              (anything passed via captureException context)
  *   - event.contexts           (Sentry-managed but sometimes echoes input)
  *   - event.request.data       (POST body if Sentry captures one)
+ *   - event.fingerprint        (custom grouping keys; scrubbed so a future
+ *                               fingerprint built from error text can't leak PII)
  *
  * NOT covered:
  *   - event.user               (we only set { id } — no PII expected)
@@ -258,6 +274,9 @@ export function redactPii<T>(event: T): T {
   const req = e.request as { data?: unknown; url?: unknown } | undefined;
   if (req?.data) {
     req.data = redactDeep(req.data, seen);
+  }
+  if (Array.isArray(e.fingerprint)) {
+    redactDeep(e.fingerprint, seen);
   }
 
   return event;
