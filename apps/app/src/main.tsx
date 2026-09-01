@@ -1,10 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { QueryClient, QueryCache, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryCache, MutationCache, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { Toaster } from "sonner";
 import { App } from "@/App";
-import { initObservability, captureException } from "@/lib/observability";
+import { initObservability, reportCacheError } from "@/lib/observability";
 import { installChunkReloadHandler } from "@/lib/chunkReload";
 import "@/index.css";
 
@@ -34,10 +34,12 @@ const queryClient = new QueryClient({
   // otherwise just renders a spinner or empty state) is visible. Skip offline
   // errors — they're expected and noisy; Sentry groups the rest.
   queryCache: new QueryCache({
-    onError: (error) => {
-      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
-      captureException(error, { source: "react-query" });
-    },
+    onError: reportCacheError("react-query"),
+  }),
+  // Same for mutations: a failed save/update otherwise only toasts and is
+  // invisible to us. Tagged separately so the two can be filtered apart.
+  mutationCache: new MutationCache({
+    onError: reportCacheError("react-query-mutation"),
   }),
   defaultOptions: {
     queries: {

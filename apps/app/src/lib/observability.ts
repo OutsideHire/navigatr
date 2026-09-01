@@ -134,6 +134,23 @@ export function captureException(
 }
 
 /**
+ * react-query cache error reporter. Returns an onError handler that reports a
+ * non-offline cache error to Sentry, tagged by `source`. Shared by both the
+ * QueryCache and the MutationCache in main.tsx so read AND write failures are
+ * visible (a silently-failing mutation otherwise only toasts). Offline errors
+ * are skipped — they are expected and noisy. captureException still drops
+ * authz-working-as-designed and normalizes Supabase errors.
+ */
+export function reportCacheError(
+  source: "react-query" | "react-query-mutation",
+): (error: unknown) => void {
+  return (error: unknown) => {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    captureException(error, { source });
+  };
+}
+
+/**
  * Capture a non-Error event (e.g., a fetch returned 500 with no thrown
  * exception). Use sparingly — every captureMessage counts against quota.
  */
