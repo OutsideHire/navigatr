@@ -97,4 +97,17 @@ describe("useTeamLeaderboard", () => {
     expect(result.current.status).toBe("pending");
     expect(rpcMock).not.toHaveBeenCalled();
   });
+
+  it("does not call the manager-only RPC when the caller gates it off ({ enabled: false })", () => {
+    authUserId = "user-1";
+    rpcMock.mockResolvedValue({ data: [], error: null });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const { result } = renderHook(() => useTeamLeaderboard(30, { enabled: false }), {
+      wrapper: makeWrapper(client),
+    });
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
 });

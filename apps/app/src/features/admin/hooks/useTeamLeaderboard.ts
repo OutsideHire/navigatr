@@ -34,11 +34,15 @@ export interface LeaderboardRow {
 export const TEAM_LEADERBOARD_QUERY_KEY = (userId: string | undefined, windowDays: number) =>
   ["admin", "leaderboard", userId ?? "anon", windowDays] as const;
 
-export function useTeamLeaderboard(windowDays: number = 30) {
+export function useTeamLeaderboard(windowDays: number = 30, options: { enabled?: boolean } = {}) {
   const userId = useAuth((s) => s.user?.id);
   return useQuery({
     queryKey: TEAM_LEADERBOARD_QUERY_KEY(userId, windowDays),
-    enabled: Boolean(userId),
+    // team_leaderboard is a manager-only RPC (raises P0001 forbidden for reps).
+    // Admin surfaces are route-gated so they leave `enabled` default true;
+    // rep-reachable callers (useViewerScope) pass enabled=false for reps so the
+    // request is never made. See NAVIGATR-APP-7.
+    enabled: Boolean(userId) && (options.enabled ?? true),
     queryFn: async (): Promise<LeaderboardRow[]> => {
       const { data, error } = await supabase.rpc("team_leaderboard", {
         p_window_days: windowDays,
