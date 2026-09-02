@@ -1,11 +1,12 @@
 /**
  * EditDealSheet — sibling of AddDealSheet for the existing-deal edit flow.
  *
- * Scope (Sprint 1): the core fields that live on the cached `Deal` shape
- * (companyName, contact, value, probability, stage, expected close /
- * nextFollowupAt, lead source, employee count range). Notes / address /
- * industry / contactTitle aren't on the cached Deal type yet — they'll
- * land when useDeals' SELECT grows.
+ * Scope: the fields on the cached `Deal` shape (companyName, address, contact,
+ * value, probability, stage, expected close / nextFollowupAt, lead source,
+ * employee count range). Editing the address re-geocodes the deal for Path via
+ * useUpdateDeal (Places deals keep their Google coords). Notes / industry /
+ * contactTitle aren't on the cached Deal type yet; they'll land when useDeals'
+ * SELECT grows.
  *
  * Delete affordance lives in the footer, gated to manager/admin via
  * useProfile. Two-tap confirm so a misclick on mobile doesn't nuke a
@@ -84,6 +85,9 @@ const EMPLOYEE_COUNT_OPTIONS: SelectOption[] = [
 
 const editSchema = z.object({
   companyName: z.string().min(1, "Company name is required"),
+  // Optional street address. Empty clears it; a change re-geocodes the deal for
+  // Path (useUpdateDeal), except Places-created deals keep their Google coords.
+  address: z.string().optional(),
   contactName: z.string().min(1, "Contact name is required"),
   // Optional: an empty string clears the email; a non-empty value must be a
   // valid email. Email is not required on a deal (Path QA D).
@@ -158,6 +162,7 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
   const defaultValues = React.useMemo<EditDealValues>(
     () => ({
       companyName: deal.companyName,
+      address: deal.address ?? "",
       contactName: deal.contactName,
       contactEmail: deal.email,
       contactPhone: formatUSPhone(stripUsCountryCode(deal.phone)),
@@ -210,6 +215,14 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
     // makes a value-only edit a one-column UPDATE.
     const patch: Parameters<typeof update.mutateAsync>[0]["patch"] = {};
     if (dirtyFields.companyName) patch.companyName = values.companyName;
+    if (dirtyFields.address) {
+      // Empty clears the address (send null, never ""); a change re-geocodes.
+      // dirtyFields is computed on the RAW value, so a whitespace-only edit can
+      // look dirty while the trimmed value is unchanged; only send (and thus
+      // re-geocode) when the trimmed value actually differs from the stored one.
+      const nextAddress = values.address?.trim() ? values.address.trim() : null;
+      if (nextAddress !== (deal.address ?? null)) patch.address = nextAddress;
+    }
     if (dirtyFields.contactName) patch.contactName = values.contactName;
     if (dirtyFields.contactEmail) {
       // Empty clears the email (send null, never ""), otherwise the typed value.
@@ -336,6 +349,9 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
                 <h3 className="text-body-strong text-text-default">Company</h3>
                 <FormField htmlFor="companyName" label="Company name" required error={errors.companyName?.message}>
                   <Input id="companyName" {...register("companyName")} />
+                </FormField>
+                <FormField htmlFor="address" label="Address" helper="We'll geocode for Path">
+                  <Input id="address" placeholder="Street address" {...register("address")} />
                 </FormField>
                 <Controller
                   control={control}
