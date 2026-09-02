@@ -110,6 +110,22 @@ describe("DealCard", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
+  it("renders the call button when a phone is present", () => {
+    renderCard(deal({ phone: "+15125550100" }));
+    expect(screen.getByRole("button", { name: /call/i })).toBeInTheDocument();
+  });
+
+  // A prospect (added via Google search with no phone) has phone "". The card
+  // must render cleanly with no call button and, crucially, no "Invalid number"
+  // stub -- that stub is exactly what an unguarded DealCallButton renders for an
+  // empty phone, so asserting its absence is a real revert-detector for the guard.
+  it("omits the call button and the invalid-number stub when the deal has no phone", () => {
+    renderCard(deal({ phone: "" }));
+    expect(screen.queryByRole("button", { name: /call/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/invalid number/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /invalid phone/i })).not.toBeInTheDocument();
+  });
+
   // FR-HIER-18/19: every card shows its owner; own deals read "You".
   it("shows the owner name when the deal belongs to someone else", () => {
     renderCard(deal({ owner_id: "user-2", ownerName: "Jane Doe" }));

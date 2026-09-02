@@ -95,14 +95,20 @@ export function ReferralPreviewSheet({ deal, open, onOpenChange }: ReferralPrevi
           {deal && (
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pb-4">
               <div className="flex flex-col gap-3 rounded-radius-md border border-border-subtle bg-surface-sunken p-3">
-                <Field label="CONTACT">{deal.contactName}</Field>
-                <PhoneWithClickToCall phoneNumber={deal.phone} size="sm" />
-                <a
-                  href={`mailto:${deal.email}`}
-                  className="truncate text-body-md text-accent-blue hover:underline"
-                >
-                  {deal.email}
-                </a>
+                {/* A referred deal may be a bare prospect (no contact/phone/email
+                    yet). Render each row only when it has a value so the preview
+                    never shows an empty CONTACT line, an "Invalid number" phone
+                    stub, or an empty mailto link. */}
+                {deal.contactName && <Field label="CONTACT">{deal.contactName}</Field>}
+                {deal.phone && <PhoneWithClickToCall phoneNumber={deal.phone} size="sm" />}
+                {deal.email && (
+                  <a
+                    href={`mailto:${deal.email}`}
+                    className="truncate text-body-md text-accent-blue hover:underline"
+                  >
+                    {deal.email}
+                  </a>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

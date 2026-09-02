@@ -266,10 +266,14 @@ function HeroCard({ deal, onLogActivity, onCreateTask, onEdit }: { deal: Deal; o
             DEAL · {STAGE_LABEL[deal.stage].toUpperCase()}
           </p>
           <h1 className="text-heading-lg text-text-default">{deal.companyName}</h1>
-          <p className="text-body-md text-text-muted">
-            {deal.contactName}
-            {deal.contactTitle ? ` · ${deal.contactTitle}` : ""}
-          </p>
+          {/* A prospect may have no contact yet; skip the line rather than
+              render an empty (or lone " . title") muted row under the name. */}
+          {(deal.contactName || deal.contactTitle) && (
+            <p className="text-body-md text-text-muted">
+              {deal.contactName}
+              {deal.contactTitle ? `${deal.contactName ? " · " : ""}${deal.contactTitle}` : ""}
+            </p>
+          )}
         </div>
 
         {/* 3-col metrics row. Stack on mobile, grid on sm+ */}
@@ -376,18 +380,22 @@ function ContactInfoCard({ deal }: { deal: Deal }) {
     <Card padding="md">
       <h3 className="mb-3 text-body-strong text-text-default">Contact information</h3>
       <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-teal-20 text-accent-teal">
-            <PhoneIcon className="h-4 w-4" aria-hidden />
-          </span>
-          <DealCallButton dealId={deal.id} phoneNumber={deal.phone} size="sm" invalid={deal.phoneInvalid} />
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-blue-20 text-accent-blue">
-            <Mail className="h-4 w-4" aria-hidden />
-          </span>
-          <span className="truncate text-body-md text-text-default">{deal.email}</span>
-        </div>
+        {deal.phone && (
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-teal-20 text-accent-teal">
+              <PhoneIcon className="h-4 w-4" aria-hidden />
+            </span>
+            <DealCallButton dealId={deal.id} phoneNumber={deal.phone} size="sm" invalid={deal.phoneInvalid} />
+          </div>
+        )}
+        {deal.email && (
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-blue-20 text-accent-blue">
+              <Mail className="h-4 w-4" aria-hidden />
+            </span>
+            <span className="truncate text-body-md text-text-default">{deal.email}</span>
+          </div>
+        )}
         <div className="flex items-center gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-violet-20 text-accent-violet">
             <MapPin className="h-4 w-4" aria-hidden />

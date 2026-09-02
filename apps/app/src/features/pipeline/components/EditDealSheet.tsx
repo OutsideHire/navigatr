@@ -88,17 +88,20 @@ const editSchema = z.object({
   // Optional street address. Empty clears it; a change re-geocodes the deal for
   // Path (useUpdateDeal), except Places-created deals keep their Google coords.
   address: z.string().optional(),
-  contactName: z.string().min(1, "Contact name is required"),
+  // Optional: a deal created as a bare PROSPECT (AddDealSheet) has no contact /
+  // phone / value yet, so Edit must let the rep open + progress it without
+  // inventing them. Empty persists as DB-safe blanks (contact "", value 0).
+  contactName: z.string().optional(),
   // Optional: an empty string clears the email; a non-empty value must be a
   // valid email. Email is not required on a deal (Path QA D).
   contactEmail: z.string().email("Enter a valid email").optional().or(z.literal("")),
   contactPhone: z
     .string()
-    .min(1, "Phone is required")
-    .refine((v) => digitsOnly(v).length === 10, "Enter a 10-digit US phone"),
+    .optional()
+    .refine((v) => !v || digitsOnly(v).length === 10, "Enter a 10-digit US phone"),
   dealValue: z.preprocess(
     emptyToUndefined,
-    z.coerce.number().int().positive("Enter a deal value"),
+    z.coerce.number().int().nonnegative("Enter a value of 0 or more").optional(),
   ),
   stage: z.enum(["new", "contacted", "qualified", "proposal", "submitted", "won", "lost"]),
   probability: z.preprocess(
@@ -164,7 +167,7 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
       companyName: deal.companyName,
       address: deal.address ?? "",
       contactName: deal.contactName,
-      contactEmail: deal.email,
+      contactEmail: deal.email ?? "",
       contactPhone: formatUSPhone(stripUsCountryCode(deal.phone)),
       dealValue: Math.round(deal.valueCents / 100) as unknown as number,
       stage: deal.stage,
@@ -223,16 +226,19 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
       const nextAddress = values.address?.trim() ? values.address.trim() : null;
       if (nextAddress !== (deal.address ?? null)) patch.address = nextAddress;
     }
-    if (dirtyFields.contactName) patch.contactName = values.contactName;
+    if (dirtyFields.contactName) patch.contactName = values.contactName ?? "";
     if (dirtyFields.contactEmail) {
       // Empty clears the email (send null, never ""), otherwise the typed value.
       patch.contactEmail = values.contactEmail?.trim() ? values.contactEmail : null;
     }
     if (dirtyFields.contactPhone) {
-      patch.contactPhone = "+1" + digitsOnly(values.contactPhone);
+      // Optional now: E.164 only when 10 digits are present, else "" (no phone).
+      const phoneDigits = digitsOnly(values.contactPhone ?? "");
+      patch.contactPhone = phoneDigits.length === 10 ? "+1" + phoneDigits : "";
     }
     if (dirtyFields.dealValue) {
-      patch.valueCents = Math.round(Number(values.dealValue) * 100);
+      // Optional now: empty saves as $0 (value_cents is not-null).
+      patch.valueCents = values.dealValue ? Math.round(Number(values.dealValue) * 100) : 0;
     }
     if (dirtyFields.stage) patch.stage = values.stage;
     if (dirtyFields.probability) {
@@ -374,7 +380,7 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
 
               <section className="flex flex-col gap-3">
                 <h3 className="text-body-strong text-text-default">Primary contact</h3>
-                <FormField htmlFor="contactName" label="Contact name" required error={errors.contactName?.message}>
+                <FormField htmlFor="contactName" label="Contact name" error={errors.contactName?.message}>
                   <Input id="contactName" {...register("contactName")} />
                 </FormField>
                 <FormField htmlFor="contactEmail" label="Email" error={errors.contactEmail?.message}>
@@ -384,7 +390,7 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
                   control={control}
                   name="contactPhone"
                   render={({ field }) => (
-                    <FormField htmlFor="contactPhone" label="Phone" required error={errors.contactPhone?.message}>
+                    <FormField htmlFor="contactPhone" label="Phone" error={errors.contactPhone?.message}>
                       <Input
                         id="contactPhone"
                         type="tel"
@@ -409,7 +415,7 @@ export function EditDealSheet({ open, onOpenChange, deal, onDeleted }: EditDealS
 
               <section className="flex flex-col gap-3">
                 <h3 className="text-body-strong text-text-default">Deal</h3>
-                <FormField htmlFor="dealValue" label="Deal value" required error={errors.dealValue?.message}>
+                <FormField htmlFor="dealValue" label="Deal value" error={errors.dealValue?.message}>
                   <Input id="dealValue" type="number" prefix="$" {...register("dealValue")} />
                 </FormField>
                 <Controller
