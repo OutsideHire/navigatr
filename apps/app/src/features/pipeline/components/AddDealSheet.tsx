@@ -9,14 +9,15 @@
  *   Mobile  → bottom sheet (slide-up from bottom, drag handle, sticky footer)
  *   Desktop → centered modal, max-w-[560px], max-h-[80vh], internal scroll
  *
- * Form (RHF + Zod, profession-conditional schema):
- *   1. Company        — name (req), address, industry, employee count
- *   2. Primary contact — name (req), title, email (req), phone (req)
- *   3. Deal           — value (req), stage (req), probability (req, auto by
- *                       stage unless manually edited), expected close,
- *                       lead source
- *   4. Qualification  — profession-specific fields rendered by branch
- *   5. Notes          — NotesFieldWithMic
+ * Form (RHF + Zod, profession-conditional schema). Only company name is
+ * required: a rep can save a business as a bare PROSPECT (esp. via Google
+ * search) and qualify it later via Edit. The rest are optional.
+ *   1. Company: name (req), address, industry, employee count
+ *   2. Primary contact: name, title, email, phone (all optional)
+ *   3. Deal: value, stage (req), probability (req, auto by stage unless
+ *      manually edited), expected close, lead source (all else optional)
+ *   4. Qualification: profession-specific fields rendered by branch
+ *   5. Notes: NotesFieldWithMic
  *
  * This file is the canonical template every other form in navigatr will
  * follow: FormField wraps every input, Zod schema lives next to the
@@ -203,26 +204,30 @@ const baseShape = {
   industry: z.string().optional(),
   employeeCountRange: z.string().optional(),
 
-  // Primary contact
-  contactName: z.string().min(1, "Contact name is required"),
+  // Primary contact, all optional: a rep adding a business as a PROSPECT (esp.
+  // via Google search) shouldn't be forced to fill contact/value/source. Empty
+  // fields persist as DB-safe blanks (contact_name/phone "", value_cents 0,
+  // lead_source coerced to "unknown" by useCreateDeal) so the not-null columns
+  // are satisfied; the rep qualifies the deal later via the Edit form.
+  contactName: z.string().optional(),
   contactTitle: z.string().optional(),
   // Optional: an empty string is allowed (submitted as no email), but a
   // non-empty value must still be a valid email. Email is not required to
   // create a deal (Path QA D).
   contactEmail: z.string().email("Enter a valid email").optional().or(z.literal("")),
-  // Permissive on purpose: 10 digits (US). libphonenumber's strict "valid"
-  // check rejects 555-555-5555 (reserved area code), which is the most-typed
-  // test number on Earth. Sprint 2 can tighten if we route real calls.
+  // Optional. When provided it must be 10 US digits (permissive: 555 area codes
+  // pass, since 555-555-5555 is the most-typed test number); empty is allowed.
   contactPhone: z
     .string()
-    .min(1, "Phone is required")
-    .refine((v) => digitsOnly(v).length === 10, "Enter a 10-digit US phone"),
+    .optional()
+    .refine((v) => !v || digitsOnly(v).length === 10, "Enter a 10-digit US phone"),
 
-  // Deal — preprocess empty strings to undefined so the default value "" lets
-  // the placeholder show instead of forcing the user to delete a literal "0".
+  // Deal value, optional. Empty preprocesses to undefined (placeholder shows,
+  // and a prospect saves at $0); a typed value must be 0 or more (a rep may
+  // deliberately enter 0), never negative.
   dealValue: z.preprocess(
     emptyToUndefined,
-    z.coerce.number().int().positive("Enter a deal value"),
+    z.coerce.number().int().nonnegative("Enter a value of 0 or more").optional(),
   ),
   stage: z.enum(["new", "contacted", "qualified", "proposal", "submitted", "won", "lost"]),
   probability: z.preprocess(
@@ -230,7 +235,7 @@ const baseShape = {
     z.coerce.number().int().min(0).max(100),
   ),
   expectedClose: z.string().optional(),
-  leadSource: z.string().min(1, "Pick a lead source"),
+  leadSource: z.string().optional(),
   leadSourceNote: z.string().optional(),
 
   // Notes
@@ -554,8 +559,9 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
       contactTitle: "",
       contactEmail: "",
       contactPhone: "",
-      // Empty-string defaults so the placeholder shows. Schema preprocess
-      // turns "" into undefined → triggers the "required" error on submit.
+      // Empty-string defaults so the placeholder shows. Schema preprocess turns
+      // "" into undefined: for the optional dealValue that saves as $0; for the
+      // still-required probability it triggers the validation error on submit.
       dealValue: "" as unknown as number,
       stage: (defaultStage ?? "new") as DealStage,
       probability: "" as unknown as number,
@@ -646,8 +652,8 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
       const formIndustry = PLACE_INDUSTRY_TO_FORM[place.industry];
       if (formIndustry) setValue("industry", formIndustry);
       if (place.phone) setValue("contactPhone", formatUSPhone(place.phone));
-      // A places-sourced deal is stamped 'places' at submit; set the field so
-      // the required-source validation passes without a rep pick.
+      // A places-sourced deal is stamped 'places' at submit; set the field now
+      // so the locked "Lead source" row reads 'Business search' for the rep.
       setValue("leadSource", "places", { shouldValidate: true });
       setPlaceMeta({
         placeId: place.placeId,
@@ -680,7 +686,10 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
       ...professionFields
     } = values;
 
-    const e164Phone = "+1" + digitsOnly(contactPhone);
+    // Phone is optional now: normalize to E.164 only when 10 digits are present,
+    // otherwise store "" (a prospect with no phone yet).
+    const phoneDigits = digitsOnly(contactPhone ?? "");
+    const e164Phone = phoneDigits.length === 10 ? "+1" + phoneDigits : "";
 
     // Consume the one-shot bypass + pending parent link (set by the
     // interstitial's confirm buttons) so each submit re-evaluates from scratch.
@@ -712,22 +721,26 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
         address,
         industry,
         employeeCountRange,
-        contactName,
+        // Optional for a prospect: empty persists as "" (the column is not-null).
+        contactName: contactName ?? "",
         contactTitle,
         // Email is optional; send undefined (→ null column) for an empty value
         // so a blank field never persists as "".
         contactEmail: contactEmail?.trim() ? contactEmail : undefined,
-        // Normalize to E.164 ("+1XXXXXXXXXX"). The form validator already
-        // guarantees 10 digits; PhoneWithClickToCall on the deal card
-        // requires E.164 to render without an "Invalid number" error.
+        // Normalize to E.164 ("+1XXXXXXXXXX") when 10 digits are present, else
+        // "" (phone is optional for a prospect). Only a well-formed E.164 number
+        // reaches the card, so PhoneWithClickToCall never sees a partial number.
         contactPhone: e164Phone,
-        valueCents: Math.round(dealValue * 100),
+        // Optional for a prospect: no value yet saves as $0 (column is not-null).
+        valueCents: dealValue ? Math.round(dealValue * 100) : 0,
         stage,
         probability,
         expectedClose: expectedClose || null,
         // A Business-Search deal is stamped 'places' (rep-directed, auto-set);
-        // a manual deal keeps the rep's picked source.
-        leadSource: placeMeta ? "places" : leadSource,
+        // a manual deal keeps the rep's picked source, or undefined when left
+        // blank (lead source is optional now for a prospect; useCreateDeal
+        // coerces undefined to "unknown" to satisfy the not-null column).
+        leadSource: placeMeta ? "places" : (leadSource || undefined),
         leadSourceNote: !placeMeta && leadSource === "other" ? leadSourceNote?.trim() || null : null,
         notes,
         // expectedClose is a YYYY-MM-DD calendar date; store the mirrored
@@ -756,10 +769,11 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
     }
   };
 
-  // Submit blocked by validation. The failing fields (company / contact / phone
-  // up top) render above the button, so a rep scrolled to "Add deal" sees
-  // nothing happen. Surface it: a toast near the action, plus scroll the first
-  // invalid field into view so the red field is never stranded off-screen.
+  // Submit blocked by validation. A failing field (company name up top, or a
+  // malformed optional like a partial phone) renders above the button, so a rep
+  // scrolled to "Add deal" sees nothing happen. Surface it: a toast near the
+  // action, plus scroll the first invalid field into view so it is never
+  // stranded off-screen.
   const onInvalid: SubmitErrorHandler<DealFormValues> = () => {
     toast.error("Add the missing details highlighted above to save this deal.");
     requestAnimationFrame(() => {
@@ -1001,7 +1015,7 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
               {/* Section 2: Primary contact */}
               <section className="flex flex-col gap-3">
                 <SectionHeader>Primary contact</SectionHeader>
-                <FormField htmlFor="contactName" label="Contact name" required error={errors.contactName?.message}>
+                <FormField htmlFor="contactName" label="Contact name" error={errors.contactName?.message}>
                   <Input id="contactName" placeholder="Full name" {...register("contactName")} />
                 </FormField>
                 <FormField htmlFor="contactTitle" label="Title / role">
@@ -1014,7 +1028,7 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
                   control={control}
                   name="contactPhone"
                   render={({ field }) => (
-                    <FormField htmlFor="contactPhone" label="Phone" required error={errors.contactPhone?.message}>
+                    <FormField htmlFor="contactPhone" label="Phone" error={errors.contactPhone?.message}>
                       <Input
                         id="contactPhone"
                         type="tel"
@@ -1042,7 +1056,7 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
               {/* Section 3: Deal */}
               <section className="flex flex-col gap-3">
                 <SectionHeader>Deal</SectionHeader>
-                <FormField htmlFor="dealValue" label="Deal value" required error={errors.dealValue?.message}>
+                <FormField htmlFor="dealValue" label="Deal value" error={errors.dealValue?.message}>
                   <Input id="dealValue" type="number" prefix="$" placeholder="0" {...register("dealValue")} />
                 </FormField>
                 <Controller
