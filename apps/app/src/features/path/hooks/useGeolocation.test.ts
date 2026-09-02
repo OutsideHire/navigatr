@@ -66,6 +66,34 @@ describe("useGeolocation", () => {
     expect(result.current.coords).toBeNull();
   });
 
+  it("does NOT request the position when enabled:false (no browser prompt)", async () => {
+    const getCurrentPosition = vi.fn((ok) =>
+      ok({ coords: { latitude: 40, longitude: -105 } } as GeolocationPosition),
+    );
+    mockGeolocation({ getCurrentPosition });
+    const { result } = renderHook(() => useGeolocation({ enabled: false }));
+    await new Promise((r) => setTimeout(r, 0)); // let effects run
+    expect(getCurrentPosition).not.toHaveBeenCalled();
+    expect(result.current.coords).toBeNull();
+  });
+
+  it("requests the position once enabled flips true", async () => {
+    const getCurrentPosition = vi.fn((ok) =>
+      ok({ coords: { latitude: 40, longitude: -105 } } as GeolocationPosition),
+    );
+    mockGeolocation({ getCurrentPosition });
+    const { result, rerender } = renderHook(
+      ({ enabled }) => useGeolocation({ enabled }),
+      { initialProps: { enabled: false } },
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    expect(getCurrentPosition).not.toHaveBeenCalled();
+
+    rerender({ enabled: true });
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(result.current.coords).toEqual({ lat: 40, lng: -105 });
+  });
+
   it("re-requests geolocation when the permission state changes", async () => {
     const getCurrentPosition = vi.fn((_ok, err) =>
       err?.({ code: 1, message: "denied" } as GeolocationPositionError),

@@ -40,11 +40,15 @@ export interface UseGeolocationOptions {
   /** When true, subscribe to continuous position updates via `watchPosition`
    *  (the running map's live rep marker). Default false = one-shot getter. */
   watch?: boolean;
+  /** When false, do NOT request the position (coords stays null, no browser
+   *  prompt). Lets a consumer that mounts before it's needed (e.g. an always-
+   *  mounted sheet) defer the request until it opens. Default true. */
+  enabled?: boolean;
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
-export function useGeolocation({ watch = false }: UseGeolocationOptions = {}): GeolocationResult {
+export function useGeolocation({ watch = false, enabled = true }: UseGeolocationOptions = {}): GeolocationResult {
   const [state, setState] = React.useState<{
     coords: { lat: number; lng: number } | null;
     status: GeoStatus;
@@ -109,9 +113,10 @@ export function useGeolocation({ watch = false }: UseGeolocationOptions = {}): G
   }, [watch, clearActiveWatch]);
 
   React.useEffect(() => {
+    if (!enabled) return;
     request();
     return () => clearActiveWatch();
-  }, [request, clearActiveWatch]);
+  }, [request, clearActiveWatch, enabled]);
 
   // Auto-recover when the user re-enables location in browser settings: watch the
   // geolocation permission and re-request on any change (granted → silent fix;
@@ -119,7 +124,7 @@ export function useGeolocation({ watch = false }: UseGeolocationOptions = {}): G
   // denied). Best-effort — browsers without the geolocation Permissions API
   // (older Safari) skip this silently.
   React.useEffect(() => {
-    if (typeof navigator === "undefined" || !navigator.permissions?.query) return;
+    if (!enabled || typeof navigator === "undefined" || !navigator.permissions?.query) return;
     let status: PermissionStatus | null = null;
     let cancelled = false;
     const onChange = () => { if (!cancelled) request(); };
@@ -137,7 +142,7 @@ export function useGeolocation({ watch = false }: UseGeolocationOptions = {}): G
       cancelled = true;
       status?.removeEventListener("change", onChange);
     };
-  }, [request]);
+  }, [request, enabled]);
 
   return { ...state, retry: request };
 }
