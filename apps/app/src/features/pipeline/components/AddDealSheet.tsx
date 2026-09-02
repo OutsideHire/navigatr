@@ -37,6 +37,7 @@ import { z } from "zod";
 import { AsYouType } from "libphonenumber-js";
 import { useCreateDeal } from "../hooks/useCreateDeal";
 import { usePlaceResolver } from "../hooks/usePlaceResolver";
+import { useDealSearchBias } from "../hooks/useDealSearchBias";
 import { usePlaceDuplicateCheck } from "../hooks/usePlaceDuplicateCheck";
 import { useAttachPlaceToDeal } from "../hooks/useAttachPlaceToDeal";
 import { BusinessSearchField } from "./BusinessSearchField";
@@ -509,6 +510,10 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
   const createDeal = useCreateDeal();
   const navigate = useNavigate();
   const resolver = usePlaceResolver();
+  // Bias the business search to the rep's location (live GPS, else today's path
+  // origin) so results are nearby, not nationwide. Gated on `open` so it only
+  // asks for location when the sheet is actually opened. See NAVIGATR bug.
+  const searchBias = useDealSearchBias(open);
   const { checkPlaceDuplicate } = usePlaceDuplicateCheck();
   const attachPlace = useAttachPlaceToDeal();
 
@@ -934,7 +939,7 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
                   label="Find a business"
                   helper="Search Google, or enter the details manually below"
                 >
-                  <BusinessSearchField resolver={resolver} onResolve={onResolvePlace} />
+                  <BusinessSearchField resolver={resolver} onResolve={onResolvePlace} bias={searchBias} />
                 </FormField>
                 {placeMeta && (
                   <div className="flex items-center gap-2 rounded-radius-sm bg-surface-sunken px-3 py-2">

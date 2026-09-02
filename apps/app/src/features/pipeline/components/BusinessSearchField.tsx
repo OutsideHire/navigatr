@@ -74,6 +74,22 @@ export function BusinessSearchField({ resolver, onResolve, bias, disabled }: Bus
     debounceRef.current = setTimeout(() => runSearch(text), DEBOUNCE_MS);
   };
 
+  // The location bias resolves asynchronously (GPS / active-path read) after the
+  // sheet opens. A fast rep can type before it lands, so the first search runs
+  // unbiased (nationwide). Re-issue the current query ONCE, the moment bias
+  // first becomes available, so those early results are replaced with nearby
+  // ones. The ref guard fires only on the undefined->defined transition, not on
+  // keystrokes (those already run via onChange) or later GPS refinements.
+  const hasBias = bias != null;
+  const hadBiasRef = React.useRef(hasBias);
+  React.useEffect(() => {
+    const justResolved = hasBias && !hadBiasRef.current;
+    hadBiasRef.current = hasBias;
+    if (justResolved && query.trim().length >= MIN_CHARS) {
+      runSearch(query);
+    }
+  }, [hasBias, query, runSearch]);
+
   const onPick = async (s: PlaceSuggestion) => {
     setOpen(false);
     setResolving(true);
