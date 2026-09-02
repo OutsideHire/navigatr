@@ -19,6 +19,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
 import { useFollowupSync } from "@/features/appointments/useFollowupSync";
+import { useGeocodeDealCoords } from "./useGeocodeDealCoords";
 import { DuplicateDealError, isDuplicateActiveDealError } from "./useCreateDeal";
 import { DEALS_QUERY_KEY } from "./useDeals";
 import { STAGE_HISTORY_QUERY_KEY } from "./useStageHistory";
@@ -54,7 +55,7 @@ export interface UpdateDealInput {
     contactPhone?: string;
     contactEmail?: string | null;
     contactTitle?: string;
-    address?: string;
+    address?: string | null;
     industry?: string;
     employeeCountRange?: string;
     valueCents?: number;
@@ -101,6 +102,7 @@ export function useUpdateDeal() {
   const queryClient = useQueryClient();
   const userId = useAuth((s) => s.user?.id);
   const { syncFollowup } = useFollowupSync();
+  const geocode = useGeocodeDealCoords();
 
   return useMutation({
     mutationFn: async (input: UpdateDealInput): Promise<void> => {
@@ -139,6 +141,13 @@ export function useUpdateDeal() {
       // this hook). Fire-and-forget: never blocks or fails the update.
       if (variables.patch.nextFollowupAt !== undefined || variables.patch.stage !== undefined) {
         void syncFollowup(variables.id);
+      }
+      // Address changed -> re-place the deal on the map/Path. Fire-and-forget +
+      // best-effort (the geocoder never rejects and never blocks the save). It
+      // reads the live row and skips a Places deal (keeps its Google coords)
+      // and a cleared address, so force is safe to pass unconditionally here.
+      if (variables.patch.address !== undefined) {
+        geocode.mutate({ dealId: variables.id, force: true });
       }
     },
   });

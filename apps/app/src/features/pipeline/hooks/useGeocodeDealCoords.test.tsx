@@ -144,4 +144,81 @@ describe("useGeocodeDealCoords", () => {
     expect(updateMock).not.toHaveBeenCalled();
     expect(out).toEqual({ geocoded: false });
   });
+
+  it("force RE-geocodes even when the deal already has coords (an address edit)", async () => {
+    singleMock.mockResolvedValueOnce({
+      data: { address: "456 Oak Ave", lat: 12.3, lng: 45.6, place_id: null },
+      error: null,
+    });
+    invokeMock.mockResolvedValueOnce({ data: { result: { lat: 40.1, lng: -88.2 } } });
+
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => useGeocodeDealCoords(), { wrapper });
+    const out = await result.current.mutateAsync({ dealId: "deal-7", force: true });
+
+    expect(invokeMock).toHaveBeenCalledWith("geocode", { body: { query: "456 Oak Ave" } });
+    expect(updateMock).toHaveBeenCalledWith({ lat: 40.1, lng: -88.2 });
+    expect(out).toEqual({ geocoded: true });
+  });
+
+  it("force still does NOT geocode a place_id deal (keeps its authoritative Google coords)", async () => {
+    singleMock.mockResolvedValueOnce({
+      data: { address: "456 Oak Ave", lat: 12.3, lng: 45.6, place_id: "gp-2" },
+      error: null,
+    });
+
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => useGeocodeDealCoords(), { wrapper });
+    const out = await result.current.mutateAsync({ dealId: "deal-8", force: true });
+
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(out).toEqual({ geocoded: false });
+  });
+
+  it("force CLEARS stale coords when the address was cleared (deal leaves the route)", async () => {
+    singleMock.mockResolvedValueOnce({
+      data: { address: null, lat: 12.3, lng: 45.6, place_id: null },
+      error: null,
+    });
+
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => useGeocodeDealCoords(), { wrapper });
+    const out = await result.current.mutateAsync({ dealId: "deal-9", force: true });
+
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(updateMock).toHaveBeenCalledWith({ lat: null, lng: null });
+    expect(out).toEqual({ geocoded: false, cleared: true });
+  });
+
+  it("force CLEARS stale coords when the new address is unlocatable (clean geocode miss)", async () => {
+    singleMock.mockResolvedValueOnce({
+      data: { address: "Unfindable Pl", lat: 12.3, lng: 45.6, place_id: null },
+      error: null,
+    });
+    invokeMock.mockResolvedValueOnce({ data: {} }); // response, but no result
+
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => useGeocodeDealCoords(), { wrapper });
+    const out = await result.current.mutateAsync({ dealId: "deal-10", force: true });
+
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(updateMock).toHaveBeenCalledWith({ lat: null, lng: null });
+    expect(out).toEqual({ geocoded: false, cleared: true });
+  });
+
+  it("force KEEPS existing coords when the geocoder THROWS (transient outage, not a real miss)", async () => {
+    singleMock.mockResolvedValueOnce({
+      data: { address: "123 Main St", lat: 12.3, lng: 45.6, place_id: null },
+      error: null,
+    });
+    invokeMock.mockRejectedValueOnce(new Error("edge function 500"));
+
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => useGeocodeDealCoords(), { wrapper });
+    const out = await result.current.mutateAsync({ dealId: "deal-11", force: true });
+
+    expect(updateMock).not.toHaveBeenCalled(); // coords left intact
+    expect(out).toEqual({ geocoded: false });
+  });
 });

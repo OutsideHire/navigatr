@@ -30,6 +30,14 @@ vi.mock("@/features/appointments/useFollowupSync", () => ({
   useFollowupSync: () => ({ syncFollowup: syncFollowupMock }),
 }));
 
+// Address re-geocode is fire-and-forget; mock the hook so we can assert
+// useUpdateDeal triggers it (force:true) exactly when the address changed. The
+// geocoder's own guards (place_id / no-address) are covered in its own tests.
+const geocodeMutateMock = vi.fn();
+vi.mock("./useGeocodeDealCoords", () => ({
+  useGeocodeDealCoords: () => ({ mutate: geocodeMutateMock }),
+}));
+
 function makeWrapper(client: QueryClient) {
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
@@ -40,6 +48,7 @@ beforeEach(() => {
   updateMock.mockClear();
   eqMock.mockReset();
   syncFollowupMock.mockClear();
+  geocodeMutateMock.mockClear();
   authUserId = "user-1";
 });
 
@@ -221,6 +230,40 @@ describe("useUpdateDeal", () => {
     // Give onSuccess a tick to run.
     await new Promise((r) => setTimeout(r, 0));
     expect(syncFollowupMock).not.toHaveBeenCalled();
+  });
+
+  it("re-geocodes the deal (force) when the address is in the patch", async () => {
+    eqMock.mockResolvedValueOnce({ error: null });
+    const { result } = renderHook(() => useUpdateDeal(), {
+      wrapper: makeWrapper(new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })),
+    });
+    await result.current.mutateAsync({ id: "deal-1", patch: { address: "456 Oak Ave" } });
+    await waitFor(() => expect(geocodeMutateMock).toHaveBeenCalledWith({ dealId: "deal-1", force: true }));
+  });
+
+  it("re-geocodes even when the address is cleared to null (the geocoder no-ops on it)", async () => {
+    eqMock.mockResolvedValueOnce({ error: null });
+    const { result } = renderHook(() => useUpdateDeal(), {
+      wrapper: makeWrapper(new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })),
+    });
+    await result.current.mutateAsync({ id: "deal-1", patch: { address: null } });
+    await waitFor(() => expect(geocodeMutateMock).toHaveBeenCalledWith({ dealId: "deal-1", force: true }));
+  });
+
+  it("does NOT re-geocode when the address is not in the patch", async () => {
+    eqMock.mockResolvedValueOnce({ error: null });
+    const { result } = renderHook(() => useUpdateDeal(), {
+      wrapper: makeWrapper(new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      })),
+    });
+    await result.current.mutateAsync({ id: "deal-1", patch: { companyName: "Acme" } });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(geocodeMutateMock).not.toHaveBeenCalled();
   });
 
   it("throws DuplicateDealError when reopening a deal collides with the active-place_id constraint", async () => {
