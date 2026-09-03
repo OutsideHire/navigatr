@@ -66,6 +66,40 @@ export function isSupabaseError(err: unknown): err is SupabaseLikeError {
 }
 
 /**
+ * True when `err` is a NON-Error object that still carries a human `message`
+ * string: a thrown `{ message }`, a library error object, or a Supabase/HTTP
+ * error whose body was only `{ message }` (e.g. a 401 on a HEAD count query,
+ * which has no parseable body, so supabase-js yields message-only). Sentry logs
+ * any such value as the useless "Object captured as exception with keys:
+ * message" (NAVIGATR-APP-P on /admin/agents/:id) because it is not an Error.
+ *
+ * A real Supabase error also satisfies this, so callers MUST check
+ * isSupabaseError() first when they want the richer code/details/hint handling.
+ *
+ * Requires a NON-empty message: an empty/whitespace message would title the
+ * event just "CapturedError" and, since Sentry groups by type + value, collapse
+ * every empty capture from unrelated code into one meaningless issue. Those fall
+ * through to Sentry's raw handling instead.
+ */
+export function isMessageObject(err: unknown): err is { message: string } {
+  if (!err || typeof err !== "object" || err instanceof Error) return false;
+  const msg = (err as Record<string, unknown>).message;
+  return typeof msg === "string" && msg.trim().length > 0;
+}
+
+/** The non-message fields of a captured object, for stashing in Sentry `extra`
+ *  so the readable title stays just the message. Returns undefined when there
+ *  are none. */
+function otherFields(err: { message: string }): Record<string, unknown> | undefined {
+  const rest: Record<string, unknown> = {};
+  const src = err as Record<string, unknown>;
+  for (const k of Object.keys(src)) {
+    if (k !== "message") rest[k] = src[k];
+  }
+  return Object.keys(rest).length > 0 ? rest : undefined;
+}
+
+/**
  * A Supabase error that is authz working as designed: the caller hit one of our
  * RPC gates that raises `forbidden` (e.g. a rep opening a manager-only report).
  * The data is protected and the UI degrades to an empty widget, so it is not a
@@ -102,6 +136,17 @@ export function normalizeError(err: unknown): { error: unknown; extra?: Record<s
       },
     };
   }
+  // Any OTHER non-Error object carrying a message (a thrown `{ message }`, a
+  // 401 HEAD-request error body, a library error object): turn it into a
+  // readable Error titled with that message and stash the remaining fields in
+  // extra. Without this, Sentry logs the useless "Object captured as exception
+  // with keys: message".
+  if (isMessageObject(err)) {
+    const error = new Error(err.message);
+    error.name = "CapturedError";
+    const rest = otherFields(err);
+    return { error, extra: rest ? { captured_object: rest } : undefined };
+  }
   return { error: err };
 }
 
@@ -112,54 +157,71 @@ export interface SentryEventLike {
   extra?: Record<string, unknown>;
 }
 
+/** Set the Sentry event's primary exception title (type + value), fabricating an
+ *  exception entry when the synthesized event has none, so the title reads
+ *  cleanly instead of staying "Object captured...". */
+function rewriteEventTitle(event: SentryEventLike, type: string, value: string): void {
+  const values = event.exception?.values;
+  if (values && values.length > 0) {
+    values[0].type = type;
+    values[0].value = value;
+  } else {
+    event.exception = { values: [{ type, value }] };
+  }
+}
+
 /**
- * Normalize a Sentry event whose ORIGINAL exception is a raw Supabase error
- * object that reached Sentry OUTSIDE our captureException wrapper.
+ * Normalize a Sentry event whose ORIGINAL exception is a raw error OBJECT (not an
+ * Error) that reached Sentry OUTSIDE our captureException wrapper.
  *
- * When a raw {code,message,details,hint} object rejects unhandled, Sentry's
- * global handlers capture it and synthesize the useless "Object captured as
- * exception with keys: code, details, hint, message" event (NAVIGATR-APP-7).
- * captureException never runs for that path, so normalizeError never sees it.
- * beforeSend, however, runs for EVERY event and receives the original throwable
- * via `hint.originalException`, so this rewrites the synthesized event in place
- * into a readable, groupable SupabaseError, or signals to drop it (authz working
- * as designed, matching the wrapper's suppression).
+ * When such an object rejects unhandled, Sentry's global handlers capture it and
+ * synthesize the useless "Object captured as exception with keys: ..." event
+ * (NAVIGATR-APP-7 for the Supabase {code,details,hint,message} shape; the same
+ * class of event with just "keys: message" for a bare {message}, e.g. a 401 on a
+ * HEAD count query). captureException never runs for that path, so normalizeError
+ * never sees it. beforeSend, however, runs for EVERY event and receives the
+ * original throwable via `hint.originalException`, so this rewrites the
+ * synthesized event in place into a readable, groupable title:
+ *   - a Supabase raw object  -> SupabaseError "[code] message" (+ code/details/hint
+ *     in extra), or a DROP for authz working as designed;
+ *   - any other {message} object -> CapturedError "message" (+ other fields in extra).
  *
- * No-op (drop:false, event untouched) when `originalException` is not a RAW
- * Supabase object, in particular an Error the wrapper already normalized
- * (isSupabaseError rejects Error instances), so the wrapper path is never
- * double-processed.
+ * No-op (drop:false, event untouched) when `originalException` is an Error the
+ * wrapper already normalized (both guards reject Error instances), so the wrapper
+ * path is never double-processed.
  */
 export function normalizeSupabaseSentryEvent(
   event: SentryEventLike,
   originalException: unknown,
 ): { drop: boolean } {
-  if (!isSupabaseError(originalException)) return { drop: false };
-  if (isExpectedPermissionError(originalException)) return { drop: true };
-
-  const readable = `[${originalException.code}] ${originalException.message}`;
-  const values = event.exception?.values;
-  if (values && values.length > 0) {
-    values[0].type = "SupabaseError";
-    values[0].value = readable;
-  } else {
-    // Exception-less synthesized event (rare): fabricate one so the title is
-    // readable rather than silently staying "Object captured...".
-    event.exception = { values: [{ type: "SupabaseError", value: readable }] };
+  // Supabase raw-object path: richest handling (code/details/hint + authz drop).
+  if (isSupabaseError(originalException)) {
+    if (isExpectedPermissionError(originalException)) return { drop: true };
+    rewriteEventTitle(event, "SupabaseError", `[${originalException.code}] ${originalException.message}`);
+    // Deliberately set NO fingerprint. Sentry groups by the rewritten type +
+    // value ("SupabaseError: [code] message"), which redactPii scrubs before the
+    // event ships. Keying a fingerprint on the raw message would (a) ship that
+    // message UNREDACTED, since redactPii historically did not walk fingerprint,
+    // and (b) fragment on Postgres errors that interpolate a value (e.g. 22P02
+    // "invalid input syntax for type uuid: <value>"). Value-grouping avoids both:
+    // it groups on the scrubbed message and matches how the captureException
+    // wrapper path (normalizeError) already groups the caught case.
+    event.extra = {
+      ...(event.extra ?? {}),
+      supabase_code: originalException.code,
+      supabase_details: originalException.details ?? null,
+      supabase_hint: originalException.hint ?? null,
+    };
+    return { drop: false };
   }
-  // Deliberately set NO fingerprint. Sentry groups by the rewritten type +
-  // value ("SupabaseError: [code] message"), which redactPii scrubs before the
-  // event ships. Keying a fingerprint on the raw message would (a) ship that
-  // message UNREDACTED, since redactPii historically did not walk fingerprint,
-  // and (b) fragment on Postgres errors that interpolate a value (e.g. 22P02
-  // "invalid input syntax for type uuid: <value>"). Value-grouping avoids both:
-  // it groups on the scrubbed message and matches how the captureException
-  // wrapper path (normalizeError) already groups the caught case.
-  event.extra = {
-    ...(event.extra ?? {}),
-    supabase_code: originalException.code,
-    supabase_details: originalException.details ?? null,
-    supabase_hint: originalException.hint ?? null,
-  };
+  // Generic message-object fallback: a bare {message} (e.g. a 401 HEAD-request
+  // error body) rejected unhandled synthesizes "Object captured as exception with
+  // keys: message". Rewrite it into a readable CapturedError and stash the rest.
+  if (isMessageObject(originalException)) {
+    rewriteEventTitle(event, "CapturedError", originalException.message);
+    const rest = otherFields(originalException);
+    if (rest) event.extra = { ...(event.extra ?? {}), captured_object: rest };
+    return { drop: false };
+  }
   return { drop: false };
 }

@@ -212,6 +212,15 @@ const EMAIL_RE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 // long random integers (deal IDs, timestamps).
 const PHONE_RE = /(?:\+?\d{1,3}[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]\d{3}[\s.-]\d{4}|\+\d{10,15}/g;
 
+// Object KEYS whose value is a credential regardless of type: redact the whole
+// value. Mirrors stripTokensFromUrl's REDACT_KEYS but for object properties in
+// extra / contexts / breadcrumb data. This matters now that a captured error
+// OBJECT flows into event.extra (extra.captured_object, supabase_details): a 401
+// body or fetch error can carry an Authorization header, api key, or cookie.
+// Targeted (not a bare `key`/`auth`) so it doesn't nuke benign fields like
+// `primaryKey`; over-redaction here only costs a debug hint, never correctness.
+const SENSITIVE_KEY_RE = /(authorization|password|passwd|secret|cookie|token|api[-_]?key)/i;
+
 export function redactString(input: string): string {
   return input.replace(EMAIL_RE, "[email]").replace(PHONE_RE, "[phone]");
 }
@@ -236,10 +245,12 @@ function redactDeep(value: unknown, seen: WeakSet<object>): unknown {
     return value;
   }
 
-  // Plain object: redact each enumerable property in place.
+  // Plain object: redact each enumerable property in place. A property whose
+  // KEY names a credential is masked wholesale (any type); everything else
+  // recurses so nested strings still get email/phone scrubbing.
   const obj = value as Record<string, unknown>;
   for (const key of Object.keys(obj)) {
-    obj[key] = redactDeep(obj[key], seen);
+    obj[key] = SENSITIVE_KEY_RE.test(key) ? "[redacted]" : redactDeep(obj[key], seen);
   }
   return obj;
 }

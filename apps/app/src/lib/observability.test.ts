@@ -244,6 +244,31 @@ describe("observability", () => {
     expect(out.fingerprint).toBeUndefined();           // no fingerprint carrying the raw message
   });
 
+  it("beforeSend normalizes an UNHANDLED bare {message} object into a readable CapturedError, scrubbing PII + secrets in extra", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { initObservability } = await import("./observability");
+    initObservability();
+    const initArg = (Sentry.init as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+      beforeSend: (e: Record<string, unknown>, h?: { originalException?: unknown }) => Record<string, unknown> | null;
+    };
+    // The synthesized event Sentry builds from a bare {message} unhandled reject
+    // (e.g. a 401 HEAD-count error body), carrying a credential field.
+    const event = {
+      exception: { values: [{ type: "Error", value: "Object captured as exception with keys: message" }] },
+    };
+    const raw = { message: "unauthorized for user@acme.com", authorization: "Bearer eyJsecret", status: 401 };
+    const out = initArg.beforeSend(event, { originalException: raw }) as Record<string, unknown>;
+    const val = (out.exception as { values: { type: string; value: string }[] }).values[0];
+    expect(val.type).toBe("CapturedError");
+    expect(val.value).toContain("[email]");            // message PII scrubbed in the title
+    expect(val.value).not.toContain("user@acme.com");
+    const captured = (out.extra as { captured_object: Record<string, unknown> }).captured_object;
+    expect(captured.authorization).toBe("[redacted]"); // credential key masked wholesale
+    expect(captured.status).toBe(401);                 // benign field kept
+    expect(out.fingerprint).toBeUndefined();
+  });
+
   it("beforeSend drops an UNHANDLED expected-permission Supabase error (P0001 forbidden)", async () => {
     vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
     const Sentry = await import("@sentry/react");
