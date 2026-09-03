@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   IGNORED_ERROR_PATTERNS,
   isSupabaseError,
+  isMessageObject,
   isExpectedPermissionError,
   normalizeError,
   normalizeSupabaseSentryEvent,
@@ -46,6 +47,28 @@ describe("isSupabaseError", () => {
   });
 });
 
+describe("isMessageObject", () => {
+  it("recognizes a non-Error object carrying a string message", () => {
+    expect(isMessageObject({ message: "boom" })).toBe(true);
+    expect(isMessageObject({ message: "boom", status: 500 })).toBe(true);
+    // A Supabase error is a message object too (callers check isSupabaseError
+    // first, for the richer code/details/hint handling).
+    expect(isMessageObject({ code: "P0001", message: "forbidden", details: null, hint: null })).toBe(true);
+  });
+  it("rejects Errors, non-string messages, and non-objects", () => {
+    expect(isMessageObject(new Error("boom"))).toBe(false); // Sentry handles Errors natively
+    expect(isMessageObject(new TypeError("boom"))).toBe(false);
+    expect(isMessageObject({ message: 123 })).toBe(false);
+    expect(isMessageObject({ code: "x" })).toBe(false); // no message key
+    expect(isMessageObject("boom")).toBe(false);
+    expect(isMessageObject(null)).toBe(false);
+  });
+  it("rejects an empty or whitespace-only message (would collision-group as a bare CapturedError)", () => {
+    expect(isMessageObject({ message: "" })).toBe(false);
+    expect(isMessageObject({ message: "   " })).toBe(false);
+  });
+});
+
 describe("isExpectedPermissionError", () => {
   it("is true ONLY for a P0001 'forbidden' RPC-gate denial", () => {
     expect(isExpectedPermissionError({ code: "P0001", message: "forbidden", details: null, hint: null })).toBe(true);
@@ -83,6 +106,24 @@ describe("normalizeError", () => {
   it("passes a non-Supabase value through unchanged", () => {
     const { error, extra } = normalizeError("plain string");
     expect(error).toBe("plain string");
+    expect(extra).toBeUndefined();
+  });
+  it("turns a bare {message} object into a readable Error (the 'keys: message' bug)", () => {
+    const { error, extra } = normalizeError({ message: "boom" });
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe("boom");
+    expect((error as Error).name).toBe("CapturedError");
+    expect(extra).toBeUndefined();
+  });
+  it("stashes a message-object's other fields under captured_object", () => {
+    const { error, extra } = normalizeError({ message: "boom", status: 500, url: "/x" });
+    expect((error as Error).message).toBe("boom");
+    expect(extra).toMatchObject({ captured_object: { status: 500, url: "/x" } });
+  });
+  it("passes an empty-message object through raw (never a bare, collision-grouped CapturedError)", () => {
+    const raw = { message: "" };
+    const { error, extra } = normalizeError(raw);
+    expect(error).toBe(raw);
     expect(extra).toBeUndefined();
   });
 });
@@ -128,7 +169,7 @@ describe("normalizeSupabaseSentryEvent", () => {
     expect(JSON.stringify(event)).toBe(before);
   });
 
-  it("is a no-op for a non-Supabase throwable", () => {
+  it("is a no-op for a real Error (Sentry handles Errors natively; the wrapper path is not double-processed)", () => {
     const event = synthesizedEvent();
     const before = JSON.stringify(event);
     normalizeSupabaseSentryEvent(event, new TypeError("cannot read 'id'"));
@@ -139,5 +180,25 @@ describe("normalizeSupabaseSentryEvent", () => {
     const event: SentryEventLike = {};
     normalizeSupabaseSentryEvent(event, rawError);
     expect(event.exception?.values?.[0]).toMatchObject({ type: "SupabaseError", value: "[42501] permission denied for table deals" });
+  });
+
+  // A bare {message}-only object rejected UNHANDLED synthesizes the useless
+  // "Object captured as exception with keys: message" event (NAVIGATR-APP-P on
+  // /admin/agents/:id). The generic fallback rescues it the same way.
+  it("rewrites a bare {message} unhandled event into a readable CapturedError", () => {
+    const event: SentryEventLike = {
+      exception: { values: [{ type: "Error", value: "Object captured as exception with keys: message" }] },
+    };
+    const { drop } = normalizeSupabaseSentryEvent(event, { message: "boom" });
+    expect(drop).toBe(false);
+    expect(event.exception?.values?.[0]).toMatchObject({ type: "CapturedError", value: "boom" });
+  });
+
+  it("stashes a message-object's other fields under captured_object in extra", () => {
+    const event: SentryEventLike = {
+      exception: { values: [{ type: "Error", value: "Object captured as exception with keys: message, status" }] },
+    };
+    normalizeSupabaseSentryEvent(event, { message: "boom", status: 500 });
+    expect(event.extra).toMatchObject({ captured_object: { status: 500 } });
   });
 });
