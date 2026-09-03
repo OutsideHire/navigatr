@@ -9,13 +9,14 @@
  *   Mobile  → bottom sheet (slide-up from bottom, drag handle, sticky footer)
  *   Desktop → centered modal, max-w-[560px], max-h-[80vh], internal scroll
  *
- * Form (RHF + Zod, profession-conditional schema). Only company name is
- * required: a rep can save a business as a bare PROSPECT (esp. via Google
- * search) and qualify it later via Edit. The rest are optional.
+ * Form (RHF + Zod, profession-conditional schema). Company name + lead source
+ * are required; otherwise a rep can save a business as a bare PROSPECT (esp.
+ * via Google search, which auto-stamps the source as "places") and qualify it
+ * later via Edit. Contact fields + value are optional.
  *   1. Company: name (req), address, industry, employee count
  *   2. Primary contact: name, title, email, phone (all optional)
- *   3. Deal: value, stage (req), probability (req, auto by stage unless
- *      manually edited), expected close, lead source (all else optional)
+ *   3. Deal: value (optional), stage (req), probability (req, auto by stage
+ *      unless manually edited), expected close, lead source (req)
  *   4. Qualification: profession-specific fields rendered by branch
  *   5. Notes: NotesFieldWithMic
  *
@@ -204,11 +205,11 @@ const baseShape = {
   industry: z.string().optional(),
   employeeCountRange: z.string().optional(),
 
-  // Primary contact, all optional: a rep adding a business as a PROSPECT (esp.
-  // via Google search) shouldn't be forced to fill contact/value/source. Empty
-  // fields persist as DB-safe blanks (contact_name/phone "", value_cents 0,
-  // lead_source coerced to "unknown" by useCreateDeal) so the not-null columns
-  // are satisfied; the rep qualifies the deal later via the Edit form.
+  // Primary contact + value, all optional: a rep adding a business as a PROSPECT
+  // (esp. via Google search) shouldn't be forced to fill the contact or a value.
+  // Empty fields persist as DB-safe blanks (contact_name/phone "", value_cents 0)
+  // so the not-null columns are satisfied; the rep qualifies the deal later via
+  // the Edit form. Lead source is the exception: it stays required (see below).
   contactName: z.string().optional(),
   contactTitle: z.string().optional(),
   // Optional: an empty string is allowed (submitted as no email), but a
@@ -235,7 +236,10 @@ const baseShape = {
     z.coerce.number().int().min(0).max(100),
   ),
   expectedClose: z.string().optional(),
-  leadSource: z.string().optional(),
+  // Lead source stays REQUIRED. A search-added deal auto-stamps "places" (the
+  // field is locked); a manual deal makes the rep pick one. Only the contact
+  // fields + value are optional for a prospect, never the source.
+  leadSource: z.string().min(1, "Pick a lead source"),
   leadSourceNote: z.string().optional(),
 
   // Notes
@@ -737,10 +741,8 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
         probability,
         expectedClose: expectedClose || null,
         // A Business-Search deal is stamped 'places' (rep-directed, auto-set);
-        // a manual deal keeps the rep's picked source, or undefined when left
-        // blank (lead source is optional now for a prospect; useCreateDeal
-        // coerces undefined to "unknown" to satisfy the not-null column).
-        leadSource: placeMeta ? "places" : (leadSource || undefined),
+        // a manual deal sends the rep's picked source, which the schema requires.
+        leadSource: placeMeta ? "places" : leadSource,
         leadSourceNote: !placeMeta && leadSource === "other" ? leadSourceNote?.trim() || null : null,
         notes,
         // expectedClose is a YYYY-MM-DD calendar date; store the mirrored
