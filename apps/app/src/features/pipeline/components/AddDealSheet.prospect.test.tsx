@@ -1,11 +1,12 @@
 // Prospect capture: a rep adding a business (esp. via Google search) should NOT
-// be forced to fill contact name, phone, deal value, or lead source. Only the
-// company name is required. Empty fields persist as DB-safe blanks (contact ""
-// and value 0 satisfy the not-null columns; a blank lead source is sent as
-// undefined and useCreateDeal coerces it to "unknown") so the rep can qualify
-// the deal later via the Edit form.
+// be forced to fill contact name, phone, or deal value. Empty fields persist as
+// DB-safe blanks (contact "" and value 0 satisfy the not-null columns) so the
+// rep can qualify the deal later via the Edit form. Lead source is the ONE thing
+// still required: a search-added deal auto-stamps "places", and a manual deal
+// makes the rep pick a source (Robert, 2026-09-03 QA: don't drop lead source).
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { AddDealSheet } from "./AddDealSheet";
@@ -55,12 +56,16 @@ function renderSheet() {
   );
 }
 
-describe("AddDealSheet: prospect capture (required fields dropped)", () => {
-  it("adds a prospect with only a company name: contact/phone blank, value $0", async () => {
+describe("AddDealSheet: prospect capture (contact fields optional, lead source still required)", () => {
+  it("adds a manual prospect with only company + lead source: contact/phone blank, value $0", async () => {
+    const user = userEvent.setup();
     renderSheet();
     fireEvent.change(document.getElementById("companyName") as HTMLInputElement, {
       target: { value: "Sunset Cafe" },
     });
+    // Lead source is required even for a prospect: a manual deal must pick one.
+    await user.click(document.getElementById("leadSource") as HTMLElement);
+    await user.click(await screen.findByRole("option", { name: /Inbound/i }));
 
     fireEvent.click(screen.getByRole("button", { name: /Add deal/i }));
 
@@ -70,14 +75,30 @@ describe("AddDealSheet: prospect capture (required fields dropped)", () => {
     expect(payload.contactName).toBe("");
     expect(payload.contactPhone).toBe("");
     expect(payload.valueCents).toBe(0);
-    expect(payload.leadSource).toBeUndefined(); // manual + blank; useCreateDeal coerces to "unknown"
+    expect(payload.leadSource).toBe("inbound");
   });
 
-  it("still rejects a partially-typed phone (must be 10 digits when provided)", async () => {
+  it("still requires a lead source on a manual deal (blocked with only a company name)", async () => {
     renderSheet();
     fireEvent.change(document.getElementById("companyName") as HTMLInputElement, {
       target: { value: "Sunset Cafe" },
     });
+
+    fireEvent.click(screen.getByRole("button", { name: /Add deal/i }));
+
+    expect(await screen.findByText(/Pick a lead source/i)).toBeInTheDocument();
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("still rejects a partially-typed phone (must be 10 digits when provided)", async () => {
+    const user = userEvent.setup();
+    renderSheet();
+    fireEvent.change(document.getElementById("companyName") as HTMLInputElement, {
+      target: { value: "Sunset Cafe" },
+    });
+    // Pick a lead source so the only remaining error isolates the phone.
+    await user.click(document.getElementById("leadSource") as HTMLElement);
+    await user.click(await screen.findByRole("option", { name: /Inbound/i }));
     fireEvent.change(document.getElementById("contactPhone") as HTMLInputElement, {
       target: { value: "310555" }, // < 10 digits
     });
