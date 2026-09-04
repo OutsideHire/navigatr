@@ -64,6 +64,8 @@ export interface TopBarProps {
   onBack?: () => void;
   /** White-label override for the brand mark. */
   tenantLogo?: string;
+  /** White-label override for the brand mark in dark mode (optional). */
+  tenantDarkLogo?: string;
   /** White-label override for the brand wordmark. */
   tenantAppName?: string;
   /** Signed-in user. Pass `null` to render the bar without an avatar/menu. */
@@ -79,6 +81,7 @@ export function TopBar({
   showBack = false,
   onBack,
   tenantLogo,
+  tenantDarkLogo,
   tenantAppName = "navigatr",
   user,
   onSignOut,
@@ -141,7 +144,7 @@ export function TopBar({
               </button>
             )}
 
-            <Logo size="sm" wordmark={tenantAppName} logoSrc={tenantLogo} />
+            <Logo size="sm" wordmark={tenantAppName} logoSrc={tenantLogo} logoSrcDark={tenantDarkLogo} />
 
             <div className="ml-auto flex items-center gap-1">
               {showSearch && (
@@ -175,7 +178,7 @@ export function TopBar({
           </button>
         )}
 
-        <Logo size="md" wordmark={tenantAppName} logoSrc={tenantLogo} />
+        <Logo size="md" wordmark={tenantAppName} logoSrc={tenantLogo} logoSrcDark={tenantDarkLogo} />
 
         {showSearch && <GlobalSearch className="ml-6 max-w-[480px] flex-1" />}
 

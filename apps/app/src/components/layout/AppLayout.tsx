@@ -65,6 +65,7 @@ export interface AppLayoutProps {
   user?: TopBarUser | null;
   /** White-label overrides (forwarded to TopBar). */
   tenantLogo?: string;
+  tenantDarkLogo?: string;
   tenantAppName?: string;
   /** Show the desktop search input. Defaults to true. */
   showSearch?: boolean;
@@ -77,6 +78,7 @@ export function AppLayout({
   children,
   user,
   tenantLogo,
+  tenantDarkLogo,
   tenantAppName,
   showSearch = true,
   collapsedOverride,
@@ -92,10 +94,8 @@ export function AppLayout({
   // caller win over the brand query — useful for storybook fixtures.
   const brand = useBrand();
   const resolvedLogo = tenantLogo ?? brand.data?.logoUrl ?? undefined;
+  const resolvedDarkLogo = tenantDarkLogo ?? brand.data?.darkLogoUrl ?? undefined;
   const resolvedAppName = tenantAppName ?? brand.data?.productName ?? "navigatr";
-  // showPoweredBy defaults to true so component-preview routes (no brand
-  // data) match the default ISO experience.
-  const showPoweredBy = brand.data?.showPoweredBy ?? true;
 
   return (
     <div className="flex min-h-dvh flex-col bg-surface-canvas text-text-default">
@@ -110,6 +110,7 @@ export function AppLayout({
       <TopBar
         user={user}
         tenantLogo={resolvedLogo}
+        tenantDarkLogo={resolvedDarkLogo}
         tenantAppName={resolvedAppName}
         showSearch={showSearch}
       />
@@ -128,25 +129,23 @@ export function AppLayout({
         >
           {children}
           {/* Footer. The "Map data © OpenStreetMap" credit is REQUIRED (the map
-              renders OpenStreetMap data under ODbL) and shows on EVERY breakpoint
-              regardless of the powered-by setting. "Powered by navigatr" stays
-              desktop-only (mobile has BottomNav) and gated on the org's setting.
+              renders OpenStreetMap data under ODbL) and shows on EVERY breakpoint.
+              "Powered by navigatr" is ALWAYS shown (desktop-only, since mobile has
+              the BottomNav). A white-label org cannot hide the navigatr credit.
               Discreet, low-contrast so it doesn't compete with page content. */}
           <footer className="mt-12 border-t border-border-subtle px-6 py-4 text-caption text-text-subtle">
-            {showPoweredBy && (
-              <span className="hidden md:inline">
-                Powered by{" "}
-                <a
-                  href="https://navigatr.app"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-text-muted underline-offset-4 hover:text-text-default hover:underline"
-                >
-                  navigatr
-                </a>
-                <span className="px-2" aria-hidden>·</span>
-              </span>
-            )}
+            <span className="hidden md:inline">
+              Powered by{" "}
+              <a
+                href="https://navigatr.app"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-text-muted underline-offset-4 hover:text-text-default hover:underline"
+              >
+                navigatr
+              </a>
+              <span className="px-2" aria-hidden>·</span>
+            </span>
             Map data ©{" "}
             <a
               href="https://www.openstreetmap.org/copyright"

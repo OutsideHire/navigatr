@@ -48,6 +48,7 @@ describe("useUpdateBrand", () => {
         product_name: "Acme Sales",
         primary_color: "#2456e6",
         logo_url: null,
+        dark_logo_url: null,
         show_powered_by: true,
       },
       error: null,
@@ -63,6 +64,7 @@ describe("useUpdateBrand", () => {
       p_product_name: "Acme Sales",
       p_primary_color: "#2456e6",
       p_logo_url: null,
+      p_dark_logo_url: null,
       p_show_powered_by: null,
     });
   });

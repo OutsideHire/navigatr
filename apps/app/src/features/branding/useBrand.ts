@@ -18,6 +18,8 @@ export interface Brand {
   productName: string;
   primaryColor: string | null;
   logoUrl: string | null;
+  /** Optional purpose-made logo for dark mode. Falls back to logoUrl. */
+  darkLogoUrl: string | null;
   showPoweredBy: boolean;
 }
 
@@ -25,6 +27,7 @@ interface BrandRow {
   product_name: string;
   primary_color: string | null;
   logo_url: string | null;
+  dark_logo_url: string | null;
   show_powered_by: boolean;
 }
 
@@ -34,6 +37,7 @@ export const DEFAULT_BRAND: Brand = {
   productName: "navigatr",
   primaryColor: null,    // null = use the design system default
   logoUrl: null,
+  darkLogoUrl: null,
   showPoweredBy: true,
 };
 
@@ -51,7 +55,7 @@ export function useBrand() {
     queryFn: async (): Promise<Brand> => {
       const { data, error } = await supabase
         .from("org_branding")
-        .select("product_name, primary_color, logo_url, show_powered_by")
+        .select("product_name, primary_color, logo_url, dark_logo_url, show_powered_by")
         .eq("org_id", orgId!)
         .maybeSingle();
       if (error) throw new Error(error.message);
@@ -61,6 +65,7 @@ export function useBrand() {
         productName: row.product_name,
         primaryColor: row.primary_color,
         logoUrl: row.logo_url,
+        darkLogoUrl: row.dark_logo_url,
         showPoweredBy: row.show_powered_by,
       };
     },

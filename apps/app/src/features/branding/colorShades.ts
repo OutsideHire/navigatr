@@ -1,58 +1,79 @@
 /**
- * colorShades.ts — derive hover / pressed / 10%-alpha tints from a primary.
+ * colorShades.ts: derive the full brand CSS-variable set from one primary.
  *
- * The design system has three brand-primary slots: base, hover, pressed,
- * plus a 10%-alpha tint used for selected-row backgrounds. When the org
- * picks a custom primary, we have to derive the other three. Doing it
- * client-side keeps the admin UI snappy (no round-trip to compute shades)
- * and lets the picker preview the full button state set in real time.
+ * An ISO picks a single brand color; we derive everything the design system
+ * needs so any color looks finished in BOTH light and dark mode:
+ *   - primary / hover / pressed : the button states (darker on light,
+ *     lighter on dark, matching how a pressed state reads on each ground)
+ *   - foreground : readable button TEXT (near-black or white by luminance),
+ *     so a pale accent doesn't get white-on-white
+ *   - tint10 : 10%-alpha selected-row background
+ *   - gradient from/via/to : an analogous sweep off the accent hue, so
+ *     gradient surfaces follow the brand instead of staying navigatr indigo
  *
- * Strategy: convert hex → HSL, then nudge L (lightness). HSL is the
- * cheapest model for "darker version of same hue." Manipulating in RGB
- * would shift hue when colors get near pure red/green/blue.
+ * In dark mode a dark accent is lightened first (mirrors the design system's
+ * dark primary, a lightened indigo) so it stays vivid on a dark surface.
  *
- * The exact L deltas (-8 for hover, -15 for pressed) match the visual
- * relationship in the default design-system primaries:
- *   #5856eb (L≈63) → hover ≈ #4f4fe3 (L≈60) → pressed ≈ #4040c7 (L≈52)
- * Not pixel-perfect to the original tokens (those used a 3-color brand
- * scale, not pure HSL), but close enough that no ISO's custom color
- * will look "off" against the same buttons.
+ * Colors are manipulated in HSL, the cheapest model for "same hue, different
+ * lightness"; RGB math would shift hue near pure red/green/blue.
  */
 
-export interface BrandShades {
+export interface BrandVars {
   primary: string;
   hover: string;
   pressed: string;
-  /** 10%-alpha version, formatted as #rrggbbaa (matches design tokens). */
+  /** Readable button text on `primary`. */
+  foreground: string;
+  /** 10%-alpha version, formatted #rrggbbaa (matches design tokens). */
   tint10: string;
+  gradientFrom: string;
+  gradientVia: string;
+  gradientTo: string;
 }
 
 /**
- * Build the full shade set from a single hex primary. Returns null if
- * the input doesn't look like a #rrggbb — caller falls back to design
- * system defaults in that case.
+ * Build the full brand variable set for one hex primary + the current mode.
+ * Returns null if the input isn't a #rrggbb (caller falls back to the design
+ * system defaults).
  */
-export function deriveShades(hex: string): BrandShades | null {
+export function deriveBrandVars(hex: string, isDark: boolean): BrandVars | null {
   const rgb = hexToRgb(hex);
   if (!rgb) return null;
-  const hsl = rgbToHsl(rgb);
+  const baseHsl = rgbToHsl(rgb);
 
-  const hover  = hslToHex({ ...hsl, l: clamp01(hsl.l - 0.04) });
-  const pressed = hslToHex({ ...hsl, l: clamp01(hsl.l - 0.12) });
+  // Effective primary for the mode. Dark mode lifts a dark accent so it stays
+  // vivid on a dark surface; light mode uses the accent as-is.
+  const primaryHsl = isDark
+    ? withL(baseHsl, Math.min(0.82, Math.max(baseHsl.l + 0.12, 0.58)))
+    : baseHsl;
+  const primary = hslToHex(primaryHsl);
+
+  // Hover/pressed: darker in light mode, lighter in dark mode.
+  const hover = hslToHex(withL(primaryHsl, primaryHsl.l + (isDark ? 0.06 : -0.04)));
+  const pressed = hslToHex(withL(primaryHsl, primaryHsl.l + (isDark ? 0.12 : -0.12)));
+
+  // Button text: whichever of near-black / white reads on the primary.
+  const foreground = relLuminance(primary) > 0.5 ? "#16181f" : "#ffffff";
+
+  // Analogous gradient swept off the accent hue (from -> +24deg -> +48deg),
+  // brightening slightly along the sweep so it reads as a gradient.
+  const gradientFrom = primary;
+  const gradientVia = hslToHex(withL(rotateHue(primaryHsl, 24), Math.min(0.72, primaryHsl.l + 0.04)));
+  const gradientTo = hslToHex(withL(rotateHue(primaryHsl, 48), Math.min(0.78, primaryHsl.l + 0.08)));
 
   return {
-    primary: normaliseHex(hex),
+    primary,
     hover,
     pressed,
-    tint10: normaliseHex(hex) + "19", // 0x19 = 25/255 ≈ 10% alpha
+    foreground,
+    tint10: primary + "19", // 0x19 = 25/255 ~ 10% alpha
+    gradientFrom,
+    gradientVia,
+    gradientTo,
   };
 }
 
 // --- hex / rgb / hsl plumbing ----------------------------------------------
-
-function normaliseHex(hex: string): string {
-  return hex.toLowerCase();
-}
 
 interface Rgb { r: number; g: number; b: number }
 interface Hsl { h: number; s: number; l: number }
@@ -108,6 +129,27 @@ function hslToHex({ h, s, l }: Hsl): string {
   }
   const toHex = (n: number) => Math.round(n * 255).toString(16).padStart(2, "0");
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+/** WCAG relative luminance (0..1) of a #rrggbb, for the readable-text pick. */
+function relLuminance(hex: string): number {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 0;
+  const a = [rgb.r, rgb.g, rgb.b].map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
+}
+
+function withL(hsl: Hsl, l: number): Hsl {
+  return { ...hsl, l: clamp01(l) };
+}
+
+function rotateHue(hsl: Hsl, deg: number): Hsl {
+  let h = hsl.h + deg / 360;
+  h -= Math.floor(h); // wrap into 0..1
+  return { ...hsl, h };
 }
 
 function clamp01(n: number): number {

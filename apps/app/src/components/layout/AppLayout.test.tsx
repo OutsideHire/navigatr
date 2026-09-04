@@ -125,7 +125,8 @@ describe("AppLayout", () => {
     expect(screen.getByText(/powered by/i)).toBeInTheDocument();
   });
 
-  it("hides 'Powered by' when showPoweredBy is false but still shows the OSM credit", () => {
+  it("always renders 'Powered by navigatr': an org cannot hide the credit", () => {
+    // show_powered_by is now vestigial; the credit shows regardless.
     brandReturn = {
       data: {
         productName: "X",
@@ -140,7 +141,7 @@ describe("AppLayout", () => {
       </AppLayout>,
       { wrapper: makeWrapper() },
     );
-    expect(screen.queryByText(/powered by/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/powered by/i)).toBeInTheDocument();
     expect(screen.getByText(/map data ©/i)).toBeInTheDocument();
   });
 

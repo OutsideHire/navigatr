@@ -17,6 +17,7 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/stores/theme";
 import { LogoMark } from "./LogoMark";
 
 export type LogoSize = "sm" | "md" | "lg";
@@ -39,27 +40,37 @@ export interface LogoProps extends Omit<React.HTMLAttributes<HTMLSpanElement>, "
   wordmark?: string;
   /** Override the compass mark with a tenant logo URL (for white-label). */
   logoSrc?: string;
+  /** Optional purpose-made logo for dark mode. Used only when the app is in
+   *  dark mode; otherwise the main logoSrc is used. */
+  logoSrcDark?: string;
   /** Hide the wordmark and show only the mark. */
   iconOnly?: boolean;
 }
 
 export const Logo = React.forwardRef<HTMLSpanElement, LogoProps>(function Logo(
-  { size = "sm", wordmark = "navigatr", logoSrc, iconOnly = false, className, ...rest },
+  { size = "sm", wordmark = "navigatr", logoSrc, logoSrcDark, iconOnly = false, className, ...rest },
   ref,
 ) {
+  const isDark = useTheme((s) => s.resolvedTheme) === "dark";
+  // In dark mode use the purpose-made dark logo when provided. When only the
+  // main logo exists, showing it on a dark top bar would risk a dark logo
+  // vanishing, so we sit it on a small white backing.
+  const effectiveSrc = isDark && logoSrcDark ? logoSrcDark : logoSrc;
+  const needsBacking = isDark && !logoSrcDark && Boolean(logoSrc);
+
   return (
     <span
       ref={ref}
       className={cn("inline-flex items-center", gapClass[size], className)}
       {...rest}
     >
-      {logoSrc ? (
+      {effectiveSrc ? (
         <img
-          src={logoSrc}
+          src={effectiveSrc}
           alt={wordmark}
           width={markSize[size]}
           height={markSize[size]}
-          className="shrink-0 rounded-radius-sm object-contain"
+          className={cn("shrink-0 rounded-radius-sm object-contain", needsBacking && "bg-white p-0.5")}
         />
       ) : (
         <LogoMark size={markSize[size]} />
