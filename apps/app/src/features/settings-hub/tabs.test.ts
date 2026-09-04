@@ -13,13 +13,14 @@ describe("visibleTabs", () => {
     expect(result.map((t) => t.id)).toEqual(["personal", "organization", "integrations"]);
   });
 
-  it("returns rep+manager tabs for a manager (no danger zone)", () => {
+  it("returns rep+manager tabs for a manager (no branding, no danger zone)", () => {
+    // Branding is admin-only, so a manager sees the workspace's profession tab
+    // but not branding.
     const result = visibleTabs("manager");
     expect(result.map((t) => t.id)).toEqual([
       "personal",
       "organization",
       "integrations",
-      "branding",
       "profession",
     ]);
   });
@@ -52,8 +53,14 @@ describe("visibleTabs", () => {
 
 describe("resolveTab", () => {
   it("returns the requested tab when role-permitted", () => {
-    const out = resolveTab("branding", "manager");
+    // Branding is admin-only; an admin requesting it gets it with no redirect.
+    const out = resolveTab("branding", "admin");
     expect(out).toEqual({ id: "branding", redirected: false });
+  });
+
+  it("redirects a manager away from the admin-only branding tab", () => {
+    const out = resolveTab("branding", "manager");
+    expect(out).toEqual({ id: "personal", redirected: true });
   });
 
   it("redirects to personal when tab id is unknown", () => {
