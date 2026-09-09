@@ -75,4 +75,25 @@ describe("pwa auto-update", () => {
     expect(setInt).toHaveBeenCalled();
     setInt.mockRestore();
   });
+
+  it("never reloads mid-auth-handoff, then applies once the user is off /auth", async () => {
+    const { isAuthHandoffPath } = await import("./pwa");
+    // Pure predicate: only the /auth/* handoff routes are protected.
+    expect(isAuthHandoffPath("/auth/callback")).toBe(true);
+    expect(isAuthHandoffPath("/dashboard")).toBe(false);
+    expect(isAuthHandoffPath("/login")).toBe(false);
+
+    // On the OAuth callback, a detected update must NOT reload (it would re-run
+    // the app mid-PKCE exchange and can drop the session).
+    history.pushState({}, "", "/auth/callback");
+    setVisibility("hidden");
+    opts.onNeedRefresh();
+    expect(mockUpdate).not.toHaveBeenCalled();
+
+    // Once the user lands on a normal route, the still-pending update applies at
+    // the next visibility change, leaving module state clean for later tests.
+    history.pushState({}, "", "/dashboard");
+    fireVisibilityChange();
+    expect(mockUpdate).toHaveBeenCalledWith(true);
+  });
 });

@@ -35,11 +35,21 @@ function appHidden(): boolean {
   return typeof document !== "undefined" && document.visibilityState === "hidden";
 }
 
+/** True on the OAuth/magic-link handoff routes (/auth/callback etc.). A
+ *  skip-waiting reload here would re-run the app mid-PKCE-exchange and can drop
+ *  the session, exactly the mobile-logout failure mode. Pure + exported so the
+ *  guard is unit-testable. */
+export function isAuthHandoffPath(pathname: string): boolean {
+  return pathname.startsWith("/auth/");
+}
+
 /** Apply a waiting update: skip-waiting + reload to the new bundle. The reload
  *  wipes module state in the browser; the guard also stops a delayed reload from
- *  firing twice. */
+ *  firing twice. Never reloads during an auth handoff; the update stays pending
+ *  and applies at the next safe moment once the user is off /auth. */
 function applyUpdate() {
   if (!pendingUpdate) return;
+  if (typeof window !== "undefined" && isAuthHandoffPath(window.location.pathname)) return;
   pendingUpdate = false;
   void updateSW(true);
 }

@@ -18,6 +18,7 @@ vi.mock("@sentry/react", () => ({
   setTag: vi.fn(),
   captureException: vi.fn(),
   captureMessage: vi.fn(),
+  addBreadcrumb: vi.fn(),
   browserTracingIntegration: vi.fn(() => ({})),
 }));
 
@@ -282,6 +283,27 @@ describe("observability", () => {
       { originalException: { code: "P0001", message: "forbidden", details: null, hint: null } },
     );
     expect(out).toBeNull();
+  });
+
+  it("addBreadcrumb is a no-op when uninitialized (does not throw)", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "");
+    const Sentry = await import("@sentry/react");
+    const { addBreadcrumb } = await import("./observability");
+    expect(() => addBreadcrumb({ message: "session.recovered" })).not.toThrow();
+    expect(Sentry.addBreadcrumb).not.toHaveBeenCalled();
+  });
+
+  it("addBreadcrumb forwards to Sentry when initialized", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { initObservability, addBreadcrumb } = await import("./observability");
+    initObservability();
+    addBreadcrumb({ category: "auth", message: "session.recovered", level: "info" });
+    expect(Sentry.addBreadcrumb).toHaveBeenCalledWith({
+      category: "auth",
+      message: "session.recovered",
+      level: "info",
+    });
   });
 
   it("beforeSend scrubs PII from a fingerprint (defense-in-depth for any custom grouping key)", async () => {

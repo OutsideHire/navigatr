@@ -33,6 +33,13 @@ export default defineConfig({
         // timing control.
         clientsClaim: true,
         cleanupOutdatedCaches: true,
+        // Never serve the cached app shell for the OAuth / magic-link handoff
+        // routes. Those navigations must hit the network so detectSessionInUrl
+        // completes the PKCE exchange against a fresh document; a stale cached
+        // shell mid-handoff is one of the ways a mobile sign-in silently drops
+        // the session. (navigateFallback still serves index.html for every
+        // other client route offline.)
+        navigateFallbackDenylist: [/^\/auth\//],
         // Don't precache the giant maskable icon — only ship it when needed.
         globPatterns: ["**/*.{js,css,html,svg,png,ico,woff,woff2}"],
         globIgnores: ["**/maskable-icon-512.png"],
