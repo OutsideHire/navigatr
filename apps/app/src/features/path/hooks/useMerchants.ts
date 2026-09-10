@@ -259,6 +259,12 @@ export function useMerchants(
   const query = useQuery({
     queryKey: ["path", "prospects", lat, lng, radiusM, profession, industries, allIndustries, includeChains, limit, fillToLimit],
     enabled: origin != null,
+    // Do NOT auto-retry a failed discovery. Each attempt re-runs an expensive
+    // cold fan-out (many Google Places calls per cell x industry); an automatic
+    // retry doubles that against a service that just failed, which is exactly
+    // what pinned the Places quota during the 2026-09-10 outage. The rep can
+    // retry manually (with a cooldown) if they want.
+    retry: 0,
     staleTime: 5 * 60_000, // 5 min — the server-side cache is the real TTL
     queryFn: async (): Promise<DiscoverResult> => {
       // Auto-widen-to-fill: walk an escalating radius ladder, calling discovery
