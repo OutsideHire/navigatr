@@ -25,6 +25,13 @@ vi.mock("@/features/auth/useOrgSuspended", () => ({
   useOrgSuspended: () => suspendedShape,
 }));
 
+// Mock the session-recovery hook so we can drive its phase directly. Its own
+// mechanics (retry + refresh) are covered in useSessionRecovery.test.tsx; here
+// we only care how ProtectedRoute branches on the phase.
+vi.mock("@/features/auth/useSessionRecovery", () => ({
+  useSessionRecovery: () => recoveryPhase,
+}));
+
 // AppLayout pulls in TopBar / SidebarNav / data-fetching hooks; stub it
 // so this test stays focused on ProtectedRoute's branching.
 vi.mock("./AppLayout", () => ({
@@ -58,6 +65,7 @@ let suspendedShape: {
   isFetching: boolean;
   isError: boolean;
 };
+let recoveryPhase: "recovering" | "settled";
 
 function renderAt(path: string) {
   return render(
@@ -97,6 +105,9 @@ describe("ProtectedRoute", () => {
     };
     // Default: org is active (not suspended) and the status read is settled.
     suspendedShape = { data: false, isLoading: false, isFetching: false, isError: false };
+    // Default: recovery has settled (no session to recover). Cases that exercise
+    // the transient-null window override this to "recovering".
+    recoveryPhase = "settled";
   });
 
   it("renders the error UI (not a redirect) when the profile fetch errors", () => {
@@ -124,10 +135,22 @@ describe("ProtectedRoute", () => {
     expect(screen.getByText("auth callback page")).toBeInTheDocument();
   });
 
-  it("redirects to /login when not authed", () => {
+  it("redirects to /login when not authed and recovery has settled with no session", () => {
     authShape = { user: null, loading: false };
+    recoveryPhase = "settled";
     renderAt("/dashboard");
     expect(screen.getByText("login page")).toBeInTheDocument();
+  });
+
+  it("holds the spinner (does NOT redirect) while a session is still recovering", () => {
+    // The mobile-logout fix: a transient "no user" must not bounce a signed-in
+    // rep to /login while recovery is still trying to reconstitute the session.
+    authShape = { user: null, loading: false };
+    recoveryPhase = "recovering";
+    const { container } = renderAt("/dashboard");
+    expect(screen.queryByText("login page")).not.toBeInTheDocument();
+    expect(screen.queryByText("dashboard content")).not.toBeInTheDocument();
+    expect(container.querySelector(".animate-spin")).toBeInTheDocument();
   });
 
   it("renders children inside AppLayout when authed with a profile", () => {

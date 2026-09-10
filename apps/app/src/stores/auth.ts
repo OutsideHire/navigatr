@@ -14,7 +14,7 @@
 
 import { create } from "zustand";
 import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import { supabase, AUTH_STORAGE_KEY } from "@/lib/supabase";
 
 export type Profession = "payroll" | "merchant_services" | "treasury_management";
 
@@ -317,52 +317,202 @@ export const useAuth = create<AuthState>((set) => ({
 }));
 
 // ---------------------------------------------------------------------------
+// Session recovery
+//
+// iOS Safari and any WebKit PWA can momentarily report "no session" on resume
+// or reload even when a valid refresh token is still sitting in storage
+// (supabase-js#1560; ITP storage-availability timing). Left unhandled, that
+// transient null makes ProtectedRoute bounce a signed-in rep straight to
+// /login: the "it keeps logging me out on my phone" complaint. recoverSession
+// actively re-reads the session and, if needed, forces a refresh-token exchange
+// BEFORE the app concludes the user is signed out. ProtectedRoute calls it and
+// only redirects when recovery genuinely fails.
+// ---------------------------------------------------------------------------
+
+/** Retry/backoff/timeout knobs. Exposed as a param on recoverSession so tests
+ *  can run it instantly without real timers; production callers use defaults. */
+interface RecoveryOptions {
+  attempts: number;
+  backoffMs: number;
+  timeoutMs: number;
+}
+const RECOVERY_DEFAULTS: RecoveryOptions = { attempts: 3, backoffMs: 250, timeoutMs: 3000 };
+
+/** Ceiling on the boot-time getSession so a hung SDK call can't strand the app
+ *  on a spinner forever. On timeout we settle to "no user" and let recovery try. */
+const BOOTSTRAP_TIMEOUT_MS = 8000;
+
+/** Resolve to null if `p` doesn't settle within `ms`. Never rejects; a hung or
+ *  throwing SDK call becomes "no result this attempt" rather than an exception. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise<T | null>((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    p.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      () => { clearTimeout(timer); resolve(null); },
+    );
+  });
+}
+
+const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** True when the SDK has a session persisted to storage. Lets recovery skip
+ *  pointless retries for a genuinely signed-out visitor (nothing to recover)
+ *  while still retrying hard when a token IS present but the SDK momentarily
+ *  returned null (the transient iOS/WebKit window). */
+function hasPersistedSession(): boolean {
+  try {
+    const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+    return !!raw && raw !== "null";
+  } catch {
+    // localStorage blocked (private mode / locked-down WebView): treat as no
+    // persisted session so we don't spin on retries that can never read it.
+    return false;
+  }
+}
+
+/** Mirror a recovered session into the store. getSession does NOT emit an
+ *  onAuthStateChange event, so we push it ourselves; refreshSession does emit
+ *  one, but setting it here too is idempotent and closes the render gap. */
+function adoptSession(session: Session): void {
+  useAuth.setState({ session, user: session.user, loading: false });
+}
+
+/** Fire-and-forget Sentry signal so Ryan can watch the involuntary-logout rate
+ *  drop after this ships. "recovered" = we saved a session that would otherwise
+ *  have logged the rep out; "failed" = a rep with a persisted token still could
+ *  not be recovered (the rare, high-signal case). Lazy import keeps Sentry out
+ *  of the bundle when observability is disabled. */
+function trackRecovery(outcome: "recovered" | "failed"): void {
+  void import("@/lib/observability")
+    .then(({ addBreadcrumb, captureMessage }) => {
+      addBreadcrumb({
+        category: "auth",
+        level: outcome === "failed" ? "warning" : "info",
+        message: `session.${outcome}`,
+      });
+      if (outcome === "failed") {
+        captureMessage("Session recovery failed despite a persisted token", "warning");
+      }
+    })
+    .catch(() => {
+      /* observability is best-effort; never let it break auth */
+    });
+}
+
+/**
+ * Attempt to reconstitute a session before the app gives up and redirects to
+ * /login. Returns true if a session was recovered (and mirrored into the store).
+ *
+ * Strategy:
+ *   - No persisted token → at most ONE cheap read (covers a session that only
+ *     exists in memory, e.g. just parsed from an OAuth callback), then give up
+ *     fast so a genuinely signed-out visitor reaches /login without a stall.
+ *   - Persisted token but the store shows none → the transient window: re-read,
+ *     then force a refresh-token exchange, retrying a few times with a short
+ *     backoff to ride it out.
+ */
+export async function recoverSession(
+  opts: Partial<RecoveryOptions> = {},
+): Promise<boolean> {
+  const { attempts, backoffMs, timeoutMs } = { ...RECOVERY_DEFAULTS, ...opts };
+  const persisted = hasPersistedSession();
+  const maxAttempts = persisted ? attempts : 1;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const read = await withTimeout(supabase.auth.getSession(), timeoutMs);
+    if (read?.data.session) {
+      adoptSession(read.data.session);
+      if (persisted) trackRecovery("recovered");
+      return true;
+    }
+    if (persisted) {
+      const refreshed = await withTimeout(supabase.auth.refreshSession(), timeoutMs);
+      if (refreshed?.data.session) {
+        adoptSession(refreshed.data.session);
+        trackRecovery("recovered");
+        return true;
+      }
+    }
+    if (i < maxAttempts - 1) await delay(backoffMs);
+  }
+
+  // A persisted token that still couldn't produce a session is the genuine
+  // involuntary-logout signal worth watching; a plain signed-out visitor
+  // (no persisted token) is not, so it stays quiet.
+  if (persisted) trackRecovery("failed");
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Module-level side effects: hydrate from Supabase + subscribe to changes.
 //
 // Importing this module is what kicks off auth bootstrap. Runs exactly once
 // per page load.
 // ---------------------------------------------------------------------------
 
-if (typeof window !== "undefined") {
-  // 1) Hydrate initial state from the SDK's persisted session.
-  supabase.auth
-    .getSession()
-    .then(({ data, error }) => {
-      if (error) {
-        useAuth.setState({
-          loading: false,
-          error: errorMessage(error, "Failed to read session"),
-        });
-        return;
-      }
-      useAuth.setState({
-        session: data.session,
-        user: data.session?.user ?? null,
-        loading: false,
-      });
-    })
-    .catch((err) => {
-      useAuth.setState({
-        loading: false,
-        error: errorMessage(err, "Failed to read session"),
-      });
-    });
+/** Push the signed-in user's id into Sentry (no PII beyond the auth id); null on
+ *  sign-out so later errors aren't tagged with a stale user. Lazy import keeps
+ *  Sentry out of the bundle when observability is disabled. */
+function identifyUser(user: User | null): void {
+  void import("@/lib/observability").then(({ setUser }) => {
+    setUser(user ? { id: user.id } : null);
+  });
+}
 
-  // 2) Live-subscribe so other tabs / refresh events / sign-outs propagate.
-  supabase.auth.onAuthStateChange((_event, session) => {
+if (typeof window !== "undefined") {
+  // 1) Hydrate initial state from the SDK's persisted session. Guarded by a
+  //    timeout so a hung getSession can't leave the app spinning forever: on
+  //    timeout (or error) we settle to "no user" and let ProtectedRoute's
+  //    recovery try to reconstitute the session.
+  void (async () => {
+    const result = await withTimeout(supabase.auth.getSession(), BOOTSTRAP_TIMEOUT_MS);
+    if (result === null) {
+      // getSession hung or threw. Don't strand the boot spinner; recovery
+      // (triggered on the null user) will re-attempt with retry + refresh.
+      useAuth.setState({ loading: false });
+      return;
+    }
+    const { data, error } = result;
+    if (error) {
+      useAuth.setState({
+        loading: false,
+        error: errorMessage(error, "Failed to read session"),
+      });
+      return;
+    }
     useAuth.setState({
-      session,
-      user: session?.user ?? null,
+      session: data.session,
+      user: data.session?.user ?? null,
       loading: false,
     });
-    // Identify the user in Sentry (no PII beyond auth user id). On sign-out,
-    // pass null so subsequent errors aren't tagged with a stale user. Lazy
-    // import to keep this side-effect file from pulling Sentry into the
-    // bundle when observability is disabled. (initObservability is a no-op
-    // when VITE_SENTRY_DSN is unset, so the import itself is the only cost.)
-    void import("@/lib/observability").then(({ setUser }) => {
-      setUser(session?.user ? { id: session.user.id } : null);
-    });
+  })();
+
+  // 2) Live-subscribe so other tabs / refresh events / sign-outs propagate.
+  //    Event-aware on purpose: we only HARD-CLEAR the user on a genuine
+  //    SIGNED_OUT. A momentary null session on any OTHER event (a WebKit
+  //    resume blip, an INITIAL_SESSION race) must NOT wipe a user we already
+  //    hold; that spurious clear is exactly what bounced mobile reps to
+  //    /login. A truly dead/expired session still arrives as SIGNED_OUT (the
+  //    SDK emits it when a refresh fails terminally), so we don't trap anyone
+  //    in a broken authed state.
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (session) {
+      useAuth.setState({ session, user: session.user, loading: false });
+      identifyUser(session.user);
+      return;
+    }
+    if (event === "SIGNED_OUT") {
+      useAuth.setState({ session: null, user: null, loading: false });
+      identifyUser(null);
+      return;
+    }
+    // Null session on a non-sign-out event. Release the loading gate but KEEP
+    // whatever user we already hold (undefined stays untouched via the
+    // functional update). On a cold start with genuinely no session we hold
+    // no user, so this correctly settles to signed-out and ProtectedRoute's
+    // recovery confirms there's nothing to recover before routing to /login.
+    useAuth.setState((s) => ({ loading: false, user: s.user, session: s.session }));
   });
 }
 

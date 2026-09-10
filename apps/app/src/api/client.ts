@@ -50,15 +50,16 @@ export function setAuthTokenGetter(fn: TokenGetter): void {
 // ---------------------------------------------------------------------------
 
 let onUnauthorized: () => void = () => {
-  // Default: clear the Supabase session and hard-redirect to /login.
-  // A React-Router-aware soft-navigation handler is installed by the
-  // root App component via setUnauthorizedHandler() — that runs after
-  // mount, so this default is the boot-time fallback.
-  void supabase.auth.signOut().catch(() => {
-    /* best-effort */
-  });
-  if (typeof window !== "undefined" && window.location.pathname !== "/login") {
-    window.location.assign("/login");
+  // Boot-time fallback, BEFORE the App installs its router-aware handler via
+  // setUnauthorizedHandler() at mount. Deliberately does NOT sign the user out
+  // or hard-redirect: a lone 401 here is often a transient token-refresh race
+  // on resume/reload (the same iOS/WebKit window that causes the mobile-logout
+  // complaint), and destroying the session + reloading would turn a recoverable
+  // blip into a real logout. Genuine session loss is handled where it belongs:
+  // ProtectedRoute + the auth store's session recovery. So at boot we just note
+  // it and let the caller's own error handling proceed.
+  if (import.meta.env.DEV) {
+    console.warn("[api] 401 before the unauthorized handler was installed; ignoring at boot");
   }
 };
 

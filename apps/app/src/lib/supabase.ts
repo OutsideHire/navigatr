@@ -33,12 +33,21 @@ if (!url || !anonKey) {
 const SAFE_URL = url || "http://localhost:54321";
 const SAFE_KEY = anonKey || "test-anon-key-placeholder";
 
+/**
+ * localStorage key the SDK persists its session under. Exported so the auth
+ * store's session-recovery path can tell "genuinely signed out" (nothing
+ * stored) from "a token IS stored but the SDK momentarily returned null"
+ * (the transient iOS/WebKit case worth retrying). MUST match the `storageKey`
+ * passed to createClient below.
+ */
+export const AUTH_STORAGE_KEY = "navigatr-auth";
+
 export const supabase = createClient(SAFE_URL, SAFE_KEY, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
-    storageKey: "navigatr-auth",
+    storageKey: AUTH_STORAGE_KEY,
     flowType: "pkce",
   },
 });

@@ -162,6 +162,22 @@ export function captureMessage(
   Sentry.captureMessage(message, level);
 }
 
+/**
+ * Record a breadcrumb: a lightweight timeline entry attached to the NEXT
+ * captured event (it does not, on its own, count against quota). Used to trace
+ * how the app got to an error: e.g. an auth-session recovery attempt right
+ * before a failure. No-op when Sentry isn't initialized.
+ */
+export function addBreadcrumb(crumb: {
+  category?: string;
+  message: string;
+  level?: "info" | "warning" | "error";
+  data?: Record<string, unknown>;
+}): void {
+  if (!initialized) return;
+  Sentry.addBreadcrumb(crumb);
+}
+
 // --- helpers ----------------------------------------------------------------
 
 /**

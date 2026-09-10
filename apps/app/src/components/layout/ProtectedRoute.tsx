@@ -22,6 +22,7 @@ import { Loader2 } from "lucide-react";
 import { useAuth } from "@/stores/auth";
 import { useProfile } from "@/features/auth/useProfile";
 import { useOrgSuspended } from "@/features/auth/useOrgSuspended";
+import { useSessionRecovery } from "@/features/auth/useSessionRecovery";
 import { AppLayout } from "./AppLayout";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { BrandProvider } from "@/features/branding/BrandProvider";
@@ -71,9 +72,19 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   const suspended = useOrgSuspended();
   const location = useLocation();
 
+  // Before treating "no user" as signed out, let the session try to recover.
+  // iOS Safari / WebKit PWAs can momentarily report no session on resume or
+  // reload even with a valid refresh token still in storage. Redirecting on
+  // that transient null is what logged reps out on mobile. Only run once the
+  // boot has settled (loading === false) and the store shows no user.
+  const recovery = useSessionRecovery(!loading && !user);
+
   if (loading) return <Spinner />;
 
   if (!user) {
+    // Hold the spinner while recovery is in flight; only bounce to /login once
+    // it has genuinely failed to reconstitute a session.
+    if (recovery === "recovering") return <Spinner />;
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
