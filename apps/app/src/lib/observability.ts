@@ -22,6 +22,7 @@ import * as Sentry from "@sentry/react";
 import {
   IGNORED_ERROR_PATTERNS,
   isExpectedPermissionError,
+  isTransientNetworkError,
   normalizeError,
   normalizeSupabaseSentryEvent,
 } from "./errorFilter";
@@ -122,6 +123,10 @@ export function captureException(
   // Authz working as designed (a user hit a report RLS/an RPC gate forbids) is
   // not a bug — the data is protected and the UI degrades to an empty widget.
   if (isExpectedPermissionError(err)) return;
+  // A transient network transport failure (the rep's fetch never completed:
+  // dead zone, tunnel, tower handoff). Not our bug; the next load works. This is
+  // the primary route for these (a react-query read whose fetch failed).
+  if (isTransientNetworkError(err)) return;
   // A raw Supabase error object would log as the useless "Object captured as
   // exception with keys: code, details, hint, message" — normalize it to a
   // readable, groupable Error and move the raw fields to extra.
