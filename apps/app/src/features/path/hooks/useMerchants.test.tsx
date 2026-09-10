@@ -225,6 +225,30 @@ describe("useMerchants", () => {
     expect(result.current.merchants).toEqual([]);
   });
 
+  it("does NOT auto-retry a failed discovery: retry:0 overrides the app-wide default", async () => {
+    // Regression guard for the 2026-09-10 Places quota storm. Each discovery
+    // attempt re-runs an expensive Google fan-out, so the hook pins retry:0.
+    // The default `wrapper` sets client retry:false, which would MASK a
+    // regression; this wrapper mirrors the REAL app default (main.tsx: retry:1)
+    // so that, if the hook's own retry:0 were dropped, the query would re-fire
+    // and invoke would be called twice. retryDelay:0 keeps the test instant.
+    function retryingWrapper({ children }: { children: ReactNode }) {
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: 1, retryDelay: 0 } },
+      });
+      return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    }
+    invokeMock.mockResolvedValue({ data: null, error: new Error("429 rate_limited") });
+    const { result } = renderHook(
+      () => useMerchants({ lat: 30.2672, lng: -97.7431 }),
+      { wrapper: retryingWrapper },
+    );
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    // Exactly one call: the query's retry:0 beat the client's retry:1 default.
+    // Two calls here would mean the storm-amplifying auto-retry is back.
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+  });
+
   it("honors a custom radius", async () => {
     invokeMock.mockResolvedValue({ data: { prospects: [] }, error: null });
     renderHook(() => useMerchants({ lat: 30.2672, lng: -97.7431 }, { radiusM: 1500 }), {
