@@ -42,6 +42,14 @@ export const IGNORED_ERROR_PATTERNS: string[] = [
   // (Safe today: observability.ts registers no console-capturing integration,
   // so this SDK log is never itself re-captured. If one is ever added, revisit.)
   "An event processor returned",
+  // Transient client-side network transport failures: the browser's fetch never
+  // completed (dead zone, tunnel, tower handoff, captive portal, connection
+  // reset). A field rep losing signal for a moment is not an app bug and the
+  // next load works. Each browser words it differently. See isTransientNetworkError.
+  "Load failed", // WebKit / Safari
+  "Failed to fetch", // Chromium
+  "NetworkError when attempting to fetch resource", // Firefox
+  "The network connection was lost", // iOS URLSession
 ];
 
 /** The raw PostgREST/Supabase error object shape (not an Error instance). */
@@ -116,6 +124,36 @@ function otherFields(err: { message: string }): Record<string, unknown> | undefi
  */
 export function isExpectedPermissionError(err: unknown): boolean {
   return isSupabaseError(err) && err.code === "P0001" && /\bforbidden\b/i.test(err.message);
+}
+
+/**
+ * A transient CLIENT-side network transport failure: the browser's fetch never
+ * completed (dead zone, tunnel, tower handoff, captive portal, connection reset)
+ * so no HTTP response was received. This is the rep's connectivity, not our app;
+ * the next load works. Each browser words it differently (WebKit "Load failed",
+ * Chromium "Failed to fetch", Firefox "NetworkError when attempting to fetch
+ * resource", iOS "The network connection was lost"), and supabase-js surfaces it
+ * as a SupabaseError with an EMPTY code (the tell that the DB was never reached).
+ *
+ * We drop these from Sentry: a field rep hitting a dead zone is not a bug, and at
+ * volume they drown the real signal. We do NOT drop anything carrying a real
+ * PostgREST/Postgres code (PGRST202, 42501, ...); those reached the server and
+ * are handled by normalizeError(). Matches across shapes: an Error, a raw
+ * Supabase object, a bare {message}, or a plain string.
+ */
+const NETWORK_FAILURE_RE =
+  /(load failed|failed to fetch|networkerror when attempting to fetch|network connection was lost|internet connection appears to be offline)/i;
+
+export function isTransientNetworkError(err: unknown): boolean {
+  const message =
+    err instanceof Error
+      ? err.message
+      : isSupabaseError(err) || isMessageObject(err)
+        ? (err as { message: string }).message
+        : typeof err === "string"
+          ? err
+          : "";
+  return NETWORK_FAILURE_RE.test(message);
 }
 
 /**
@@ -194,6 +232,10 @@ export function normalizeSupabaseSentryEvent(
   event: SentryEventLike,
   originalException: unknown,
 ): { drop: boolean } {
+  // Transient network transport failure (any shape): the fetch never reached the
+  // server. Drop it before the shape-specific handling below; a rep's momentary
+  // dead zone is not a bug worth an event.
+  if (isTransientNetworkError(originalException)) return { drop: true };
   // Supabase raw-object path: richest handling (code/details/hint + authz drop).
   if (isSupabaseError(originalException)) {
     if (isExpectedPermissionError(originalException)) return { drop: true };

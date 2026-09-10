@@ -4,6 +4,7 @@ import {
   isSupabaseError,
   isMessageObject,
   isExpectedPermissionError,
+  isTransientNetworkError,
   normalizeError,
   normalizeSupabaseSentryEvent,
   type SentryEventLike,
@@ -32,6 +33,33 @@ describe("IGNORED_ERROR_PATTERNS", () => {
   });
   it("does NOT match an ordinary application error", () => {
     expect(matches("TypeError: cannot read properties of undefined (reading 'id')")).toBe(false);
+  });
+  it("covers transient network fetch failures (dead-zone noise)", () => {
+    // Sentry ignoreErrors substring-matches the captured value, e.g. the wrapped
+    // "SupabaseError: [] TypeError: Load failed".
+    expect(matches("[] TypeError: Load failed")).toBe(true);
+    expect(matches("TypeError: Failed to fetch")).toBe(true);
+    expect(matches("NetworkError when attempting to fetch resource")).toBe(true);
+  });
+});
+
+describe("isTransientNetworkError", () => {
+  it("is true for the browser fetch-failure signatures across shapes", () => {
+    // The exact shape supabase-js yields when the fetch never completed: a
+    // Supabase-like object with an EMPTY code (no HTTP response received).
+    expect(isTransientNetworkError({ code: "", message: "TypeError: Load failed", details: "stack", hint: "" })).toBe(true);
+    expect(isTransientNetworkError(new Error("[] TypeError: Load failed"))).toBe(true); // wrapped Error
+    expect(isTransientNetworkError(new TypeError("Failed to fetch"))).toBe(true); // Chromium
+    expect(isTransientNetworkError({ message: "NetworkError when attempting to fetch resource" })).toBe(true); // Firefox, bare {message}
+    expect(isTransientNetworkError("The network connection was lost")).toBe(true); // iOS, plain string
+  });
+
+  it("does NOT drop errors that actually reached the server (real coded errors)", () => {
+    expect(isTransientNetworkError({ code: "PGRST202", message: "Could not find the function public.cron_health", details: null, hint: null })).toBe(false);
+    expect(isTransientNetworkError({ code: "42501", message: "permission denied for table profiles", details: null, hint: null })).toBe(false);
+    expect(isTransientNetworkError(new Error("cannot read properties of undefined (reading 'id')"))).toBe(false);
+    expect(isTransientNetworkError(null)).toBe(false);
+    expect(isTransientNetworkError(undefined)).toBe(false);
   });
 });
 
@@ -158,6 +186,12 @@ describe("normalizeSupabaseSentryEvent", () => {
   it("signals DROP for an authz-working-as-designed P0001 forbidden", () => {
     const event = synthesizedEvent();
     const { drop } = normalizeSupabaseSentryEvent(event, { code: "P0001", message: "forbidden", details: null, hint: null });
+    expect(drop).toBe(true);
+  });
+
+  it("signals DROP for a transient network fetch failure (empty-code Load failed)", () => {
+    const event = synthesizedEvent();
+    const { drop } = normalizeSupabaseSentryEvent(event, { code: "", message: "TypeError: Load failed", details: "stack", hint: "" });
     expect(drop).toBe(true);
   });
 

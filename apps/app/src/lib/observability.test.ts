@@ -92,6 +92,17 @@ describe("observability", () => {
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 
+  it("captureException drops a transient network fetch failure (field dead-zone noise)", async () => {
+    // The exact shape a failed fetch yields through the react-query funnel: a
+    // Supabase-like object with an EMPTY code and a "Load failed" message.
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { initObservability, captureException } = await import("./observability");
+    initObservability();
+    captureException({ code: "", message: "TypeError: Load failed", details: "stack", hint: "" }, { source: "react-query" });
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
   it("captureException normalizes a raw Supabase error into a readable Error", async () => {
     vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
     const Sentry = await import("@sentry/react");
