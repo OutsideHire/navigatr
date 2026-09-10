@@ -40,6 +40,12 @@ import {
 import { decodeGeohash, decodeGeohashBounds, cellsCovering } from "../_shared/geohash.ts";
 import { chunk, dedupeById } from "../_shared/chunk.ts";
 import {
+  newRateGate,
+  noteStatus,
+  classifyColdFetch,
+  type RateGate,
+} from "../_shared/discoveryBackoff.ts";
+import {
   ALL_FETCHABLE_KEYS,
   bucketForType,
   categoriesForIndustries,
@@ -182,6 +188,7 @@ async function searchNearbyForTypes(
   lng: number,
   radiusM: number,
   includedTypes: string[],
+  gate: RateGate,
 ): Promise<PlacesNewPlace[]> {
   if (PLACES_MOCK) {
     return mockSearchNearby(lat, lng).places;
@@ -189,9 +196,14 @@ async function searchNearbyForTypes(
   if (!GOOGLE_PLACES_API_KEY) {
     throw new Error("GOOGLE_PLACES_API_KEY not set (and PLACES_MOCK != 1)");
   }
+  // Circuit breaker: once a sibling call has hit Google's 429 (quota wall),
+  // don't fire more requests at an already-exhausted quota. Throwing (not
+  // returning []) routes this bucket to `failed`, so it doesn't count as a
+  // real pull and the handler can return a proper 429.
+  if (gate.tripped) throw new Error("skipped: places rate limit");
   // Chunk to the Google includedTypes cap, pull batches in parallel, dedupe by id.
   const batches = chunk(includedTypes, INCLUDED_TYPES_CAP);
-  const results = await Promise.all(batches.map((b) => searchNearbyOneRequest(lat, lng, radiusM, b)));
+  const results = await Promise.all(batches.map((b) => searchNearbyOneRequest(lat, lng, radiusM, b, gate)));
   return dedupeById(results.flat());
 }
 
@@ -201,7 +213,9 @@ async function searchNearbyOneRequest(
   lng: number,
   radiusM: number,
   includedTypes: string[],
+  gate: RateGate,
 ): Promise<PlacesNewPlace[]> {
+  if (gate.tripped) throw new Error("skipped: places rate limit");
   const res = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
     method: "POST",
     headers: {
@@ -240,6 +254,9 @@ async function searchNearbyOneRequest(
     }),
   });
   if (!res.ok) {
+    // Trip the breaker on a 429 so the rest of the fan-out short-circuits
+    // instead of hammering an exhausted quota (2026-09-10 prod outage).
+    noteStatus(gate, res.status);
     const detail = await res.text().catch(() => "");
     throw new Error(`Places searchNearby ${res.status}: ${detail.slice(0, 500)}`);
   }
@@ -259,10 +276,11 @@ async function fetchPlacesByCategory(
   lng: number,
   radiusM: number,
   buckets: IndustryKey[],
+  gate: RateGate,
 ): Promise<BucketPullResult> {
   const settled = await Promise.allSettled(
     buckets.map((bucket) =>
-      searchNearbyForTypes(lat, lng, radiusM, searchableTypes(bucket)).then(
+      searchNearbyForTypes(lat, lng, radiusM, searchableTypes(bucket), gate).then(
         (places): BucketPull => ({ bucket, places }),
       ),
     ),
@@ -401,6 +419,9 @@ Deno.serve(async (req) => {
 
   // ---- Cold cells: pull Places per cell (bounded concurrency), classify ----
   let failedBuckets: Array<{ cell: string; bucket: IndustryKey; error: string }> = [];
+  // Request-scoped rate-limit breaker: shared across every cell + bucket fetch
+  // of THIS request so the first Google 429 stops the rest of the fan-out.
+  const gate = newRateGate();
   if (!warm) {
     coldCells = cellWork.length;
     interface CellPull {
@@ -417,6 +438,7 @@ Deno.serve(async (req) => {
         w.center.lng,
         w.radiusM,
         w.coldBuckets,
+        gate,
       );
       return { cell: w.cell, pulls: fulfilled, failed };
     });
@@ -425,7 +447,16 @@ Deno.serve(async (req) => {
     const totalPulls = cellResults.reduce((n, cr) => n + cr.pulls.length, 0);
     // Every bucket of every cold cell failed → nothing to ingest; surface it.
     // (A partial failure falls through: ingest what we got, leave failed cold.)
-    if (totalPulls === 0) {
+    const outcome = classifyColdFetch(totalPulls, gate.tripped);
+    if (outcome === "rate_limited") {
+      // Quota wall: the breaker stopped the storm; tell the client to back off
+      // (429) rather than retry, so we don't keep the quota pinned.
+      return json(
+        { error: "rate_limited", detail: "Places API quota reached; backing off. Try again shortly." },
+        429,
+      );
+    }
+    if (outcome === "fetch_failed") {
       return json(
         {
           error: "places_fetch_failed",

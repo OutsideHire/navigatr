@@ -15,6 +15,7 @@
 import { Calendar, Check, Loader2, MapPinOff, Phone, Plus, Radio, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge, Button, Card } from "@/components/navigatr";
+import { DiscoveryRetryButton } from "../DiscoveryRetryButton";
 import { labelForCategory, STATUS_LABEL, STATUS_PILL_CLASS, type Merchant } from "../../mockData";
 import { formatDistance } from "@/lib/distance";
 import { formatPhoneDisplay } from "@/lib/phone";
@@ -78,9 +79,7 @@ export function PlanResultsStep({
             Something went wrong reaching the discovery service. Try again in a moment.
           </p>
         </div>
-        <Button variant="secondary" size="sm" onClick={onRetry}>
-          Retry
-        </Button>
+        <DiscoveryRetryButton onRetry={onRetry} />
       </Card>
     );
   }

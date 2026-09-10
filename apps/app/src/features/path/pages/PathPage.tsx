@@ -43,6 +43,7 @@ import {
 } from "../mockData";
 import { usePathOrigin } from "../hooks/usePathOrigin";
 import { LocationSearch } from "../components/LocationSearch";
+import { DiscoveryRetryButton } from "../components/DiscoveryRetryButton";
 import { haversineMeters, nearestNeighborOrder } from "@/lib/distance";
 import { MerchantMap } from "../components/MerchantMap";
 import { MerchantList, type MerchantWithDistance } from "../components/MerchantList";
@@ -1167,9 +1168,7 @@ export function PathPage() {
                   Something went wrong reaching the discovery service. Try again in a moment.
                 </p>
               </div>
-              <Button variant="secondary" size="sm" leadingIcon={LocateFixed} onClick={refetchMerchants}>
-                Retry
-              </Button>
+              <DiscoveryRetryButton onRetry={refetchMerchants} leadingIcon={LocateFixed} />
             </Card>
           ) : liveMerchants.length === 0 ? (
             <Card padding="lg" className="mt-6 flex flex-col items-center gap-3 text-center">
