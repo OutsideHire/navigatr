@@ -70,7 +70,14 @@ from (values
   -- Second dedicated dealless rep, for the running-carousel + carry-to-tomorrow
   -- E2E. It MUTATES its path (carry completes today + reparents stops to
   -- tomorrow), so it must not share repe2e's path with the other rep specs.
-  ('5eed0000-0000-4000-8000-00000000000f'::uuid, 'repcarousel@navigatr.test', 'Cara Ruiz')
+  ('5eed0000-0000-4000-8000-00000000000f'::uuid, 'repcarousel@navigatr.test', 'Cara Ruiz'),
+  -- Dedicated rep for the STOP-LOGGER golden path (apps/app/e2e/rep/stop-logger.spec.ts).
+  -- Unlike the dealless reps above, this one OWNS a deal with a past-due owed
+  -- drop-in follow-up, so its running Path fronts an OWED card whose "I'm here"
+  -- opens LogActivitySheet (the stop logger the 2026-09 drop-in-outcomes
+  -- regression lived on), not the create-deal DropInSheet. It logs an outcome
+  -- (mutates its own data), so it is isolated on its own rep like repcarousel.
+  ('5eed0000-0000-4000-8000-000000000010'::uuid, 'repstoplogger@navigatr.test', 'Sam Fielder')
 ) as u(id, email, full_name)
 order by u.email = 'manager@navigatr.test' desc, u.email;
 
@@ -179,3 +186,49 @@ select
   'pending'
 from prospects p
 where p.place_id in ('seed_place_003', 'seed_place_005');
+
+-- ---------------------------------------------------------------------------
+-- Stop-logger golden-path fixture (apps/app/e2e/rep/stop-logger.spec.ts). The
+-- dedicated rep (repstoplogger, …0010) OWNS a deal with a past-due owed drop-in
+-- follow-up, so its running Path fronts an OWED card. Tapping that card's "I'm
+-- here" opens LogActivitySheet (the stop logger), NOT the create-deal DropInSheet
+-- the dealless reps hit. Three pieces:
+--   1. the owed deal (active stage, coords set directly so it routes without a
+--      prospect join),
+--   2. an open, past-due drop-in `task` against it (hand-created, source_outcome
+--      null, so it is never same-day-suppressed), which useOwedVisits turns into
+--      a routable owed visit, and
+--   3. a started today path with ONE pending nearby stop — RunningPath only
+--      renders when the path has a pending stop, and the owed card sorts ahead of
+--      the nearby one, so the owed card is what fronts the carousel.
+-- ---------------------------------------------------------------------------
+insert into deals (id, org_id, owner_id, company_name, contact_name, contact_phone, contact_email, address, stage, value_cents, lead_source, source, place_id, lat, lng) values
+  ('5eed0000-0000-4000-8000-0000000000d4', '5eed0000-0000-4000-8000-000000000001', '5eed0000-0000-4000-8000-000000000010',
+   'Midtown Mattress Co', 'Rosa Delgado', '(916) 555-0155', 'rosa@midtownmattress.test', '1717 J St, Sacramento, CA',
+   'qualified', 360000, 'path', 'path', null, 38.5816, -121.4944);
+
+-- Past-due owed drop-in: earliest_at 3 days ago (opened, strictly before today so
+-- it lands in the past-due slice), aging band -> highest urgency -> fronts ahead
+-- of the nearby stop. source_outcome null + created two days ago keeps it off the
+-- same-day-suppression path either way.
+insert into task (org_id, owner_id, type, title, deal_id, status,
+                  earliest_at, target_at, latest_at, original_target_at,
+                  date_source, source_outcome, created_at) values
+  ('5eed0000-0000-4000-8000-000000000001', '5eed0000-0000-4000-8000-000000000010',
+   'drop_in', 'Follow up: Midtown Mattress Co', '5eed0000-0000-4000-8000-0000000000d4', 'open',
+   current_date - 3, current_date - 2, current_date - 1, current_date - 2,
+   'interval', null, now() - interval '2 days');
+
+insert into paths (id, user_id, path_date, origin_label, origin_lat, origin_lng, status, started_at, name) values
+  ('5eed0000-0000-4000-8000-0000000000f3', '5eed0000-0000-4000-8000-000000000010', current_date,
+   'Downtown Sacramento', 38.5816, -121.4944, 'planned', now(), 'E2E stop-logger day');
+
+-- One pending nearby stop (Sierra Family Dental, no linked deal), used ONLY to
+-- render RunningPath. It is a different prospect than the other reps' paths use,
+-- so nothing this spec does touches them.
+insert into path_stops (path_id, prospect_id, name, address, lat, lng, category, primary_type, position, status)
+select
+  '5eed0000-0000-4000-8000-0000000000f3',
+  p.id, p.name, p.address, p.lat, p.lng, p.category, null, 1, 'pending'
+from prospects p
+where p.place_id = 'seed_place_004';
