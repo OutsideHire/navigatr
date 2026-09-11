@@ -58,6 +58,7 @@ import { DISPOSITIONS_BY_TYPE, DISPOSITION_VALUES } from "../lib/dispositionSets
 import { formatLogConfirmation } from "../lib/logConfirmation";
 import { friendlyLogError } from "../lib/friendlyLogError";
 import { repOutcomeLabel, repOutcomeSubtitle } from "@/features/path/lib/outcomeRepLabels";
+import { outcomeFollowUpMeta } from "@/features/path/lib/outcomeFollowUpMeta";
 
 // ───────────────────────────────────────────────────────────────────────
 // Type picker
@@ -478,12 +479,20 @@ function ActivityForm({
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {(showAll ? dispositionSet.all : dispositionSet.top).map((d) => {
                     const spec = DISPOSITIONS[d];
+                    // Drop-in outcomes show their follow-up timing on the tile
+                    // (parity with DropInSheet, feature #149): a fixed N-day
+                    // interval, or "You pick the date" for "Asked me to come
+                    // back". Other types keep the plain tile (their follow-up is
+                    // the smart preview below, not a per-outcome cadence).
+                    const followUp = type === "drop_in" ? outcomeFollowUpMeta(d) : null;
                     return (
                       <DispositionTile
                         key={d}
                         tier={spec.tier}
                         title={repOutcomeLabel(d)}
                         description={repOutcomeSubtitle(d)}
+                        meta={followUp?.label}
+                        metaTone={followUp?.tone}
                         selected={field.value === d}
                         onClick={() => field.onChange(d)}
                       />
@@ -514,8 +523,14 @@ function ActivityForm({
                   </span>
                 )}
 
-                {/* Smart follow-up preview — only after a disposition is picked. */}
-                {field.value && <FollowUpPreview disposition={field.value} />}
+                {/* Smart follow-up preview: only after a disposition is picked,
+                    and only for outcomes the platform schedules itself. For a
+                    date-pinned outcome (callback / "Asked me to come back") the
+                    rep enters the exact return date below, so a computed preview
+                    would contradict it. */}
+                {field.value && !pinsFollowUpDate(field.value) && (
+                  <FollowUpPreview disposition={field.value} />
+                )}
               </div>
             )}
           />

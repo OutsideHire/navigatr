@@ -63,6 +63,12 @@ test("running-path stop logger shows the drop-in outcomes and logs one against t
   await expect(sheet.getByText("Got their statement")).toBeVisible();
   await expect(sheet.getByText("Other", { exact: true })).toHaveCount(0);
 
+  // Robert QA (2026-09): each drop-in outcome shows its follow-up timing here,
+  // same as the nearby-stop DropInSheet. A fixed-interval outcome shows an N-day
+  // line; "Asked me to come back" shows the pick-a-date cue.
+  await expect(sheet.getByText(/\d+-day follow-up/i).first()).toBeVisible();
+  await expect(sheet.getByText("You pick the date")).toBeVisible();
+
   // Pick it and log; assert the activity really POSTs (not just that the sheet
   // closed), arming the wait BEFORE the click that triggers it.
   await sheet.getByText("Got their statement").click();
