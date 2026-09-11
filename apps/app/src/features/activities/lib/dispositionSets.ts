@@ -55,23 +55,24 @@ const EMAIL_ALL: Disposition[] = [
   "unsubscribed",
 ];
 
-const DROPIN_TOP: Disposition[] = [
-  "met_dm",
-  "gatekeeper",
-  "left_collateral",
-  "not_in_office",
-];
-
-const DROPIN_ALL: Disposition[] = [
-  "met_dm",
-  "gatekeeper",
-  "left_collateral",
-  "not_in_office",
-  "scheduled_callback",
-  "closed_locked",
-  "do_not_contact",
-  "out_of_business",
-  "other",
+// The field drop-in outcomes, in the product's Desired Outcome order. This is the
+// SINGLE SOURCE for drop-in outcomes: the Path stop logger (LogActivitySheet) AND
+// the nearby-card sheet (DropInSheet, via pathDispositions.PATH_DISPOSITION_KEYS,
+// which re-exports this) both read it, so they can never diverge again. That
+// divergence is exactly what broke this: an Aug-2026 driving-view redesign pointed
+// the stop logger at LogActivitySheet's separate list, and a later outcome fix
+// only touched DropInSheet's list. No "other" (drop-ins are a fixed field
+// taxonomy), and top == all so a rep sees every option at once with no "show more".
+const DROPIN: Disposition[] = [
+  "statement_secured",  // Got their statement
+  "met_dm",             // Met with decision maker
+  "scheduled_callback", // Asked me to come back (rep picks the date)
+  "gatekeeper",         // Spoke with gatekeeper
+  "left_collateral",    // Left materials
+  "not_in_office",      // Closed right now
+  "closed_locked",      // Not now
+  "do_not_contact",     // Do not contact
+  "out_of_business",    // Out of business
 ];
 
 const APPOINTMENT_TOP: Disposition[] = [
@@ -105,7 +106,7 @@ export const DISPOSITIONS_BY_TYPE: Record<ActivityType, DispositionSet> = {
   call: { top: CALL_TOP, all: CALL_ALL },
   appointment: { top: APPOINTMENT_TOP, all: APPOINTMENT_ALL },
   email: { top: EMAIL_TOP, all: EMAIL_ALL },
-  drop_in: { top: DROPIN_TOP, all: DROPIN_ALL },
+  drop_in: { top: DROPIN, all: DROPIN },
 };
 
 /**

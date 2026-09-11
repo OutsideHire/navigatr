@@ -491,18 +491,22 @@ function ActivityForm({
                   })}
                 </div>
 
-                <Button
-                  type="button"
-                  variant="tertiary"
-                  size="sm"
-                  trailingIcon={showAll ? ChevronUp : ChevronDown}
-                  onClick={() => setShowAll((v) => !v)}
-                  className="self-start"
-                >
-                  {showAll
-                    ? `Show top ${dispositionSet.top.length} dispositions`
-                    : `Show all ${dispositionSet.all.length} dispositions`}
-                </Button>
+                {/* Only when there's actually more to reveal. Drop-in shows every
+                    outcome at once (top == all), so no no-op toggle. */}
+                {dispositionSet.all.length > dispositionSet.top.length && (
+                  <Button
+                    type="button"
+                    variant="tertiary"
+                    size="sm"
+                    trailingIcon={showAll ? ChevronUp : ChevronDown}
+                    onClick={() => setShowAll((v) => !v)}
+                    className="self-start"
+                  >
+                    {showAll
+                      ? `Show top ${dispositionSet.top.length} dispositions`
+                      : `Show all ${dispositionSet.all.length} dispositions`}
+                  </Button>
+                )}
 
                 {errors.disposition && (
                   <span className="text-caption text-status-danger">

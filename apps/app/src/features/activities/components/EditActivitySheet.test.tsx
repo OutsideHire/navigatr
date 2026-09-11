@@ -57,4 +57,20 @@ describe("EditActivitySheet — type-specific outcomes", () => {
     renderSheet(activity({ type: "drop_in", disposition: "positive_engagement" }));
     expect(screen.getByText(/positive engagement/i)).toBeInTheDocument();
   });
+
+  it("shows NO show-all toggle for a normal drop-in (all outcomes fit at once)", () => {
+    // Drop-in has top == all, so every outcome is already visible; a
+    // "Show all / Show top" button would be a dead no-op (the bug this fix
+    // removed on the sibling logger; guard it here too).
+    renderSheet(activity({ type: "drop_in", disposition: "met_dm" }));
+    expect(screen.getByText(/got their statement/i)).toBeInTheDocument(); // all shown
+    expect(screen.queryByRole("button", { name: /show (all|top)/i })).not.toBeInTheDocument();
+  });
+
+  it("DOES show the toggle when a legacy value expands the list beyond the set", () => {
+    // A stored value outside the set adds a 10th option, so there IS more to
+    // reveal than the top tiles and the toggle is meaningful again.
+    renderSheet(activity({ type: "drop_in", disposition: "positive_engagement" }));
+    expect(screen.getByRole("button", { name: /show (all|top)/i })).toBeInTheDocument();
+  });
 });
