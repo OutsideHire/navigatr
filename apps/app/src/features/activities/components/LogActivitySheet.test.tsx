@@ -249,6 +249,37 @@ describe("LogActivitySheet — 'Asked me to come back' date capture", () => {
   });
 });
 
+describe("LogActivitySheet: drop-in follow-up timing on each outcome (parity with DropInSheet)", () => {
+  // Robert QA (2026-09): the stop logger's drop-in outcomes must show the same
+  // per-tile follow-up timing the nearby-stop DropInSheet shows (feature #149:
+  // "N-day follow-up" / "You pick the date"), and "Asked me to come back" must
+  // read as pick-a-date, not show a contradictory auto-computed follow-up. Those
+  // landed on DropInSheet only; this component is the stop logger reps hit on
+  // return visits (and the Activities logger), so it needs parity.
+  function openDropIn() {
+    openSheet();
+    fireEvent.click(screen.getByText("Drop-In"));
+  }
+
+  it("shows the follow-up timing line on the drop-in outcome tiles", () => {
+    openDropIn();
+    // scheduled_callback surfaces the pick-the-date cue (unique to that outcome);
+    // fixed-interval outcomes each show an N-day follow-up line.
+    expect(screen.getByText("You pick the date")).toBeInTheDocument();
+    expect(screen.getAllByText(/\d+-day follow-up/i).length).toBeGreaterThan(0);
+  });
+
+  it("does not show a computed 'smart follow-up' preview for the date-pinned 'Asked me to come back'", () => {
+    openDropIn();
+    fireEvent.click(screen.getByText(/asked me to come back/i));
+    // The rep pins the return date below; an auto-computed preview would
+    // contradict the picker, so it must not appear.
+    expect(screen.queryByText(/smart follow-up scheduled/i)).not.toBeInTheDocument();
+    // The date capture is still the clear, single path.
+    expect(screen.getByLabelText(/when to come back/i)).toBeInTheDocument();
+  });
+});
+
 describe("LogActivitySheet inline post-log confirmation", () => {
   it("renders the confirmation title and lines inline after a successful log", async () => {
     // The hook returns a confirmation summary alongside the new id; the sheet
