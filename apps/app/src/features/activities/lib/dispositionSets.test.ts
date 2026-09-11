@@ -23,6 +23,28 @@ describe("dispositionSets", () => {
     expect(call).not.toContain("met_dm");
   });
 
+  it("Drop-in is the Desired Outcome set, in order, no 'other' (2026-09 regression guard)", () => {
+    // The exact field drop-in outcomes the product spec calls for. This set is
+    // the SINGLE SOURCE every drop-in surface renders (see the DROPIN note in
+    // dispositionSets.ts). The 2026-09 bug: the Path stop logger had drifted onto
+    // a stale list that dropped `statement_secured` and added `other`.
+    expect(DISPOSITIONS_BY_TYPE.drop_in.all).toEqual([
+      "statement_secured",
+      "met_dm",
+      "scheduled_callback",
+      "gatekeeper",
+      "left_collateral",
+      "not_in_office",
+      "closed_locked",
+      "do_not_contact",
+      "out_of_business",
+    ]);
+    expect(DISPOSITIONS_BY_TYPE.drop_in.all).not.toContain("other");
+    // Shown all at once: top == all, so the logger renders every outcome with no
+    // "show more" toggle.
+    expect(DISPOSITIONS_BY_TYPE.drop_in.top).toEqual(DISPOSITIONS_BY_TYPE.drop_in.all);
+  });
+
   it("SP2: the Call set records unconnected dials and drops Closed Lost", () => {
     const call = DISPOSITIONS_BY_TYPE.call.all;
     expect(call).toContain("no_answer"); // the 85%-of-dials gap

@@ -160,26 +160,70 @@ describe("LogActivitySheet — submission payload by type", () => {
   });
 });
 
+describe("LogActivitySheet: drop-in outcome set (the field-visit screen reps use)", () => {
+  // Guard for the 2026-09 regression: an Aug-2026 driving-view redesign pointed
+  // the Path stop logger at a stale outcome list that dropped "Got their
+  // statement" and added "Other". A later fix corrected only the OTHER drop-in
+  // sheet, so the screen reps actually use kept the wrong set. This asserts what
+  // a rep SEES on this screen, so both a list change AND a component/flow swap
+  // get caught, not just the underlying constant.
+  const EXPECTED_IN_ORDER = [
+    "Got their statement",
+    "Met with decision maker",
+    "Asked me to come back",
+    "Spoke with gatekeeper",
+    "Left materials",
+    "Closed right now",
+    "Not now",
+    "Do not contact",
+    "Out of business",
+  ];
+
+  it("shows the full Desired Outcome set in order, with no 'Other' and no 'show more'", () => {
+    openSheet();
+    fireEvent.click(screen.getByText("Drop-In"));
+
+    for (const label of EXPECTED_IN_ORDER) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+    // The two things that defined the bug:
+    expect(screen.getByText("Got their statement")).toBeInTheDocument(); // was missing
+    expect(screen.queryByText("Other")).not.toBeInTheDocument(); // was present
+    // Every outcome is shown at once (no top/all toggle for drop-in).
+    expect(screen.queryByRole("button", { name: /show (all|top)/i })).not.toBeInTheDocument();
+
+    // Tiles render top-to-bottom in the Desired order (grid places them in source
+    // order, so DOM text order == the list order).
+    const body = document.body.textContent ?? "";
+    const positions = EXPECTED_IN_ORDER.map((l) => body.indexOf(l));
+    expect(positions.every((p) => p >= 0)).toBe(true);
+    for (let i = 1; i < positions.length; i++) {
+      expect(positions[i]).toBeGreaterThan(positions[i - 1]);
+    }
+  });
+});
+
 describe("LogActivitySheet — 'Asked me to come back' date capture", () => {
   // scheduled_callback ("Asked me to come back" / "He named a time") is a
   // field drop-in outcome whose rep copy promises the rep names a return time.
   // The manual drop-in sheet must therefore surface a date/time capture and use
   // the entered value AS the follow-up (asserted), same as a phone `callback` —
   // never silently fall back to the 2-business-day interval.
-  function openDropInShowAll() {
+  function openDropInPickComeBack() {
     openSheet();
     fireEvent.click(screen.getByText("Drop-In"));
-    fireEvent.click(screen.getByRole("button", { name: /show all/i }));
+    // Drop-in shows every outcome at once (top == all, no "show all" toggle), so
+    // "Asked me to come back" is visible immediately.
     fireEvent.click(screen.getByText(/asked me to come back/i));
   }
 
   it("reveals the return date/time capture when the outcome is selected", () => {
-    openDropInShowAll();
+    openDropInPickComeBack();
     expect(screen.getByLabelText(/when to come back/i)).toBeInTheDocument();
   });
 
   it("blocks submit and shows an error when no return time is entered", async () => {
-    openDropInShowAll();
+    openDropInPickComeBack();
     fireEvent.click(screen.getByRole("button", { name: /log activity/i }));
 
     expect(
@@ -189,7 +233,7 @@ describe("LogActivitySheet — 'Asked me to come back' date capture", () => {
   });
 
   it("submits the entered return time as an asserted follow-up", async () => {
-    openDropInShowAll();
+    openDropInPickComeBack();
     fireEvent.change(screen.getByLabelText(/when to come back/i), {
       target: { value: "2026-09-01T10:00" },
     });
