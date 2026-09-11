@@ -257,18 +257,24 @@ export function EditActivitySheet({ open, onOpenChange, activity }: EditActivity
                       })}
                     </div>
 
-                    <Button
-                      type="button"
-                      variant="tertiary"
-                      size="sm"
-                      trailingIcon={showAll ? ChevronUp : ChevronDown}
-                      onClick={() => setShowAll((v) => !v)}
-                      className="self-start"
-                    >
-                      {showAll
-                        ? `Show top ${dispositionSet.top.length} dispositions`
-                        : `Show all ${allOptions.length} dispositions`}
-                    </Button>
+                    {/* Only when there's genuinely more to reveal than the top
+                        tiles. For drop-in (top == all) with a current value in the
+                        set, allOptions == top, so no no-op toggle; a legacy value
+                        outside the set expands allOptions and the toggle returns. */}
+                    {allOptions.length > dispositionSet.top.length && (
+                      <Button
+                        type="button"
+                        variant="tertiary"
+                        size="sm"
+                        trailingIcon={showAll ? ChevronUp : ChevronDown}
+                        onClick={() => setShowAll((v) => !v)}
+                        className="self-start"
+                      >
+                        {showAll
+                          ? `Show top ${dispositionSet.top.length} dispositions`
+                          : `Show all ${allOptions.length} dispositions`}
+                      </Button>
+                    )}
 
                     {errors.disposition && (
                       <span className="text-caption text-status-danger">
