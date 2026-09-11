@@ -62,6 +62,15 @@ export default defineConfig({
       name: "carousel",
       testMatch: /carousel-carry\.spec\.ts$/,
     },
+    {
+      // The stop-logger spec logs an outcome against an OWED deal (mutates the
+      // rep's activities/tasks), so it runs as its own seeded rep (repstoplogger)
+      // via inline login. That rep owns a deal with a past-due owed drop-in, so
+      // its running Path fronts an OWED card whose "I'm here" opens LogActivitySheet
+      // (the stop logger) rather than the dealless reps' create-deal DropInSheet.
+      name: "stop-logger",
+      testMatch: /stop-logger\.spec\.ts$/,
+    },
   ],
   webServer: {
     // Vite dev reads VITE_* from the environment at startup, so the CI job
