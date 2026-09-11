@@ -60,6 +60,15 @@ jobs:
       - name: Migrate the staging database
         run: supabase db push --db-url "${{ secrets.SUPABASE_DB_URL }}"
 
+      # After migrations, force PostgREST to refresh its schema cache so a freshly
+      # added column/function is recognised immediately, rather than transiently
+      # returning "column X does not exist" (42703) or PGRST202 until the cache
+      # catches up on its own. Non-fatal: the migration already succeeded and the
+      # cache self-heals regardless. (Staging catches this before it reaches prod.)
+      - name: Reload the PostgREST schema cache
+        continue-on-error: true
+        run: psql "${{ secrets.SUPABASE_DB_URL }}" -c "notify pgrst, 'reload schema';"
+
       # --use-api bundles server-side, so this needs no Docker on the runner.
       # verify_jwt posture comes from config.toml, so a new environment inherits
       # the right auth settings rather than needing 15 dashboard clicks.
