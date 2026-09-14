@@ -79,6 +79,24 @@ jobs:
           esac
           supabase db push --db-url "$DEMO_DB_URL"
 
+      # Same failure mode staging and production already guard against: `db push`
+      # changes the schema, but PostgREST keeps serving its CACHED view, so a
+      # freshly added column reads as "column ... does not exist" until the cache
+      # catches up. Demo was missed when this step was added to the other two
+      # workflows (#176), which is exactly how org_branding.dark_logo_url
+      # regressed on demo after an auto-refresh. Non-fatal: the migration already
+      # succeeded and the cache self-heals on its own eventually.
+      - name: Reload the demo PostgREST schema cache (skipped if secrets absent)
+        continue-on-error: true
+        env:
+          DEMO_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$DEMO_DB_URL" ]; then
+            echo "::notice::No demo SUPABASE_DB_URL secret. Skipping schema cache reload."
+            exit 0
+          fi
+          psql "$DEMO_DB_URL" -c "notify pgrst, 'reload schema';"
+
       # --use-api bundles server-side, so no Docker is needed on the runner, and
       # verify_jwt posture comes from config.toml.
       - name: Deploy the demo edge functions (skipped if secrets absent)
