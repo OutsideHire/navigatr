@@ -5,6 +5,7 @@ import { z } from "zod";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { reportError } from "@/lib/reportError";
+import { captureException } from "@/lib/observability";
 import { Mail } from "lucide-react";
 import { Button, FormField, Input } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
@@ -78,6 +79,12 @@ export function LoginForm() {
             ? "Too many requests right now. Try again in a minute."
             : raw;
         setSendError(friendly);
+        // Shown as an inline banner rather than a toast, so reportError (which
+        // toasts) does not fit: report directly. This is the magic-link sibling
+        // of the password-reset path whose silent auth-email rate limit went
+        // unnoticed for a week (2026-09-22), and it pattern-matches rate limits
+        // right above, so it is exactly the failure we must not swallow again.
+        captureException(err, { action: "auth.send-magic-link" });
       }
       return;
     }

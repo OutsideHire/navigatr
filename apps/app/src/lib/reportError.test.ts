@@ -51,6 +51,29 @@ describe("reportError", () => {
     expect(capture).toHaveBeenCalledWith(err, { action: "admin.invite-agent", count: 3 });
   });
 
+  // A Supabase error is a plain OBJECT, not an Error, so without this the user
+  // would drop to the generic fallback and lose the real reason.
+  it("shows an explicit message override verbatim", () => {
+    reportError({ message: "Invite code already claimed" }, {
+      action: "auth.claim-invite-code",
+      fallback: "Couldn't accept invite",
+      message: "Invite code already claimed",
+    });
+    expect(toastError).toHaveBeenCalledWith("Invite code already claimed");
+  });
+
+  // `action` is the stable grouping tag the alerting will key on, so a caller
+  // passing extra.action must NOT be able to overwrite it.
+  it("never lets extra overwrite the action tag", () => {
+    const err = new Error("boom");
+    reportError(err, {
+      action: "auth.sign-in",
+      fallback: "Sign in failed",
+      extra: { action: "not-the-real-action", detail: "kept" },
+    });
+    expect(capture).toHaveBeenCalledWith(err, { action: "auth.sign-in", detail: "kept" });
+  });
+
   it("still reports when the thrown value is not an Error", () => {
     reportError({ code: "PGRST204" }, { action: "auth.sign-in", fallback: "Sign in failed" });
     expect(capture).toHaveBeenCalledTimes(1);

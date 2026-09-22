@@ -24,6 +24,7 @@ import {
 import type { ActivityType } from "@/features/activities/mockData";
 import { formatMoney, formatRelative } from "@/features/pipeline/mockData";
 import { toast } from "sonner";
+import { reportError } from "@/lib/reportError";
 
 // Radix Select forbids empty-string item values (it reserves "" to clear the
 // selection), so "No manager" uses this sentinel and maps back to null on
@@ -274,10 +275,14 @@ export function AgentDetailPage() {
                   {
                     onSuccess: () => toast.success("Reporting updated"),
                     onError: (e) =>
-                      toast.error(
-                        (e instanceof Error && MANAGER_ERROR_COPY[e.message]) ||
+                      // Keep the mapped friendly copy exactly as the user saw it.
+                      reportError(e, {
+                        action: "admin.set-manager",
+                        fallback: "Could not update reporting",
+                        message:
+                          (e instanceof Error && MANAGER_ERROR_COPY[e.message]) ||
                           "Could not update reporting",
-                      ),
+                      }),
                   },
                 );
               }}
@@ -311,10 +316,13 @@ export function AgentDetailPage() {
                   {
                     onSuccess: () => toast.success("Role level updated"),
                     onError: (e) =>
-                      toast.error(
-                        (e instanceof Error && ROLE_LEVEL_ERROR_COPY[e.message]) ||
+                      reportError(e, {
+                        action: "admin.set-role-level",
+                        fallback: "Could not update role level",
+                        message:
+                          (e instanceof Error && ROLE_LEVEL_ERROR_COPY[e.message]) ||
                           "Could not update role level",
-                      ),
+                      }),
                   },
                 );
               }}

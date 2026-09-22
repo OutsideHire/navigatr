@@ -69,7 +69,13 @@ export function AcceptInvitePage() {
     (async () => {
       const { error } = await supabase.rpc("claim_invite_code", { p_code: token });
       if (error) {
-        toast.error(error.message);
+        // A Supabase error object, not an Error instance, so pass `message`
+        // explicitly to keep showing the real reason (stale/claimed token).
+        reportError(error, {
+          action: "auth.claim-invite-code",
+          fallback: "Couldn't accept invite",
+          message: error.message,
+        });
         return;
       }
       navigate("/dashboard", { replace: true });

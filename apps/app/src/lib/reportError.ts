@@ -31,6 +31,12 @@ export interface ReportErrorOptions {
   action: string;
   /** Shown to the user when the caught value carries no readable message. */
   fallback: string;
+  /**
+   * Show this exact copy instead of deriving it from the error. For callers
+   * whose thrown value is a Supabase error OBJECT (not an Error instance), so
+   * the user keeps seeing the real message rather than the generic fallback.
+   */
+  message?: string;
   /** Extra context for the Sentry event. Never put tokens or secrets here. */
   extra?: Record<string, unknown>;
 }
@@ -38,6 +44,8 @@ export interface ReportErrorOptions {
 export function reportError(err: unknown, options: ReportErrorOptions): void {
   // Same message the user saw before this helper existed, so adding
   // observability changes nothing about the experience.
-  toast.error(err instanceof Error ? err.message : options.fallback);
-  captureException(err, { action: options.action, ...(options.extra ?? {}) });
+  toast.error(options.message ?? (err instanceof Error ? err.message : options.fallback));
+  // `action` is spread LAST on purpose: a caller passing extra.action must not
+  // be able to clobber the stable grouping tag this helper exists to guarantee.
+  captureException(err, { ...(options.extra ?? {}), action: options.action });
 }
