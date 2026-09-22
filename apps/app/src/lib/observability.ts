@@ -118,6 +118,12 @@ export function setUser(user: { id: string; orgId?: string } | null): void {
 export function captureException(
   err: unknown,
   context?: Record<string, unknown>,
+  /**
+   * Sentry TAGS. Unlike `context` (which lands in `extra`), tags are indexed:
+   * they can be searched, grouped and, critically, used as an ALERT RULE
+   * condition. Anything you want to be notified about must be a tag.
+   */
+  tags?: Record<string, string>,
 ): void {
   if (!initialized) return;
   // Authz working as designed (a user hit a report RLS/an RPC gate forbids) is
@@ -132,9 +138,13 @@ export function captureException(
   // readable, groupable Error and move the raw fields to extra.
   const { error, extra } = normalizeError(err);
   const merged = { ...(extra ?? {}), ...(context ?? {}) };
+  const hasExtra = Object.keys(merged).length > 0;
+  const hasTags = tags != null && Object.keys(tags).length > 0;
   Sentry.captureException(
     error,
-    Object.keys(merged).length > 0 ? { extra: merged } : undefined,
+    hasExtra || hasTags
+      ? { ...(hasExtra ? { extra: merged } : {}), ...(hasTags ? { tags } : {}) }
+      : undefined,
   );
 }
 

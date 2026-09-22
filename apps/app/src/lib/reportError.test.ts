@@ -5,7 +5,11 @@ const capture = vi.fn();
 
 vi.mock("sonner", () => ({ toast: { error: (m: string) => toastError(m) } }));
 vi.mock("./observability", () => ({
-  captureException: (e: unknown, c?: Record<string, unknown>) => capture(e, c),
+  captureException: (
+    e: unknown,
+    c?: Record<string, unknown>,
+    t?: Record<string, string>,
+  ) => capture(e, c, t),
 }));
 
 import { reportError } from "./reportError";
@@ -38,7 +42,8 @@ describe("reportError", () => {
   it("reports the error to Sentry, tagged with the action", () => {
     const err = new Error("boom");
     reportError(err, { action: "auth.sign-up", fallback: "Sign up failed" });
-    expect(capture).toHaveBeenCalledWith(err, { action: "auth.sign-up" });
+    // action must be a TAG (3rd arg), because only tags can drive alert rules.
+    expect(capture).toHaveBeenCalledWith(err, undefined, { action: "auth.sign-up" });
   });
 
   it("passes extra context through to Sentry", () => {
@@ -48,7 +53,7 @@ describe("reportError", () => {
       fallback: "Could not send invite",
       extra: { count: 3 },
     });
-    expect(capture).toHaveBeenCalledWith(err, { action: "admin.invite-agent", count: 3 });
+    expect(capture).toHaveBeenCalledWith(err, { count: 3 }, { action: "admin.invite-agent" });
   });
 
   // A Supabase error is a plain OBJECT, not an Error, so without this the user
@@ -62,8 +67,9 @@ describe("reportError", () => {
     expect(toastError).toHaveBeenCalledWith("Invite code already claimed");
   });
 
-  // `action` is the stable grouping tag the alerting will key on, so a caller
-  // passing extra.action must NOT be able to overwrite it.
+  // `action` is the tag the alert rules key on, so a caller passing
+  // extra.action must NOT be able to overwrite it. Tags and extra are separate
+  // arguments now, so this is impossible by construction.
   it("never lets extra overwrite the action tag", () => {
     const err = new Error("boom");
     reportError(err, {
@@ -71,7 +77,11 @@ describe("reportError", () => {
       fallback: "Sign in failed",
       extra: { action: "not-the-real-action", detail: "kept" },
     });
-    expect(capture).toHaveBeenCalledWith(err, { action: "auth.sign-in", detail: "kept" });
+    expect(capture).toHaveBeenCalledWith(
+      err,
+      { action: "not-the-real-action", detail: "kept" },
+      { action: "auth.sign-in" },
+    );
   });
 
   it("still reports when the thrown value is not an Error", () => {
