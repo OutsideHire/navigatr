@@ -25,8 +25,10 @@ import { captureException } from "./observability";
 
 export interface ReportErrorOptions {
   /**
-   * Stable label for WHAT failed, e.g. "auth.reset-password-request". Attached
-   * to the Sentry event so related failures group and can be alerted on.
+   * Stable label for WHAT failed, e.g. "auth.reset-password-request". Sent as a
+   * Sentry TAG, not extra: tags are indexed, so this is what an alert rule can
+   * actually key on ("notify me when action starts with auth."). Extra is not
+   * filterable, which is the whole reason this is a tag.
    */
   action: string;
   /** Shown to the user when the caught value carries no readable message. */
@@ -45,7 +47,7 @@ export function reportError(err: unknown, options: ReportErrorOptions): void {
   // Same message the user saw before this helper existed, so adding
   // observability changes nothing about the experience.
   toast.error(options.message ?? (err instanceof Error ? err.message : options.fallback));
-  // `action` is spread LAST on purpose: a caller passing extra.action must not
-  // be able to clobber the stable grouping tag this helper exists to guarantee.
-  captureException(err, { ...(options.extra ?? {}), action: options.action });
+  // action goes in TAGS and caller context goes in EXTRA: separate namespaces,
+  // so a caller passing extra.action cannot clobber the grouping tag.
+  captureException(err, options.extra, { action: options.action });
 }

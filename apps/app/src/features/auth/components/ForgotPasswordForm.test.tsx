@@ -22,7 +22,11 @@ vi.mock("@/stores/auth", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 vi.mock("@/lib/observability", () => ({
-  captureException: (e: unknown, c?: Record<string, unknown>) => captureExceptionMock(e, c),
+  captureException: (
+    e: unknown,
+    c?: Record<string, unknown>,
+    t?: Record<string, string>,
+  ) => captureExceptionMock(e, c, t),
 }));
 
 import { ForgotPasswordForm } from "./ForgotPasswordForm";
@@ -55,7 +59,9 @@ describe("ForgotPasswordForm reports failures", () => {
     await submitWith("rep@example.com");
 
     await waitFor(() =>
-      expect(captureExceptionMock).toHaveBeenCalledWith(err, {
+      // The action must arrive as a TAG (3rd arg): tags are what a Sentry
+      // alert rule can key on, extra is not filterable.
+      expect(captureExceptionMock).toHaveBeenCalledWith(err, undefined, {
         action: "auth.reset-password-request",
       }),
     );
