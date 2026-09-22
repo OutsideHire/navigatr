@@ -13,6 +13,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { X } from "lucide-react";
 import { toast } from "sonner";
+import { reportError } from "@/lib/reportError";
 import { cn } from "@/lib/utils";
 import { Button, FormField, Input, Select, type SelectOption } from "@/components/navigatr";
 import { ROLE_LEVEL_OPTIONS, type RoleLevel } from "@/features/auth/capabilities";
@@ -96,7 +97,7 @@ export function InviteAgentModal({ open, onOpenChange }: { open: boolean; onOpen
         toast.error(`Could not invite: ${row.error}`);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not send invite");
+      reportError(err, { action: "admin.invite-agent", fallback: "Could not send invite" });
     }
   };
 

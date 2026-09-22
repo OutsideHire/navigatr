@@ -23,6 +23,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
+import { reportError } from "@/lib/reportError";
 import { AuthSplitShell } from "../components/AuthShell";
 import { CheckYourEmailNotice } from "../components/CheckYourEmailNotice";
 import { TermsConsent } from "../components/TermsConsent";
@@ -68,7 +69,13 @@ export function AcceptInvitePage() {
     (async () => {
       const { error } = await supabase.rpc("claim_invite_code", { p_code: token });
       if (error) {
-        toast.error(error.message);
+        // A Supabase error object, not an Error instance, so pass `message`
+        // explicitly to keep showing the real reason (stale/claimed token).
+        reportError(error, {
+          action: "auth.claim-invite-code",
+          fallback: "Couldn't accept invite",
+          message: error.message,
+        });
         return;
       }
       navigate("/dashboard", { replace: true });
@@ -139,7 +146,7 @@ export function AcceptInvitePage() {
       navigate("/auth/callback");
     } catch (err) {
       sessionStorage.removeItem("pending_invite");
-      toast.error(err instanceof Error ? err.message : "Sign up failed");
+      reportError(err, { action: "auth.accept-invite-signup", fallback: "Sign up failed" });
     }
   };
 

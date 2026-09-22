@@ -9,6 +9,7 @@ import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { toast } from "sonner";
+import { reportError } from "@/lib/reportError";
 import { cn } from "@/lib/utils";
 import { Button, Select, type SelectOption } from "@/components/navigatr";
 import { useReassignDeals } from "../hooks/useReassignDeals";
@@ -93,7 +94,7 @@ export function RevokeAgentDialog({
       }
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not deactivate agent");
+      reportError(err, { action: "admin.deactivate-agent", fallback: "Could not deactivate agent" });
     } finally {
       setSubmitting(false);
     }

@@ -17,6 +17,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { reportError } from "@/lib/reportError";
 import { Loader2 } from "lucide-react";
 
 import { AuthSplitShell } from "../components/AuthShell";
@@ -86,9 +87,7 @@ export function CreateOrganizationPage() {
       // shareable invite code/link, instead of dropping onto an empty dashboard.
       navigate("/welcome", { replace: true });
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Could not create workspace",
-      );
+      reportError(err, { action: "onboarding.create-org", fallback: "Could not create workspace" });
     }
   };
 

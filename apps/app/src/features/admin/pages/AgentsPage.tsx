@@ -5,6 +5,7 @@
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { reportError } from "@/lib/reportError";
 import { ChevronUp, ChevronDown, ChevronsUpDown, Plus, Upload } from "lucide-react";
 import { Button } from "@/components/navigatr";
 import { useTeamLeaderboard, type LeaderboardRow } from "../hooks/useTeamLeaderboard";
@@ -150,7 +151,7 @@ export function AgentsPage() {
         toast.warning(`Invite refreshed for ${res.email}, but email failed: ${emailErr}`);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not resend invite");
+      reportError(err, { action: "admin.resend-invite", fallback: "Could not resend invite" });
     }
   };
 
@@ -163,7 +164,7 @@ export function AgentsPage() {
         await revoke.mutateAsync({ targetId: row.agent_id, kind: "invite" });
         toast.success("Done.");
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Could not revoke");
+        reportError(err, { action: "admin.revoke-invite", fallback: "Could not revoke" });
       }
     } else {
       // Active profile — open the dialog so deals can be reassigned first.
@@ -182,7 +183,7 @@ export function AgentsPage() {
       { profileId: row.agent_id, newRole },
       {
         onSuccess: () => toast.success("Role updated"),
-        onError: (e) => toast.error(e instanceof Error ? e.message : "Could not change role"),
+        onError: (e) => reportError(e, { action: "admin.set-role", fallback: "Could not change role" }),
       },
     );
   };

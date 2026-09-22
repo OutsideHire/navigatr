@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
+import { reportError } from "@/lib/reportError";
 import { CalendarClock, CreditCard, Landmark, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/navigatr";
@@ -55,7 +55,7 @@ export function ProfessionSelectorPage() {
       await setProfession(selected);
       navigate("/dashboard");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't save profession");
+      reportError(err, { action: "onboarding.set-profession", fallback: "Couldn't save profession" });
     } finally {
       setSaving(false);
     }
