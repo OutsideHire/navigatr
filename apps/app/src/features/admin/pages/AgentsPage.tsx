@@ -5,6 +5,7 @@
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { reportError } from "@/lib/reportError";
 import { ChevronUp, ChevronDown, ChevronsUpDown, Plus, Upload } from "lucide-react";
 import { Button } from "@/components/navigatr";
 import { useTeamLeaderboard, type LeaderboardRow } from "../hooks/useTeamLeaderboard";
@@ -150,7 +151,7 @@ export function AgentsPage() {
         toast.warning(`Invite refreshed for ${res.email}, but email failed: ${emailErr}`);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not resend invite");
+      reportError(err, { action: "admin.resend-invite", fallback: "Could not resend invite" });
     }
   };
 

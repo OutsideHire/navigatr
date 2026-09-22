@@ -23,6 +23,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
+import { reportError } from "@/lib/reportError";
 import { AuthSplitShell } from "../components/AuthShell";
 import { CheckYourEmailNotice } from "../components/CheckYourEmailNotice";
 import { TermsConsent } from "../components/TermsConsent";
@@ -139,7 +140,7 @@ export function AcceptInvitePage() {
       navigate("/auth/callback");
     } catch (err) {
       sessionStorage.removeItem("pending_invite");
-      toast.error(err instanceof Error ? err.message : "Sign up failed");
+      reportError(err, { action: "auth.accept-invite-signup", fallback: "Sign up failed" });
     }
   };
 

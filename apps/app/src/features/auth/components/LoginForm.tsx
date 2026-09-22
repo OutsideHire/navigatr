@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { reportError } from "@/lib/reportError";
 import { Mail } from "lucide-react";
 import { Button, FormField, Input } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
@@ -90,7 +91,7 @@ export function LoginForm() {
       await signInWithEmail(values.email, values.password);
       navigate("/dashboard");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Sign in failed");
+      reportError(err, { action: "auth.sign-in", fallback: "Sign in failed" });
     }
   };
 
@@ -113,7 +114,7 @@ export function LoginForm() {
         await verifyMagicLinkCode(magicSentTo, code);
         navigate("/dashboard");
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Couldn't verify code");
+        reportError(err, { action: "auth.verify-otp", fallback: "Couldn't verify code" });
       } finally {
         setVerifying(false);
       }

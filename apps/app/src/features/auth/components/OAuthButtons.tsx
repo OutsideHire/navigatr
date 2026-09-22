@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
-import { toast } from "sonner";
+import { reportError } from "@/lib/reportError";
 
 /** Inline brand glyphs — flat SVG, sized to inherit currentColor where useful. */
 function GoogleIcon() {
@@ -58,7 +58,7 @@ export function OAuthButtons({
     try {
       await signInWithGoogle(inviteCode || undefined);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Google sign-in failed");
+      reportError(err, { action: "auth.google-sign-in", fallback: "Google sign-in failed" });
     }
   };
 

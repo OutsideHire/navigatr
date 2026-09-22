@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { reportError } from "@/lib/reportError";
 import { Button, FormField, Input } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
 import { OAuthButtons, OrDivider } from "./OAuthButtons";
@@ -67,7 +68,7 @@ export function SignUpForm() {
       }
       navigate("/auth/callback");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Sign up failed");
+      reportError(err, { action: "auth.sign-up", fallback: "Sign up failed" });
     }
   };
 

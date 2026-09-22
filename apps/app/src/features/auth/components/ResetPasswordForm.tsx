@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { reportError } from "@/lib/reportError";
 import { Loader2 } from "lucide-react";
 import { Button, FormField, Input } from "@/components/navigatr";
 import { supabase } from "@/lib/supabase";
@@ -119,7 +120,7 @@ export function ResetPasswordForm() {
         setStatus("expired");
         return;
       }
-      toast.error(msg);
+      reportError(err, { action: "auth.update-password", fallback: "Couldn't update password" });
     }
   };
 

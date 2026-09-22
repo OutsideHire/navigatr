@@ -12,6 +12,7 @@
 import * as React from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { reportError } from "@/lib/reportError";
 
 import { AuthSplitShell } from "../components/AuthShell";
 import { Button, FormField, Input } from "@/components/navigatr";
@@ -78,7 +79,7 @@ export function WelcomeInvitePage() {
       }
       goDashboard();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't send invites.");
+      reportError(err, { action: "onboarding.send-invites", fallback: "Couldn't send invites." });
     } finally {
       setSubmitting(false);
     }

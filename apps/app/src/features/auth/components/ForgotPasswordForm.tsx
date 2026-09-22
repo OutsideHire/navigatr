@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link } from "react-router-dom";
-import { toast } from "sonner";
+import { reportError } from "@/lib/reportError";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { Button, FormField, Input } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
@@ -33,7 +33,7 @@ export function ForgotPasswordForm() {
       await resetPassword(values.email);
       setSent(true);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't send reset link");
+      reportError(err, { action: "auth.reset-password-request", fallback: "Couldn't send reset link" });
     }
   };
 
