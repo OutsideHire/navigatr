@@ -197,9 +197,17 @@ describe("useMerchants", () => {
       { wrapper },
     );
     await waitFor(() => expect(result.current.merchants).toHaveLength(2));
-    expect(invokeMock).toHaveBeenCalledWith("discover_prospects", {
-      body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: false, include_chains: false, limit: 25 },
-    });
+    expect(invokeMock).toHaveBeenCalledWith(
+      "discover_prospects",
+      expect.objectContaining({
+        body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: false, include_chains: false, limit: 25 },
+      }),
+    );
+    // The fix for the FunctionsFetchError noise: react-query's AbortSignal must
+    // reach invoke, so a discovery the rep walked away from is CANCELLED rather
+    // than running on unobserved, failing, and landing in Sentry stamped with
+    // whatever page they reached next (it also stops burning Google quota).
+    expect(invokeMock.mock.calls[0]![1].signal).toBeInstanceOf(AbortSignal);
     expect(result.current.merchants.map((m) => m.id)).toEqual(["a", "b"]);
     expect(result.current.merchants[0]!.status).toBe("untouched");
   });
@@ -255,18 +263,24 @@ describe("useMerchants", () => {
       wrapper,
     });
     await waitFor(() => expect(invokeMock).toHaveBeenCalled());
-    expect(invokeMock).toHaveBeenCalledWith("discover_prospects", {
-      body: { lat: 30.2672, lng: -97.7431, radius_m: 1500, profession: "merchant_services", industries: [], all_industries: false, include_chains: false, limit: 25 },
-    });
+    expect(invokeMock).toHaveBeenCalledWith(
+      "discover_prospects",
+      expect.objectContaining({
+        body: { lat: 30.2672, lng: -97.7431, radius_m: 1500, profession: "merchant_services", industries: [], all_industries: false, include_chains: false, limit: 25 },
+      }),
+    );
   });
 
   it("sends all_industries + empty industries when allIndustries is set", async () => {
     invokeMock.mockResolvedValue({ data: { prospects: [] }, error: null });
     renderHook(() => useMerchants({ lat: 30.2672, lng: -97.7431 }, { industries: ["healthcare"], allIndustries: true }), { wrapper });
     await waitFor(() => expect(invokeMock).toHaveBeenCalled());
-    expect(invokeMock).toHaveBeenCalledWith("discover_prospects", {
-      body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: true, include_chains: false, limit: 25 },
-    });
+    expect(invokeMock).toHaveBeenCalledWith(
+      "discover_prospects",
+      expect.objectContaining({
+        body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: true, include_chains: false, limit: 25 },
+      }),
+    );
   });
 
   it("defaults the results limit to 25 in the invoke body", async () => {

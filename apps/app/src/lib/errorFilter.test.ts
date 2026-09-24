@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   IGNORED_ERROR_PATTERNS,
-  isSupabaseError,
-  isMessageObject,
+  isExpectedDomainError,
   isExpectedPermissionError,
+  isFunctionsFetchError,
+  isMessageObject,
+  isSupabaseError,
   isTransientNetworkError,
   normalizeError,
   normalizeSupabaseSentryEvent,
@@ -148,11 +150,29 @@ describe("normalizeError", () => {
     expect((error as Error).message).toBe("boom");
     expect(extra).toMatchObject({ captured_object: { status: 500, url: "/x" } });
   });
-  it("passes an empty-message object through raw (never a bare, collision-grouped CapturedError)", () => {
+  // SUPERSEDED 2026-09-24, intent preserved. This used to assert raw
+  // pass-through, guarding against a BARE CapturedError that would dump every
+  // empty-message object into one meaningless Sentry group. That anti-collision
+  // intent still stands. But passing raw is exactly what produced the useless
+  // title "Object captured as exception with keys: code, details, hint,
+  // message" seen in prod. We now build a SHAPE-SPECIFIC title, which is
+  // readable AND still keeps unrelated shapes in separate groups.
+  it("makes an empty-message object readable without collision-grouping it", () => {
     const raw = { message: "" };
     const { error, extra } = normalizeError(raw);
-    expect(error).toBe(raw);
-    expect(extra).toBeUndefined();
+    expect(error).not.toBe(raw);
+    expect((error as Error).name).toBe("CapturedObject");
+    expect((error as Error).message).toBe("Unreadable error object with keys: message");
+    expect(extra?.captured_object).toEqual(raw);
+  });
+
+  it("keeps different unreadable shapes in DIFFERENT groups (the anti-collision guard)", () => {
+    const a = normalizeError({ message: "" }).error as Error;
+    const b = normalizeError({ status: 500, url: "/x" }).error as Error;
+    const c = normalizeError({ code: 42501, details: null, hint: null, message: "" }).error as Error;
+    expect(a.message).not.toBe(b.message);
+    expect(b.message).not.toBe(c.message);
+    expect(a.message).not.toBe(c.message);
   });
 });
 
@@ -234,5 +254,54 @@ describe("normalizeSupabaseSentryEvent", () => {
     };
     normalizeSupabaseSentryEvent(event, { message: "boom", status: 500 });
     expect(event.extra).toMatchObject({ captured_object: { status: 500 } });
+  });
+});
+
+describe("expected-condition and unreadable-object filtering (2026-09-24 Sentry triage)", () => {
+  // These reach Sentry only because EVERY react-query mutation rejection is
+  // reported, including ones the caller catches and shows as a friendly toast.
+  it("treats our own business-outcome sentinels as expected, by class name", () => {
+    const dup = new Error("This business is already in your team's pipeline.");
+    dup.name = "DuplicateDealError";
+    expect(isExpectedDomainError(dup)).toBe(true);
+
+    const locked = new Error("lead source is locked");
+    locked.name = "LeadSourceLockedError";
+    expect(isExpectedDomainError(locked)).toBe(true);
+  });
+
+  it("does NOT treat a real failure as an expected domain error", () => {
+    // Same message, ordinary Error: a genuine insert failure must still report.
+    expect(isExpectedDomainError(new Error("This business is already in your team's pipeline."))).toBe(false);
+    expect(isExpectedDomainError(new TypeError("boom"))).toBe(false);
+  });
+
+  it("treats FunctionsFetchError as transport noise, but not FunctionsHttpError", () => {
+    const fetchErr = new Error("Failed to send a request to the Edge Function");
+    fetchErr.name = "FunctionsFetchError";
+    expect(isFunctionsFetchError(fetchErr)).toBe(true);
+
+    // A function that actually responded with a non-2xx is a REAL failure and
+    // must stay visible.
+    const httpErr = new Error("Edge Function returned a non-2xx status code");
+    httpErr.name = "FunctionsHttpError";
+    expect(isFunctionsFetchError(httpErr)).toBe(false);
+  });
+
+  // The "Object captured as exception with keys: code, details, hint, message"
+  // title: an object with the Supabase shape but a non-string code and an empty
+  // message slips past BOTH guards and used to reach Sentry raw.
+  it("never returns a raw object from normalizeError", () => {
+    const weird = { code: 42501, details: null, hint: null, message: "" };
+    const { error, extra } = normalizeError(weird);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("42501");
+    expect((error as Error).name).toBe("CapturedObject");
+    expect(extra?.captured_object).toEqual(weird);
+  });
+
+  it("titles a codeless unreadable object by its key shape so it still groups", () => {
+    const { error } = normalizeError({ foo: 1, bar: 2 });
+    expect((error as Error).message).toBe("Unreadable error object with keys: bar, foo");
   });
 });

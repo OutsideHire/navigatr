@@ -62,6 +62,41 @@ export interface SupabaseLikeError {
 
 /** True when `err` is a raw Supabase error object (has code + message and the
  *  details/hint keys PostgREST always includes), and is NOT already an Error. */
+/**
+ * Errors OUR OWN code throws to represent a business outcome the UI already
+ * handles with a deliberate, friendly message. Matched by the class's stable
+ * `name`, never by message text, because copy changes and names do not.
+ *
+ * These reach Sentry only because every react-query MUTATION rejection is
+ * reported (main.tsx MutationCache onError), including ones the caller catches
+ * and turns into an info toast. A rep seeing "already in your pipeline" is the
+ * dedupe working, not a failure.
+ *
+ * ADD ONLY a class whose EVERY throw site is an expected outcome. A genuine
+ * insert failure keeps its own name (SupabaseError, TypeError) and still reports.
+ */
+const EXPECTED_DOMAIN_ERROR_NAMES = new Set([
+  "DuplicateDealError", // pipeline dedupe: the business is already owned
+  "LeadSourceLockedError", // lead source is immutable after creation, by design
+]);
+
+export function isExpectedDomainError(err: unknown): boolean {
+  return err instanceof Error && EXPECTED_DOMAIN_ERROR_NAMES.has(err.name);
+}
+
+/**
+ * A network-layer failure reaching an Edge Function. supabase-js throws
+ * FunctionsFetchError ONLY when the fetch promise itself rejects, i.e. no HTTP
+ * response ever arrived: the rep lost signal mid-request, drove into a dead
+ * zone, or navigated away. A function that errors, times out server-side, or is
+ * mid-redeploy returns a response and surfaces as FunctionsHttpError instead,
+ * which we deliberately still report. So this is the same not-our-bug class as
+ * isTransientNetworkError, just wearing a Supabase name.
+ */
+export function isFunctionsFetchError(err: unknown): boolean {
+  return err instanceof Error && err.name === "FunctionsFetchError";
+}
+
 export function isSupabaseError(err: unknown): err is SupabaseLikeError {
   if (!err || typeof err !== "object" || err instanceof Error) return false;
   const e = err as Record<string, unknown>;
@@ -184,6 +219,26 @@ export function normalizeError(err: unknown): { error: unknown; extra?: Record<s
     error.name = "CapturedError";
     const rest = otherFields(err);
     return { error, extra: rest ? { captured_object: rest } : undefined };
+  }
+  // Last resort. A plain object that carries no USABLE message still has to be
+  // made readable: returning it raw is what makes Sentry write the useless
+  // "Object captured as exception with keys: code, details, hint, message",
+  // which is the exact title this function exists to prevent. It happens when
+  // the object has the Supabase shape but a non-string code or an empty
+  // message, so both guards above miss it. Title it by its code when there is
+  // one (groupable and actionable), otherwise by its key shape.
+  if (err && typeof err === "object" && !(err instanceof Error)) {
+    const src = err as Record<string, unknown>;
+    const rawCode = src.code;
+    const code =
+      typeof rawCode === "string" || typeof rawCode === "number" ? String(rawCode) : null;
+    const error = new Error(
+      code
+        ? `[${code}] unreadable error object`
+        : `Unreadable error object with keys: ${Object.keys(src).sort().join(", ")}`,
+    );
+    error.name = "CapturedObject";
+    return { error, extra: { captured_object: src } };
   }
   return { error: err };
 }
