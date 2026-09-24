@@ -148,17 +148,44 @@ function otherFields(err: { message: string }): Record<string, unknown> | undefi
  * The data is protected and the UI degrades to an empty widget, so it is not a
  * bug worth paging on.
  *
- * Deliberately NARROW — only `P0001 forbidden`. We do NOT suppress:
- *   - `42501 "permission denied for table X"`: that is a FORGOTTEN `GRANT` in a
- *     migration (a recurring deploy bug in this repo), which must stay visible.
- *     (An RLS row-read denial returns zero rows, not 42501, so 42501 is never
- *     the "expected" case.)
- *   - `P0001 not_authenticated`: for a query on an authed screen that means the
- *     app thinks it is signed in but the token did not attach — a real bug.
+ * Deliberately NARROW: `P0001 forbidden`, plus an EXACT-match set of RPC
+ * sentinels that are expected outcomes (see EXPECTED_RPC_SENTINELS). We do NOT
+ * suppress:
+ *   - `42501 "permission denied for table X"`. This must stay visible, though
+ *     the 2026-09-24 production incident corrected WHY: it is not usually a
+ *     forgotten GRANT. A grants audit proved `authenticated` held every
+ *     privilege and `anon` held none, so a 42501 means the request reached
+ *     PostgREST as `anon`, i.e. the rep's token did not attach and supabase-js
+ *     silently substituted the publishable key. That is the involuntary-logout
+ *     signal lib/sessionGuard.ts now repairs, and it is exactly what we want to
+ *     keep seeing if the repair ever stops working.
+ *   - `P0001 not_authenticated`: on an authed screen that is the same class of
+ *     bug, the app believing it is signed in when it is not.
  * Those still flow through and are made readable by normalizeError().
  */
+/**
+ * P0001 RPC sentinels that represent an EXPECTED outcome the UI already handles
+ * with a deliberate message, not a failure. Matched EXACTLY, never by substring:
+ * each string is the RPC's own `raise exception '<name>'`, so an exact set
+ * cannot accidentally swallow a neighbouring guard.
+ *
+ * THE BAR FOR ADDING ONE: every caller must treat it as a normal outcome. The
+ * `cannot_*` guards (cannot_deactivate_self, cannot_demote_sole_admin,
+ * cannot_change_own_role, cycle_detected, ...) do NOT qualify: hitting one means
+ * the UI offered an action it should have prevented, which is worth seeing.
+ */
+const EXPECTED_RPC_SENTINELS = new Set([
+  // Two people actioned the same invite, or it was already accepted/revoked.
+  // A race between admins, not a failure.
+  "invite_not_found_or_already_resolved",
+  // The invited person is already a member. Same invite flow, same race.
+  "already_in_organization",
+]);
+
 export function isExpectedPermissionError(err: unknown): boolean {
-  return isSupabaseError(err) && err.code === "P0001" && /\bforbidden\b/i.test(err.message);
+  if (!isSupabaseError(err) || err.code !== "P0001") return false;
+  if (/\bforbidden\b/i.test(err.message)) return true;
+  return EXPECTED_RPC_SENTINELS.has(err.message.trim());
 }
 
 /**
