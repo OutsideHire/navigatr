@@ -305,3 +305,42 @@ describe("expected-condition and unreadable-object filtering (2026-09-24 Sentry 
     expect((error as Error).message).toBe("Unreadable error object with keys: bar, foo");
   });
 });
+
+describe("expected RPC sentinels (P0001)", () => {
+  const supa = (code: string, message: string) => ({ code, message, details: null, hint: null });
+
+  it("drops an invite that was already actioned by someone else", () => {
+    expect(isExpectedPermissionError(supa("P0001", "invite_not_found_or_already_resolved"))).toBe(true);
+    expect(isExpectedPermissionError(supa("P0001", "already_in_organization"))).toBe(true);
+  });
+
+  it("still drops the original P0001 forbidden", () => {
+    expect(isExpectedPermissionError(supa("P0001", "forbidden"))).toBe(true);
+  });
+
+  // Hitting one of these means the UI offered an action it should have
+  // prevented. That is a real defect and must stay visible.
+  it("does NOT drop the cannot_* guard rails", () => {
+    for (const m of [
+      "cannot_deactivate_self",
+      "cannot_demote_sole_admin",
+      "cannot_change_own_role",
+      "cycle_detected",
+    ]) {
+      expect(isExpectedPermissionError(supa("P0001", m))).toBe(false);
+    }
+  });
+
+  // The 2026-09-24 incident: a 42501 means the request ran as `anon` because the
+  // rep's token did not attach. That is the involuntary-logout signal and must
+  // keep reporting, so we can tell if sessionGuard ever stops repairing it.
+  it("NEVER drops a 42501, whatever the message", () => {
+    expect(isExpectedPermissionError(supa("42501", "permission denied for table paths"))).toBe(false);
+    expect(isExpectedPermissionError(supa("42501", "forbidden"))).toBe(false);
+  });
+
+  it("matches the sentinel exactly, never as a substring", () => {
+    expect(isExpectedPermissionError(supa("P0001", "invite_not_found_or_already_resolved_somehow"))).toBe(false);
+    expect(isExpectedPermissionError(supa("P0001", "not already_in_organization"))).toBe(false);
+  });
+});
