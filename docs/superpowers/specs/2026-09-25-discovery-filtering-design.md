@@ -18,37 +18,48 @@ cannot actually work:
 Note the ask: the customer is asking US to block these centrally, not asking for
 a self-serve blocking tool. That reading is what keeps this scoped.
 
-## Root cause
+## What we verified against production
 
-Two separate failures, one shared cause.
+Both halves of the complaint were checked against the live `prospects` table
+before designing anything. The results split the ask in two.
 
-**1. The verdict is frozen at first sight.** `is_chain`, `in_profile` and the
-chain metadata are computed once per place at ingest (`classifyProspect` in
-`supabase/functions/_shared/icpFilter.ts`, called from
-`discover_prospects/index.ts`) and written into the `prospects` row. NOTHING
-ever recomputes them: no backfill migration, no cron, no admin RPC, no UI. The
-read path (`prospects_nearby`) reads the stored booleans and never re-consults
-the brand list.
+**Chains: the filter works. The complaint is largely a false alarm.**
+Every Home Depot and Ace Hardware row on production is correctly flagged
+(`is_chain = true`, `chain_reason = seed_list`), and the read path excludes
+them. A sweep of major brands (McDonalds, Subway, Starbucks, Dollar General,
+Walgreens, 7-Eleven, Taco Bell, Dominos, Pizza Hut, Tractor Supply, Ace
+Hardware) found exactly ONE escape:
 
-Consequences, both live today:
-- Adding a brand to `exclusion_seed` changes nothing for businesses already in
-  the table. Home Depot keeps appearing because its row was stamped before, or
-  without, a matching pattern.
-- The ~300-pattern brand batch (2026-06-01) and the ~130 new consumer-only
-  types (2026-07-29) both shipped with zero backfill, so every row cached before
-  those dates still carries the old verdict.
-- `geo_cell_cache` has a 30-day TTL and a cold pull only re-stamps the places
-  Google happens to return, so a wrong row can persist indefinitely.
+    brand      | escaped
+    True Value | 18
 
-**2. There is no residential concept at all.** A repo-wide search for
+True Value is a co-op whose member stores trade under local names
+("Adam True Value Hardware & Ag Sply"), which the substring block list misses.
+That is a GAP IN THE LIST, not a broken mechanism.
+
+An earlier draft of this document claimed chain detection was systemically
+broken. That was wrong and is corrected here.
+
+**Residential: confirmed, and it is the real problem.** A repo-wide search for
 residential / home-based / storefront returns only prose in `PATH_DESIGN.md`.
-The only thing resembling it is a handful of Google type strings in the
-consumer-only list.
+There is no implementation of any kind. This matches the customer's 70%.
 
-Worth confirming separately (one query, not part of this design): whether
-`exclusion_seed` on production actually contains the patterns we think it does.
-`ace hardware` appears only in migrations from the hand-pasted era, before the
-CI migration pipeline existed on 2026-08-23.
+## The frozen-verdict flaw, proven by those 18 rows
+
+`is_chain` and `in_profile` are computed once per place at ingest
+(`classifyProspect` in `supabase/functions/_shared/icpFilter.ts`) and written
+into the row. NOTHING ever recomputes them: no backfill migration, no cron, no
+admin RPC, no UI. The read path (`prospects_nearby`) reads the stored booleans
+and never re-consults the brand list.
+
+The True Value rows make this concrete rather than theoretical: adding
+`true value` to `exclusion_seed` today would NOT hide those 18 stores. They were
+stamped `is_chain = false` when first discovered and nothing will ever restamp
+them. The same applies to the ~130 consumer-only types added on 2026-07-29,
+which shipped with no backfill.
+
+This is the flaw the architecture below removes, and it is why the fix is
+worth doing even though the chain complaint turned out to be small.
 
 ## Decisions taken
 
