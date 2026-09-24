@@ -23,6 +23,12 @@ export interface PlacesNewPlace {
   userRatingCount?: number;
   rating?: number;
   primaryType?: string;
+  /** Google's own "serves customers at their location, not mine". */
+  pureServiceAreaBusiness?: boolean;
+  /** Places this one sits inside: a mall, plaza or office building. */
+  containingPlaces?: Array<{ id?: string; name?: string }>;
+  /** Wheelchair entrance/parking/restroom flags; any true implies a real entrance. */
+  accessibilityOptions?: Record<string, boolean>;
 }
 
 export interface PlacesNewResponse {
