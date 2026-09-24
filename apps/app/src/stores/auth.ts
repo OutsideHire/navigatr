@@ -15,6 +15,7 @@
 import { create } from "zustand";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase, AUTH_STORAGE_KEY } from "@/lib/supabase";
+import { setSessionGuardHooks } from "@/lib/sessionGuard";
 
 export type Profession = "payroll" | "merchant_services" | "treasury_management";
 
@@ -412,7 +413,7 @@ function trackRecovery(outcome: "recovered" | "failed"): void {
  *     then force a refresh-token exchange, retrying a few times with a short
  *     backoff to ride it out.
  */
-export async function recoverSession(
+async function runRecovery(
   opts: Partial<RecoveryOptions> = {},
 ): Promise<boolean> {
   const { attempts, backoffMs, timeoutMs } = { ...RECOVERY_DEFAULTS, ...opts };
@@ -443,6 +444,43 @@ export async function recoverSession(
   if (persisted) trackRecovery("failed");
   return false;
 }
+
+/**
+ * Single in-flight recovery, shared by every caller.
+ *
+ * runRecovery had no concurrency guard and was safe only by accident: exactly
+ * one caller (useSessionRecovery), rendered by one ProtectedRoute at a time.
+ * The anon-request guard changes that, because a screen firing several queries
+ * at once would otherwise launch that many independent recoveries, each up to
+ * attempts x (getSession + refreshSession) x timeoutMs.
+ *
+ * Worse than slow: Supabase ROTATES refresh tokens, so concurrent unserialised
+ * refreshes can invalidate one another and turn a recoverable blip into a real
+ * logout, which is the exact failure this whole fix exists to prevent. One
+ * attempt, many awaiters.
+ */
+let inFlightRecovery: Promise<boolean> | null = null;
+
+export function recoverSession(
+  opts: Partial<RecoveryOptions> = {},
+): Promise<boolean> {
+  if (inFlightRecovery) return inFlightRecovery;
+  inFlightRecovery = runRecovery(opts).finally(() => {
+    inFlightRecovery = null;
+  });
+  return inFlightRecovery;
+}
+
+// Let the transport-level guard repair a token-less request. Registered here
+// (not in lib/supabase.ts) because the guard must not import the auth store:
+// the store imports the client, so that would be a cycle.
+setSessionGuardHooks({
+  recover: () => recoverSession(),
+  getAccessToken: async () => {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
+  },
+});
 
 // ---------------------------------------------------------------------------
 // Module-level side effects: hydrate from Supabase + subscribe to changes.

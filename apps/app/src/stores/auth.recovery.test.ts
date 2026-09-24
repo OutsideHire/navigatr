@@ -209,3 +209,41 @@ describe("onAuthStateChange watcher (tolerant)", () => {
     expect(useAuth.getState().loading).toBe(false);
   });
 });
+
+describe("recoverSession is single-flight", () => {
+  // Before the transport-level guard existed, recoverSession was safe only by
+  // ACCIDENT: one caller (useSessionRecovery), one ProtectedRoute rendered at a
+  // time. Now any query can trigger it, so a screen firing several at once must
+  // still produce exactly ONE attempt. This is not just about speed: Supabase
+  // rotates refresh tokens, so concurrent unserialised refreshes can invalidate
+  // each other and cause the very involuntary logout this fix exists to prevent.
+  it("runs ONE attempt for many concurrent callers, and resolves them all", async () => {
+    installLocalStorage();
+    persistToken();
+    let release!: (v: unknown) => void;
+    getSession.mockReset().mockImplementationOnce(
+      () => new Promise((r) => { release = r as (v: unknown) => void; }),
+    );
+
+    const inFlight = [
+      recoverSession(), recoverSession(), recoverSession(),
+      recoverSession(), recoverSession(),
+    ];
+    release(ok(session()));
+    const results = await Promise.all(inFlight);
+
+    expect(results).toEqual([true, true, true, true, true]);
+    expect(getSession).toHaveBeenCalledTimes(1);
+    // One read succeeded, so no refresh-token exchange should have been needed.
+    expect(refreshSession).not.toHaveBeenCalled();
+  });
+
+  it("allows a fresh recovery once the previous one has settled", async () => {
+    installLocalStorage();
+    persistToken();
+    getSession.mockReset().mockResolvedValue(ok(session()));
+    await recoverSession();
+    await recoverSession();
+    expect(getSession).toHaveBeenCalledTimes(2);
+  });
+});
