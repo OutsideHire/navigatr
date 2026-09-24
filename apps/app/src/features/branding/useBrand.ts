@@ -58,7 +58,13 @@ export function useBrand() {
         .select("product_name, primary_color, logo_url, dark_logo_url, show_powered_by")
         .eq("org_id", orgId!)
         .maybeSingle();
-      if (error) throw new Error(error.message);
+      // Re-throw the RAW PostgREST error, like useActivePath and usePartners do.
+      // Wrapping it in a bare Error discarded `error.code`, which is why an
+      // org_branding failure reached Sentry as a codeless "permission denied for
+      // table org_branding" instead of grouping with its siblings as
+      // "[42501] ..." with supabase_code in extra. normalizeError does the
+      // readable-title work; it just needs the code to survive.
+      if (error) throw error;
       if (!data) return DEFAULT_BRAND;
       const row = data as BrandRow;
       return {
