@@ -12,6 +12,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { createSessionGuardFetch } from "./sessionGuard";
 
 const url = import.meta.env.VITE_SUPABASE_URL;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -49,6 +50,14 @@ export const supabase = createClient(SAFE_URL, SAFE_KEY, {
     detectSessionInUrl: true,
     storageKey: AUTH_STORAGE_KEY,
     flowType: "pkce",
+  },
+  global: {
+    // Repairs a request the SDK is about to send with the publishable key
+    // because it momentarily has no session. Without this the request reaches
+    // PostgREST as `anon` and comes back 42501, which is what broke /path,
+    // /pipeline and /admin/agents for reps in production. Adds no requests of
+    // its own; see lib/sessionGuard.ts.
+    fetch: createSessionGuardFetch({ anonKey: SAFE_KEY, storageKey: AUTH_STORAGE_KEY }),
   },
 });
 
