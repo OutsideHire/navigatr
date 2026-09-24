@@ -266,7 +266,14 @@ export function useMerchants(
     // retry manually (with a cooldown) if they want.
     retry: 0,
     staleTime: 5 * 60_000, // 5 min — the server-side cache is the real TTL
-    queryFn: async (): Promise<DiscoverResult> => {
+    // `signal` comes from react-query. Passing it to invoke means a discovery
+    // the rep walked away from (tapping Path -> Pipeline mid-fan-out) is
+    // CANCELLED instead of running on unobserved and then failing: react-query
+    // treats an aborted query as cancelled, not errored, so it no longer lands
+    // in Sentry stamped with whatever page the rep happened to reach. It also
+    // stops a walked-away-from cold pull from burning the rest of its Google
+    // quota on a ladder nobody is waiting for.
+    queryFn: async ({ signal }): Promise<DiscoverResult> => {
       // Auto-widen-to-fill: walk an escalating radius ladder, calling discovery
       // at each rung until we have `limit` servable prospects, widening stops
       // adding results, or we hit the max radius. When fillToLimit is off the
@@ -286,10 +293,12 @@ export function useMerchants(
       let prevCount = -1;
 
       for (let i = 0; i < ladder.length; i++) {
+        // Do not start another (expensive) rung for a rep who already left.
+        if (signal?.aborted) break;
         const r = ladder[i];
         const { data, error } = await supabase.functions.invoke<DiscoverResponse>(
           "discover_prospects",
-          { body: { lat: origin!.lat, lng: origin!.lng, radius_m: r, profession, industries, all_industries: allIndustries, include_chains: includeChains, limit } },
+          { body: { lat: origin!.lat, lng: origin!.lng, radius_m: r, profession, industries, all_industries: allIndustries, include_chains: includeChains, limit }, signal },
         );
         // The first rung failing is a real error; a later (widen) rung failing
         // keeps whatever the previous rung already returned.

@@ -21,7 +21,9 @@
 import * as Sentry from "@sentry/react";
 import {
   IGNORED_ERROR_PATTERNS,
+  isExpectedDomainError,
   isExpectedPermissionError,
+  isFunctionsFetchError,
   isTransientNetworkError,
   normalizeError,
   normalizeSupabaseSentryEvent,
@@ -133,6 +135,12 @@ export function captureException(
   // dead zone, tunnel, tower handoff). Not our bug; the next load works. This is
   // the primary route for these (a react-query read whose fetch failed).
   if (isTransientNetworkError(err)) return;
+  // The rep's connection dropped mid-request to an Edge Function. Same class as
+  // above: no response ever arrived, so it is not a backend failure.
+  if (isFunctionsFetchError(err)) return;
+  // A business outcome the UI already handled with a friendly message (pipeline
+  // dedupe, immutable lead source). Not a failure.
+  if (isExpectedDomainError(err)) return;
   // A raw Supabase error object would log as the useless "Object captured as
   // exception with keys: code, details, hint, message" — normalize it to a
   // readable, groupable Error and move the raw fields to extra.
