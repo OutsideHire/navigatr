@@ -15,6 +15,7 @@
 import { Calendar, Check, Loader2, MapPinOff, Phone, Plus, Radio, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge, Button, Card } from "@/components/navigatr";
+import { FilteredOutNotice } from "../FilteredOutNotice";
 import { DiscoveryRetryButton } from "../DiscoveryRetryButton";
 import { labelForCategory, STATUS_LABEL, STATUS_PILL_CLASS, type Merchant } from "../../mockData";
 import { formatDistance } from "@/lib/distance";
@@ -44,6 +45,13 @@ export interface PlanResultsStepProps {
   /** OPTIONAL — one-line explanation shown under the results count when the
    *  pool is short of the requested count or the search auto-widened. */
   discoveryHint?: string | null;
+  /** Escape hatch for the premises filter: how many were hidden, and the
+   *  control to pull them back. A rep picking a whole territory needs to know
+   *  the list was trimmed, or they will conclude the area is empty. */
+  hiddenHomeBased?: number;
+  hiddenChains?: number;
+  showingFiltered?: boolean;
+  onToggleFiltered?: () => void;
 }
 
 export function PlanResultsStep({
@@ -57,6 +65,10 @@ export function PlanResultsStep({
   onAddAll,
   onRemoveAll,
   discoveryHint,
+  hiddenHomeBased = 0,
+  hiddenChains = 0,
+  showingFiltered = false,
+  onToggleFiltered,
 }: PlanResultsStepProps) {
   if (isLoading) {
     return (
@@ -119,6 +131,14 @@ export function PlanResultsStep({
           {allAdded ? "Remove all" : `Add all (${merchants.length})`}
         </Button>
       </div>
+      {onToggleFiltered && (
+        <FilteredOutNotice
+          homeBased={hiddenHomeBased}
+          chains={hiddenChains}
+          showing={showingFiltered}
+          onToggle={onToggleFiltered}
+        />
+      )}
       {discoveryHint && (
         <p className="text-caption text-text-muted" data-testid="discovery-hint">
           {discoveryHint}

@@ -87,6 +87,9 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
   // Results count — how many nearby businesses to fetch/show. Default 25,
   // clamped to [1, 50] in useMerchants.
   const [resultsCount, setResultsCount] = React.useState(25);
+  // Escape hatch for the premises filter. The plan step is where a rep commits
+  // to a whole territory, so an unexplained short list is most costly here.
+  const [showFiltered, setShowFiltered] = React.useState(false);
 
   const industries = React.useMemo(
     () => selectedCategories(selection) as unknown as MerchantCategory[],
@@ -151,6 +154,7 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
   // --- Merchants (results step) ---------------------------------------------
   const {
     merchants: liveMerchants,
+    hidden: planHidden,
     isLoading: merchantsLoading,
     isError: merchantsError,
     refetch: refetchMerchants,
@@ -163,7 +167,7 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
     // requested count with non-chain businesses.
     // Only auto-widen on the results step, so the extra edge calls fire when the
     // rep is actually looking at results, not while they tune filters.
-  } = useMerchants(origin, { radiusM, industries, allIndustries, includeChains: false, limit: resultsCount, fillToLimit: stepKey === "results" });
+  } = useMerchants(origin, { radiusM, industries, allIndustries, includeChains: false, includeHomeBased: showFiltered, limit: resultsCount, fillToLimit: stepKey === "results" });
 
   // Distance-annotate + sort nearest-first for the results list.
   const resultMerchants: MerchantWithDistance[] = React.useMemo(() => {
@@ -468,6 +472,10 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
 
         {stepKey === "results" && (
           <PlanResultsStep
+              hiddenHomeBased={planHidden.homeBased}
+              hiddenChains={planHidden.chains}
+              showingFiltered={showFiltered}
+              onToggleFiltered={() => setShowFiltered((v) => !v)}
             merchants={resultMerchants}
             isLoading={merchantsLoading}
             isError={merchantsError}

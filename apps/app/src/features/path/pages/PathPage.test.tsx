@@ -91,7 +91,13 @@ type UseMerchantsMock = Omit<
 > &
   Partial<Pick<UseMerchantsFull, "hidden" | "effectiveRadiusM" | "requestedRadiusM" | "requestedLimit">>;
 const merchantsState = {
-  current: { merchants: [], isLoading: false, isError: false, refetch: vi.fn() } as UseMerchantsMock,
+  // `hidden` is always present on the real hook (it defaults to zeros), so the
+  // shared mock default carries it too. Without it the discover view's
+  // "N filtered out" notice reads through undefined.
+  current: {
+    merchants: [], isLoading: false, isError: false, refetch: vi.fn(),
+    hidden: { chains: 0, inPipeline: 0, homeBased: 0 },
+  } as UseMerchantsMock,
 };
 // Records every useMerchants(origin, opts) call so tests can assert PathPage
 // requests both a chains-included browse fetch AND a chain-free Create fetch.
