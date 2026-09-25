@@ -233,6 +233,11 @@ async function searchNearbyOneRequest(
         "places.userRatingCount",
         "places.rating",
         "places.primaryType",
+        // Premises signals (storefront vs house). All Pro-tier, and the mask
+        // already requests Enterprise-tier fields above, so these add no cost.
+        "places.pureServiceAreaBusiness",
+        "places.containingPlaces",
+        "places.accessibilityOptions",
       ].join(","),
     },
     body: JSON.stringify({
@@ -543,6 +548,13 @@ Deno.serve(async (req) => {
         website: p.websiteUri ?? null,
         rating_count: p.userRatingCount ?? null,
         rating: p.rating ?? null,
+        // Premises signals. Undefined stays NULL ("unknown"), never false: the
+        // read path must not hide a business just because Google was quiet.
+        pure_service_area: p.pureServiceAreaBusiness ?? null,
+        containing_places_count: p.containingPlaces ? p.containingPlaces.length : null,
+        has_accessibility: p.accessibilityOptions
+          ? Object.values(p.accessibilityOptions).some((v) => v === true)
+          : null,
         // primaryType is the best-guess category; fall back to the first raw
         // type so a lead never loses its category (CSV: primary_type fallback).
         primary_type: p.primaryType ?? p.types?.[0] ?? null,
