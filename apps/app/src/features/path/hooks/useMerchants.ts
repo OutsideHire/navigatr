@@ -75,7 +75,7 @@ interface DiscoverResponse {
   prospects?: ProspectRow[];
   /** How many in-radius businesses were hidden, so the UI can explain a short
    *  result set. `chains` is nonzero only when chains are excluded (Create). */
-  hidden?: { chains?: number; in_pipeline?: number };
+  hidden?: { chains?: number; in_pipeline?: number; home_based?: number };
 }
 
 /** What the discovery query resolves to: the mapped merchants plus the fill
@@ -95,6 +95,10 @@ export interface HiddenCounts {
   chains: number;
   /** Businesses already tied to an active deal in the org (pipeline de-dup). */
   inPipeline: number;
+  /** Home-based businesses hidden (0 when they are included). A rep cannot
+   *  walk into a house, so these are filtered by default and revealed on
+   *  demand via the "show filtered out" control. */
+  homeBased: number;
 }
 
 /**
@@ -199,6 +203,10 @@ export interface UseMerchantsOptions {
   /** When true, the read includes chains (flagged via isChain) so browse can
    *  show + badge them. Create stays chain-free via candidatePool. Default off. */
   includeChains?: boolean;
+  /** Include home-based businesses. The rep tapping "show N filtered out".
+   *  The filter is aggressive by design, so this is how anything it got wrong
+   *  is recovered. Default off. */
+  includeHomeBased?: boolean;
   /** Results count — how many nearest businesses to fetch/show. Default 25,
    *  clamped client-side to [1, MAX_RESULTS_LIMIT] (the Edge clamps again). */
   limit?: number;
@@ -243,6 +251,7 @@ export function useMerchants(
   // as-is; the Edge treats an empty/all request as "fetch everything".
   const industries = allIndustries ? [] : (opts.industries ?? []);
   const includeChains = opts.includeChains ?? false;
+  const includeHomeBased = opts.includeHomeBased ?? false;
   const fillToLimit = opts.fillToLimit === true;
   // Results count: default 25, clamped to [1, 50] before it hits the query key
   // + invoke body (the Edge clamps again as a backstop).
@@ -257,7 +266,7 @@ export function useMerchants(
   const lng = origin ? roundCoord(origin.lng) : null;
 
   const query = useQuery({
-    queryKey: ["path", "prospects", lat, lng, radiusM, profession, industries, allIndustries, includeChains, limit, fillToLimit],
+    queryKey: ["path", "prospects", lat, lng, radiusM, profession, industries, allIndustries, includeChains, includeHomeBased, limit, fillToLimit],
     enabled: origin != null,
     // Do NOT auto-retry a failed discovery. Each attempt re-runs an expensive
     // cold fan-out (many Google Places calls per cell x industry); an automatic
@@ -288,7 +297,7 @@ export function useMerchants(
         : [radiusM];
 
       let prospects: ProspectRow[] = [];
-      let hidden: HiddenCounts = { chains: 0, inPipeline: 0 };
+      let hidden: HiddenCounts = { chains: 0, inPipeline: 0, homeBased: 0 };
       let effectiveRadiusM = radiusM;
       let prevCount = -1;
 
@@ -298,7 +307,7 @@ export function useMerchants(
         const r = ladder[i];
         const { data, error } = await supabase.functions.invoke<DiscoverResponse>(
           "discover_prospects",
-          { body: { lat: origin!.lat, lng: origin!.lng, radius_m: r, profession, industries, all_industries: allIndustries, include_chains: includeChains, limit }, signal },
+          { body: { lat: origin!.lat, lng: origin!.lng, radius_m: r, profession, industries, all_industries: allIndustries, include_chains: includeChains, include_home_based: includeHomeBased, limit }, signal },
         );
         // The first rung failing is a real error; a later (widen) rung failing
         // keeps whatever the previous rung already returned.
@@ -310,6 +319,7 @@ export function useMerchants(
         hidden = {
           chains: data?.hidden?.chains ?? 0,
           inPipeline: data?.hidden?.in_pipeline ?? 0,
+          homeBased: data?.hidden?.home_based ?? 0,
         };
         effectiveRadiusM = r;
 
@@ -338,7 +348,7 @@ export function useMerchants(
     refetch: () => {
       void query.refetch();
     },
-    hidden: query.data?.hidden ?? { chains: 0, inPipeline: 0 },
+    hidden: query.data?.hidden ?? { chains: 0, inPipeline: 0, homeBased: 0 },
     effectiveRadiusM: query.data?.effectiveRadiusM ?? radiusM,
     requestedRadiusM: radiusM,
     requestedLimit: limit,

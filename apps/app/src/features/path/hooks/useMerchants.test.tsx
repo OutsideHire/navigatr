@@ -200,7 +200,7 @@ describe("useMerchants", () => {
     expect(invokeMock).toHaveBeenCalledWith(
       "discover_prospects",
       expect.objectContaining({
-        body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: false, include_chains: false, limit: 25 },
+        body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: false, include_chains: false, include_home_based: false, limit: 25 },
       }),
     );
     // The fix for the FunctionsFetchError noise: react-query's AbortSignal must
@@ -266,7 +266,7 @@ describe("useMerchants", () => {
     expect(invokeMock).toHaveBeenCalledWith(
       "discover_prospects",
       expect.objectContaining({
-        body: { lat: 30.2672, lng: -97.7431, radius_m: 1500, profession: "merchant_services", industries: [], all_industries: false, include_chains: false, limit: 25 },
+        body: { lat: 30.2672, lng: -97.7431, radius_m: 1500, profession: "merchant_services", industries: [], all_industries: false, include_chains: false, include_home_based: false, limit: 25 },
       }),
     );
   });
@@ -278,7 +278,7 @@ describe("useMerchants", () => {
     expect(invokeMock).toHaveBeenCalledWith(
       "discover_prospects",
       expect.objectContaining({
-        body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: true, include_chains: false, limit: 25 },
+        body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: true, include_chains: false, include_home_based: false, limit: 25 },
       }),
     );
   });
@@ -378,7 +378,7 @@ describe("useMerchants auto-widen (fillToLimit)", () => {
       { wrapper },
     );
     await waitFor(() => expect(result.current.merchants).toHaveLength(25));
-    expect(result.current.hidden).toEqual({ chains: 3, inPipeline: 2 });
+    expect(result.current.hidden).toEqual({ chains: 3, inPipeline: 2, homeBased: 0 });
   });
 
   it("keeps the previous rung's results when a widen step errors", async () => {

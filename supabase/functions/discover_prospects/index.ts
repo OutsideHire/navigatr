@@ -152,6 +152,9 @@ interface RequestBody {
   all_industries?: boolean;
   force_refresh?: boolean;
   include_chains?: boolean;
+  /** Return home-based businesses too. The rep tapping "show filtered out":
+   *  the filter is aggressive by design, so nothing it hides is unrecoverable. */
+  include_home_based?: boolean;
   /** Number of nearest prospects to return (results count). Default 25, clamped
    *  server-side to [1, MAX_LIMIT]. */
   limit?: number;
@@ -330,6 +333,7 @@ Deno.serve(async (req) => {
   // Find Near Me opts in to see chains (flagged in the UI); Create stays
   // chain-free client-side. Default false → prospects_nearby excludes chains.
   const includeChains = body?.include_chains === true;
+  const includeHomeBased = body?.include_home_based === true;
   // Results count: how many nearest prospects to return. Default 25, clamped to
   // [1, MAX_LIMIT] so a rep can widen the pool up to 50 without a 500-row pull.
   const readLimit = Math.min(MAX_LIMIT, Math.max(1, Math.floor(Number(body?.limit)) || DEFAULT_LIMIT));
@@ -618,6 +622,7 @@ Deno.serve(async (req) => {
   // A wide radius across many tiles can legitimately surface far more, so we
   // bound what's returned to the client here.
   const { data: nearby, error: rpcErr } = await userClient.rpc("prospects_nearby", {
+    p_include_home_based: includeHomeBased,
     p_lat: lat,
     p_lng: lng,
     p_radius_m: radiusM,
@@ -641,6 +646,7 @@ Deno.serve(async (req) => {
     p_profession: profession,
     p_include_chains: includeChains,
     p_categories: readCategories,
+    p_include_home_based: includeHomeBased,
   });
   const hiddenRow = Array.isArray(hiddenRows) ? hiddenRows[0] : null;
 
@@ -657,6 +663,7 @@ Deno.serve(async (req) => {
     hidden: {
       chains: hiddenRow?.chains_hidden ?? 0,
       in_pipeline: hiddenRow?.in_pipeline_hidden ?? 0,
+      home_based: hiddenRow?.home_based_hidden ?? 0,
     },
   });
 });

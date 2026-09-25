@@ -44,6 +44,7 @@ import {
 import { usePathOrigin } from "../hooks/usePathOrigin";
 import { LocationSearch } from "../components/LocationSearch";
 import { DiscoveryRetryButton } from "../components/DiscoveryRetryButton";
+import { FilteredOutNotice } from "../components/FilteredOutNotice";
 import { haversineMeters, nearestNeighborOrder } from "@/lib/distance";
 import { MerchantMap } from "../components/MerchantMap";
 import { MerchantList, type MerchantWithDistance } from "../components/MerchantList";
@@ -152,12 +153,17 @@ export function PathPage() {
   // Results count — how many nearby businesses the discovery fetch returns/shows
   // (the pool size, NOT the stop cap). Default 25, clamped to [1, 50] in the hook.
   const [discoverLimit, setDiscoverLimit] = React.useState(25);
+  // The escape hatch. Discovery hides home-based businesses by default (a rep
+  // cannot walk into a house), but the detection is inferred, so the rep can
+  // always pull them back. Session-only on purpose: the default is "filtered".
+  const [showFiltered, setShowFiltered] = React.useState(false);
   const {
     merchants: liveMerchants,
+    hidden: browseHidden,
     isLoading: merchantsLoading,
     isError: merchantsError,
     refetch: refetchMerchants,
-  } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, allIndustries: ingestAllIndustries, includeChains: false, limit: discoverLimit });
+  } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, allIndustries: ingestAllIndustries, includeChains: false, includeHomeBased: showFiltered, limit: discoverLimit });
   // Chains are excluded from ALL Path discovery (this browse fetch, Create
   // below, and Plan), org-wide, with no toggle: chain locations can't make local
   // buying decisions, so they are never surfaced. Create keeps its own fetch so
@@ -1146,6 +1152,21 @@ export function PathPage() {
             <MapIcon className="h-3.5 w-3.5" aria-hidden />
             {mapVisible ? "Hide map" : "Show map"}
           </button>
+          )}
+
+          {/* The escape hatch, ABOVE the list so it is visible whether the list
+              is full or empty. If everything nearby was filtered, the empty
+              state and this notice together explain why, instead of the rep
+              concluding there are no businesses in their territory. */}
+          {!merchantsLoading && !merchantsError && (
+            <FilteredOutNotice
+              // Defensive: this notice is cosmetic, so a missing count must
+              // never take the whole Path screen down with it.
+              homeBased={browseHidden?.homeBased ?? 0}
+              chains={browseHidden?.chains ?? 0}
+              showing={showFiltered}
+              onToggle={() => setShowFiltered((v) => !v)}
+            />
           )}
 
           {/* Discovery body — mobile single pane, desktop split. When nothing is
