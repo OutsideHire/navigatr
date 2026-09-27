@@ -97,18 +97,36 @@ export function PlanResultsStep({
   }
 
   if (merchants.length === 0) {
+    // An empty list does not mean an empty territory: the filters may have
+    // hidden everything nearby. Telling a rep to widen the radius when the
+    // businesses are right there but filtered sends them hunting for territory
+    // they already have, so the notice and its one-tap escape hatch have to
+    // render here too, not only above a populated list.
+    const filteredEverything = hiddenHomeBased + hiddenChains > 0 && !showingFiltered;
     return (
-      <Card padding="lg" className="mt-6 flex flex-col items-center gap-3 text-center">
-        <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-surface-sunken text-text-muted">
-          <MapPinOff className="h-6 w-6" aria-hidden />
-        </span>
-        <div className="flex flex-col gap-1">
-          <p className="text-heading-sm text-text-default">No businesses match</p>
-          <p className="text-body-md text-text-muted">
-            Go back and try a wider radius, a different area, or more business types.
-          </p>
-        </div>
-      </Card>
+      <div className="flex flex-col gap-2 md:mx-auto md:w-full md:max-w-2xl">
+        <Card padding="lg" className="mt-6 flex flex-col items-center gap-3 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-radius-full bg-surface-sunken text-text-muted">
+            <MapPinOff className="h-6 w-6" aria-hidden />
+          </span>
+          <div className="flex flex-col gap-1">
+            <p className="text-heading-sm text-text-default">No businesses match</p>
+            <p className="text-body-md text-text-muted">
+              {filteredEverything
+                ? "Everything nearby was filtered out. Show them below, or go back and try a wider radius or more business types."
+                : "Go back and try a wider radius, a different area, or more business types."}
+            </p>
+          </div>
+        </Card>
+        {onToggleFiltered && (
+          <FilteredOutNotice
+            homeBased={hiddenHomeBased}
+            chains={hiddenChains}
+            showing={showingFiltered}
+            onToggle={onToggleFiltered}
+          />
+        )}
+      </div>
     );
   }
 

@@ -137,4 +137,30 @@ describe("PlanResultsStep", () => {
     renderStep({ merchants: [] });
     expect(screen.getByText(/no businesses match/i)).toBeInTheDocument();
   });
+
+  // The empty list is exactly where the escape hatch matters most: if the
+  // filters hid everything nearby, a rep who is only told "no businesses
+  // match" concludes the territory is empty and goes looking somewhere else.
+  it("still offers the filtered-out escape hatch when the filters emptied the list", () => {
+    const onToggleFiltered = vi.fn();
+    renderStep({ merchants: [], hiddenHomeBased: 9, hiddenChains: 2, onToggleFiltered });
+    expect(screen.getByText(/no businesses match/i)).toBeInTheDocument();
+    expect(screen.getByText(/11 businesses filtered out/i)).toBeInTheDocument();
+    expect(screen.getByText(/9 home-based and 2 chains/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /show them/i }));
+    expect(onToggleFiltered).toHaveBeenCalled();
+  });
+
+  // "Try a wider radius" is the wrong advice when the businesses are already
+  // there and hidden, so the empty-state copy has to change with the cause.
+  it("blames the filters, not the territory, when the empty list was filtered", () => {
+    renderStep({ merchants: [], hiddenHomeBased: 4, hiddenChains: 0, onToggleFiltered: vi.fn() });
+    expect(screen.getByText(/everything nearby was filtered out/i)).toBeInTheDocument();
+  });
+
+  it("keeps the widen-your-search advice when nothing was filtered", () => {
+    renderStep({ merchants: [], hiddenHomeBased: 0, hiddenChains: 0, onToggleFiltered: vi.fn() });
+    expect(screen.getByText(/try a wider radius/i)).toBeInTheDocument();
+    expect(screen.queryByText(/filtered out/i)).not.toBeInTheDocument();
+  });
 });

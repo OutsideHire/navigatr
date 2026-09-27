@@ -639,7 +639,7 @@ Deno.serve(async (req) => {
   // (only when include_chains is false) and already-in-pipeline (the de-dup).
   // The client shows this when the result set is short of the requested count.
   // Non-fatal: a failure here defaults to zeros rather than failing discovery.
-  const { data: hiddenRows } = await userClient.rpc("prospects_nearby_hidden_counts", {
+  const { data: hiddenRows, error: hiddenErr } = await userClient.rpc("prospects_nearby_hidden_counts", {
     p_lat: lat,
     p_lng: lng,
     p_radius_m: radiusM,
@@ -648,6 +648,11 @@ Deno.serve(async (req) => {
     p_categories: readCategories,
     p_include_home_based: includeHomeBased,
   });
+  // Non-fatal, but NOT silent. Zeros here are indistinguishable from "nothing
+  // was filtered", so a broken count reads to the rep as a working filter with
+  // nothing to report, and the "N filtered out" notice just never appears. Log
+  // it so the function logs say which of the two actually happened.
+  if (hiddenErr) console.error("hidden_counts_failed", hiddenErr.message);
   const hiddenRow = Array.isArray(hiddenRows) ? hiddenRows[0] : null;
 
   return json({
