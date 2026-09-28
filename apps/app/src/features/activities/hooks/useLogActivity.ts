@@ -116,6 +116,16 @@ export function useLogActivity() {
         // Drop-in task must clear even if they logged a Call. Otherwise (e.g.
         // logging from a deal page) fall back to a same-type open task on the
         // deal, preserving the prior supersession behavior.
+        //
+        // EVERY LOOKUP AND THE WRITE ARE PINNED TO THE ACTING REP'S OWN TASKS.
+        // They were not, and it cost a real customer: on 2026-09-21 an admin
+        // logging visits closed four of a rep's drop-ins on her own deals,
+        // silently. She lost her next day's route and was never told. The
+        // fallback matched on deal + type + status alone, so on any deal two
+        // people touch, whoever logs first closes the other's task; and the
+        // replacement follow-up is created owned by whoever logged, so the work
+        // quietly changed hands. Owning the close is what keeps them separate:
+        // the deal owner keeps their task, the visitor gets their own.
         let taskIdToClose: string | null = null;
         if (input.closeTaskId) {
           taskIdToClose = input.closeTaskId;
@@ -126,20 +136,30 @@ export function useLogActivity() {
             .eq("deal_id", input.dealId)
             .eq("type", input.type)
             .eq("status", "open")
+            .eq("owner_id", userId)
             .order("target_at", { ascending: true })
             .limit(1)
             .maybeSingle();
           taskIdToClose = (openTask?.id as string | undefined) ?? null;
         }
         if (taskIdToClose) {
-          await supabase
+          // owner_id on the UPDATE, not just on the lookup: it covers the
+          // closeTaskId branch too (a task row the rep should not have been
+          // shown at all), and it means the database decides, not the caller.
+          // `.select()` tells us whether a row actually closed, so the activity
+          // is never stamped with a link to a task it did not close.
+          const { data: closedRows } = await supabase
             .from("task")
             .update({ status: "completed", completed_at: new Date().toISOString() })
-            .eq("id", taskIdToClose);
-          await supabase
-            .from("activities")
-            .update({ closed_task_id: taskIdToClose })
-            .eq("id", activityId);
+            .eq("id", taskIdToClose)
+            .eq("owner_id", userId)
+            .select("id");
+          if (closedRows && closedRows.length > 0) {
+            await supabase
+              .from("activities")
+              .update({ closed_task_id: taskIdToClose })
+              .eq("id", activityId);
+          }
         }
         // Create the next follow-up task(s). target_at mirrors the stored
         // follow_up_date exactly (score-stability contract).
@@ -213,6 +233,12 @@ export function useLogActivity() {
           await supabase.from("deals").update({ contact_email_invalid: true }).eq("id", input.dealId);
           recordEffects.push("Email address flagged as invalid");
         } else if (input.disposition === "do_not_call") {
+          // DELIBERATE CROSS-OWNER WRITE, unlike the supersession close above.
+          // Do-not-call is a property of the MERCHANT, not of a rep. Cancelling
+          // only the acting rep's call tasks would leave a colleague holding an
+          // open task to ring a merchant who just asked not to be rung, which
+          // is a compliance problem, not a tidiness one. Same for opt-out below.
+          // Left as-is on purpose: do not "fix" this to match the close above.
           await supabase.from("deals").update({ do_not_call: true }).eq("id", input.dealId);
           await supabase.from("task").update({ status: "cancelled", cancelled_at: nowIso })
             .eq("deal_id", input.dealId).eq("type", "call").eq("status", "open");
