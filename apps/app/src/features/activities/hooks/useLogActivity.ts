@@ -205,7 +205,6 @@ export function useLogActivity() {
 
         // Record-state effects (SP2 §7). Flags + suppression + stage advance.
         // These run regardless of a follow-up (terminal outcomes have none).
-        const nowIso = new Date().toISOString();
         if (input.disposition === "bad_number") {
           await supabase.from("deals").update({ contact_phone_invalid: true }).eq("id", input.dealId);
           recordEffects.push("Phone number flagged as invalid");
@@ -213,14 +212,30 @@ export function useLogActivity() {
           await supabase.from("deals").update({ contact_email_invalid: true }).eq("id", input.dealId);
           recordEffects.push("Email address flagged as invalid");
         } else if (input.disposition === "do_not_call") {
+          // DELIBERATE CROSS-OWNER WRITE. Do-not-call is a property of the
+          // MERCHANT, not of a rep: leaving a colleague holding an open task to
+          // ring a merchant who just asked not to be rung is a compliance
+          // problem, not a tidiness one, and nothing filters tasks by the flag
+          // at read time.
+          //
+          // It goes through an RPC because task_update is now owner-only, and
+          // should be. The function refuses unless the deal is ALREADY flagged
+          // for the channel, so this stays a narrow, named exception rather
+          // than handing a general "cancel anyone's task" capability back to
+          // the client. Order matters: flag first, then cancel.
           await supabase.from("deals").update({ do_not_call: true }).eq("id", input.dealId);
-          await supabase.from("task").update({ status: "cancelled", cancelled_at: nowIso })
-            .eq("deal_id", input.dealId).eq("type", "call").eq("status", "open");
+          await supabase.rpc("cancel_contact_tasks_for_deal", {
+            p_deal_id: input.dealId,
+            p_channel: "call",
+          });
           recordEffects.push("Marked Do Not Call; open call follow-ups cancelled");
         } else if (input.disposition === "unsubscribed") {
+          // Same exception, email channel. See the do_not_call branch above.
           await supabase.from("deals").update({ email_opt_out: true }).eq("id", input.dealId);
-          await supabase.from("task").update({ status: "cancelled", cancelled_at: nowIso })
-            .eq("deal_id", input.dealId).eq("type", "email").eq("status", "open");
+          await supabase.rpc("cancel_contact_tasks_for_deal", {
+            p_deal_id: input.dealId,
+            p_channel: "email",
+          });
           recordEffects.push("Marked email opt-out; open email follow-ups cancelled");
         } else if (input.disposition === "verbal_commitment") {
           // Advance to Proposal, never regress and never set won.
