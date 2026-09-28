@@ -57,6 +57,10 @@ export interface Deal {
   /** Street address — used by /path to surface deals as merchants.
    *  Null when the rep didn't fill it in. Not geocoded yet (no lat/lng). */
   address: string | null;
+  /** Business website, from Google Places at discovery. Null when Places had
+   *  none or the deal was created by hand. Optional like the other
+   *  later-added fields, so existing fixtures stay valid. */
+  website?: string | null;
   employeeCountRange: string;
   /** Free-text source. Common values surface as the dashboard's "Lead
    *  sources this quarter" breakdown. Nullable in the DB; empty string

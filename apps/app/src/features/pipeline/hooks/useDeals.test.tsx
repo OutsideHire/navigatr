@@ -116,6 +116,9 @@ describe("useDeals", () => {
         // FR-HIER-05: no owner embed on this row → ownerName null.
         ownerName: null,
         // LS-1 lead-source metadata — absent on this row → null.
+        // website: the deals column added 2026-09-29. Null here because the
+        // fixture row has none, which is the common case.
+        website: null,
         leadSourceNote: null,
         sourcePathId: null,
         createdAt: null,

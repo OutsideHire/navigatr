@@ -34,6 +34,7 @@ import {
   Check,
   Loader2,
   Mail,
+  Globe,
   MapPin,
   Pencil,
   Phone as PhoneIcon,
@@ -376,6 +377,29 @@ function TabBar() {
 // Overview sub-cards
 // ───────────────────────────────────────────────────────────────────────
 
+/**
+ * A safe, clickable website for the deal, or null.
+ *
+ * The value originates in third-party data (Google's websiteUri), so the scheme
+ * is checked rather than trusted: anything that is not http or https, including
+ * a javascript: URL, is refused outright rather than rendered as a link. The
+ * label drops the scheme and any trailing slash, because "bluefrogplumbing.com"
+ * is what a rep recognises and the raw URL just eats the row.
+ */
+function websiteOf(deal: Deal): { href: string; label: string } | null {
+  const raw = deal.website?.trim();
+  if (!raw) return null;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  const label = (url.host + url.pathname).replace(/\/$/, "");
+  return { href: url.href, label };
+}
+
 /** The deal's address, or null when it has none. Filters the Path display
  *  stand-in that older drop-ins wrote into this column as if it were data. */
 function addressOf(deal: Deal): string | null {
@@ -422,6 +446,24 @@ function ContactInfoCard({ deal }: { deal: Deal }) {
               <MapPin className="h-4 w-4" aria-hidden />
             </span>
             <span className="text-body-md text-text-default">{addressOf(deal)}</span>
+          </div>
+        )}
+        {/* Website. Requested from Places and stored on the prospect since
+            discovery shipped, but `deals` had no column for it, so the drop-in
+            insert dropped a field we had already fetched and paid for. */}
+        {websiteOf(deal) && (
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-blue-20 text-accent-blue">
+              <Globe className="h-4 w-4" aria-hidden />
+            </span>
+            <a
+              href={websiteOf(deal)!.href}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="truncate text-body-md text-text-default underline underline-offset-2 hover:text-text-muted"
+            >
+              {websiteOf(deal)!.label}
+            </a>
           </div>
         )}
         {/* Gated too: an unset range rendered as a bare " employees". */}

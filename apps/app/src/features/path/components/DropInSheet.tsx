@@ -148,6 +148,9 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
           // deal should say it has none (NULL) rather than carry the words
           // "Address unavailable" as though a rep could drive to them.
           address: merchant.address === ADDRESS_UNAVAILABLE ? undefined : merchant.address,
+          // Already fetched and billed for at discovery; until deals gained a
+          // website column it had nowhere to go and was silently dropped.
+          website: merchant.website,
           industry: merchant.category,
           contactName: merchant.name,
           contactPhone: merchant.phone ?? "",

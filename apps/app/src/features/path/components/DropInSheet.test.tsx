@@ -191,6 +191,17 @@ describe("DropInSheet", () => {
     );
   });
 
+  it("carries the merchant's website onto the new deal", async () => {
+    // Fetched and billed for at discovery; until deals gained a website column
+    // it had nowhere to go and was silently dropped on every drop-in.
+    renderSheet({ merchant: { ...merchant, website: "https://bluewater.example" } });
+    fireEvent.click(screen.getByText("Got their statement"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    expect(createDealMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ website: "https://bluewater.example" }),
+    );
+  });
+
   it("stores NO address rather than the Path display stand-in", async () => {
     // "Address unavailable" exists so the Path card has a string to draw when
     // Places gave no address. Persisting it onto the deal dresses a gap up as
