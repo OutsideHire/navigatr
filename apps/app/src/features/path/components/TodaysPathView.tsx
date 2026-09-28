@@ -32,8 +32,9 @@ import type { TodaysPathStatus } from "../hooks/useTodaysPath";
 import { tierAccent } from "../lib/tierStyles";
 import { reasonLine, stopLabel } from "../lib/reasonLine";
 import { agingReasonTextClass, agingStateFromBand } from "../lib/agingState";
-import { capacitySentence, fullDaySentence } from "../lib/dayCapacity";
+import { buildBlockedSentence, capacitySentence, fullDaySentence } from "../lib/dayCapacity";
 import { fillToCapacity } from "../lib/fillToCapacity";
+import type { FillStopReason } from "../lib/fillToCapacity";
 import { DayStopsMap } from "./DayStopsMap";
 
 /** Below this many open minutes, no further stop can fit (a stop needs at least
@@ -51,6 +52,40 @@ const MIN_STOP_MIN = 20;
  *  untouched. The env read lives here, in one place; PathPage threads it as a
  *  prop. */
 export const ADD_NEARBY_ENABLED = import.meta.env.VITE_PATH_ADD_NEARBY === "true";
+
+/**
+ * Record why "Build my day" placed nothing. The UI now explains it to the rep,
+ * so this exists for US: the same screenshot arrived for weeks and neither the
+ * rep nor we could tell which of three causes produced it. Now the next report
+ * carries its own diagnosis.
+ *
+ * budget-exhausted is deliberately NOT sent to Sentry. A rep tapping after
+ * their workday ends is an expected condition with a self-explaining message,
+ * and reporting it would bury the two cases that actually mean discovery is
+ * failing. It still leaves a breadcrumb on any error captured afterwards.
+ */
+function reportBuildBlocked(
+  reason: FillStopReason,
+  detail: { poolSize: number; minutesLeft: number },
+): void {
+  void import("@/lib/observability")
+    .then(({ addBreadcrumb, captureMessage }) => {
+      addBreadcrumb({
+        category: "path",
+        level: "info",
+        message: `build-my-day.${reason}`,
+        data: { poolSize: detail.poolSize, minutesLeft: Math.round(detail.minutesLeft) },
+      });
+      if (reason === "budget-exhausted") return;
+      // The reason is in the MESSAGE, not a tag, so Sentry groups the two
+      // causes as separate issues and each one can be triaged (or closed) on
+      // its own. The counts are on the breadcrumb above.
+      captureMessage(`Build my day found nothing to add: ${reason}`, "warning");
+    })
+    .catch(() => {
+      /* observability is best-effort; never let it break the day */
+    });
+}
 
 interface TodaysPathViewProps {
   /** Ordered run list (appointments interleaved with flexible stops) from useTodaysPath. */
@@ -141,12 +176,17 @@ export function TodaysPathView({
   // CSS-hidden — so MapLibre never re-initializes.
   const [dayView, setDayView] = React.useState<"list" | "map">("list");
 
+  // Why the last "Build my day" tap placed nothing, or null when it has not
+  // failed. Drives the explanation on the empty card INSTEAD of navigating.
+  const [buildBlocked, setBuildBlocked] = React.useState<FillStopReason | null>(null);
+
   React.useEffect(() => {
     setWorkingProposal(proposal);
     setPoolCursor(0);
     setFilledStops([]);
     setBudgetLeft(remainingMin);
     setFillNoticeDismissed(false);
+    setBuildBlocked(null);
     // `remainingMin` is intentionally excluded: budgetLeft resets on a fresh
     // proposal (a real refetch), not on every prop tick. The refetch that moves
     // remainingMin also delivers a new proposal, so this fires together.
@@ -234,10 +274,20 @@ export function TodaysPathView({
       setFilledStops((prev) => [...prev, ...res.added]);
       setPoolCursor(res.poolCursor);
       setBudgetLeft(res.remainingMin);
+      setBuildBlocked(null);
       return;
     }
-    onAddNearby();
-  }, [workingProposal, overflow, poolCursor, origin, budgetLeft, now, onAddNearby]);
+    // A PRIMARY ACTION MUST NOT NAVIGATE AS ITS ERROR HANDLER. This used to call
+    // onAddNearby(), silently swapping the rep onto the discover map: different
+    // title, different content, no sentence explaining it. Three unrelated
+    // failures (nothing nearby, everything nearby already used, no time left in
+    // the day) all produced that one identical jump, so every bug report looked
+    // the same, each fix moved the destination instead of the silence, and the
+    // report kept coming back. Stay put, say which one it was, and leave going
+    // to the map as something the rep CHOOSES.
+    setBuildBlocked(res.reason);
+    reportBuildBlocked(res.reason, { poolSize: overflow.length, minutesLeft: budgetLeft });
+  }, [workingProposal, overflow, poolCursor, origin, budgetLeft, now]);
   const flexibleStops = React.useMemo(
     () => visibleProposal.filter((s) => s.kind === "flexible"),
     [visibleProposal],
@@ -355,6 +405,26 @@ export function TodaysPathView({
           <Button variant="primary" size="lg" className="w-full" onClick={handleBuildMyDay}>
             Build my day
           </Button>
+          {/* The failure state the button never had. Each reason gets its own
+              sentence because they have opposite answers, and the map stays
+              reachable as a deliberate choice rather than an automatic jump. */}
+          {buildBlocked && (
+            <div
+              role="status"
+              data-testid="build-blocked"
+              className="flex flex-col items-center gap-3 rounded-radius-lg border border-border-subtle bg-surface-sunken px-4 py-3 text-center"
+            >
+              <p className="text-body-md text-text-muted">
+                {buildBlockedSentence(buildBlocked, {
+                  endHour: windowEndHour,
+                  minutesLeft: budgetLeft,
+                })}
+              </p>
+              <Button variant="tertiary" size="sm" onClick={onAddNearby}>
+                Find businesses nearby
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
         <>

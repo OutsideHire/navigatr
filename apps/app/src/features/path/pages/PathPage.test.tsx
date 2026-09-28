@@ -1005,11 +1005,14 @@ describe("PathPage discover — one-tap Start path (Path QA C3)", () => {
   });
 
   it("does not show the Start path control when there are no queued stops", () => {
-    // Empty queue → the entry landing renders; "Build my day" opens discover with
-    // an empty queue, where the one-tap Start must be hidden (only "Done" remains).
+    // Empty queue → the entry landing renders. "Build my day" no longer jumps to
+    // discover on its own (it explains why it could not build); the rep reaches
+    // discover by taking the offer. Then the one-tap Start must be hidden
+    // (only "Done" remains).
     todayState.current = { ...todayState.current, stops: [] as unknown as typeof todayState.current.stops };
     render(<PathPage />, { wrapper });
     fireEvent.click(screen.getByRole("button", { name: /build my day/i }));
+    fireEvent.click(screen.getByRole("button", { name: /find businesses nearby/i }));
     expect(screen.queryByRole("button", { name: /^start path$/i })).not.toBeInTheDocument();
     // The secondary back action reads "Done" (not "Back to path") on an empty queue.
     expect(screen.getByRole("button", { name: /^done$/i })).toBeInTheDocument();
@@ -1075,8 +1078,10 @@ describe("PathPage discover — added stops appear on return without a refresh (
     // add landing (useActivePath refetch grows the stops), then tap Next.
     todayState.current = { ...todayState.current, stops: [] as unknown as typeof todayState.current.stops };
     const { rerender } = render(<PathPage />, { wrapper });
-    // Entry landing → discover (the "Add nearby" flow).
+    // Entry landing → discover (the "Add nearby" flow). Two taps now: the build
+    // attempt explains itself, and the rep chooses to go looking.
     fireEvent.click(screen.getByRole("button", { name: /build my day/i }));
+    fireEvent.click(screen.getByRole("button", { name: /find businesses nearby/i }));
     // Empty queue → the back action reads "Done".
     expect(screen.getByRole("button", { name: /^done$/i })).toBeInTheDocument();
 

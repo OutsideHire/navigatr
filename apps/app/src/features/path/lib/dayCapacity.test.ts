@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { capacitySentence, fullDaySentence } from "./dayCapacity";
+import { buildBlockedSentence, capacitySentence, fullDaySentence } from "./dayCapacity";
 
 describe("capacitySentence", () => {
   it("reads the remaining minutes plainly, hedged with 'about'", () => {
@@ -40,5 +40,34 @@ describe("fullDaySentence", () => {
 
   it("formats a 5pm end", () => {
     expect(fullDaySentence(17)).toBe("that's a full day, nothing else fits before 5:00");
+  });
+});
+
+describe("buildBlockedSentence", () => {
+  const at6 = { endHour: 18, minutesLeft: 0 };
+
+  it("tells a rep with nothing nearby that widening is the move", () => {
+    expect(buildBlockedSentence("pool-empty", { endHour: 18, minutesLeft: 240 })).toMatch(
+      /couldn't find any businesses near you/i,
+    );
+  });
+
+  it("tells a rep who used up the pool that there is nothing left, without blaming the search", () => {
+    const s = buildBlockedSentence("pool-exhausted", { endHour: 18, minutesLeft: 240 });
+    expect(s).toMatch(/already been through everything nearby/i);
+    expect(s).not.toMatch(/couldn't find/i);
+  });
+
+  it("names the workday end when the day is over, and points at the setting", () => {
+    const s = buildBlockedSentence("budget-exhausted", at6);
+    expect(s).toMatch(/end at 6:00/);
+    expect(s).toMatch(/Path settings/);
+  });
+
+  it("distinguishes 'day is over' from 'not quite enough time left'", () => {
+    const over = buildBlockedSentence("budget-exhausted", at6);
+    const tight = buildBlockedSentence("budget-exhausted", { endHour: 18, minutesLeft: 10 });
+    expect(tight).not.toBe(over);
+    expect(tight).toMatch(/enough time left before 6:00/i);
   });
 });
