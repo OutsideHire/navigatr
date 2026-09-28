@@ -67,6 +67,50 @@ describe("pwa auto-update", () => {
     expect(mockUpdate).toHaveBeenCalledWith(true);
   });
 
+  // Suppressing update-check noise must not be able to break the update
+  // mechanism it decorates. All three run inside the visibilitychange listener,
+  // where anything thrown would skip applyUpdate() below it and a pending
+  // deploy would never land.
+
+  // NOT COVERED HERE, deliberately: that a REJECTED update check does not
+  // escape as an unhandled rejection. vitest intercepts process-level
+  // unhandled rejections for its own reporter, so a test asserting their
+  // absence passes against the pre-change source too, i.e. it proves nothing.
+  // Verified rather than assumed: both shapes of that assertion were written
+  // and both stayed green on `git show origin/main:apps/app/src/pwa.ts`.
+  // The `.catch()` in checkForUpdate is what handles it; the two tests below
+  // cover the parts that ARE observable from here.
+
+  // The synchronous hazard, and the one that costs a rep a stale build: a
+  // registration whose update() THROWS rather than rejecting. On the old
+  // handler this escapes the listener and applyUpdate() below it never runs.
+  it("still applies a pending update when update() throws synchronously", async () => {
+    await import("./pwa");
+    const reg = {
+      update: vi.fn(() => { throw new TypeError("Illegal invocation"); }),
+    } as unknown as ServiceWorkerRegistration;
+    opts.onRegisteredSW("/sw.js", reg);
+    setVisibility("visible");
+    opts.onNeedRefresh();
+    fireVisibilityChange();
+    expect(mockUpdate).toHaveBeenCalledWith(true);
+  });
+
+  // This one guards a bug introduced and fixed WITHIN this change rather than
+  // one that ever shipped: a bare `reg.update().catch(...)` blows up on a
+  // registration whose update() returns nothing, which is exactly what the
+  // mocks above do. Keeps the Promise.resolve wrapper from being "simplified"
+  // back out.
+  it("still applies a pending update when update() returns no promise at all", async () => {
+    await import("./pwa");
+    const reg = { update: vi.fn(() => undefined) } as unknown as ServiceWorkerRegistration;
+    opts.onRegisteredSW("/sw.js", reg);
+    setVisibility("visible");
+    opts.onNeedRefresh();
+    fireVisibilityChange();
+    expect(mockUpdate).toHaveBeenCalledWith(true);
+  });
+
   it("schedules a periodic update check when the SW registers", async () => {
     const setInt = vi.spyOn(globalThis, "setInterval");
     await import("./pwa");

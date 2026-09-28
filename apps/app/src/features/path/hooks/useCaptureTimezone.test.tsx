@@ -3,10 +3,17 @@ import { renderHook } from "@testing-library/react";
 
 const updateMutate = vi.fn();
 let stored: string | null = null;
-let loading = false;
+// The query's real outcome, not just "am I still loading". A read that ERRORED
+// also leaves `data` undefined, and the hook must tell the two apart.
+let status: "success" | "loading" | "error" = "success";
 
 vi.mock("./usePathPreferences", () => ({
-  usePathTimezone: () => ({ data: stored, isLoading: loading }),
+  usePathTimezone: () => ({
+    data: stored,
+    isLoading: status === "loading",
+    isError: status === "error",
+    isSuccess: status === "success",
+  }),
   useUpdateTimezone: () => ({ mutate: updateMutate }),
 }));
 
@@ -25,7 +32,7 @@ describe("useCaptureTimezone", () => {
   beforeEach(() => {
     updateMutate.mockClear();
     stored = null;
-    loading = false;
+    status = "success";
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -46,7 +53,20 @@ describe("useCaptureTimezone", () => {
 
   it("waits while the stored zone is still loading", () => {
     mockDeviceZone("America/Chicago");
-    loading = true;
+    status = "loading";
+    renderHook(() => useCaptureTimezone());
+    expect(updateMutate).not.toHaveBeenCalled();
+  });
+
+  // The regression. A failed read looks exactly like "nothing stored yet" from
+  // `data` alone, so the hook used to fire a doomed write on every broken Path
+  // load (one wasted request, one Sentry event). The data risk is worse than
+  // the noise: if the read fails but a later write lands, a rep who had set
+  // their zone deliberately gets it replaced by their device zone, which moves
+  // their whole day boundary.
+  it("does NOT write when the stored-zone read errored", () => {
+    mockDeviceZone("America/Chicago");
+    status = "error";
     renderHook(() => useCaptureTimezone());
     expect(updateMutate).not.toHaveBeenCalled();
   });

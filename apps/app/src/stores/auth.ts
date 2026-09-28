@@ -343,16 +343,93 @@ const RECOVERY_DEFAULTS: RecoveryOptions = { attempts: 3, backoffMs: 250, timeou
  *  on a spinner forever. On timeout we settle to "no user" and let recovery try. */
 const BOOTSTRAP_TIMEOUT_MS = 8000;
 
+/**
+ * Why a recovery attempt produced no session. This distinction is the whole
+ * point: "the server refused your refresh token" and "your phone never reached
+ * the server" are OPPOSITE conditions that call for opposite responses, and the
+ * old code collapsed both (plus a timeout) into a single `null`. A rep in a
+ * tunnel was therefore graded identically to a rep whose session had genuinely
+ * ended, and got signed out for losing signal.
+ */
+export type RecoveryFailure = "expired" | "transport" | "timeout" | "unknown";
+
+/** The result of a recovery run. "no-session" is a genuinely signed-out
+ *  visitor with nothing to recover, which is not a failure and stays quiet. */
+export type RecoveryOutcome = "recovered" | "no-session" | RecoveryFailure;
+
+/** Who asked. Lets Sentry separate a boot-time gate (ProtectedRoute) from a
+ *  mid-session token-less request (the transport guard), which are different
+ *  bugs with the same symptom. */
+export type RecoveryCaller = "protected_route" | "session_guard" | "unknown";
+
+/** Worst-known-wins across attempts. A server that answered and refused the
+ *  token outranks any number of later timeouts: the token really is dead. */
+const FAILURE_RANK: Record<RecoveryFailure, number> = {
+  unknown: 0,
+  timeout: 1,
+  transport: 2,
+  expired: 3,
+};
+
+/** A settled promise that never rejects, keeping WHICH of the three things
+ *  happened. `withTimeout` below is this with the reason thrown away, for the
+ *  one caller (bootstrap) that genuinely does not need it. */
+type Settled<T> =
+  | { kind: "ok"; value: T }
+  | { kind: "timeout" }
+  | { kind: "threw"; error: unknown };
+
+function settle<T>(p: Promise<T>, ms: number): Promise<Settled<T>> {
+  return new Promise<Settled<T>>((resolve) => {
+    const timer = setTimeout(() => resolve({ kind: "timeout" }), ms);
+    p.then(
+      (value) => { clearTimeout(timer); resolve({ kind: "ok", value }); },
+      (error: unknown) => { clearTimeout(timer); resolve({ kind: "threw", error }); },
+    );
+  });
+}
+
 /** Resolve to null if `p` doesn't settle within `ms`. Never rejects; a hung or
  *  throwing SDK call becomes "no result this attempt" rather than an exception. */
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
-  return new Promise<T | null>((resolve) => {
-    const timer = setTimeout(() => resolve(null), ms);
-    p.then(
-      (v) => { clearTimeout(timer); resolve(v); },
-      () => { clearTimeout(timer); resolve(null); },
-    );
-  });
+  return settle(p, ms).then((s) => (s.kind === "ok" ? s.value : null));
+}
+
+/**
+ * Grade an auth failure. The rule: only the server telling us the token is bad
+ * counts as "expired". Anything that means we never got a real answer keeps the
+ * token's fate unknown, so we must not sign the rep out over it.
+ *
+ * 429 is deliberately graded transport, not expired. It is a 4xx, but a
+ * rate-limited refresh says nothing about whether the token is still valid, and
+ * treating it as a sign-out would log reps out over a quota blip.
+ */
+function classifyAuthError(error: unknown): RecoveryFailure {
+  if (!error || typeof error !== "object") return "unknown";
+  const e = error as { name?: unknown; status?: unknown; message?: unknown };
+  // auth-js raises this for a dead fetch (status 0) and for 502/503/504/520-524/530.
+  if (e.name === "AuthRetryableFetchError") return "transport";
+  const status = typeof e.status === "number" ? e.status : null;
+  if (status !== null) {
+    if (status === 0 || status === 429 || status >= 500) return "transport";
+    // A 4xx from /auth/v1/token is the server refusing the refresh token:
+    // invalid_grant, revoked, user deleted. That IS a real sign-out.
+    if (status >= 400) return "expired";
+  }
+  const message = typeof e.message === "string" ? e.message.toLowerCase() : "";
+  if (/failed to fetch|load failed|network|timeout|aborted|connection/.test(message)) {
+    return "transport";
+  }
+  return "unknown";
+}
+
+/** Grade a settled call that did not yield a session. */
+function gradeSettled(s: Settled<{ error: unknown }>): RecoveryFailure {
+  if (s.kind === "timeout") return "timeout";
+  if (s.kind === "threw") return classifyAuthError(s.error);
+  // Resolved normally but sessionless: the SDK puts the reason in `error`,
+  // which the old code read straight past. invalid_grant lives here.
+  return classifyAuthError(s.value.error);
 }
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -384,16 +461,36 @@ function adoptSession(session: Session): void {
  *  have logged the rep out; "failed" = a rep with a persisted token still could
  *  not be recovered (the rare, high-signal case). Lazy import keeps Sentry out
  *  of the bundle when observability is disabled. */
-function trackRecovery(outcome: "recovered" | "failed"): void {
+function trackRecovery(
+  outcome: "recovered" | "failed",
+  detail: { caller: RecoveryCaller; attempts: number; reason?: RecoveryFailure },
+): void {
+  // navigator.onLine is a weak signal (it only knows about the link, not
+  // reachability) but it cheaply separates "airplane mode" from "our auth
+  // endpoint is unhappy", which no other tag on this event can do.
+  const online =
+    typeof navigator === "undefined" || typeof navigator.onLine !== "boolean"
+      ? "unknown"
+      : String(navigator.onLine);
   void import("@/lib/observability")
     .then(({ addBreadcrumb, captureMessage }) => {
       addBreadcrumb({
         category: "auth",
         level: outcome === "failed" ? "warning" : "info",
         message: `session.${outcome}`,
+        data: { caller: detail.caller, attempts: detail.attempts, reason: detail.reason ?? null },
       });
       if (outcome === "failed") {
-        captureMessage("Session recovery failed despite a persisted token", "warning");
+        // TAGS, not extra: Sentry alert rules and search can only filter on
+        // tags, and the whole point of this event is to split "expired"
+        // (expected, close it) from "transport" (a rep logged out by bad
+        // signal). Same pattern as the action tag from PR #183.
+        captureMessage("Session recovery failed despite a persisted token", "warning", {
+          "recovery.reason": detail.reason ?? "unknown",
+          "recovery.caller": detail.caller,
+          "recovery.attempts": String(detail.attempts),
+          "recovery.online": online,
+        });
       }
     })
     .catch(() => {
@@ -414,26 +511,39 @@ function trackRecovery(outcome: "recovered" | "failed"): void {
  *     backoff to ride it out.
  */
 async function runRecovery(
-  opts: Partial<RecoveryOptions> = {},
-): Promise<boolean> {
+  opts: Partial<RecoveryOptions> & { caller?: RecoveryCaller } = {},
+): Promise<RecoveryOutcome> {
   const { attempts, backoffMs, timeoutMs } = { ...RECOVERY_DEFAULTS, ...opts };
+  const caller = opts.caller ?? "unknown";
   const persisted = hasPersistedSession();
   const maxAttempts = persisted ? attempts : 1;
 
+  // Worst grade seen across every attempt. Both the read and the refresh are
+  // graded, not just the refresh: when getSession itself drives the refresh
+  // internally, the real reason surfaces on the READ, and grading only the
+  // refresh would report "Auth session missing" for most real failures.
+  let reason: RecoveryFailure = "unknown";
+  const note = (next: RecoveryFailure) => {
+    if (FAILURE_RANK[next] > FAILURE_RANK[reason]) reason = next;
+  };
+
   for (let i = 0; i < maxAttempts; i++) {
-    const read = await withTimeout(supabase.auth.getSession(), timeoutMs);
-    if (read?.data.session) {
-      adoptSession(read.data.session);
-      if (persisted) trackRecovery("recovered");
-      return true;
+    const read = await settle(supabase.auth.getSession(), timeoutMs);
+    if (read.kind === "ok" && read.value.data.session) {
+      adoptSession(read.value.data.session);
+      if (persisted) trackRecovery("recovered", { caller, attempts: i + 1 });
+      return "recovered";
     }
+    note(gradeSettled(read));
+
     if (persisted) {
-      const refreshed = await withTimeout(supabase.auth.refreshSession(), timeoutMs);
-      if (refreshed?.data.session) {
-        adoptSession(refreshed.data.session);
-        trackRecovery("recovered");
-        return true;
+      const refreshed = await settle(supabase.auth.refreshSession(), timeoutMs);
+      if (refreshed.kind === "ok" && refreshed.value.data.session) {
+        adoptSession(refreshed.value.data.session);
+        trackRecovery("recovered", { caller, attempts: i + 1 });
+        return "recovered";
       }
+      note(gradeSettled(refreshed));
     }
     if (i < maxAttempts - 1) await delay(backoffMs);
   }
@@ -441,8 +551,9 @@ async function runRecovery(
   // A persisted token that still couldn't produce a session is the genuine
   // involuntary-logout signal worth watching; a plain signed-out visitor
   // (no persisted token) is not, so it stays quiet.
-  if (persisted) trackRecovery("failed");
-  return false;
+  if (!persisted) return "no-session";
+  trackRecovery("failed", { caller, attempts: maxAttempts, reason });
+  return reason;
 }
 
 /**
@@ -459,11 +570,11 @@ async function runRecovery(
  * logout, which is the exact failure this whole fix exists to prevent. One
  * attempt, many awaiters.
  */
-let inFlightRecovery: Promise<boolean> | null = null;
+let inFlightRecovery: Promise<RecoveryOutcome> | null = null;
 
 export function recoverSession(
-  opts: Partial<RecoveryOptions> = {},
-): Promise<boolean> {
+  opts: Partial<RecoveryOptions> & { caller?: RecoveryCaller } = {},
+): Promise<RecoveryOutcome> {
   if (inFlightRecovery) return inFlightRecovery;
   inFlightRecovery = runRecovery(opts).finally(() => {
     inFlightRecovery = null;
@@ -475,7 +586,18 @@ export function recoverSession(
 // (not in lib/supabase.ts) because the guard must not import the auth store:
 // the store imports the client, so that would be a cycle.
 setSessionGuardHooks({
-  recover: () => recoverSession(),
+  // The guard only needs the boolean "did this get repaired"; the graded
+  // outcome is for the UI, which has to decide hold-vs-redirect.
+  recover: async () => (await recoverSession({ caller: "session_guard" })) === "recovered",
+  // Why the guard asks the STORE and not just localStorage: the SDK deletes
+  // the storage row before the app learns about it (a non-retryable refresh
+  // failure calls _removeSession, and SIGNED_OUT only lands on a later tick),
+  // and a WebKit PWA can fail a storage read outright while the session is
+  // perfectly alive. In both cases storage says "signed out" while the app is
+  // still showing a signed-in rep, and the guard used to wave those requests
+  // through as anon straight into a 42501. If the app believes someone is
+  // signed in, a request carrying the publishable key is wrong, full stop.
+  believesSignedIn: () => useAuth.getState().user != null,
   getAccessToken: async () => {
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token ?? null;
