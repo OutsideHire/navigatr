@@ -46,6 +46,7 @@ import { repOutcomeLabel, repOutcomeSubtitle } from "../lib/outcomeRepLabels";
 import { outcomeFollowUpMeta } from "../lib/outcomeFollowUpMeta";
 import { todayISO } from "../lib/today";
 import { useCreateDeal, DuplicateDealError } from "@/features/pipeline/hooks/useCreateDeal";
+import { ADDRESS_UNAVAILABLE } from "../hooks/useMerchants";
 import { useLogActivity } from "@/features/activities/hooks/useLogActivity";
 import { useFollowupSync } from "@/features/appointments/useFollowupSync";
 import { useProfile } from "@/features/auth/useProfile";
@@ -143,7 +144,10 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
           : calculateFollowUpDate(disposition);
         const { id: dealId } = await createDeal.mutateAsync({
           companyName: merchant.name,
-          address: merchant.address,
+          // Never persist the display stand-in. Places gave no address, so the
+          // deal should say it has none (NULL) rather than carry the words
+          // "Address unavailable" as though a rep could drive to them.
+          address: merchant.address === ADDRESS_UNAVAILABLE ? undefined : merchant.address,
           industry: merchant.category,
           contactName: merchant.name,
           contactPhone: merchant.phone ?? "",

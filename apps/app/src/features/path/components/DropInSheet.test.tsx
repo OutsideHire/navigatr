@@ -6,6 +6,7 @@
 //   - Voice note is a disabled "Coming soon" placeholder.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { ADDRESS_UNAVAILABLE } from "../hooks/useMerchants";
 import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
 
 // ── Mocks ───────────────────────────────────────────────────────────
@@ -179,6 +180,28 @@ describe("DropInSheet", () => {
     expect(syncFollowupMock).not.toHaveBeenCalled();
     expect(onLogged).toHaveBeenCalledWith("do_not_contact");
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("carries the merchant's real address onto the new deal", async () => {
+    renderSheet();
+    fireEvent.click(screen.getByText("Got their statement"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    expect(createDealMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ address: "123 Main St" }),
+    );
+  });
+
+  it("stores NO address rather than the Path display stand-in", async () => {
+    // "Address unavailable" exists so the Path card has a string to draw when
+    // Places gave no address. Persisting it onto the deal dresses a gap up as
+    // somewhere a rep could drive to, and it is what the deal record then shows
+    // forever. undefined becomes NULL in the insert.
+    renderSheet({ merchant: { ...merchant, address: ADDRESS_UNAVAILABLE } });
+    fireEvent.click(screen.getByText("Got their statement"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    expect(createDealMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ address: undefined }),
+    );
   });
 
   it("follow-up disposition + Log Stop creates deal + activity (voiceNoteUrl null)", async () => {

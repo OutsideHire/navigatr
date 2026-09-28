@@ -131,12 +131,21 @@ export function categoryFromPlaces(raw: string | null | undefined): MerchantCate
  * Discovered prospects are always cold ("untouched"), have real coords,
  * and carry the Places stable id so the queue survives a cache refresh.
  */
+/**
+ * Stand-in when Places gave no address. It exists only because Merchant.address
+ * is a required string for the Path cards; it is DISPLAY text, not data. Named
+ * and exported so the places that must refuse to persist it (the drop-in deal
+ * insert) and the places that must not re-display it (an already-polluted deal
+ * row) cannot drift from the substitution below.
+ */
+export const ADDRESS_UNAVAILABLE = "Address unavailable";
+
 export function prospectToMerchant(p: ProspectRow): Merchant {
   return {
     id: p.id,
     name: p.name,
     category: categoryFromPlaces(p.category),
-    address: p.address ?? "Address unavailable",
+    address: p.address ?? ADDRESS_UNAVAILABLE,
     lat: p.lat,
     lng: p.lng,
     phone: p.phone ?? "",
