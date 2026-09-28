@@ -33,6 +33,9 @@ export interface CreatePathInput {
 }
 export interface StopSnapshot {
   prospectId: string;
+  /** Google place id. Snapshotted so a drop-in logged from the RUNNING view can
+   *  still stamp the de-dup anchor on the deal it creates. */
+  placeId: string | null;
   name: string;
   address: string | null;
   phone: string | null;
@@ -82,7 +85,7 @@ export function usePathMutations() {
   const addStops = useMutation({
     mutationFn: async (input: AddStopsInput): Promise<void> => {
       const rows = input.stops.map((s, i) => ({
-        path_id: input.pathId, prospect_id: s.prospectId, name: s.name, address: s.address,
+        path_id: input.pathId, prospect_id: s.prospectId, place_id: s.placeId, name: s.name, address: s.address,
         phone: s.phone, lat: s.lat, lng: s.lng, category: s.category, primary_type: s.primaryType,
         position: input.basePosition + i,
       }));

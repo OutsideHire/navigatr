@@ -657,7 +657,7 @@ export function PathPage() {
         .map((id) => byId.get(id))
         .filter((m): m is NonNullable<typeof m> => Boolean(m))
         .map((m) => ({
-          prospectId: m.id, name: m.name, address: m.address ?? null,
+          prospectId: m.id, placeId: m.placeId ?? null, name: m.name, address: m.address ?? null,
           phone: m.phone ?? null, lat: m.lat, lng: m.lng, category: m.category, primaryType: m.primaryType ?? null,
         }));
       // Persist the whole route in two round-trips (clear + one batched addMany),
@@ -722,6 +722,7 @@ export function PathPage() {
           const m = byId.get(s.id);
           return {
             prospectId: s.id,
+            placeId: m?.placeId ?? null,
             name: s.name,
             address: m?.address ?? null,
             phone: m?.phone ?? null,

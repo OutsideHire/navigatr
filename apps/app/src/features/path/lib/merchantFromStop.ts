@@ -10,6 +10,9 @@ import type { TodayStop } from "../hooks/useTodayPath";
 export function merchantFromStop(stop: TodayStop): Merchant {
   return {
     id: stop.merchantId,
+    // Carries the de-dup anchor into the running view. Without it every deal
+    // created from the driving carousel landed with place_id NULL.
+    placeId: stop.placeId ?? undefined,
     name: stop.name,
     category: stop.category as MerchantCategory,
     address: stop.address ?? "",

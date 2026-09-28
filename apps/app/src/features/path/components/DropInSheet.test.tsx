@@ -191,6 +191,19 @@ describe("DropInSheet", () => {
     );
   });
 
+  it("passes the coordinates it already holds, so the deal is routable", async () => {
+    // useCreateDeal only geocodes when there is NO placeId. A discovery-sourced
+    // drop-in has one, so it skipped geocoding and landed with null lat/lng
+    // despite exact Google coordinates being in hand. Stamping place_id on the
+    // driving route as well would have spread that to every drop-in.
+    renderSheet();
+    fireEvent.click(screen.getByText("Got their statement"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    expect(createDealMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ lat: merchant.lat, lng: merchant.lng }),
+    );
+  });
+
   it("carries the merchant's website onto the new deal", async () => {
     // Fetched and billed for at discovery; until deals gained a website column
     // it had nowhere to go and was silently dropped on every drop-in.

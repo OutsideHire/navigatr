@@ -157,6 +157,7 @@ export function MerchantDetailSheet({
                 onClick={() => {
                   void todayPath.add({
                     prospectId: merchant.id,
+                    placeId: merchant.placeId ?? null,
                     name: merchant.name,
                     address: merchant.address ?? null,
                     lat: merchant.lat,

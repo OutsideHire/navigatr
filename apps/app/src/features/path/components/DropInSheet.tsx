@@ -162,6 +162,14 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
           leadSource: "path",
           sourcePathId: todayPath.pathId,
           placeId: merchant.placeId,
+          // Pass the coords we already hold. useCreateDeal only geocodes when
+          // there is NO placeId, so a deal that carries one skipped geocoding
+          // and landed with null lat/lng: not routable, despite exact Google
+          // coordinates having been in hand the whole time. That already
+          // affected every plan-route drop-in, and stamping place_id on the
+          // driving route (this change) would have spread it there too.
+          lat: merchant.lat,
+          lng: merchant.lng,
         });
         await logActivity.mutateAsync({
           dealId,

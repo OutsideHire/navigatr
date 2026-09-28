@@ -320,6 +320,7 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
       const optimized = origin ? orderStops(origin, orderedStops) : orderedStops;
       const stops: StopSnapshot[] = optimized.map((m) => ({
         prospectId: m.id,
+        placeId: m.placeId ?? null,
         name: m.name,
         address: m.address ?? null,
         phone: m.phone ?? null,

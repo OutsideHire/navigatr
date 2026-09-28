@@ -51,7 +51,7 @@ describe("pathTypes mappers", () => {
     };
     const s = rowToStop(row);
     expect(s).toEqual({
-      id: "s1", pathId: "p1", prospectId: "pr1", name: "Uratex Showroom",
+      id: "s1", pathId: "p1", prospectId: "pr1", placeId: null, name: "Uratex Showroom",
       address: "123 Rd", phone: "+15551234567", lat: 30.2, lng: -97.7, category: "manufacturing_wholesale",
       primaryType: "manufacturer", position: 0, status: "visited",
       disposition: "met_dm", notes: null, dealCreated: true, addedAt: "2026-06-03T01:00:00Z",
