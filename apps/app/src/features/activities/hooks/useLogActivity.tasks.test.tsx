@@ -25,9 +25,16 @@ let taskUpdateFilters: Record<string, unknown> | null;
 let activityUpdatePayload: Record<string, unknown> | null;
 let dealUpdatePayload: Record<string, unknown> | null;
 let dealStage: string;
+/** Calls to supabase.rpc(), so the compliance cancel can be asserted now that
+ *  it no longer goes through a direct task UPDATE. */
+let rpcCalls: Array<{ fn: string; args: Record<string, unknown> }>;
 
 vi.mock("@/lib/supabase", () => ({
   supabase: {
+    rpc: (fn: string, args: Record<string, unknown>) => {
+      rpcCalls.push({ fn, args });
+      return Promise.resolve({ data: 0, error: null });
+    },
     from: (table: string) => {
       const filters: Record<string, unknown> = {};
       let updating = false;
@@ -107,6 +114,7 @@ beforeEach(() => {
   activityUpdatePayload = null;
   dealUpdatePayload = null;
   dealStage = "new";
+  rpcCalls = [];
 });
 
 describe("useLogActivity record-state effects (SP2)", () => {
@@ -116,11 +124,37 @@ describe("useLogActivity record-state effects (SP2)", () => {
     expect(dealUpdatePayload).toMatchObject({ contact_phone_invalid: true });
   });
 
-  it("Do not call sets the flag and cancels open call tasks", async () => {
+  it("Do not call sets the flag and cancels open call tasks through the guarded RPC", async () => {
+    // The cancel crosses owners on purpose (do-not-call belongs to the
+    // MERCHANT), so it cannot be a direct task UPDATE any more: task_update is
+    // owner-only. It goes through cancel_contact_tasks_for_deal, which refuses
+    // unless the deal is already flagged, which is why the flag is written
+    // FIRST. A direct update here would silently cancel nothing.
     const { result } = renderHook(() => useLogActivity(), { wrapper });
     await result.current.mutateAsync({ dealId: "deal-1", type: "call", disposition: "do_not_call", followUpDate: null });
     expect(dealUpdatePayload).toMatchObject({ do_not_call: true });
-    expect(taskUpdatePayload).toMatchObject({ status: "cancelled" });
+    expect(taskUpdatePayload).toBeNull();
+    expect(rpcCalls).toEqual([
+      { fn: "cancel_contact_tasks_for_deal", args: { p_deal_id: "deal-1", p_channel: "call" } },
+    ]);
+  });
+
+  it("Unsubscribed does the same for the email channel", async () => {
+    const { result } = renderHook(() => useLogActivity(), { wrapper });
+    await result.current.mutateAsync({ dealId: "deal-1", type: "email", disposition: "unsubscribed", followUpDate: null });
+    expect(dealUpdatePayload).toMatchObject({ email_opt_out: true });
+    expect(rpcCalls).toEqual([
+      { fn: "cancel_contact_tasks_for_deal", args: { p_deal_id: "deal-1", p_channel: "email" } },
+    ]);
+  });
+
+  it("does not reach for the compliance RPC on an ordinary outcome", async () => {
+    const { result } = renderHook(() => useLogActivity(), { wrapper });
+    await result.current.mutateAsync({
+      dealId: "deal-1", type: "call", disposition: "positive_engagement",
+      followUpDate: "2026-05-22T00:00:00.000Z",
+    });
+    expect(rpcCalls).toEqual([]);
   });
 
   it("Verbal commitment advances an early-stage deal to Proposal", async () => {
@@ -323,13 +357,20 @@ describe("useLogActivity only ever closes the acting rep's OWN tasks", () => {
     // above. Do-not-call is a property of the merchant, not of a rep: leaving a
     // colleague holding an open task to ring a merchant who just asked not to
     // be rung is a compliance problem, not a tidiness one.
+    //
+    // The MECHANISM moved (task_update is owner-only now, so this goes through
+    // the guarded RPC) but the BEHAVIOUR is the point of this test: no owner
+    // predicate is sent, so a colleague's task is still cancelled. Asserting
+    // the absence of one keeps that meaningful.
     const { result } = renderHook(() => useLogActivity(), { wrapper });
     await result.current.mutateAsync({
       dealId: "deal-1", type: "call", disposition: "do_not_call", followUpDate: null,
     });
 
-    expect(taskUpdatePayload).toMatchObject({ status: "cancelled" });
-    expect(taskUpdateFilters).toMatchObject({ deal_id: "deal-1", type: "call", status: "open" });
-    expect(taskUpdateFilters!.owner_id).toBeUndefined();
+    expect(taskUpdatePayload).toBeNull();               // not a direct write any more
+    expect(rpcCalls).toHaveLength(1);
+    expect(rpcCalls[0]!.fn).toBe("cancel_contact_tasks_for_deal");
+    expect(rpcCalls[0]!.args).toEqual({ p_deal_id: "deal-1", p_channel: "call" });
+    expect(rpcCalls[0]!.args.p_owner_id).toBeUndefined();
   });
 });
