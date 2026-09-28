@@ -56,9 +56,13 @@ export function useDueTodayVisits(
       //    due-today band). `.eq` here is the only line that differs from the
       //    owed query's `.lte`. exclude_from_path and stage are filtered in the
       //    pure assembler (stage needs the deal join).
+      //    owner_id for the same reason as useOwedVisits: task RLS is org-wide,
+      //    so without it another rep's due-today drop-ins become routable stops
+      //    on this rep's day.
       const { data: taskData, error: taskErr } = await supabase
         .from("task")
         .select(TASK_COLS)
+        .eq("owner_id", userId)
         .eq("type", "drop_in")
         .eq("status", "open")
         .eq("earliest_at", pathDate)

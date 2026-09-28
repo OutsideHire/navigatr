@@ -48,11 +48,19 @@ export function useOwedVisits(
     enabled: Boolean(userId) && Boolean(pathDate),
     staleTime: 30_000,
     queryFn: async (): Promise<AssembledOwedVisits> => {
-      // 1. Open drop-in tasks whose window has opened by pathDate. exclude_from_path
-      //    and stage are filtered in the pure assembler (stage needs the deal join).
+      // 1. The REP'S OWN open drop-in tasks whose window has opened by pathDate.
+      //    exclude_from_path and stage are filtered in the pure assembler
+      //    (stage needs the deal join).
+      //
+      //    owner_id is not optional here. task RLS is org-wide (org_id alone,
+      //    no owner or hierarchy gate), so without it this returns every rep's
+      //    owed drop-ins and routes them onto THIS rep's day as stops with a
+      //    Navigate button. Worse than the Activities leak: that one shows a
+      //    row, this one sends someone driving.
       const { data: taskData, error: taskErr } = await supabase
         .from("task")
         .select(TASK_COLS)
+        .eq("owner_id", userId)
         .eq("type", "drop_in")
         .eq("status", "open")
         .lte("earliest_at", pathDate)
