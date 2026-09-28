@@ -752,6 +752,8 @@ export function AddDealSheet({ open, onOpenChange, defaultStage }: AddDealSheetP
         professionData: { profession: _profession, ...professionFields },
         // Place provenance (Business-Search only): anchor de-dup + routability.
         placeId: placeMeta?.placeId,
+        // From the business search, same as the Path drop-in already does.
+        website: placeMeta?.place.website ?? undefined,
         lat: placeMeta?.lat ?? null,
         lng: placeMeta?.lng ?? null,
         placeSyncedAt: placeMeta?.syncedAt ?? null,

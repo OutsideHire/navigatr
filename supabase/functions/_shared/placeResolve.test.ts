@@ -118,8 +118,33 @@ describe("normalizePlaceDetails", () => {
       lng: null,
       primaryType: null,
       phone: null,
+      website: null,
       industry: "other",
     });
+  });
+
+  it("carries the website through when Google has one", () => {
+    // websiteUri was excluded from the mask by FR-ADD-PLC, so the pipeline's
+    // own business search was the one creation path that could never give a
+    // deal a website. Reversed 2026-09-29: it is the same Enterprise SKU tier
+    // as nationalPhoneNumber, which the mask already requests, so it is free.
+    const out = normalizePlaceDetails({
+      id: "ChIJ_site",
+      displayName: { text: "Bluefrog Plumbing" },
+      types: [],
+      websiteUri: "https://bluefrogplumbing.example",
+    });
+    expect(out.website).toBe("https://bluefrogplumbing.example");
+  });
+
+  it("treats a blank website as none", () => {
+    const out = normalizePlaceDetails({
+      id: "ChIJ_blank",
+      displayName: { text: "Blank" },
+      types: [],
+      websiteUri: "   ",
+    });
+    expect(out.website).toBeNull();
   });
 
   it("treats blank strings as absent (null), not empty text", () => {

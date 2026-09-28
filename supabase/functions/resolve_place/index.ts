@@ -21,7 +21,12 @@
 // until deliberately switched on. Live path needs GOOGLE_PLACES_API_KEY set and
 // PLACES_MOCK unset. The details field mask is the minimal set the form uses
 // (id, displayName, formattedAddress, location, primaryType, types,
-// nationalPhoneNumber) — website/hours are intentionally excluded (FR-ADD-PLC).
+// nationalPhoneNumber, websiteUri). Hours stay out.
+//
+// websiteUri was excluded by FR-ADD-PLC; that call was REVERSED 2026-09-29.
+// Robert reported deals missing details Places had given us, and the pipeline's
+// own search was the one creation path that could never supply a website. It is
+// free to add: see the SKU note on the mask below.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
@@ -101,8 +106,14 @@ async function livePlaceDetails(placeId: string, sessionToken: string): Promise<
     method: "GET",
     headers: {
       "X-Goog-Api-Key": GOOGLE_PLACES_API_KEY,
-      // Minimal field mask: exactly what the Add-Deal form prefills. Keeping it
-      // tight holds the details call in the cheaper SKU tier.
+      // Exactly what the Add-Deal form prefills, and no more.
+      //
+      // ON COST, because the previous note here was misleading: this mask is
+      // already in the ENTERPRISE Place Details SKU and has been since it asked
+      // for nationalPhoneNumber. websiteUri sits in that same tier, so adding it
+      // does not move the bill. Hours and reviews are the ones that would, and
+      // they stay out. Same reasoning as the premises signals in discovery.
+      // Worth re-checking against Google's SKU table if they restructure it.
       "X-Goog-FieldMask": [
         "id",
         "displayName",
@@ -111,6 +122,7 @@ async function livePlaceDetails(placeId: string, sessionToken: string): Promise<
         "primaryType",
         "types",
         "nationalPhoneNumber",
+        "websiteUri",
       ].join(","),
     },
   });
