@@ -112,3 +112,45 @@ describe("DealDetailPage / the website on the Contact information card", () => {
     expect(screen.queryByRole("link", { name: /not a url/i })).not.toBeInTheDocument();
   });
 });
+
+/**
+ * The empty card. Robert hit this on staging: every row in this card is
+ * conditional, so a deal with none of them left a heading floating over an
+ * empty box. It reads as broken even though the deal genuinely has nothing.
+ *
+ * It looked populated before only because the card printed "Address on file"
+ * and a bare " employees" whether or not either was true. Removing those lies
+ * without saying anything in their place is what created this.
+ */
+describe("DealDetailPage / a deal with no contact details at all", () => {
+  const bare = {
+    phone: "", email: "", address: null, website: null, employeeCountRange: "",
+  } as const;
+
+  it("says so rather than leaving the heading over an empty box", () => {
+    renderDeal(bare);
+    expect(screen.getByText(/no contact details yet/i)).toBeInTheDocument();
+  });
+
+  it("points the rep at where to add them", () => {
+    renderDeal(bare);
+    expect(screen.getByText(/use edit to add/i)).toBeInTheDocument();
+  });
+
+  it("keeps the card itself, so the layout does not jump", () => {
+    renderDeal(bare);
+    expect(screen.getByText(/contact information/i)).toBeInTheDocument();
+  });
+
+  it.each([
+    ["a phone", { ...bare, phone: "(415) 555-0109" }],
+    ["an email", { ...bare, email: "robert@getnavigatr.io" }],
+    ["an address", { ...bare, address: "2141 Trosper Lane, Midwest City, OK" }],
+    ["a website", { ...bare, website: "https://bluefrog.example" }],
+    ["an employee count", { ...bare, employeeCountRange: "1-9" }],
+  ])("stays quiet when the deal has %s", (_label, overrides) => {
+    // One real detail is enough; the empty state must not shout over it.
+    renderDeal(overrides);
+    expect(screen.queryByText(/no contact details yet/i)).not.toBeInTheDocument();
+  });
+});
