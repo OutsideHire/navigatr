@@ -17,7 +17,7 @@
  */
 
 import type { ReactNode } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/stores/auth";
 import { useProfile } from "@/features/auth/useProfile";
@@ -32,6 +32,43 @@ function Spinner() {
   return (
     <div className="flex min-h-dvh items-center justify-center bg-surface-canvas">
       <Loader2 className="h-6 w-6 animate-spin text-text-subtle" />
+    </div>
+  );
+}
+
+/**
+ * Shown when session recovery could not reach the server (dead zone, tunnel,
+ * captive portal, or our auth endpoint being unhappy) rather than being told
+ * the session is over.
+ *
+ * The difference matters more than it looks. A rep who loses signal mid-route
+ * used to be redirected to /login, a form they cannot submit without the very
+ * connection they just lost, with their day's route gone from the screen. We
+ * do not know they are signed out, so we do not act as if they are: we hold,
+ * and useSessionRecovery retries when the link returns or they come back to
+ * the app. The Sign in link is the deliberate escape for the case where they
+ * really were signed out and would rather not wait.
+ */
+function ReconnectingWall() {
+  return (
+    <div
+      role="status"
+      className="flex min-h-dvh items-center justify-center bg-surface-canvas px-6"
+    >
+      <div className="max-w-sm text-center">
+        <Loader2 className="mx-auto h-6 w-6 animate-spin text-text-subtle" aria-hidden />
+        <h1 className="mt-4 text-heading-sm text-text-default">Reconnecting</h1>
+        <p className="mt-2 text-body-md text-text-muted">
+          We can&apos;t reach the server right now. You&apos;re still signed in, and this
+          will pick up on its own once your connection is back.
+        </p>
+        <Link
+          to="/login"
+          className="mt-6 inline-block text-body-sm font-medium text-text-default underline underline-offset-2 hover:text-text-muted"
+        >
+          Sign in again
+        </Link>
+      </div>
     </div>
   );
 }
@@ -85,6 +122,10 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
     // Hold the spinner while recovery is in flight; only bounce to /login once
     // it has genuinely failed to reconstitute a session.
     if (recovery === "recovering") return <Spinner />;
+    // Recovery failed because we never reached the server, which is NOT the
+    // same as being told the session ended. Redirecting here is what logs a
+    // rep out for driving through a dead zone.
+    if (recovery === "reconnecting") return <ReconnectingWall />;
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
