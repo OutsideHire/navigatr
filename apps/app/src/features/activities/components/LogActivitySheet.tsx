@@ -53,6 +53,9 @@ import {
 } from "@/lib/followUpScheduling";
 import { type ActivityType } from "../mockData";
 import { useLogActivity } from "../hooks/useLogActivity";
+import { useDeals } from "@/features/pipeline/hooks/useDeals";
+import { useUpdateDeal } from "@/features/pipeline/hooks/useUpdateDeal";
+import { SpokeToField } from "./SpokeToField";
 import { useFollowupSync } from "@/features/appointments/useFollowupSync";
 import { DISPOSITIONS_BY_TYPE, DISPOSITION_VALUES } from "../lib/dispositionSets";
 import { formatLogConfirmation } from "../lib/logConfirmation";
@@ -275,6 +278,18 @@ function ActivityForm({
 }) {
   const [showAll, setShowAll] = React.useState(false);
   const logActivity = useLogActivity();
+  // "Who did you speak to?" is offered here too, not only on the nearby-stop
+  // DropInSheet. Those two sheets have drifted twice before and the fix landed
+  // on the one reps use less both times; sharing SpokeToField and wiring both
+  // hosts in the same change is how that stops.
+  //
+  // Unlike a brand-new drop-in, this deal already exists, so only ASK when it
+  // has no contact yet. Nagging a rep for a name already on the record is how a
+  // useful prompt turns into one people learn to tab past.
+  const { data: dealsForContact = [] } = useDeals();
+  const updateDeal = useUpdateDeal();
+  const dealNeedsContact = !dealsForContact.find((d) => d.id === dealId)?.contactName?.trim();
+  const [spokeTo, setSpokeTo] = React.useState("");
   const { syncFollowup } = useFollowupSync();
   const cfg = TYPE_CONFIG[type];
   const dispositionSet = DISPOSITIONS_BY_TYPE[type];
@@ -349,6 +364,13 @@ function ActivityForm({
         // clears regardless of the activity type picked.
         closeTaskId: closeTaskId ?? null,
       });
+      // Name the rep captured at the door. Best-effort and fire-and-forget for
+      // the same reason as the calendar sync below: the activity is the durable
+      // record and a contact-name write must never be able to fail it.
+      const captured = spokeTo.trim();
+      if (captured && dealNeedsContact) {
+        void updateDeal.mutateAsync({ id: dealId, patch: { contactName: captured } }).catch(() => {});
+      }
       // The log's DB trigger has moved the deal's next_followup_at — reconcile
       // its calendar event. Fire-and-forget: never blocks or fails the log.
       void syncFollowup(dealId);
@@ -566,6 +588,16 @@ function ActivityForm({
                 onChange={(e) => setNextStep(e.target.value)}
               />
             </FormField>
+          )}
+
+          {/* Who they met, only when the deal does not already know. */}
+          {dealNeedsContact && (
+            <SpokeToField
+              id="log-spoke-to"
+              value={spokeTo}
+              onChange={setSpokeTo}
+              disabled={isSubmitting}
+            />
           )}
 
           {/* Notes */}

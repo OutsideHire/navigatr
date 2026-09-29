@@ -47,6 +47,7 @@ import { outcomeFollowUpMeta } from "../lib/outcomeFollowUpMeta";
 import { todayISO } from "../lib/today";
 import { useCreateDeal, DuplicateDealError } from "@/features/pipeline/hooks/useCreateDeal";
 import { ADDRESS_UNAVAILABLE } from "../hooks/useMerchants";
+import { SpokeToField } from "@/features/activities/components/SpokeToField";
 import { useLogActivity } from "@/features/activities/hooks/useLogActivity";
 import { useFollowupSync } from "@/features/appointments/useFollowupSync";
 import { useProfile } from "@/features/auth/useProfile";
@@ -81,6 +82,9 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
   const [selected, setSelected] = React.useState<Disposition | null>(null);
   const [customDate, setCustomDate] = React.useState("");
   const [notes, setNotes] = React.useState("");
+  // Who the rep actually met. Optional, and asked at the door rather than left
+  // for someone to retype later from memory.
+  const [spokeTo, setSpokeTo] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   // Synchronous guard against double-submit: `saving` state is a stale closure
   // within a single tick, so a fast double-tap can fire commit() twice and
@@ -105,6 +109,7 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
       // actively pick the return date (Log Stop stays disabled until they do).
       setCustomDate("");
       setNotes("");
+      setSpokeTo("");
       setSaving(false);
       savingRef.current = false;
     }
@@ -152,7 +157,12 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
           // website column it had nowhere to go and was silently dropped.
           website: merchant.website,
           industry: merchant.category,
-          contactName: merchant.name,
+          // NOT merchant.name. Writing the business name here made the deal
+          // look like it had a contact when it did not, so 156 of 250
+          // Path-created deals on production carried a company masquerading as
+          // a person and almost none were corrected. Blank is honest, and
+          // invites the rep to fill it in.
+          contactName: spokeTo.trim(),
           contactPhone: merchant.phone ?? "",
           stage: "new",
           probability: 20,
@@ -240,6 +250,13 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
           <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
             {/* Optional note — dictate or type. Works on any outcome. Placed
                 above the outcomes so a rep can capture what happened first. */}
+            <SpokeToField
+              id="dropin-spoke-to"
+              value={spokeTo}
+              onChange={setSpokeTo}
+              disabled={saving}
+            />
+
             <div className="flex flex-col gap-1.5">
               <span className="text-caption font-medium text-text-muted">Notes (optional)</span>
               <NotesFieldWithMic
