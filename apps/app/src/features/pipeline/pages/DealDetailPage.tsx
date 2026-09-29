@@ -22,6 +22,7 @@
  */
 
 import * as React from "react";
+import { ADDRESS_UNAVAILABLE } from "@/features/path/hooks/useMerchants";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import * as Tabs from "@radix-ui/react-tabs";
@@ -375,6 +376,13 @@ function TabBar() {
 // Overview sub-cards
 // ───────────────────────────────────────────────────────────────────────
 
+/** The deal's address, or null when it has none. Filters the Path display
+ *  stand-in that older drop-ins wrote into this column as if it were data. */
+function addressOf(deal: Deal): string | null {
+  const a = deal.address?.trim();
+  return a && a !== ADDRESS_UNAVAILABLE ? a : null;
+}
+
 function ContactInfoCard({ deal }: { deal: Deal }) {
   return (
     <Card padding="md">
@@ -396,18 +404,35 @@ function ContactInfoCard({ deal }: { deal: Deal }) {
             <span className="truncate text-body-md text-text-default">{deal.email}</span>
           </div>
         )}
-        <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-violet-20 text-accent-violet">
-            <MapPin className="h-4 w-4" aria-hidden />
-          </span>
-          <span className="text-body-md text-text-default">Address on file</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-orange-20 text-accent-orange">
-            <Users className="h-4 w-4" aria-hidden />
-          </span>
-          <span className="text-body-md text-text-default">{deal.employeeCountRange} employees</span>
-        </div>
+        {/* The address the deal actually has. This card used to print the
+            literal words "Address on file" here, so the one detail Robert says
+            EVERY discovered business carries was fetched from Places, stored on
+            the deal and then never shown to anyone. The same card had a twin
+            placeholder, a hardcoded "Owner", which was replaced in 15d82de;
+            this one was missed.
+
+            Gated like phone and email above, so a deal with no address shows
+            nothing rather than an empty row. ADDRESS_UNAVAILABLE is treated as
+            no address: it is Path display text that older drop-ins persisted
+            into this column, and re-displaying it would dress a gap up as a
+            location. */}
+        {addressOf(deal) && (
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-violet-20 text-accent-violet">
+              <MapPin className="h-4 w-4" aria-hidden />
+            </span>
+            <span className="text-body-md text-text-default">{addressOf(deal)}</span>
+          </div>
+        )}
+        {/* Gated too: an unset range rendered as a bare " employees". */}
+        {deal.employeeCountRange && (
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-orange-20 text-accent-orange">
+              <Users className="h-4 w-4" aria-hidden />
+            </span>
+            <span className="text-body-md text-text-default">{deal.employeeCountRange} employees</span>
+          </div>
+        )}
       </div>
     </Card>
   );
