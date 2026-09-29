@@ -25,6 +25,17 @@ beforeAll(() => {
   if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
 });
 
+// A signed-in viewer. Needed so History attribution can tell the viewer's own
+// rows from a colleague's; every query key below is seeded under this id.
+// vi.hoisted: the vi.mock factory below is hoisted above these declarations.
+const { ME, PEER } = vi.hoisted(() => ({ ME: "me-1", PEER: "peer-2" }));
+vi.mock("@/stores/auth", () => {
+  const state = { user: { id: ME, email: "me@navigatr.test" }, session: null, loading: false, error: null };
+  const useAuth = (sel?: (s: typeof state) => unknown) => (sel ? sel(state) : state);
+  useAuth.getState = () => state;
+  return { useAuth };
+});
+
 // Capture what the task mutations receive.
 const snoozeMutate = vi.fn();
 const completeMutate = vi.fn();
@@ -148,12 +159,17 @@ function renderWithSeed(args: {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   // userId is undefined in tests (no auth mock), so useTasks is disabled and
   // reads this seeded cache instead of hitting Supabase.
-  client.setQueryData(TASKS_QUERY_KEY(undefined, "open"), args.tasks ?? []);
-  client.setQueryData(TASKS_QUERY_KEY(undefined, "completed"), args.completedTasks ?? []);
-  client.setQueryData(ACTIVITIES_ORG_QUERY_KEY(undefined), args.activities ?? []);
-  client.setQueryData(DEALS_QUERY_KEY(undefined), args.deals);
+  client.setQueryData(TASKS_QUERY_KEY(ME, "open"), args.tasks ?? []);
+  client.setQueryData(TASKS_QUERY_KEY(ME, "completed"), args.completedTasks ?? []);
+  client.setQueryData(ACTIVITIES_ORG_QUERY_KEY(ME), args.activities ?? []);
+  client.setQueryData(DEALS_QUERY_KEY(ME), args.deals);
   // useMyAppointments is likewise disabled without a userId; seed its cache.
-  client.setQueryData(myAppointmentsKey(undefined), args.appointments ?? []);
+  client.setQueryData(myAppointmentsKey(ME), args.appointments ?? []);
+  // Names for the History byline. Seeded so the lookup resolves without a fetch.
+  client.setQueryData(["orgMemberNames", ME], [
+    { id: ME, full_name: "Me Myself", email: "me@navigatr.test" },
+    { id: PEER, full_name: "Ryan Minnix", email: "ryan.minnix@example.com" },
+  ]);
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/activities"]}>
@@ -282,6 +298,59 @@ describe("ActivitiesPage / shared type filter (above tabs)", () => {
     expect(screen.queryByText("Company d-call")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Clear filter/i }));
     expect(screen.getByText("Company d-call")).toBeInTheDocument();
+  });
+});
+
+/**
+ * History attribution. Activities are visible by DEAL ownership, not by who
+ * logged them, so a rep legitimately sees a manager's coaching call or a
+ * colleague's cover visit on their own account. On 2026-09-21 an administrator
+ * logged four drop-ins on a rep's deals and the rows carried no name, so she
+ * had no way to learn it had happened. Hiding those rows instead would have
+ * made it worse. The fix is the byline, not the filter.
+ */
+describe("ActivitiesPage / History says who logged it", () => {
+  const byPeer = (id: string, dealId: string): Activity => ({
+    ...historyActivity(id, dealId, "drop_in"),
+    loggedBy: PEER,
+  });
+
+  it("names the colleague on a row the viewer did not log", async () => {
+    const user = userEvent.setup();
+    renderWithSeed({ activities: [byPeer("a-1", "d-1")], deals: [deal("d-1", "Bluefrog Plumbing")] });
+    await user.click(screen.getByRole("tab", { name: /History/ }));
+    expect(screen.getByText(/by Ryan Minnix/)).toBeInTheDocument();
+  });
+
+  it("stays silent on the viewer's OWN rows, so the byline means something", async () => {
+    const user = userEvent.setup();
+    renderWithSeed({
+      activities: [{ ...historyActivity("a-mine", "d-1", "drop_in"), loggedBy: ME }],
+      deals: [deal("d-1", "Bluefrog Plumbing")],
+    });
+    await user.click(screen.getByRole("tab", { name: /History/ }));
+    expect(screen.queryByText(/^by /)).not.toBeInTheDocument();
+    expect(screen.getByText(/Bluefrog Plumbing/)).toBeInTheDocument();
+  });
+
+  it("shows the colleague's row rather than hiding it", async () => {
+    // The explicit rejection of "only activities I logged": the rep must still
+    // see that someone visited her merchant, and what they found.
+    const user = userEvent.setup();
+    renderWithSeed({ activities: [byPeer("a-1", "d-1")], deals: [deal("d-1", "Bluefrog Plumbing")] });
+    await user.click(screen.getByRole("tab", { name: /History/ }));
+    expect(screen.getByText(/Bluefrog Plumbing/)).toBeInTheDocument();
+    expect(screen.getByText("notes")).toBeInTheDocument();
+  });
+
+  it("omits the byline when the activity records no author at all", async () => {
+    const user = userEvent.setup();
+    renderWithSeed({
+      activities: [historyActivity("a-anon", "d-1", "drop_in")],
+      deals: [deal("d-1", "Bluefrog Plumbing")],
+    });
+    await user.click(screen.getByRole("tab", { name: /History/ }));
+    expect(screen.queryByText(/^by /)).not.toBeInTheDocument();
   });
 });
 
