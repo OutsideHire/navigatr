@@ -38,6 +38,9 @@ export interface SessionGuardHooks {
   recover: () => Promise<boolean>;
   /** The access token after a successful recovery, or null. */
   getAccessToken: () => Promise<string | null>;
+  /** True when the APP believes a user is signed in, whatever storage says.
+   *  Optional so an older registration keeps working unchanged. */
+  believesSignedIn?: () => boolean;
 }
 
 let hooks: SessionGuardHooks | null = null;
@@ -87,10 +90,24 @@ export function createSessionGuardFetch(config: {
     if (headers.get("Authorization") !== `Bearer ${config.anonKey}`) {
       return base(input, init);
     }
-    // No stored session means this is a genuine signed-out request (the login
-    // screen, a public read). Nothing to repair.
-    if (!hasPersistedSession(config.storageKey)) return base(input, init);
     if (!hooks) return base(input, init);
+    // No stored session USUALLY means a genuine signed-out request (the login
+    // screen, a public read), and there is nothing to repair.
+    //
+    // But storage is not the only word on the subject, and trusting it alone
+    // was a hole: this early return sent a known-anon request straight to the
+    // wire in two states where the rep is in fact signed in.
+    //   1. A non-retryable refresh failure makes the SDK delete the storage row
+    //      BEFORE the app hears about it. SIGNED_OUT only arrives on a later
+    //      tick, so queries already in flight left as anon.
+    //   2. A WebKit PWA can fail the storage read on resume while the session
+    //      is alive (the same ITP timing that caused the original mobile
+    //      logout bug), and no auth event fires at all.
+    // In both, the app is still rendering a signed-in rep. Ask it, and if it
+    // says someone is signed in, treat the request as repairable.
+    if (!hasPersistedSession(config.storageKey) && !hooks.believesSignedIn?.()) {
+      return base(input, init);
+    }
 
     const recovered = await hooks.recover();
     if (!recovered) return base(input, init);
