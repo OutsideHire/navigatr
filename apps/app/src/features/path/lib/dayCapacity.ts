@@ -28,6 +28,25 @@ function fmtHour(endHour: number): string {
   return `${h}:00`;
 }
 
+/** Why "Build my day" could not place anything, in the rep's words. Each reason
+ *  gets its OWN sentence because they have opposite answers: widen the search,
+ *  stop trying, or change your hours. */
+export function buildBlockedSentence(
+  reason: "pool-empty" | "pool-exhausted" | "budget-exhausted",
+  opts: { endHour: number; minutesLeft: number },
+): string {
+  if (reason === "pool-empty") {
+    return "We couldn't find any businesses near you to build a day from.";
+  }
+  if (reason === "pool-exhausted") {
+    return "You've already been through everything nearby today.";
+  }
+  if (opts.minutesLeft <= 0) {
+    return `Your day is set to end at ${fmtHour(opts.endHour)}, so there's no time left to schedule into. Change your hours in Path settings, or plan tomorrow.`;
+  }
+  return `There isn't enough time left before ${fmtHour(opts.endHour)} to fit the closest stop.`;
+}
+
 /** "that's a full day, nothing else fits before 6:00" (FR-PATH-UX-10). */
 export function fullDaySentence(endHour: number): string {
   return `that's a full day, nothing else fits before ${fmtHour(endHour)}`;

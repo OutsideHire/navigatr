@@ -216,6 +216,60 @@ describe("fillToCapacity", () => {
     expect(res2.proposal.length).toBe(2);
   });
 
+  /**
+   * The three reasons a fill can place nothing. Keeping them apart is the whole
+   * point: they have OPPOSITE answers for the rep (widen the search / stop
+   * trying / change your hours), and collapsing them into a bare empty array is
+   * what let the landing's primary button navigate away with no explanation.
+   */
+  describe("reports WHY it stopped", () => {
+    const opts: FillToCapacityOptions = {
+      origin: ORIGIN,
+      remainingMin: 240,
+      now: "2026-08-11T09:00:00Z",
+      dwellMin: 15,
+    };
+
+    it("says pool-empty when there was nothing nearby at all", () => {
+      const res = fillToCapacity([], [], 0, opts);
+      expect(res.added).toEqual([]);
+      expect(res.reason).toBe("pool-empty");
+    });
+
+    it("says pool-exhausted when everything nearby is already on the day", () => {
+      // A pool EXISTS but every candidate is already placed. Widening the
+      // search is the wrong advice here, which is why this is not pool-empty.
+      const pool = [flex("a", 0, 0.001)];
+      const res = fillToCapacity([orderedFlex("a", 0, 0.001)], pool, 0, opts);
+      expect(res.added).toEqual([]);
+      expect(res.reason).toBe("pool-exhausted");
+    });
+
+    it("says budget-exhausted when the closest candidate does not fit the day", () => {
+      // The evening case: candidates are right there, but the day has no room.
+      const pool = [flex("a", 0, 0.001)];
+      const res = fillToCapacity([], pool, 0, { ...opts, remainingMin: 0 });
+      expect(res.added).toEqual([]);
+      expect(res.reason).toBe("budget-exhausted");
+    });
+
+    it("reports budget-exhausted after a PARTIAL fill, not pool-exhausted", () => {
+      // Two candidates, room for one. The fill succeeded but stopped on the
+      // budget, and the reason must describe the stop, not the pool.
+      const pool = [flex("a", 0, 0.001), flex("b", 0, 0.002)];
+      const res = fillToCapacity([], pool, 0, { ...opts, remainingMin: 20 });
+      expect(res.added).toHaveLength(1);
+      expect(res.reason).toBe("budget-exhausted");
+    });
+
+    it("reports pool-exhausted when a fill drains the pool", () => {
+      const pool = [flex("a", 0, 0.001)];
+      const res = fillToCapacity([], pool, 0, opts);
+      expect(res.added).toHaveLength(1);
+      expect(res.reason).toBe("pool-exhausted");
+    });
+  });
+
   it("anchors closeness to the origin when the proposal is empty", () => {
     // No existing stops: the first pick is the pool candidate closest to origin.
     const pool = [flex("far", 0, 0.5), flex("near", 0, 0.01)];

@@ -114,6 +114,54 @@ describe("sessionGuard", () => {
     }
   });
 
+  /**
+   * The storage-only gate was a hole. In both states below localStorage says
+   * "signed out" while the app is still rendering a signed-in rep, and the
+   * guard used to wave the request straight through as anon into a 42501:
+   *   1. a non-retryable refresh makes the SDK delete the storage row before
+   *      SIGNED_OUT reaches the app, so in-flight queries leave unauthenticated;
+   *   2. a WebKit PWA fails the storage read on resume while the session is
+   *      perfectly alive, and no auth event fires at all.
+   */
+  it("repairs a token-less request when storage is empty but the app says a rep is signed in", async () => {
+    const { base, guard } = makeFetch();
+    // Deliberately NOT signedIn(): storage is empty, which is the whole point.
+    setSessionGuardHooks({
+      recover: async () => true,
+      getAccessToken: async () => "fresh-jwt",
+      believesSignedIn: () => true,
+    });
+    await guard(REST, { headers: { Authorization: `Bearer ${ANON}` } });
+    expect(authHeaderOf(base)).toBe("Bearer fresh-jwt");
+    expect(base).toHaveBeenCalledTimes(1);
+  });
+
+  it("still leaves a genuinely signed-out visitor alone", async () => {
+    // Empty storage AND the app agrees nobody is signed in: the login screen,
+    // a public read. Nothing to repair, and recovery must not even be tried.
+    const recover = vi.fn(async () => true);
+    const { base, guard } = makeFetch();
+    setSessionGuardHooks({
+      recover,
+      getAccessToken: async () => "fresh-jwt",
+      believesSignedIn: () => false,
+    });
+    await guard(REST, { headers: { Authorization: `Bearer ${ANON}` } });
+    expect(recover).not.toHaveBeenCalled();
+    expect(authHeaderOf(base)).toBe(`Bearer ${ANON}`);
+  });
+
+  it("treats a registration without believesSignedIn exactly as before", async () => {
+    // The hook is optional; an older registration must not start repairing
+    // signed-out requests just because the field is missing.
+    const recover = vi.fn(async () => true);
+    const { base, guard } = makeFetch();
+    setSessionGuardHooks({ recover, getAccessToken: async () => "fresh-jwt" });
+    await guard(REST, { headers: { Authorization: `Bearer ${ANON}` } });
+    expect(recover).not.toHaveBeenCalled();
+    expect(authHeaderOf(base)).toBe(`Bearer ${ANON}`);
+  });
+
   it("does not attach the anon key as if it were a user token", async () => {
     const { base, guard } = makeFetch();
     signedIn();

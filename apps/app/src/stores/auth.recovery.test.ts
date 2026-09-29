@@ -94,7 +94,7 @@ describe("recoverSession", () => {
 
     const recovered = await recoverSession({ backoffMs: 0 });
 
-    expect(recovered).toBe(true);
+    expect(recovered).toBe("recovered");
     expect(useAuth.getState().user?.id).toBe("user-1");
     expect(refreshSession).not.toHaveBeenCalled(); // read succeeded, no refresh needed
   });
@@ -106,7 +106,7 @@ describe("recoverSession", () => {
 
     const recovered = await recoverSession({ backoffMs: 0 });
 
-    expect(recovered).toBe(true);
+    expect(recovered).toBe("recovered");
     expect(refreshSession).toHaveBeenCalled();
     expect(useAuth.getState().user?.id).toBe("refreshed");
   });
@@ -122,7 +122,7 @@ describe("recoverSession", () => {
 
     const recovered = await recoverSession({ attempts: 3, backoffMs: 0 });
 
-    expect(recovered).toBe(true);
+    expect(recovered).toBe("recovered");
     expect(useAuth.getState().user?.id).toBe("late");
   });
 
@@ -132,7 +132,9 @@ describe("recoverSession", () => {
 
     const recovered = await recoverSession({ attempts: 3, backoffMs: 0 });
 
-    expect(recovered).toBe(false);
+    // "no-session" and a graded failure are different answers: nothing was
+    // persisted, so there is no involuntary logout to report.
+    expect(recovered).toBe("no-session");
     expect(getSession).toHaveBeenCalledTimes(1);
     expect(refreshSession).not.toHaveBeenCalled();
     // A plain logged-out visitor is NOT an involuntary-logout signal.
@@ -146,18 +148,21 @@ describe("recoverSession", () => {
 
     const recovered = await recoverSession({ backoffMs: 0 });
 
-    expect(recovered).toBe(true);
+    expect(recovered).toBe("recovered");
     expect(useAuth.getState().user?.id).toBe("in-memory");
   });
 
-  it("returns false and flags Sentry when a persisted token can't be recovered", async () => {
+  it("flags Sentry when a persisted token can't be recovered", async () => {
     persistToken();
     getSession.mockResolvedValue(none());
     refreshSession.mockResolvedValue(none());
 
     const recovered = await recoverSession({ attempts: 2, backoffMs: 0 });
 
-    expect(recovered).toBe(false);
+    // The SDK gave no reason at all, so the grade is "unknown" rather than a
+    // confident "expired". Guessing "expired" here is exactly the mistake that
+    // signs a rep out over a condition we never diagnosed.
+    expect(recovered).toBe("unknown");
     // The rare, high-signal case: a rep WITH a token still got logged out.
     // trackRecovery reports via a lazy import("@/lib/observability"), so wait
     // for that microtask chain to settle before asserting.
@@ -165,17 +170,109 @@ describe("recoverSession", () => {
       expect(captureMessage).toHaveBeenCalledWith(
         "Session recovery failed despite a persisted token",
         "warning",
+        expect.objectContaining({ "recovery.reason": "unknown" }),
       ),
     );
   });
 
   it("does not hang when getSession never resolves (timeout guard)", async () => {
-    // Hung SDK call: withTimeout resolves null so recovery still settles.
+    // Hung SDK call: settle() resolves a timeout so recovery still settles.
     getSession.mockReturnValue(new Promise(() => {}));
 
     const recovered = await recoverSession({ attempts: 1, backoffMs: 0, timeoutMs: 10 });
 
-    expect(recovered).toBe(false);
+    expect(recovered).toBe("no-session");
+  });
+});
+
+/**
+ * The grading spec. Before this, every one of these collapsed to a single
+ * `false` and the app signed the rep out for all of them alike. The whole
+ * point is that "the server refused your token" and "your phone never reached
+ * the server" must come back as different answers, because the UI takes
+ * opposite actions on them.
+ */
+describe("recoverSession grades WHY it failed", () => {
+  /** An auth-js style error object: what the SDK actually hands back. */
+  function authError(fields: { name?: string; status?: number; message?: string }) {
+    return { data: { session: null }, error: { name: "AuthApiError", ...fields } };
+  }
+
+  it("grades a refused refresh token as expired (a real sign-out)", async () => {
+    persistToken();
+    getSession.mockResolvedValue(none());
+    refreshSession.mockResolvedValue(
+      authError({ status: 400, message: "Invalid Refresh Token" }),
+    );
+
+    expect(await recoverSession({ attempts: 1, backoffMs: 0 })).toBe("expired");
+    await vi.waitFor(() =>
+      expect(captureMessage).toHaveBeenCalledWith(
+        expect.any(String),
+        "warning",
+        expect.objectContaining({ "recovery.reason": "expired" }),
+      ),
+    );
+  });
+
+  it("grades a dead connection as transport, NOT expired", async () => {
+    persistToken();
+    getSession.mockResolvedValue(none());
+    refreshSession.mockRejectedValue(
+      Object.assign(new Error("Failed to fetch"), { name: "AuthRetryableFetchError" }),
+    );
+
+    // This is the rep in a tunnel. Calling this "expired" is what logged them out.
+    expect(await recoverSession({ attempts: 1, backoffMs: 0 })).toBe("transport");
+  });
+
+  it("grades a 5xx from the auth endpoint as transport", async () => {
+    persistToken();
+    getSession.mockResolvedValue(none());
+    refreshSession.mockResolvedValue(authError({ status: 503, message: "Service Unavailable" }));
+
+    expect(await recoverSession({ attempts: 1, backoffMs: 0 })).toBe("transport");
+  });
+
+  it("grades a rate-limited refresh as transport even though 429 is a 4xx", async () => {
+    persistToken();
+    getSession.mockResolvedValue(none());
+    refreshSession.mockResolvedValue(authError({ status: 429, message: "Too Many Requests" }));
+
+    // A quota blip says nothing about whether the token is still good, so it
+    // must not be graded as a sign-out.
+    expect(await recoverSession({ attempts: 1, backoffMs: 0 })).toBe("transport");
+  });
+
+  it("grades a hung call as timeout when a token IS persisted", async () => {
+    persistToken();
+    getSession.mockReturnValue(new Promise(() => {}));
+    refreshSession.mockReturnValue(new Promise(() => {}));
+
+    expect(await recoverSession({ attempts: 1, backoffMs: 0, timeoutMs: 5 })).toBe("timeout");
+  });
+
+  it("reads the reason off getSession, not only off refreshSession", async () => {
+    // getSession drives its own refresh internally, so the real error often
+    // surfaces on the READ. Grading only the refresh reports whatever generic
+    // complaint refreshSession makes afterwards and settles nothing.
+    persistToken();
+    getSession.mockResolvedValue(authError({ status: 503, message: "Service Unavailable" }));
+    refreshSession.mockResolvedValue(none());
+
+    expect(await recoverSession({ attempts: 1, backoffMs: 0 })).toBe("transport");
+  });
+
+  it("lets a definite expiry outrank a timeout seen on an earlier attempt", async () => {
+    persistToken();
+    getSession.mockResolvedValue(none());
+    refreshSession
+      .mockReturnValueOnce(new Promise(() => {})) // attempt 1: no answer
+      .mockResolvedValue(authError({ status: 400, message: "Invalid Refresh Token" }));
+
+    // The server did eventually answer and refuse the token, so it really is
+    // dead; an earlier silence must not soften that into "just reconnect".
+    expect(await recoverSession({ attempts: 2, backoffMs: 0, timeoutMs: 5 })).toBe("expired");
   });
 });
 
@@ -232,7 +329,9 @@ describe("recoverSession is single-flight", () => {
     release(ok(session()));
     const results = await Promise.all(inFlight);
 
-    expect(results).toEqual([true, true, true, true, true]);
+    expect(results).toEqual([
+      "recovered", "recovered", "recovered", "recovered", "recovered",
+    ]);
     expect(getSession).toHaveBeenCalledTimes(1);
     // One read succeeded, so no refresh-token exchange should have been needed.
     expect(refreshSession).not.toHaveBeenCalled();

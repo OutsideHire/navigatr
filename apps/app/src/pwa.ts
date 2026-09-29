@@ -43,6 +43,32 @@ export function isAuthHandoffPath(pathname: string): boolean {
   return pathname.startsWith("/auth/");
 }
 
+/**
+ * Ask the browser to re-check for a new service worker, and swallow everything
+ * that comes back. Two separate hazards, both of which we have actually met:
+ *
+ *  1. A REJECTED update. The script fetch fails (a rep losing signal at the
+ *     moment the tab came back to the foreground) and the browser rejects with
+ *     a TypeError. That is a non-event, since the next visibility change or the
+ *     hourly poll re-checks anyway, but unhandled it becomes a global error.
+ *     errorFilter does drop it by message, except the wording is Chromium's:
+ *     other engines phrase it differently and slip past the matcher. Catching
+ *     at the source kills the class however a browser chooses to word it.
+ *
+ *  2. An `update()` that does not return a promise. This runs inside the
+ *     visibilitychange listener, so a synchronous throw here would skip
+ *     applyUpdate() below it and a pending deploy would never land. Suppressing
+ *     log noise must not be able to break the update mechanism it decorates.
+ */
+function checkForUpdate(reg: ServiceWorkerRegistration | undefined): void {
+  if (!reg) return;
+  try {
+    void Promise.resolve(reg.update()).catch(() => {});
+  } catch {
+    /* an update CHECK must never be able to break its caller */
+  }
+}
+
 /** Apply a waiting update: skip-waiting + reload to the new bundle. The reload
  *  wipes module state in the browser; the guard also stops a delayed reload from
  *  firing twice. Never reloads during an auth handoff; the update stays pending
@@ -69,7 +95,7 @@ updateSW = registerSW({
     console.info("%c[pwa]%c service worker registered", "color:#2456E6;font-weight:600", "color:inherit", swUrl);
     registration = reg;
     if (reg) {
-      setInterval(() => { void reg.update(); }, UPDATE_CHECK_MS);
+      setInterval(() => checkForUpdate(reg), UPDATE_CHECK_MS);
     }
   },
   onRegisterError(error) {
@@ -83,7 +109,7 @@ updateSW = registerSW({
 if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
-      void registration?.update();
+      checkForUpdate(registration);
     }
     applyUpdate();
   });
