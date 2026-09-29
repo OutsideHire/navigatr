@@ -47,6 +47,12 @@ import { outcomeFollowUpMeta } from "../lib/outcomeFollowUpMeta";
 import { todayISO } from "../lib/today";
 import { useCreateDeal, DuplicateDealError } from "@/features/pipeline/hooks/useCreateDeal";
 import { ADDRESS_UNAVAILABLE } from "../hooks/useMerchants";
+import { supabase } from "@/lib/supabase";
+import {
+  needsProspectFill,
+  mergeProspectDetail,
+  type ProspectDetail,
+} from "../lib/prospectFill";
 import { SpokeToField } from "@/features/activities/components/SpokeToField";
 import { useLogActivity } from "@/features/activities/hooks/useLogActivity";
 import { useFollowupSync } from "@/features/appointments/useFollowupSync";
@@ -147,23 +153,53 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
         const followUpDate = customDateStr
           ? dateOnlyToNoonUtcIso(customDateStr)
           : calculateFollowUpDate(disposition);
+
+        // Recover whatever this merchant lost on its way here. Several routes
+        // reach this sheet and they do not all carry the same fields: the
+        // driving view falls back to building one from a DrivingCard, which
+        // holds only a name, an address and coordinates, so phone and place id
+        // arrive empty even though the prospect row has them. Three deals on
+        // staging were created that way with real data sitting unused.
+        //
+        // Done HERE rather than in that one builder because the fix then covers
+        // every route into this sheet, including ones not yet found. A drop-in
+        // always knows its prospect id, and the read is a single primary-key
+        // lookup on a save that already writes several rows.
+        //
+        // Best-effort in both directions: skipped entirely when the merchant is
+        // already complete, and a failure leaves the merchant exactly as it was
+        // rather than blocking a rep from logging their visit.
+        let full = merchant;
+        if (needsProspectFill(merchant)) {
+          try {
+            const { data: row } = await supabase
+              .from("prospects")
+              .select("place_id, address, phone, website")
+              .eq("id", merchant.id)
+              .maybeSingle();
+            full = mergeProspectDetail(merchant, row as ProspectDetail | null);
+          } catch {
+            /* keep the merchant as-is; logging the visit matters more */
+          }
+        }
+
         const { id: dealId } = await createDeal.mutateAsync({
-          companyName: merchant.name,
+          companyName: full.name,
           // Never persist the display stand-in. Places gave no address, so the
           // deal should say it has none (NULL) rather than carry the words
           // "Address unavailable" as though a rep could drive to them.
-          address: merchant.address === ADDRESS_UNAVAILABLE ? undefined : merchant.address,
+          address: full.address === ADDRESS_UNAVAILABLE || !full.address ? undefined : full.address,
           // Already fetched and billed for at discovery; until deals gained a
           // website column it had nowhere to go and was silently dropped.
-          website: merchant.website,
-          industry: merchant.category,
+          website: full.website,
+          industry: full.category,
           // NOT merchant.name. Writing the business name here made the deal
           // look like it had a contact when it did not, so 156 of 250
           // Path-created deals on production carried a company masquerading as
           // a person and almost none were corrected. Blank is honest, and
           // invites the rep to fill it in.
           contactName: spokeTo.trim(),
-          contactPhone: merchant.phone ?? "",
+          contactPhone: full.phone ?? "",
           stage: "new",
           probability: 20,
           // System-set source: a Path drop-in. Stamp the canonical value + the
@@ -171,15 +207,15 @@ export function DropInSheet({ merchant, open, onOpenChange, onLogged }: DropInSh
           // (and its industry mix) actually converts (LS-1).
           leadSource: "path",
           sourcePathId: todayPath.pathId,
-          placeId: merchant.placeId,
+          placeId: full.placeId,
           // Pass the coords we already hold. useCreateDeal only geocodes when
           // there is NO placeId, so a deal that carries one skipped geocoding
           // and landed with null lat/lng: not routable, despite exact Google
           // coordinates having been in hand the whole time. That already
           // affected every plan-route drop-in, and stamping place_id on the
           // driving route (this change) would have spread it there too.
-          lat: merchant.lat,
-          lng: merchant.lng,
+          lat: full.lat,
+          lng: full.lng,
         });
         await logActivity.mutateAsync({
           dealId,
