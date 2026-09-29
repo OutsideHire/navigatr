@@ -180,8 +180,21 @@ export function reportCacheError(
 export function captureMessage(
   message: string,
   level: "info" | "warning" | "error" = "info",
+  tags?: Record<string, string>,
 ): void {
   if (!initialized) return;
+  // Tags, not extra: Sentry search and alert rules can only filter on tags, so
+  // anything that has to SPLIT one message into distinct cases (an expected
+  // expiry vs a rep knocked offline) has to arrive as a tag or the event
+  // cannot answer its own question. Scoped so the tags stay on this event
+  // instead of leaking onto every later one.
+  if (tags) {
+    Sentry.withScope((scope) => {
+      scope.setTags(tags);
+      Sentry.captureMessage(message, level);
+    });
+    return;
+  }
   Sentry.captureMessage(message, level);
 }
 

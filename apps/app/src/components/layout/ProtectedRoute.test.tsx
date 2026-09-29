@@ -65,7 +65,7 @@ let suspendedShape: {
   isFetching: boolean;
   isError: boolean;
 };
-let recoveryPhase: "recovering" | "settled";
+let recoveryPhase: "recovering" | "reconnecting" | "settled";
 
 function renderAt(path: string) {
   return render(
@@ -151,6 +151,19 @@ describe("ProtectedRoute", () => {
     expect(screen.queryByText("login page")).not.toBeInTheDocument();
     expect(screen.queryByText("dashboard content")).not.toBeInTheDocument();
     expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+  });
+
+  it("holds a 'Reconnecting' wall instead of redirecting when the server was unreachable", () => {
+    // The dead-zone case. Recovery failed because we never got an answer, NOT
+    // because the session ended, so bouncing to /login hands a rep a form they
+    // have no connection to submit and takes their day off the screen.
+    authShape = { user: null, loading: false };
+    recoveryPhase = "reconnecting";
+    renderAt("/dashboard");
+    expect(screen.queryByText("login page")).not.toBeInTheDocument();
+    expect(screen.getByText(/reconnecting/i)).toBeInTheDocument();
+    // The escape hatch for a rep who really was signed out and won't wait.
+    expect(screen.getByRole("link", { name: /sign in again/i })).toBeInTheDocument();
   });
 
   it("renders children inside AppLayout when authed with a profile", () => {

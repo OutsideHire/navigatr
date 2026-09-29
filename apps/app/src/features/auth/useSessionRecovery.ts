@@ -22,10 +22,15 @@
 import { useEffect, useState } from "react";
 import { recoverSession } from "@/stores/auth";
 
-export type RecoveryPhase = "recovering" | "settled";
+export type RecoveryPhase = "recovering" | "reconnecting" | "settled";
 
 export function useSessionRecovery(active: boolean): RecoveryPhase {
   const [phase, setPhase] = useState<RecoveryPhase>("recovering");
+  // Bumped to re-run recovery when the moment is right (see the listener
+  // below). Not a timer: a rep on a dead screen should not generate background
+  // auth traffic, so we only retry on an event that plausibly changed the
+  // answer.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!active) {
@@ -35,11 +40,41 @@ export function useSessionRecovery(active: boolean): RecoveryPhase {
     }
     let cancelled = false;
     setPhase("recovering");
-    void recoverSession().finally(() => {
-      if (!cancelled) setPhase("settled");
-    });
+    void recoverSession({ caller: "protected_route" }).then(
+      (outcome) => {
+        if (cancelled) return;
+        // THE DISTINCTION THIS WHOLE CHANGE EXISTS FOR. "transport" and
+        // "timeout" mean we never got an answer about the token, so we do NOT
+        // know the rep is signed out and must not act as if we do. Redirecting
+        // a rep in a tunnel to /login strands them on a form they cannot
+        // submit, mid-route, with their day gone from the screen: the exact
+        // failure the mobile-logout fix existed to stop, arriving by a
+        // different door. Hold instead, and try again when something changes.
+        setPhase(outcome === "transport" || outcome === "timeout" ? "reconnecting" : "settled");
+      },
+      () => {
+        if (!cancelled) setPhase("settled");
+      },
+    );
     return () => {
       cancelled = true;
+    };
+  }, [active, attempt]);
+
+  // Retry on the two events that can actually change the outcome: the link
+  // coming back, and the rep returning to the app (a phone that slept through
+  // the outage never fires `online`). Both are free until they fire.
+  useEffect(() => {
+    if (!active) return;
+    const retry = () => setAttempt((n) => n + 1);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") retry();
+    };
+    window.addEventListener("online", retry);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("online", retry);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [active]);
 
