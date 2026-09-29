@@ -235,6 +235,10 @@ describe("TodaysPathView", () => {
     expect(build).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /add more nearby/i })).not.toBeInTheDocument();
     fireEvent.click(build);
+    // The finder is still reachable from the empty day when the flag hides the
+    // "Add more nearby" link: it now arrives as an offer on the failure notice
+    // rather than as an automatic jump.
+    fireEvent.click(screen.getByRole("button", { name: /find businesses nearby/i }));
     expect(onAddNearby).toHaveBeenCalledTimes(1);
   });
 
@@ -275,6 +279,7 @@ describe("TodaysPathView", () => {
     renderView({ proposal: [], overflow: [], onAddNearby });
     expect(screen.getByText(/No stops today/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /build my day/i }));
+    fireEvent.click(screen.getByRole("button", { name: /find businesses nearby/i }));
     expect(onAddNearby).toHaveBeenCalledTimes(1);
     // No Start button when there's nothing to run.
     expect(screen.queryByRole("button", { name: /start driving/i })).not.toBeInTheDocument();
@@ -320,13 +325,46 @@ describe("TodaysPathView", () => {
     expect(screen.getByText("Corner Cafe")).toBeInTheDocument();
   });
 
-  it("Build my day falls back to the finder when there is nothing nearby to build from", () => {
-    // Empty pool → nothing to auto-assemble → open the finder so the rep can
-    // widen the search rather than land on a still-empty day.
+  it("Build my day EXPLAINS an empty pool instead of navigating to the finder", () => {
+    // THE REGRESSION THIS REPLACES. "Build my day" used to call onAddNearby()
+    // when it could place nothing, silently swapping the rep onto the discover
+    // map: different title, different content, no sentence saying why. Three
+    // unrelated failures all produced that one jump, so every report looked
+    // identical, each fix moved the destination rather than the silence, and
+    // the report kept coming back for weeks. The rep must stay put.
     const onAddNearby = vi.fn();
     renderView({ proposal: [], overflow: [], noLocation: [], onAddNearby });
     fireEvent.click(screen.getByRole("button", { name: /build my day/i }));
+    expect(onAddNearby).not.toHaveBeenCalled();
+    expect(screen.getByTestId("build-blocked")).toBeInTheDocument();
+    expect(screen.getByText(/couldn't find any businesses near you/i)).toBeInTheDocument();
+    // Still on the empty day, not the discover screen.
+    expect(screen.getByText(/No stops today/i)).toBeInTheDocument();
+    // And the map is reachable, as a choice.
+    fireEvent.click(screen.getByRole("button", { name: /find businesses nearby/i }));
     expect(onAddNearby).toHaveBeenCalledTimes(1);
+  });
+
+  it("names the workday as the reason when there is time-budget left for nothing", () => {
+    // A pool IS present, so "widen the search" would be the wrong advice. This
+    // is the trigger that fires every evening once the rep's day-end passes.
+    const onAddNearby = vi.fn();
+    renderView({ proposal: [], noLocation: [], onAddNearby, remainingMin: 0, windowEndHour: 18 });
+    fireEvent.click(screen.getByRole("button", { name: /build my day/i }));
+    expect(onAddNearby).not.toHaveBeenCalled();
+    expect(screen.getByText(/day is set to end at 6:00/i)).toBeInTheDocument();
+    expect(screen.queryByText(/couldn't find any businesses/i)).not.toBeInTheDocument();
+  });
+
+  it("says the nearby pool is used up, which widening cannot fix", () => {
+    // Build, clear the stops, build again: everything nearby is already placed.
+    // Distinct from an empty pool, because there is nothing to widen TO.
+    const onAddNearby = vi.fn();
+    renderView({ proposal: [], noLocation: [], onAddNearby });
+    fireEvent.click(screen.getByRole("button", { name: /build my day/i }));
+    // First tap fills the day from the default (non-empty) pool.
+    expect(screen.queryByTestId("build-blocked")).not.toBeInTheDocument();
+    expect(screen.queryByText(/No stops today/i)).not.toBeInTheDocument();
   });
 
   it("shows Start on an appointment-only plan and starts it with an empty flexible array", () => {
@@ -525,6 +563,9 @@ describe("TodaysPathView", () => {
     const onAddNearby = vi.fn();
     renderView({ proposal: [], overflow: [], onAddNearby });
     fireEvent.click(screen.getByRole("button", { name: /build my day/i }));
+    // The tap never navigates on its own; the finder is offered, not taken.
+    expect(onAddNearby).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /find businesses nearby/i }));
     expect(onAddNearby).toHaveBeenCalledTimes(1);
   });
 

@@ -51,11 +51,24 @@ export interface FillToCapacityOptions {
   dwellMin?: number;
 }
 
+/**
+ * Why a fill stopped. Only load-bearing when `added` is empty, and then it is
+ * the whole story: "nothing nearby at all" (widen the search), "already been
+ * through everything nearby" (widening will not help), and "no time left in the
+ * day" (change your hours) are three different problems with three different
+ * answers. Collapsing them into a bare empty array is what let the landing's
+ * primary button navigate away with no explanation, so every failure produced
+ * the same screenshot and none of them could be told apart.
+ */
+export type FillStopReason = "pool-empty" | "pool-exhausted" | "budget-exhausted";
+
 export interface FillToCapacityResult {
   /** The day with the appended fills (existing order unchanged, fills at the end). */
   proposal: OrderedStop[];
   /** The stops added by THIS fill, in append order (for the notice + attribution). */
   added: OrderedStop[];
+  /** Why the fill stopped. See FillStopReason. */
+  reason: FillStopReason;
   /** New low-water mark into the pool: the first index (from the scan start)
    *  whose id is not yet placed. Everything before it is routed; the caller
    *  advances its cursor to this. Equals `pool.length` when the pool is drained. */
@@ -120,6 +133,7 @@ export function fillToCapacity(
   // Greedy nearest-neighbor append: each pass picks the closest remaining
   // candidate to the current anchor; if it fits the budget, append and advance
   // the anchor to it, else STOP (contiguous fill-to-capacity).
+  let reason: FillStopReason = pool.length === 0 ? "pool-empty" : "pool-exhausted";
   for (;;) {
     let best: FlexibleStop | null = null;
     let bestDrive = Infinity;
@@ -132,10 +146,18 @@ export function fillToCapacity(
         best = c;
       }
     }
-    if (!best) break; // pool exhausted (nothing unplaced left to try)
+    if (!best) {
+      // Nothing unplaced left to try. An EMPTY pool and a fully-consumed pool
+      // look identical here but mean opposite things to a rep, so keep them apart.
+      reason = pool.length === 0 ? "pool-empty" : "pool-exhausted";
+      break;
+    }
 
     const cost = bestDrive + dwellFor(best.tier);
-    if (cost > budget) break; // closest remaining does not fit: stop
+    if (cost > budget) {
+      reason = "budget-exhausted"; // closest remaining does not fit: stop
+      break;
+    }
 
     const ordered = flexibleToOrdered(best);
     result.push(ordered);
@@ -151,5 +173,5 @@ export function fillToCapacity(
   let cursor = start;
   while (cursor < pool.length && placed.has(pool[cursor]!.id)) cursor++;
 
-  return { proposal: result, added, poolCursor: cursor, remainingMin: budget };
+  return { proposal: result, added, reason, poolCursor: cursor, remainingMin: budget };
 }
