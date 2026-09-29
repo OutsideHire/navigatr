@@ -22,6 +22,29 @@ const { DuplicateDealError } = vi.hoisted(() => {
   }
   return { DuplicateDealError };
 });
+// The prospects lookup the sheet uses to recover detail a thin Merchant lost.
+// Controlled per test; null means "no prospect row", which must leave the
+// merchant exactly as it was.
+const { prospectRow } = vi.hoisted(() => ({ prospectRow: { current: null as Record<string, unknown> | null } }));
+vi.mock("@/lib/supabase", () => ({
+  AUTH_STORAGE_KEY: "navigatr-auth",
+  supabase: {
+    // The auth store subscribes at import time; give it just enough to load.
+    auth: {
+      getSession: () => Promise.resolve({ data: { session: null }, error: null }),
+      refreshSession: () => Promise.resolve({ data: { session: null }, error: null }),
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+    },
+    from: () => {
+      const b: Record<string, unknown> = {};
+      b.select = () => b;
+      b.eq = () => b;
+      b.maybeSingle = () => Promise.resolve({ data: prospectRow.current, error: null });
+      return b;
+    },
+  },
+}));
+
 vi.mock("@/features/pipeline/hooks/useCreateDeal", () => ({
   useCreateDeal: () => ({ mutateAsync: createDealMutateAsync }),
   DuplicateDealError,
@@ -108,6 +131,7 @@ describe("DropInSheet", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     createDealMutateAsync.mockResolvedValue({ id: "deal-1" });
+    prospectRow.current = null;
     logActivityMutateAsync.mockResolvedValue({ id: "act-1" });
     logVisit.mockClear();
     markDealCreated.mockClear();
@@ -226,6 +250,47 @@ describe("DropInSheet", () => {
     const payload = createDealMutateAsync.mock.calls[0][0];
     expect(payload.contactName).not.toBe(payload.companyName);
     expect(payload.contactName).toBe("");
+  });
+
+  it("recovers the detail a thin merchant lost, from the prospect row", async () => {
+    // Robert, staging 2026-09-29: three deals created from the driving carousel
+    // had empty phone, empty address and null place_id, while the prospect rows
+    // behind them held real addresses, phone numbers and a website. The driving
+    // view builds a Merchant from a DrivingCard when no saved stop matches, and
+    // a card carries only a name, an address and coordinates.
+    prospectRow.current = {
+      place_id: "ChIJKZLcB50fsocRJ6Bz_GyaaJg",
+      address: "1700 Kickingbird Rd, Edmond, OK 73034, USA",
+      phone: "(405) 341-5350",
+      website: "http://www.thelookoutedmond.com/",
+    };
+    renderSheet({
+      merchant: { ...merchant, placeId: undefined, address: "", phone: "", website: undefined },
+    });
+    fireEvent.click(screen.getByText("Got their statement"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    expect(createDealMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        placeId: "ChIJKZLcB50fsocRJ6Bz_GyaaJg",
+        address: "1700 Kickingbird Rd, Edmond, OK 73034, USA",
+        contactPhone: "(405) 341-5350",
+        website: "http://www.thelookoutedmond.com/",
+      }),
+    );
+  });
+
+  it("still logs the visit when the prospect lookup finds nothing", async () => {
+    // A recovery that can block a rep from logging a visit they actually made
+    // is worse than the gap it fills.
+    prospectRow.current = null;
+    renderSheet({
+      merchant: { ...merchant, placeId: undefined, address: "", phone: "", website: undefined },
+    });
+    fireEvent.click(screen.getByText("Got their statement"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    expect(createDealMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ companyName: "Bluewater", placeId: undefined }),
+    );
   });
 
   it("carries the merchant's website onto the new deal", async () => {
