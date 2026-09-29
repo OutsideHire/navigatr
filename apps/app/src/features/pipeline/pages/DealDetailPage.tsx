@@ -408,24 +408,34 @@ function addressOf(deal: Deal): string | null {
 }
 
 function ContactInfoCard({ deal }: { deal: Deal }) {
+  // Resolved once, for two reasons. websiteOf was being called three times per
+  // render, and more importantly the card needs to know whether it has ANY row
+  // before it draws a heading.
+  const phone = deal.phone || null;
+  const email = deal.email || null;
+  const address = addressOf(deal);
+  const website = websiteOf(deal);
+  const employees = deal.employeeCountRange || null;
+  const hasAnyDetail = Boolean(phone || email || address || website || employees);
+
   return (
     <Card padding="md">
       <h3 className="mb-3 text-body-strong text-text-default">Contact information</h3>
       <div className="flex flex-col gap-3">
-        {deal.phone && (
+        {phone && (
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-teal-20 text-accent-teal">
               <PhoneIcon className="h-4 w-4" aria-hidden />
             </span>
-            <DealCallButton dealId={deal.id} phoneNumber={deal.phone} size="sm" invalid={deal.phoneInvalid} />
+            <DealCallButton dealId={deal.id} phoneNumber={phone} size="sm" invalid={deal.phoneInvalid} />
           </div>
         )}
-        {deal.email && (
+        {email && (
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-blue-20 text-accent-blue">
               <Mail className="h-4 w-4" aria-hidden />
             </span>
-            <span className="truncate text-body-md text-text-default">{deal.email}</span>
+            <span className="truncate text-body-md text-text-default">{email}</span>
           </div>
         )}
         {/* The address the deal actually has. This card used to print the
@@ -440,40 +450,54 @@ function ContactInfoCard({ deal }: { deal: Deal }) {
             no address: it is Path display text that older drop-ins persisted
             into this column, and re-displaying it would dress a gap up as a
             location. */}
-        {addressOf(deal) && (
+        {address && (
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-violet-20 text-accent-violet">
               <MapPin className="h-4 w-4" aria-hidden />
             </span>
-            <span className="text-body-md text-text-default">{addressOf(deal)}</span>
+            <span className="text-body-md text-text-default">{address}</span>
           </div>
         )}
         {/* Website. Requested from Places and stored on the prospect since
             discovery shipped, but `deals` had no column for it, so the drop-in
             insert dropped a field we had already fetched and paid for. */}
-        {websiteOf(deal) && (
+        {website && (
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-blue-20 text-accent-blue">
               <Globe className="h-4 w-4" aria-hidden />
             </span>
             <a
-              href={websiteOf(deal)!.href}
+              href={website.href}
               target="_blank"
               rel="noreferrer noopener"
               className="truncate text-body-md text-text-default underline underline-offset-2 hover:text-text-muted"
             >
-              {websiteOf(deal)!.label}
+              {website.label}
             </a>
           </div>
         )}
         {/* Gated too: an unset range rendered as a bare " employees". */}
-        {deal.employeeCountRange && (
+        {employees && (
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-orange-20 text-accent-orange">
               <Users className="h-4 w-4" aria-hidden />
             </span>
-            <span className="text-body-md text-text-default">{deal.employeeCountRange} employees</span>
+            <span className="text-body-md text-text-default">{employees} employees</span>
           </div>
+        )}
+        {/* Every row above is conditional, so a deal with nothing on it used to
+            leave a heading floating over an empty box. That happens for real: a
+            drop-in on a merchant Google had no phone or address for creates a
+            deal with none of these. Robert hit it on staging.
+
+            Say so instead. The card used to look populated only because it was
+            printing "Address on file" and a bare " employees" whether or not
+            either was true; an honest blank needs to read as blank rather than
+            as broken. */}
+        {!hasAnyDetail && (
+          <p className="text-body-md text-text-muted">
+            No contact details yet. Use Edit to add a phone, email or address.
+          </p>
         )}
       </div>
     </Card>
