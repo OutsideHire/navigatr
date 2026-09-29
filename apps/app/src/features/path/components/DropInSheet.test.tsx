@@ -191,6 +191,54 @@ describe("DropInSheet", () => {
     );
   });
 
+  it("passes the coordinates it already holds, so the deal is routable", async () => {
+    // useCreateDeal only geocodes when there is NO placeId. A discovery-sourced
+    // drop-in has one, so it skipped geocoding and landed with null lat/lng
+    // despite exact Google coordinates being in hand. Stamping place_id on the
+    // driving route as well would have spread that to every drop-in.
+    renderSheet();
+    fireEvent.click(screen.getByText("Got their statement"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    expect(createDealMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ lat: merchant.lat, lng: merchant.lng }),
+    );
+  });
+
+  it("records the person the rep says they spoke to", async () => {
+    renderSheet();
+    fireEvent.change(screen.getByLabelText(/who did you speak to/i), {
+      target: { value: "Karen" },
+    });
+    fireEvent.click(screen.getByText("Got their statement"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    expect(createDealMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ contactName: "Karen" }),
+    );
+  });
+
+  it("never writes the BUSINESS name into the contact field", async () => {
+    // The defect this replaces: 156 of 250 Path-created deals on production
+    // carried their own company name as the contact, which reads as filled in
+    // and so was almost never corrected.
+    renderSheet();
+    fireEvent.click(screen.getByText("Got their statement"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    const payload = createDealMutateAsync.mock.calls[0][0];
+    expect(payload.contactName).not.toBe(payload.companyName);
+    expect(payload.contactName).toBe("");
+  });
+
+  it("carries the merchant's website onto the new deal", async () => {
+    // Fetched and billed for at discovery; until deals gained a website column
+    // it had nowhere to go and was silently dropped on every drop-in.
+    renderSheet({ merchant: { ...merchant, website: "https://bluewater.example" } });
+    fireEvent.click(screen.getByText("Got their statement"));
+    await act(async () => { fireEvent.click(logStopBtn()); });
+    expect(createDealMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ website: "https://bluewater.example" }),
+    );
+  });
+
   it("stores NO address rather than the Path display stand-in", async () => {
     // "Address unavailable" exists so the Path card has a string to draw when
     // Places gave no address. Persisting it onto the deal dresses a gap up as
@@ -211,7 +259,10 @@ describe("DropInSheet", () => {
     expect(logVisit).toHaveBeenCalledWith("m-1", "statement_secured", "");
     expect(createDealMutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({
-        contactName: "Bluewater",
+        // NOT "Bluewater". The business name used to be written into the
+        // contact field, which made the deal look like it had a person on it.
+        // Blank is the honest state until a rep tells us who they met.
+        contactName: "",
         leadSource: "path",
         placeId: "gp-blue-1",
       }),

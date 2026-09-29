@@ -34,6 +34,7 @@ interface DealRow {
   last_activity_at: string | null;
   next_followup_at: string | null;
   address: string | null;
+  website?: string | null;
   employee_count_range: string | null;
   lead_source: string | null;
   lead_source_note?: string | null;
@@ -98,6 +99,7 @@ export function toDeal(row: DealRow): Deal {
     lastActivity: row.last_activity_at ?? new Date().toISOString(),
     nextFollowup: row.next_followup_at,
     address: row.address,
+    website: row.website ?? null,
     employeeCountRange: row.employee_count_range ?? "",
     leadSource: row.lead_source ?? "",
     leadSourceNote: row.lead_source_note ?? null,
@@ -138,7 +140,7 @@ export const DEALS_QUERY_KEY = (userId: string | undefined) =>
 const DEALS_SELECT =
   "id, company_name, contact_name, contact_title, contact_phone, contact_phone_invalid, contact_email, " +
   "value_cents, stage, probability, last_activity_at, " +
-  "next_followup_at, address, employee_count_range, lead_source, " +
+  "next_followup_at, address, website, employee_count_range, lead_source, " +
   "lead_source_note, source_path_id, created_at, " +
   "updated_at, owner_id, lost_reason_category, lost_reason_notes, " +
   "notes, profession_data, followup_calendar_sync_status, " +

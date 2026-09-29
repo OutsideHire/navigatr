@@ -63,6 +63,9 @@ export function isDuplicateActiveDealError(
 export interface CreateDealInput {
   companyName: string;
   address?: string;
+  /** Business website from Places. Undefined when Google had none, which the
+   *  insert stores as NULL rather than an empty string. */
+  website?: string;
   industry?: string;
   employeeCountRange?: string;
   contactName: string;
@@ -134,6 +137,7 @@ export function useCreateDeal() {
           owner_id:            userId,
           company_name:        input.companyName,
           address:             input.address ?? null,
+          website:             input.website ?? null,
           industry:            input.industry ?? null,
           employee_count_range: input.employeeCountRange ?? null,
           contact_name:        input.contactName,

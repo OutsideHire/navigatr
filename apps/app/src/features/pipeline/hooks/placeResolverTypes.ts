@@ -23,5 +23,8 @@ export interface ResolvedPlace {
   lng: number | null;
   primaryType: string | null;
   phone: string | null;
+  /** Business website, null when Google has none. Added 2026-09-29, reversing
+   *  FR-ADD-PLC's exclusion; it is the same SKU tier as the phone number. */
+  website: string | null;
   industry: string;
 }

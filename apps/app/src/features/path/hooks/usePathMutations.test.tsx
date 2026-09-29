@@ -174,15 +174,35 @@ describe("usePathMutations.addStops", () => {
         pathId: "p1",
         basePosition: 2,
         stops: [
-          { prospectId: "pr1", name: "A", address: null, phone: null, lat: 1, lng: 2, category: "automotive", primaryType: "car_repair" },
+          { prospectId: "pr1", placeId: null, name: "A", address: null, phone: null, lat: 1, lng: 2, category: "automotive", primaryType: "car_repair" },
         ],
       });
     });
     const upsert = calls.find((c) => c.table === "path_stops" && c.op === "upsert");
     expect(upsert?.payload).toEqual([
-      { path_id: "p1", prospect_id: "pr1", name: "A", address: null, phone: null, lat: 1, lng: 2, category: "automotive", primary_type: "car_repair", position: 2 },
+      { path_id: "p1", prospect_id: "pr1", place_id: null, name: "A", address: null, phone: null, lat: 1, lng: 2, category: "automotive", primary_type: "car_repair", position: 2 },
     ]);
     expect(upsert?.opts).toEqual({ onConflict: "path_id,prospect_id", ignoreDuplicates: true });
+  });
+
+  it("snapshots the place id onto the stop, so the running view can stamp it on a deal", async () => {
+    // path_stops is a deliberate snapshot so the driving view needs no join.
+    // It simply never included place_id, which is why every deal created from
+    // the driving carousel lost the org-wide de-dup anchor.
+    const { result } = renderHook(() => usePathMutations(), { wrapper });
+    await act(async () => {
+      await result.current.addStops.mutateAsync({
+        pathId: "p1",
+        basePosition: 0,
+        stops: [
+          { prospectId: "pr1", placeId: "ChIJ-blue-1", name: "Bluefrog", address: null, phone: null, lat: 1, lng: 2, category: "automotive", primaryType: null },
+        ],
+      });
+    });
+    const upsert = calls.find((c) => c.table === "path_stops" && c.op === "upsert");
+    expect(upsert?.payload).toEqual([
+      expect.objectContaining({ prospect_id: "pr1", place_id: "ChIJ-blue-1" }),
+    ]);
   });
 
   it("uses ignoreDuplicates so re-adding a prospect already on the path is a no-op (no 23505)", async () => {
@@ -192,7 +212,7 @@ describe("usePathMutations.addStops", () => {
         pathId: "p1",
         basePosition: 0,
         stops: [
-          { prospectId: "pr1", name: "A", address: null, phone: null, lat: 1, lng: 2, category: "automotive", primaryType: null },
+          { prospectId: "pr1", placeId: null, name: "A", address: null, phone: null, lat: 1, lng: 2, category: "automotive", primaryType: null },
         ],
       });
     });

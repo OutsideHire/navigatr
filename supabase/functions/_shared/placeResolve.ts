@@ -42,6 +42,8 @@ export interface ResolvedPlace {
   lng: number | null;
   primaryType: string | null;
   phone: string | null;
+  /** Business website. Null when Google has none for the place. */
+  website: string | null;
   industry: IndustryKey;
 }
 
@@ -71,6 +73,7 @@ export interface GooglePlaceDetails {
   primaryType?: string;
   types?: string[];
   nationalPhoneNumber?: string;
+  websiteUri?: string;
 }
 
 /** Map Google's autocomplete payload to our suggestion rows, dropping any entry
@@ -111,6 +114,7 @@ export function normalizePlaceDetails(raw: GooglePlaceDetails): ResolvedPlace {
     lng,
     primaryType: raw.primaryType ?? null,
     phone: raw.nationalPhoneNumber?.trim() || null,
+    website: raw.websiteUri?.trim() || null,
     industry: bucketForType(raw.types ?? [], raw.primaryType ?? null),
   };
 }

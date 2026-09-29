@@ -37,6 +37,7 @@ export function planQueueMigration(
     }
     snapshots.push({
       prospectId: m.id,
+      placeId: m.placeId ?? null,
       name: m.name,
       address: m.address,
       lat: m.lat,

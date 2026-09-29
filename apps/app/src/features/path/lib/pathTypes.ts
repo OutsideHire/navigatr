@@ -41,6 +41,10 @@ export interface PathStop {
   id: string;
   pathId: string;
   prospectId: string;
+  /** Google place id, snapshotted at add time. Null on stops added before the
+   *  column existed and never backfilled, and on any stop whose prospect had
+   *  none. Carries the de-dup anchor into a drop-in logged while driving. */
+  placeId: string | null;
   name: string;
   address: string | null;
   phone: string | null;
@@ -73,6 +77,7 @@ export interface PathStopRow {
   id: string;
   path_id: string;
   prospect_id: string;
+  place_id?: string | null;
   name: string;
   address: string | null;
   phone: string | null;
@@ -151,6 +156,7 @@ export function rowToStop(row: PathStopRow): PathStop {
     id: row.id,
     pathId: row.path_id,
     prospectId: row.prospect_id,
+    placeId: row.place_id ?? null,
     name: row.name,
     address: row.address,
     phone: row.phone,

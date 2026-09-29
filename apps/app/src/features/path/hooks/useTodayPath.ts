@@ -19,6 +19,10 @@ export { todayISO };
 /** Queue-compatible stop shape the existing components read. */
 export interface TodayStop {
   merchantId: string;
+  /** Google place id from the stop snapshot. Null when the stop predates the
+   *  column, or when its prospect had none. Optional so existing fixtures stay
+   *  valid, matching how other later-added fields are declared. */
+  placeId?: string | null;
   name: string;
   address: string | null;
   phone: string | null;
@@ -43,7 +47,7 @@ export function useTodayPath() {
 
   const stops: TodayStop[] = React.useMemo(
     () => rawStops.map((s) => ({
-      merchantId: s.prospectId, name: s.name, address: s.address, phone: s.phone, lat: s.lat, lng: s.lng,
+      merchantId: s.prospectId, placeId: s.placeId, name: s.name, address: s.address, phone: s.phone, lat: s.lat, lng: s.lng,
       category: s.category, primaryType: s.primaryType, status: s.status,
       disposition: s.disposition, notes: s.notes, dealCreated: s.dealCreated, addedAt: s.addedAt,
     })),

@@ -31,7 +31,7 @@ vi.mock("./usePathMutations", () => ({
   }),
 }));
 
-const SNAP: StopSnapshot = { prospectId: "m1", name: "A", address: null, phone: null, lat: 1, lng: 2, category: "manufacturing_wholesale", primaryType: null };
+const SNAP: StopSnapshot = { prospectId: "m1", placeId: null, name: "A", address: null, phone: null, lat: 1, lng: 2, category: "manufacturing_wholesale", primaryType: null };
 
 beforeEach(() => {
   [createPath, addStops, removeStop, setStopStatus, setStopDisposition, markDealCreatedM, deletePath, markStarted].forEach((m) => m.mockClear());

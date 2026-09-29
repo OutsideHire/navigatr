@@ -20,6 +20,7 @@ interface MockPlace {
   primaryType: string;
   types: string[];
   phone?: string;
+  website?: string;
 }
 
 const MOCK_PLACES: MockPlace[] = [
@@ -32,6 +33,9 @@ const MOCK_PLACES: MockPlace[] = [
     primaryType: "restaurant",
     types: ["restaurant", "food", "point_of_interest", "establishment"],
     phone: "(512) 555-0101",
+    // One fixture carries a website and the rest do not, so mock mode exercises
+    // both branches rather than only the happy one.
+    website: "https://patsfamilydiner.example",
   },
   {
     id: "mock_place_riverside_dental",
@@ -103,5 +107,6 @@ export function mockPlaceDetails(placeId: string): GooglePlaceDetails {
     primaryType: p.primaryType,
     types: p.types,
     nationalPhoneNumber: p.phone,
+    websiteUri: p.website,
   };
 }

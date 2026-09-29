@@ -76,3 +76,39 @@ describe("DealDetailPage / the address on the Contact information card", () => {
     expect(screen.queryByText(/^\s*employees$/i)).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Website. Requested from Places and stored on prospects since discovery
+ * shipped, but `deals` had no column for it at all, so the drop-in insert
+ * dropped a field we had already fetched and paid for.
+ */
+describe("DealDetailPage / the website on the Contact information card", () => {
+  it("shows the website as a link a rep can open", () => {
+    renderDeal({ website: "https://bluefrogplumbing.com" });
+    const link = screen.getByRole("link", { name: /bluefrogplumbing\.com/i });
+    expect(link).toHaveAttribute("href", "https://bluefrogplumbing.com/");
+  });
+
+  it("drops the scheme from the label, because that is what a rep recognises", () => {
+    renderDeal({ website: "https://www.bakitchenandbath.com/" });
+    expect(screen.getByRole("link", { name: "www.bakitchenandbath.com" })).toBeInTheDocument();
+  });
+
+  it("shows nothing when the deal has no website", () => {
+    renderDeal({ website: null });
+    expect(screen.queryByRole("link", { name: /\./ })).not.toBeInTheDocument();
+  });
+
+  it("refuses a javascript: URL rather than rendering it as a link", () => {
+    // The value comes from third-party data, so the scheme is checked rather
+    // than trusted. A rep must never be one tap from executing what an external
+    // record happened to contain.
+    renderDeal({ website: "javascript:alert(1)" });
+    expect(screen.queryByRole("link", { name: /alert/i })).not.toBeInTheDocument();
+  });
+
+  it("refuses a value that is not a URL at all", () => {
+    renderDeal({ website: "not a url" });
+    expect(screen.queryByRole("link", { name: /not a url/i })).not.toBeInTheDocument();
+  });
+});

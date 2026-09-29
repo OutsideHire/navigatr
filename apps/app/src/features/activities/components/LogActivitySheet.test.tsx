@@ -23,6 +23,10 @@ vi.mock("../hooks/useLogActivity", () => ({
 // Calendar follow-up sync fires after a successful log (the DB trigger has
 // moved next_followup_at). Fire-and-forget; mock it to assert it's invoked.
 const syncFollowupMock = vi.fn().mockResolvedValue(undefined);
+const updateDealMock = vi.fn().mockResolvedValue(undefined);
+vi.mock("@/features/pipeline/hooks/useUpdateDeal", () => ({
+  useUpdateDeal: () => ({ mutateAsync: updateDealMock, isPending: false }),
+}));
 vi.mock("@/features/appointments/useFollowupSync", () => ({
   useFollowupSync: () => ({ syncFollowup: syncFollowupMock }),
 }));
@@ -52,18 +56,28 @@ vi.mock("@/components/navigatr", async () => {
   };
 });
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { DEALS_QUERY_KEY } from "@/features/pipeline/hooks/useDeals";
 import { LogActivitySheet } from "./LogActivitySheet";
+
+/** The sheet reads the deal it is logging against (to decide whether to ask who
+ *  the rep spoke to), so it needs a query client. Seeded empty by default,
+ *  which means "this deal has no contact yet" and the field is offered. */
+function withClient(ui: React.ReactElement, deals: Array<Record<string, unknown>> = []) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client.setQueryData(DEALS_QUERY_KEY(undefined), deals);
+  return <QueryClientProvider client={client}>{ui}</QueryClientProvider>;
+}
 
 beforeEach(() => {
   mutateAsyncMock.mockReset();
   mutateAsyncMock.mockResolvedValue({ id: "act-1" });
   syncFollowupMock.mockClear();
+  updateDealMock.mockClear();
 });
 
 function openSheet() {
-  render(
-    <LogActivitySheet open={true} onOpenChange={() => {}} dealId="deal-1" />,
-  );
+  render(withClient(<LogActivitySheet open={true} onOpenChange={() => {}} dealId="deal-1" />));
 }
 
 describe("LogActivitySheet — type picker", () => {
@@ -309,7 +323,7 @@ describe("LogActivitySheet inline post-log confirmation", () => {
 
 describe("LogActivitySheet — defaultType", () => {
   it("opens directly on the form when defaultType is set", () => {
-    render(<LogActivitySheet open onOpenChange={vi.fn()} dealId="deal-1" defaultType="call" />);
+    render(withClient(<LogActivitySheet open onOpenChange={vi.fn()} dealId="deal-1" defaultType="call" />));
     // Form title is "Log activity" (shared with the submit button); the
     // type-picker title is "What did you do?". On the Call form we see the
     // duration field and no picker title.
@@ -338,7 +352,7 @@ describe("LogActivitySheet — change-type navigation", () => {
 describe("LogActivitySheet — lockedType (Log outcome path)", () => {
   it("locks to the task's type: no picker, no Change type, titled Log outcome, with an editable time", () => {
     render(
-      <LogActivitySheet open onOpenChange={vi.fn()} dealId="deal-1" lockedType="drop_in" closeTaskId="task-1" />,
+      withClient(<LogActivitySheet open onOpenChange={vi.fn()} dealId="deal-1" lockedType="drop_in" closeTaskId="task-1" />),
     );
     // Opens straight on the form (no type picker), titled "Log outcome".
     expect(screen.getAllByText("Log outcome").length).toBeGreaterThan(0);
@@ -347,5 +361,34 @@ describe("LogActivitySheet — lockedType (Log outcome path)", () => {
     expect(screen.queryByRole("button", { name: /change type/i })).not.toBeInTheDocument();
     // The editable event-time field is present.
     expect(screen.getByLabelText(/^When$/i)).toBeInTheDocument();
+  });
+});
+
+/**
+ * "Who did you speak to?" on the STOP logger, not only on the nearby-stop
+ * DropInSheet. Those two sheets have drifted apart twice before and both times
+ * the fix reached only the one reps use less, so both hosts are wired and
+ * tested in the same change.
+ */
+describe("LogActivitySheet — capturing who the rep met", () => {
+  const deal = (over: Record<string, unknown> = {}) => ({
+    id: "deal-1", companyName: "Bluefrog Plumbing", contactName: "", ...over,
+  });
+
+  it("asks when the deal has no contact yet", () => {
+    render(withClient(<LogActivitySheet open onOpenChange={vi.fn()} dealId="deal-1" lockedType="drop_in" />, [deal()]));
+    expect(screen.getByLabelText(/who did you speak to/i)).toBeInTheDocument();
+  });
+
+  it("stays quiet when the deal already knows the contact", () => {
+    // A prompt that fires when the answer is already on the record is one reps
+    // learn to tab past, which costs us the times it actually matters.
+    render(withClient(<LogActivitySheet open onOpenChange={vi.fn()} dealId="deal-1" lockedType="drop_in" />, [deal({ contactName: "Karen" })]));
+    expect(screen.queryByLabelText(/who did you speak to/i)).not.toBeInTheDocument();
+  });
+
+  it("treats a whitespace-only contact name as missing", () => {
+    render(withClient(<LogActivitySheet open onOpenChange={vi.fn()} dealId="deal-1" lockedType="drop_in" />, [deal({ contactName: "   " })]));
+    expect(screen.getByLabelText(/who did you speak to/i)).toBeInTheDocument();
   });
 });
