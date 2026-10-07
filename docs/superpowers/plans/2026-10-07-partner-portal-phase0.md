@@ -52,6 +52,8 @@
 
 **Second deviation:** the spec said the demo reset/seed functions are rewritten in this phase. `reset_demo_data_base()` is a 465-line SECURITY DEFINER function; instead of copying it, Task 4 adds a mirror trigger so its existing `partner_deals` inserts produce referrals. The rewrite moves to the follow-up migration that drops `partner_deals`. Reassignment ships as an RPC only (no UI) in Phase 0; the spec's in-app UI list (4.8) does not include it.
 
+**Third deviation:** Deferred from spec 4.8 to Phase 1: status chips on Partner Detail referral rows and hero KPIs counted from referrals (the deal stage badge already conveys status).
+
 ---
 
 ### Task 1: Referral tables, history, visibility, helpers
