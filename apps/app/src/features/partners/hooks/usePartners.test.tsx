@@ -1,5 +1,5 @@
 // Pins the Supabase row → Partner shape mapping (especially the nested
-// partner_deals → attributedDealIds flattening), the cache-key shape
+// referrals -> attributedDealIds flattening), the cache-key shape
 // useCreatePartner relies on for invalidation, and the disabled state
 // when no userId is available.
 
@@ -53,12 +53,12 @@ describe("usePartners", () => {
           owner_id: "owner-7",
           created_at: "2026-05-01T00:00:00Z",
           followup_cadence_days: 30,
-          partner_deals: [
-            { deal_id: "d-206", direction: "inbound" },
-            { deal_id: "d-301", direction: "inbound" },
+          referrals: [
+            { deal_id: "d-206", direction: "inbound", status: "won" },
+            { deal_id: "d-301", direction: "inbound", status: "working" },
             // Outbound link (we referred a deal TO this partner) must be
             // excluded from attribution.
-            { deal_id: "d-999", direction: "outbound" },
+            { deal_id: "d-999", direction: "outbound", status: "accepted" },
           ],
           owner: { full_name: "Owen Owner" },
         },
@@ -94,7 +94,7 @@ describe("usePartners", () => {
     expect(result.current.data?.[0].attributedDealIds).not.toContain("d-999");
   });
 
-  it("splits partner_deals into inbound attribution and outbound referrals", async () => {
+  it("splits referrals into inbound attribution and outbound referrals", async () => {
     orderMock.mockResolvedValueOnce({
       data: [
         {
@@ -109,11 +109,11 @@ describe("usePartners", () => {
           last_touch_at: null,
           next_followup_at: null,
           notes: "",
-          partner_deals: [
-            { deal_id: "in1", direction: "inbound" },
-            { deal_id: "out1", direction: "outbound" },
-            // No direction → treated as inbound.
-            { deal_id: "in2" },
+          referrals: [
+            { deal_id: "in1", direction: "inbound", status: "accepted" },
+            { deal_id: "out1", direction: "outbound", status: "accepted" },
+            // No direction -> treated as inbound.
+            { deal_id: "in2", status: "accepted" },
           ],
         },
       ],
@@ -127,6 +127,28 @@ describe("usePartners", () => {
     // No owner embed on this row → owner fields null-coalesce (FR-HIER-05).
     expect(result.current.data?.[0].ownerId).toBeNull();
     expect(result.current.data?.[0].ownerName).toBeNull();
+  });
+
+  it("drops declined, withdrawn, and not-yet-linked referrals from the deal id lists", async () => {
+    orderMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: "p-4", name: "Filter", company: "Filter Co", type: "cpa_bookkeeper",
+          status: "active", phone: null, email: null, city: null,
+          last_touch_at: null, next_followup_at: null, notes: "",
+          referrals: [
+            { deal_id: "keep", direction: "inbound", status: "working" },
+            { deal_id: "gone1", direction: "inbound", status: "declined" },
+            { deal_id: "gone2", direction: "inbound", status: "withdrawn" },
+            { deal_id: null, direction: "inbound", status: "submitted" },
+          ],
+        },
+      ],
+      error: null,
+    });
+    const { result } = renderHook(() => usePartners(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0].attributedDealIds).toEqual(["keep"]);
   });
 
   it("partner with no attributed deals produces empty attributedDealIds (not undefined)", async () => {
@@ -144,7 +166,7 @@ describe("usePartners", () => {
           last_touch_at: null,
           next_followup_at: null,
           notes: "",
-          partner_deals: null,
+          referrals: null,
         },
       ],
       error: null,
@@ -191,7 +213,7 @@ describe("usePartners", () => {
           next_followup_at: null,
           notes: "",
           created_by: "creator-9",
-          partner_deals: null,
+          referrals: null,
         },
       ],
       error: null,
@@ -219,7 +241,7 @@ describe("usePartners", () => {
           last_touch_at: null,
           next_followup_at: null,
           notes: "",
-          partner_deals: null,
+          referrals: null,
         },
       ],
       error: null,

@@ -1,7 +1,7 @@
 /**
  * SendReferralSheet — FR-PIPE-09. Opens from the Deal Detail Quick actions
  * card ("Send as referral"). Pick a partner + optional note, then record an
- * outbound referral via useReferDeal (inserts a partner_deals row). Same Radix
+ * outbound referral via useReferDeal (refer_deal_to_partner RPC). Same Radix
  * Dialog shell + navigatr primitives as StageUpdateModal.
  */
 import * as React from "react";

@@ -1,22 +1,17 @@
 /**
- * useAttributeDeal — link a deal to a partner.
+ * useAttributeDeal: link an existing deal to a partner as an inbound referral.
+ * useUnattributeDeal: withdraw a rep-entered link (history is kept).
  *
- * Inserts into partner_deals. RLS with-check pins org_id; the
- * partner_deals consistency trigger overwrites org_id from the parent
- * partner anyway. attributed_by defaults to auth.uid().
- *
- * On success: invalidate the partners cache (the nested
- * partner_deals(deal_id) embed needs to refetch so the partner's
- * attributedDealIds includes the new link).
- *
- * useUnattributeDeal is the inverse — removes the link row.
+ * Both go through SECURITY DEFINER RPCs (migration 20261007000003); the app
+ * role has no direct write access to referrals. On success we refetch the
+ * partners list (its embedded referrals drive attributedDealIds) and every
+ * referrals query (queue, deal "Referred by").
  */
-
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
-import { useProfile } from "@/features/auth/useProfile";
 import { PARTNERS_QUERY_KEY } from "./usePartners";
+import { referralErrorMessage, type ReferralDirection } from "../lib/referrals";
 
 export interface AttributeDealInput {
   partnerId: string;
@@ -27,33 +22,20 @@ export interface AttributeDealInput {
 export function useAttributeDeal() {
   const queryClient = useQueryClient();
   const userId = useAuth((s) => s.user?.id);
-  const profile = useProfile();
 
   return useMutation({
     mutationFn: async (input: AttributeDealInput): Promise<void> => {
       if (!userId) throw new Error("Not signed in");
-      if (!profile.data?.org_id) {
-        throw new Error("Profile not loaded — cannot attribute deal");
-      }
-
-      const { error } = await supabase.from("partner_deals").insert({
-        // org_id is required by the with-check policy; the trigger
-        // overwrites it from the parent partner. We send our own org
-        // for the rare case the trigger is disabled.
-        org_id:        profile.data.org_id,
-        partner_id:    input.partnerId,
-        deal_id:       input.dealId,
-        attributed_by: userId,
-        notes:         input.notes ?? "",
+      const { error } = await supabase.rpc("attribute_deal_to_partner", {
+        p_partner_id: input.partnerId,
+        p_deal_id: input.dealId,
+        p_note: input.notes ?? "",
       });
-      if (error) throw error;
+      if (error) throw new Error(referralErrorMessage(error, "Could not attribute deal"));
     },
     onSuccess: () => {
-      // The partners query embeds partner_deals(deal_id); invalidating
-      // it refetches the full list (and rebuilds each partner's
-      // attributedDealIds). The deals list isn't touched — deal rows
-      // don't carry attribution.
       void queryClient.invalidateQueries({ queryKey: PARTNERS_QUERY_KEY(userId) });
+      void queryClient.invalidateQueries({ queryKey: ["referrals"] });
     },
   });
 }
@@ -63,18 +45,22 @@ export function useUnattributeDeal() {
   const userId = useAuth((s) => s.user?.id);
 
   return useMutation({
-    mutationFn: async (input: { partnerId: string; dealId: string }): Promise<void> => {
+    mutationFn: async (input: {
+      partnerId: string;
+      dealId: string;
+      direction?: ReferralDirection;
+    }): Promise<void> => {
       if (!userId) throw new Error("Not signed in");
-
-      const { error } = await supabase
-        .from("partner_deals")
-        .delete()
-        .eq("partner_id", input.partnerId)
-        .eq("deal_id", input.dealId);
-      if (error) throw error;
+      const { error } = await supabase.rpc("remove_referral_link", {
+        p_partner_id: input.partnerId,
+        p_deal_id: input.dealId,
+        p_direction: input.direction ?? "inbound",
+      });
+      if (error) throw new Error(referralErrorMessage(error, "Could not remove the link"));
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: PARTNERS_QUERY_KEY(userId) });
+      void queryClient.invalidateQueries({ queryKey: ["referrals"] });
     },
   });
 }

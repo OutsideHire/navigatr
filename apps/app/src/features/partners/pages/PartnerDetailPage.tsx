@@ -734,7 +734,7 @@ export function PartnerDetailPage() {
           }}
           onRemove={async (dealId) => {
             try {
-              await unattribute.mutateAsync({ partnerId: partner.id, dealId });
+              await unattribute.mutateAsync({ partnerId: partner.id, dealId, direction: "inbound" });
               toast.success("Attribution removed");
             } catch (err) {
               toast.error(err instanceof Error ? err.message : "Could not remove attribution");
@@ -760,7 +760,7 @@ export function PartnerDetailPage() {
           }}
           onRemove={async (dealId) => {
             try {
-              await unattribute.mutateAsync({ partnerId: partner.id, dealId });
+              await unattribute.mutateAsync({ partnerId: partner.id, dealId, direction: "outbound" });
               toast.success("Referral removed");
             } catch (err) {
               toast.error(err instanceof Error ? err.message : "Could not remove referral");
