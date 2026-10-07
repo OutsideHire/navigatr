@@ -139,6 +139,33 @@ create trigger referrals_record_status
 alter table deals add column if not exists source_referral_id uuid references referrals(id) on delete set null;
 alter table deals add column if not exists source_partner_id  uuid references partners(id)  on delete set null;
 
+-- Attribution is written only by the referral RPCs (SECURITY DEFINER, so they
+-- run as the function owner). A direct client write (current_user =
+-- 'authenticated') through the deals INSERT/UPDATE policies must not forge or
+-- rewrite it. FK ON DELETE SET NULL actions run as the table owner, not here.
+create or replace function public.deals_lock_source_attribution()
+returns trigger language plpgsql set search_path = public as $$
+begin
+  -- Deliberately SECURITY INVOKER: current_user must be the caller's role.
+  if current_user = 'authenticated' then
+    if tg_op = 'INSERT' then
+      if new.source_partner_id is not null or new.source_referral_id is not null then
+        raise exception 'source_attribution_locked' using errcode = '42501';
+      end if;
+    elsif new.source_partner_id is distinct from old.source_partner_id
+       or new.source_referral_id is distinct from old.source_referral_id then
+      raise exception 'source_attribution_locked' using errcode = '42501';
+    end if;
+  end if;
+  return new;
+end $$;
+
+revoke execute on function public.deals_lock_source_attribution() from public, anon, authenticated;
+
+create trigger deals_lock_source_attribution
+  before insert or update on deals
+  for each row execute function public.deals_lock_source_attribution();
+
 -- Privileges + RLS ------------------------------------------------------------
 alter table referrals enable row level security;
 alter table referral_status_history enable row level security;

@@ -93,7 +93,8 @@ begin
       triaged_by, triaged_at
     ) values (
       v_org, p_partner_id, p_direction, 'rep_entered',
-      public.referral_status_for_stage(v_deal.stage), v_deal.company_name,
+      public.referral_status_for_stage(v_deal.stage),
+      coalesce(nullif(btrim(v_deal.company_name), ''), 'Unnamed business'),
       v_deal.contact_name, v_deal.contact_email, v_deal.contact_phone, v_deal.address,
       v_deal.place_id, v_deal.industry, coalesce(p_note, ''), v_company, p_deal_id,
       v_deal.owner_id, auth.uid(), auth.uid(), now()
@@ -177,7 +178,12 @@ begin
   if r.status <> 'submitted' then
     raise exception 'referral_not_submitted' using errcode = '22023';
   end if;
-  v_owner := coalesce(r.assigned_user_id, auth.uid());
+  -- A deactivated (or missing) assignee cannot own the new deal; the accepter does.
+  v_owner := auth.uid();
+  if r.assigned_user_id is not null and exists (
+       select 1 from profiles where id = r.assigned_user_id and deactivated_at is null) then
+    v_owner := r.assigned_user_id;
+  end if;
 
   begin
     insert into deals (
@@ -320,11 +326,19 @@ begin
   return public.profile_can_see_owner(p_user_id, v_owner);
 end $$;
 
+-- PostgREST computed field: lets the referral queue filter to rows the caller
+-- can actually triage (RLS visibility is wider: it includes partner visibility).
+create or replace function public.can_triage(r referrals)
+returns boolean language sql stable security definer set search_path = public as $$
+  select public.can_triage_referral(r.assigned_user_id)
+$$;
+
 -- Privileges ------------------------------------------------------------------
 revoke execute on function public._referral_for_update(uuid)                          from public, anon, authenticated;
 revoke execute on function public._referral_set_note(text)                            from public, anon, authenticated;
 revoke execute on function public._link_deal_to_partner(uuid, uuid, text, text)       from public, anon, authenticated;
 
+revoke execute on function public.can_triage(referrals)                               from public, anon;
 revoke execute on function public.log_referral(uuid, text, text, text, text, text, text, text, text) from public, anon;
 revoke execute on function public.attribute_deal_to_partner(uuid, uuid, text)         from public, anon;
 revoke execute on function public.refer_deal_to_partner(uuid, uuid, text)             from public, anon;
@@ -335,6 +349,7 @@ revoke execute on function public.merge_referral(uuid, uuid)                    
 revoke execute on function public.withdraw_referral(uuid, text)                       from public, anon;
 revoke execute on function public.reassign_referral(uuid, uuid)                       from public, anon;
 
+grant execute on function public.can_triage(referrals)                                to authenticated;
 grant execute on function public.log_referral(uuid, text, text, text, text, text, text, text, text) to authenticated;
 grant execute on function public.attribute_deal_to_partner(uuid, uuid, text)          to authenticated;
 grant execute on function public.refer_deal_to_partner(uuid, uuid, text)              to authenticated;

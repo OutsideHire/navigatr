@@ -27,6 +27,28 @@ insert into deals (id, org_id, owner_id, company_name, address, contact_name, co
   ('e4d00000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000e4', 'e4000000-0000-0000-0000-000000000004', 'Rep2 Co',     '2 Main St', 'C', 'y@rp.example', '+15550004002', 100, 'new',       'path'),
   ('e4d00000-0000-0000-0000-0000000000a3', '00000000-0000-0000-0000-0000000000e4', 'e4000000-0000-0000-0000-000000000004', 'Twin Cafe',   '9 Elm St',  'C', 'z@rp.example', '+15550004003', 100, 'new',       'path');
 
+
+-- Extra fixtures (seeded as postgres, before any role switch):
+--  rep3: a DEACTIVATED report of mgr, assignee of referral 'deact'.
+--  OTH: another org with its own partner and a submitted referral 'foreign'.
+--  'mgrlog': referral logged on P1 but assigned to mgr (rep1 sees it through
+--  partner visibility yet cannot triage it).
+insert into auth.users (id, email, aud, role, created_at, updated_at, email_confirmed_at) values
+  ('e4000000-0000-0000-0000-000000000005', 'rep3@rp.example', 'authenticated', 'authenticated', now(), now(), now()),
+  ('e4000000-0000-0000-0000-000000000006', 'oth@rp.example',  'authenticated', 'authenticated', now(), now(), now());
+insert into organizations (id, name, slug, invite_code) values
+  ('00000000-0000-0000-0000-0000000000e5', 'Other Org', 'ref-rpc-other', 'ref-rpc-b1');
+insert into profiles (id, org_id, role, role_level, full_name, email, role_path, manager_id, deactivated_at) values
+  ('e4000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-0000000000e4', 'rep', 'sales_professional', 'Rep3', 'rep3@rp.example', 'boss.mgr.rep3'::ltree, 'e4000000-0000-0000-0000-000000000002', now());
+insert into profiles (id, org_id, role, role_level, full_name, email, role_path, manager_id) values
+  ('e4000000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-0000000000e5', 'admin', 'administrator', 'Oth', 'oth@rp.example', 'oth'::ltree, null);
+insert into partners (id, org_id, created_by, owner_id, name, company, type) values
+  ('e5a00000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000e5', 'e4000000-0000-0000-0000-000000000006', 'e4000000-0000-0000-0000-000000000006', 'Other CPA', 'Other & Co', 'cpa');
+insert into referrals (id, org_id, partner_id, company_name, assigned_user_id) values
+  ('e4f00000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000e5', 'e5a00000-0000-0000-0000-000000000001', 'Foreign Co', 'e4000000-0000-0000-0000-000000000006'),
+  ('e4f00000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000e4', 'e4a00000-0000-0000-0000-000000000001', 'Deact Co', 'e4000000-0000-0000-0000-000000000005'),
+  ('e4f00000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-0000000000e4', 'e4a00000-0000-0000-0000-000000000001', 'Mgr Owned Co', 'e4000000-0000-0000-0000-000000000002');
+
 create temp table _exp (exp_d date);
 insert into _exp select public.next_business_day(current_date, '00000000-0000-0000-0000-0000000000e4');
 grant select on _exp to authenticated;
@@ -219,6 +241,81 @@ do $$ declare o uuid; st text; n int; begin
   end;
 end $$;
 
+-- 14. can_triage computed field: rep1 sees the mgr-assigned referral (partner P1
+--     is theirs) but cannot triage it; mgr can.
+do $$ declare t boolean; begin
+  perform _t_act('e4000000-0000-0000-0000-000000000003');
+  select public.can_triage(r) into t from referrals r where id = 'e4f00000-0000-0000-0000-000000000003';
+  if t is null then raise exception 'rep1 should see the mgr-assigned referral via partner visibility'; end if;
+  if t then raise exception 'rep1 must not be able to triage a mgr-assigned referral'; end if;
+  perform _t_act('e4000000-0000-0000-0000-000000000002');
+  select public.can_triage(r) into t from referrals r where id = 'e4f00000-0000-0000-0000-000000000003';
+  if t is not true then raise exception 'mgr should be able to triage it'; end if;
+end $$;
+
+-- 15. Attributing a deal with a blank company name succeeds as 'Unnamed business'.
+do $$ declare o uuid; n text; begin
+  perform set_config('role', 'postgres', true);
+  insert into deals (id, org_id, owner_id, company_name, address, contact_name, contact_email, contact_phone, value_cents, stage, lead_source) values
+    ('e4d00000-0000-0000-0000-0000000000a4', '00000000-0000-0000-0000-0000000000e4', 'e4000000-0000-0000-0000-000000000003', '  ', '4 Blank St', 'C', 'b@rp.example', '+15550004004', 100, 'new', 'path');
+  perform _t_act('e4000000-0000-0000-0000-000000000003');
+  o := public.attribute_deal_to_partner('e4a00000-0000-0000-0000-000000000001', 'e4d00000-0000-0000-0000-0000000000a4');
+  select company_name into n from referrals where id = o;
+  if n <> 'Unnamed business' then raise exception 'blank company should become Unnamed business, got %', n; end if;
+end $$;
+
+-- 16. accept_referral with a deactivated assignee: the accepter (mgr) owns the deal and task.
+do $$ declare res jsonb; d uuid; do_ uuid; to_ uuid; begin
+  perform _t_act('e4000000-0000-0000-0000-000000000002');
+  res := public.accept_referral('e4f00000-0000-0000-0000-000000000002');
+  if res->>'result' <> 'accepted' then raise exception 'accept result %', res; end if;
+  d := (res->>'deal_id')::uuid;
+  select owner_id into do_ from deals where id = d;
+  select owner_id into to_ from task where deal_id = d;
+  if do_ <> 'e4000000-0000-0000-0000-000000000002' or to_ <> 'e4000000-0000-0000-0000-000000000002' then
+    raise exception 'deactivated assignee must not own the deal/task: % %', do_, to_;
+  end if;
+end $$;
+
+-- 17. decline_referral on another org's referral is not found (P0002).
+do $$ begin
+  perform _t_act('e4000000-0000-0000-0000-000000000002');
+  begin
+    perform public.decline_referral('e4f00000-0000-0000-0000-000000000001', 'outside_icp');
+    raise exception 'cross-org decline should fail';
+  exception when no_data_found then null;
+  end;
+end $$;
+
+-- 18. Source attribution is locked against direct client writes, but the
+--     referral RPCs (definer) still set it (case 3).
+do $$ begin
+  perform set_config('role', 'postgres', true);
+  insert into deals (id, org_id, owner_id, company_name, address, contact_name, contact_email, contact_phone, value_cents, stage, lead_source) values
+    ('e4d00000-0000-0000-0000-0000000000a5', '00000000-0000-0000-0000-0000000000e4', 'e4000000-0000-0000-0000-000000000003', 'Plain Co', '5 Plain St', 'C', 'p@rp.example', '+15550004005', 100, 'new', 'path');
+  perform _t_act('e4000000-0000-0000-0000-000000000003');
+  begin
+    -- a1 already carries P1 (set by the merge in case 7), so clearing it is a change.
+    update deals set source_partner_id = null
+     where id = 'e4d00000-0000-0000-0000-0000000000a1';
+    raise exception 'rewriting source_partner_id should fail';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update deals set source_partner_id = 'e4a00000-0000-0000-0000-000000000001'
+     where id = 'e4d00000-0000-0000-0000-0000000000a5';
+    raise exception 'forging source_partner_id should fail';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into deals (org_id, owner_id, company_name, address, contact_name, contact_email, contact_phone, value_cents, stage, lead_source, source_partner_id)
+    values ('00000000-0000-0000-0000-0000000000e4', 'e4000000-0000-0000-0000-000000000003', 'Forged Co', '8 Forge St', 'C', 'f@rp.example', '+15550004008', 100, 'new', 'path', 'e4a00000-0000-0000-0000-000000000001');
+    raise exception 'inserting with source_partner_id should fail';
+  exception when insufficient_privilege then null;
+  end;
+  update deals set company_name = 'Existing Co 2' where id = 'e4d00000-0000-0000-0000-0000000000a1';
+end $$;
+
 -- 13. Anonymous callers cannot execute the RPCs. Checked through the privilege
 --     catalog rather than by calling: on the local Postgres 17.6 image, any
 --     function-level "permission denied" segfaults the server (reproduced with a
@@ -234,7 +331,8 @@ do $$ declare f text; begin
     'public.decline_referral(uuid,referral_decline_reason,text)',
     'public.merge_referral(uuid,uuid)',
     'public.withdraw_referral(uuid,text)',
-    'public.reassign_referral(uuid,uuid)'
+    'public.reassign_referral(uuid,uuid)',
+    'public.can_triage(referrals)'
   ] loop
     if has_function_privilege('anon', f, 'execute') then
       raise exception 'anon must not execute %', f;
