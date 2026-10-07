@@ -202,10 +202,21 @@ do $$ declare o uuid; st text; n int; begin
   o := public.refer_deal_to_partner('e4a00000-0000-0000-0000-000000000001', 'e4d00000-0000-0000-0000-0000000000a1');
   select status::text into st from referrals where id = o;
   if st <> 'working' then raise exception 'outbound referral should mirror the contacted deal as working, got %', st; end if;
-  perform public.remove_referral_link('e4a00000-0000-0000-0000-000000000001', 'e4d00000-0000-0000-0000-0000000000a1');
+  perform public.remove_referral_link('e4a00000-0000-0000-0000-000000000001', 'e4d00000-0000-0000-0000-0000000000a1', 'outbound');
+  select status::text into st from referrals where id = o;
+  if st <> 'withdrawn' then raise exception 'outbound link should be withdrawn, got %', st; end if;
+  select count(*) into n from referral_status_history
+   where referral_id = o and to_status = 'withdrawn' and note = 'Link removed';
+  if n <> 1 then raise exception 'expected one Link removed history row, got %', n; end if;
   select count(*) into n from referrals where partner_id = 'e4a00000-0000-0000-0000-000000000001'
-    and deal_id = 'e4d00000-0000-0000-0000-0000000000a1' and source = 'rep_entered';
-  if n <> 0 then raise exception 'remove_referral_link should delete rep_entered links, % left', n; end if;
+    and deal_id = 'e4d00000-0000-0000-0000-0000000000a1' and direction = 'inbound' and status = 'working';
+  if n <> 1 then raise exception 'merged inbound referral must be untouched, found % working', n; end if;
+  perform _t_act('e4000000-0000-0000-0000-000000000004');
+  begin
+    perform public.remove_referral_link('e4a00000-0000-0000-0000-000000000001', 'e4d00000-0000-0000-0000-0000000000a1', 'inbound');
+    raise exception 'rep2 removing rep1 link should fail';
+  exception when insufficient_privilege then null;
+  end;
 end $$;
 
 -- 13. Anonymous callers cannot execute the RPCs. Checked through the privilege
@@ -218,7 +229,7 @@ do $$ declare f text; begin
     'public.log_referral(uuid,text,text,text,text,text,text,text,text)',
     'public.attribute_deal_to_partner(uuid,uuid,text)',
     'public.refer_deal_to_partner(uuid,uuid,text)',
-    'public.remove_referral_link(uuid,uuid)',
+    'public.remove_referral_link(uuid,uuid,text)',
     'public.accept_referral(uuid)',
     'public.decline_referral(uuid,referral_decline_reason,text)',
     'public.merge_referral(uuid,uuid)',

@@ -118,32 +118,47 @@ returns uuid language sql security definer set search_path = public as $$
   select public._link_deal_to_partner(p_partner_id, p_deal_id, 'outbound', p_note)
 $$;
 
--- Remove a rep-entered link (today's "x" on the partner page). Same rule as the
--- old partner_deals delete: the creator, a manager, or an admin.
-create or replace function public.remove_referral_link(p_partner_id uuid, p_deal_id uuid)
-returns void language plpgsql security definer set search_path = public as $$
+-- Remove a rep-entered link (today's "x" on the partner page). The referral is
+-- withdrawn, never deleted, so its status history stays intact. Allowed for the
+-- submitter or anyone who can triage it, and only on a deal the caller can see.
+create or replace function public.remove_referral_link(
+  p_partner_id uuid, p_deal_id uuid, p_direction text default 'inbound'
+) returns void language plpgsql security definer set search_path = public as $$
 declare
-  n int;
+  n      int;
+  v_deal deals;
 begin
+  if p_direction not in ('inbound','outbound') then
+    raise exception 'invalid_direction' using errcode = '22023';
+  end if;
   if not public.can_see_partner(p_partner_id) then
     raise exception 'partner_not_visible' using errcode = '42501';
   end if;
-  delete from referrals
+  select * into v_deal from deals where id = p_deal_id;
+  if not found or v_deal.org_id is distinct from public.user_org_id()
+     or not public.user_can_see_owner(v_deal.owner_id) then
+    raise exception 'deal_not_visible' using errcode = '42501';
+  end if;
+  perform public._referral_set_note('Link removed');
+  update referrals
+     set status = 'withdrawn'
    where partner_id = p_partner_id
      and deal_id = p_deal_id
+     and direction = p_direction
      and source = 'rep_entered'
      and org_id = public.user_org_id()
-     and (submitted_by_user_id = auth.uid()
-          or public.user_role() in ('manager','admin')
-          or public.caller_is_admin());
+     and status not in ('declined','withdrawn')
+     and (submitted_by_user_id = auth.uid() or public.can_triage_referral(assigned_user_id));
   get diagnostics n = row_count;
+  perform public._referral_set_note('');
   if n = 0 then
     raise exception 'not_authorized' using errcode = '42501';
   end if;
   update deals set source_partner_id = null
    where id = p_deal_id and source_partner_id = p_partner_id
      and not exists (select 1 from referrals r
-                     where r.deal_id = p_deal_id and r.partner_id = p_partner_id and r.direction = 'inbound');
+                     where r.deal_id = p_deal_id and r.partner_id = p_partner_id
+                       and r.direction = 'inbound' and r.status not in ('declined','withdrawn'));
 end $$;
 
 -- Accept: create the deal, tag the lead source, add the first follow-up -------
@@ -313,7 +328,7 @@ revoke execute on function public._link_deal_to_partner(uuid, uuid, text, text) 
 revoke execute on function public.log_referral(uuid, text, text, text, text, text, text, text, text) from public, anon;
 revoke execute on function public.attribute_deal_to_partner(uuid, uuid, text)         from public, anon;
 revoke execute on function public.refer_deal_to_partner(uuid, uuid, text)             from public, anon;
-revoke execute on function public.remove_referral_link(uuid, uuid)                    from public, anon;
+revoke execute on function public.remove_referral_link(uuid, uuid, text)              from public, anon;
 revoke execute on function public.accept_referral(uuid)                               from public, anon;
 revoke execute on function public.decline_referral(uuid, referral_decline_reason, text) from public, anon;
 revoke execute on function public.merge_referral(uuid, uuid)                          from public, anon;
@@ -323,7 +338,7 @@ revoke execute on function public.reassign_referral(uuid, uuid)                 
 grant execute on function public.log_referral(uuid, text, text, text, text, text, text, text, text) to authenticated;
 grant execute on function public.attribute_deal_to_partner(uuid, uuid, text)          to authenticated;
 grant execute on function public.refer_deal_to_partner(uuid, uuid, text)              to authenticated;
-grant execute on function public.remove_referral_link(uuid, uuid)                     to authenticated;
+grant execute on function public.remove_referral_link(uuid, uuid, text)               to authenticated;
 grant execute on function public.accept_referral(uuid)                                to authenticated;
 grant execute on function public.decline_referral(uuid, referral_decline_reason, text) to authenticated;
 grant execute on function public.merge_referral(uuid, uuid)                           to authenticated;
