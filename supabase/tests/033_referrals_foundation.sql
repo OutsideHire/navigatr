@@ -146,4 +146,13 @@ do $$ begin
   end;
 end $$;
 
+-- Internal helpers are not callable by the app roles.
+do $$ declare f text; r text; begin
+  foreach f in array array['public.profile_can_see_owner(uuid,uuid)','public.referral_route_assignee(uuid)','public.next_business_day(date,uuid)','public.can_triage_referral(uuid)'] loop
+    foreach r in array array['authenticated','anon'] loop
+      if has_function_privilege(r, f, 'execute') then raise exception '% must not be executable by %', f, r; end if;
+    end loop;
+  end loop;
+end $$;
+
 rollback;

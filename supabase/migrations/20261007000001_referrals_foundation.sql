@@ -243,9 +243,9 @@ returns boolean language sql stable security definer set search_path = public as
   end
 $$;
 
-revoke execute on function public.profile_can_see_owner(uuid, uuid) from public, anon;
-revoke execute on function public.referral_route_assignee(uuid)      from public, anon;
-revoke execute on function public.next_business_day(date, uuid)       from public, anon;
-revoke execute on function public.can_triage_referral(uuid)           from public, anon;
-revoke execute on function public.referrals_enforce_org()             from public, anon;
-revoke execute on function public.referrals_record_status()           from public, anon;
+revoke execute on function public.profile_can_see_owner(uuid, uuid) from public, anon, authenticated;
+revoke execute on function public.referral_route_assignee(uuid)      from public, anon, authenticated;
+revoke execute on function public.next_business_day(date, uuid)       from public, anon, authenticated;
+revoke execute on function public.can_triage_referral(uuid)           from public, anon, authenticated;
+revoke execute on function public.referrals_enforce_org()             from public, anon, authenticated;
+revoke execute on function public.referrals_record_status()           from public, anon, authenticated;
