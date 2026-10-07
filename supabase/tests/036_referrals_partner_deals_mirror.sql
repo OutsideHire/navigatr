@@ -26,10 +26,27 @@ do $$ declare st text; src text; dir text; cn text; snap text; begin
   end if;
 end $$;
 
-do $$ declare n int; begin
+do $$ declare st text; n int; act text; begin
   delete from partner_deals where deal_id = 'e5d00000-0000-0000-0000-000000000001';
-  select count(*) into n from referrals where deal_id = 'e5d00000-0000-0000-0000-000000000001';
-  if n <> 0 then raise exception 'delete should remove the mirrored referral'; end if;
+  select status::text into st from referrals where deal_id = 'e5d00000-0000-0000-0000-000000000001';
+  if st <> 'withdrawn' then raise exception 'delete should set status to withdrawn, got %', st; end if;
+  select count(*) into n from referral_status_history where referral_id = (select id from referrals where deal_id = 'e5d00000-0000-0000-0000-000000000001') and to_status = 'withdrawn' and actor_type = 'system';
+  if n <> 1 then raise exception 'should have system history row to withdrawn'; end if;
+end $$;
+
+do $$ declare cn text; begin
+  insert into deals (id, org_id, owner_id, company_name, contact_name, contact_email, contact_phone, value_cents, stage) values
+    ('e5d00000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000e5', 'e5000000-0000-0000-0000-000000000001', '   ', 'C2', 'c2@rm.example', '+15550005002', 100, 'submitted');
+  insert into partner_deals (partner_id, deal_id, org_id, attributed_by) values
+    ('e5a00000-0000-0000-0000-000000000001', 'e5d00000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000e5', 'e5000000-0000-0000-0000-000000000001');
+  select company_name into cn from referrals where deal_id = 'e5d00000-0000-0000-0000-000000000002';
+  if cn <> 'Unnamed business' then raise exception 'whitespace company_name should map to "Unnamed business", got %', cn; end if;
+end $$;
+
+do $$ begin
+  if not (select has_function_privilege('authenticated', 'public.partner_deals_mirror_to_referrals()', 'execute') = false) then
+    raise exception 'authenticated should not have execute on mirror function';
+  end if;
 end $$;
 
 do $$ begin

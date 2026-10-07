@@ -17,7 +17,7 @@ insert into referrals (
   triaged_at, notes
 )
 select pd.org_id, pd.partner_id, pd.direction, 'rep_entered',
-       public.referral_status_for_stage(d.stage), d.company_name, d.contact_name,
+       public.referral_status_for_stage(d.stage), coalesce(nullif(btrim(d.company_name), ''), 'Unnamed business'), d.contact_name,
        d.contact_email, d.contact_phone, d.address, d.place_id, d.industry, p.company,
        pd.deal_id, d.owner_id, pd.attributed_by, pd.attributed_at, pd.attributed_by,
        pd.attributed_at, coalesce(pd.notes, '')
@@ -41,7 +41,7 @@ begin
       triaged_at, notes
     )
     select new.org_id, new.partner_id, new.direction, 'rep_entered',
-           public.referral_status_for_stage(d.stage), d.company_name, d.contact_name,
+           public.referral_status_for_stage(d.stage), coalesce(nullif(btrim(d.company_name), ''), 'Unnamed business'), d.contact_name,
            d.contact_email, d.contact_phone, d.address, d.place_id, d.industry, p.company,
            new.deal_id, d.owner_id, new.attributed_by, new.attributed_at, new.attributed_by,
            new.attributed_at, coalesce(new.notes, '')
@@ -52,8 +52,15 @@ begin
     perform set_config('navigatr.referral_actor', '', true);
     return new;
   end if;
-  delete from referrals
-   where partner_id = old.partner_id and deal_id = old.deal_id and source = 'rep_entered';
+  perform set_config('navigatr.referral_actor', 'system', true);
+  update referrals
+    set status = 'withdrawn'
+   where partner_id = old.partner_id
+     and deal_id = old.deal_id
+     and direction = old.direction
+     and source = 'rep_entered'
+     and status not in ('declined', 'withdrawn');
+  perform set_config('navigatr.referral_actor', '', true);
   return old;
 end $$;
 
