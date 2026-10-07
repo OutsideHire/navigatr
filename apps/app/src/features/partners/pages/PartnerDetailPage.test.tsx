@@ -69,6 +69,10 @@ vi.mock("../components/EditPartnerSheet", () => ({
 vi.mock("../components/PartnerNotesCard", () => ({
   PartnerNotesCard: () => <div data-testid="partner-notes-card" />,
 }));
+vi.mock("../components/ReferralQueueCard", () => ({ ReferralQueueCard: () => null }));
+vi.mock("../components/LogReferralSheet", () => ({
+  LogReferralSheet: ({ open }: { open: boolean }) => (open ? <div data-testid="log-referral-sheet" /> : null),
+}));
 vi.mock("../components/ReferralPreviewSheet", () => ({
   ReferralPreviewSheet: ({ deal, open }: { deal: { id: string } | null; open: boolean }) =>
     open && deal ? <div data-testid="referral-preview" data-deal={deal.id} /> : null,
@@ -324,5 +328,17 @@ describe("PartnerDetailPage / cadence", () => {
     renderPage({ partners, deals: [], partnerId: "p1" });
     expect(screen.getByText(/Every 30 days/)).toBeTruthy();
     expect(screen.getByText(/Overdue/)).toBeTruthy();
+  });
+});
+
+describe("PartnerDetailPage / log a referral", () => {
+  beforeEach(() => {
+    authUserId = undefined;
+  });
+
+  it("opens the Log a referral sheet", () => {
+    renderPage({ partners: [partner({ id: "p1" })], deals: [], partnerId: "p1" });
+    fireEvent.click(screen.getByRole("button", { name: "Log a referral" }));
+    expect(screen.getByTestId("log-referral-sheet")).toBeInTheDocument();
   });
 });
