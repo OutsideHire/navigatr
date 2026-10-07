@@ -37,12 +37,17 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
   const [mergeDealId, setMergeDealId] = React.useState("");
   const [dupName, setDupName] = React.useState<string | null>(null);
 
+  const referralId = referral?.id;
+
   React.useEffect(() => {
     setMode("main");
     setReason("");
     setNote("");
     setMergeDealId("");
     setDupName(null);
+  }, [open, referralId]);
+
+  React.useEffect(() => {
     if (!open || !referral) return;
     let live = true;
     void checkPlaceDuplicate({
@@ -52,7 +57,9 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
       address: referral.address,
     }).then((m) => { if (live) setDupName(m?.companyName ?? null); });
     return () => { live = false; };
-  }, [open, referral, checkPlaceDuplicate]);
+    // Keyed on the referral id so a refetch with a new object does not re-run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, referralId, checkPlaceDuplicate]);
 
   const openDeals = React.useMemo(
     () => deals

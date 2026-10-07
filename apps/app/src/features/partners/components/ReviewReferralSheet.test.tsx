@@ -27,6 +27,21 @@ vi.mock("@/features/pipeline/hooks/useDeals", () => ({
 }));
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
+vi.mock("@/components/navigatr", async (orig) => {
+  const actual = await orig<typeof import("@/components/navigatr")>();
+  return {
+    ...actual,
+    Select: ({ value, onValueChange, options, placeholder }: {
+      value?: string; onValueChange?: (v: string) => void;
+      options: Array<{ value: string; label: string }>; placeholder?: string;
+    }) => (
+      <select aria-label={placeholder} value={value ?? ""} onChange={(e) => onValueChange?.(e.target.value)}>
+        <option value="">--</option>
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    ),
+  };
+});
 vi.mock("sonner", () => ({ toast: { success: (...a: unknown[]) => toastSuccess(...a), error: (...a: unknown[]) => toastError(...a) } }));
 
 const referral: QueueReferral = {
@@ -95,5 +110,42 @@ describe("ReviewReferralSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
     await waitFor(() => expect(toastError).toHaveBeenCalledWith("This referral was already handled."));
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it("keeps state when the parent passes a new object for the same referral", async () => {
+    const onOpenChange = vi.fn();
+    const { rerender } = render(<ReviewReferralSheet referral={referral} open onOpenChange={onOpenChange} />);
+    await userEvent.click(screen.getByRole("button", { name: "Decline" }));
+    rerender(<ReviewReferralSheet referral={{ ...referral }} open onOpenChange={onOpenChange} />);
+    expect(screen.getByRole("button", { name: "Decline referral" })).toBeInTheDocument();
+  });
+
+  it("declines with the chosen reason", async () => {
+    decline.mockResolvedValueOnce(undefined);
+    const onOpenChange = renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Decline" }));
+    await userEvent.selectOptions(screen.getByLabelText("Pick a reason…"), "outside_icp");
+    await userEvent.click(screen.getByRole("button", { name: "Decline referral" }));
+    expect(decline).toHaveBeenCalledWith({ referralId: "r-1", reason: "outside_icp", note: "" });
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(toastSuccess).toHaveBeenCalledWith("Referral declined");
+  });
+
+  it("merges into the picked deal", async () => {
+    merge.mockResolvedValueOnce(undefined);
+    const onOpenChange = renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Merge" }));
+    await userEvent.selectOptions(screen.getByLabelText("Pick a deal…"), "d-1");
+    await userEvent.click(screen.getByRole("button", { name: "Merge into deal" }));
+    expect(merge).toHaveBeenCalledWith({ referralId: "r-1", dealId: "d-1" });
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(toastSuccess).toHaveBeenCalledWith("Merged into the existing deal");
+  });
+
+  it("lists only open deals sorted by company name", async () => {
+    renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Merge" }));
+    const labels = screen.getAllByRole("option").map((o) => o.textContent).filter((l) => l !== "--");
+    expect(labels).toEqual(["Alpha Gym", "Zed Cafe"]);
   });
 });
