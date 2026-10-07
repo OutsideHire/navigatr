@@ -62,6 +62,7 @@ import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { Loader2, Check, MessageSquare } from "lucide-react";
 import { Select, type SelectOption, NotesFieldWithMic } from "@/components/navigatr";
 import { ReferralSection } from "../components/ReferralSection";
+import { ReferralQueueCard } from "../components/ReferralQueueCard";
 import { type PartnerStatus } from "../mockData";
 import { useProfile } from "@/features/auth/useProfile";
 import { useAuth } from "@/stores/auth";
@@ -716,6 +717,7 @@ export function PartnerDetailPage() {
           open={logTouchOpen}
           onOpenChange={setLogTouchOpen}
         />
+        <ReferralQueueCard partnerId={partner.id} />
         <ReferralSection
           title="Referred to us"
           deals={inboundDeals}
