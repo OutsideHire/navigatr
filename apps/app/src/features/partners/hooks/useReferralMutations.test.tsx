@@ -35,14 +35,14 @@ describe("useLogReferral", () => {
 });
 
 describe("useAcceptReferral", () => {
-  it("returns accepted with the new deal id and refreshes deals, partners, referrals", async () => {
+  it("returns accepted with the new deal id and refreshes deals, partners, referrals, tasks", async () => {
     rpcMock.mockResolvedValueOnce({ data: { result: "accepted", deal_id: "d-1" }, error: null });
     const { wrapper, spy } = setup();
     const { result } = renderHook(() => useAcceptReferral(), { wrapper });
     await expect(result.current.mutateAsync("r-1")).resolves.toEqual({ result: "accepted", dealId: "d-1" });
     expect(rpcMock).toHaveBeenCalledWith("accept_referral", { p_referral_id: "r-1" });
     await waitFor(() => expect(spy.mock.calls.map((x) => x[0]?.queryKey)).toEqual([
-      ["referrals"], ["partners", "list", "user-1"], ["deals", "list", "user-1"],
+      ["referrals"], ["partners", "list", "user-1"], ["deals", "list", "user-1"], ["tasks", "user-1"],
     ]));
   });
 

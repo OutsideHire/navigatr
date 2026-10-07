@@ -162,8 +162,8 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
                 Accept
               </Button>
               <div className="flex gap-2">
-                <Button variant="secondary" className="flex-1" onClick={() => setMode("merge")}>Merge</Button>
-                <Button variant="secondary" className="flex-1" onClick={() => setMode("decline")}>Decline</Button>
+                <Button variant="secondary" className="flex-1" disabled={accept.isPending} onClick={() => setMode("merge")}>Merge</Button>
+                <Button variant="secondary" className="flex-1" disabled={accept.isPending} onClick={() => setMode("decline")}>Decline</Button>
               </div>
             </div>
           )}

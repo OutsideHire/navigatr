@@ -29,6 +29,13 @@ function setup() {
 }
 
 describe("LogReferralSheet", () => {
+  it("turns browser autofill off on every field (they describe a third party)", () => {
+    setup();
+    for (const label of ["Business name", "Contact name", "Phone", "Email", "Address"]) {
+      expect(screen.getByLabelText(label)).toHaveAttribute("autocomplete", "off");
+    }
+  });
+
   it("needs a business name", () => {
     setup();
     expect(screen.getByRole("button", { name: "Log referral" })).toBeDisabled();

@@ -32,14 +32,29 @@ beforeEach(() => { maybeSingleMock.mockReset(); calls.length = 0; });
 describe("useDealReferral", () => {
   it("returns the earliest live inbound referral for the deal", async () => {
     maybeSingleMock.mockResolvedValueOnce({
-      data: { id: "r-1", partner_id: "p-1", partner: { name: "Jane", company: "Jane & Co" } }, error: null,
+      data: { id: "r-1", partner_id: "p-1", partner_company_snapshot: "Jane & Co", partner: { name: "Jane", company: "Jane & Co" } }, error: null,
     });
     const { result } = renderHook(() => useDealReferral("d-1"), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual({ referralId: "r-1", partnerId: "p-1", partnerName: "Jane", partnerCompany: "Jane & Co" });
+    expect(result.current.data).toEqual({
+      referralId: "r-1", partnerId: "p-1", partnerVisible: true, partnerName: "Jane",
+      partnerCompany: "Jane & Co", partnerCompanySnapshot: "Jane & Co",
+    });
     expect(calls).toContainEqual(["eq", "deal_id", "d-1"]);
     expect(calls).toContainEqual(["eq", "direction", "inbound"]);
     expect(calls).toContainEqual(["not", "status", "in", "(declined,withdrawn)"]);
+  });
+
+  it("marks the partner not visible when the embed is hidden by RLS", async () => {
+    maybeSingleMock.mockResolvedValueOnce({
+      data: { id: "r-3", partner_id: "p-3", partner_company_snapshot: "Snap & Co", partner: null }, error: null,
+    });
+    const { result } = renderHook(() => useDealReferral("d-3"), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual({
+      referralId: "r-3", partnerId: "p-3", partnerVisible: false, partnerName: null,
+      partnerCompany: null, partnerCompanySnapshot: "Snap & Co",
+    });
   });
 
   it("returns null when the deal has no referral", async () => {

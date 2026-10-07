@@ -538,13 +538,21 @@ function SourceCard({ deal }: { deal: Deal }) {
       )}
       {referral && (
         <p className="mt-3 text-caption text-text-subtle">
-          Referred by{" "}
-          <Link
-            to={`/partners/${referral.partnerId}`}
-            className="text-text-default underline underline-offset-2 hover:text-text-muted"
-          >
-            {referral.partnerName} ({referral.partnerCompany})
-          </Link>
+          {referral.partnerVisible ? (
+            <>
+              Referred by{" "}
+              <Link
+                to={`/partners/${referral.partnerId}`}
+                className="text-text-default underline underline-offset-2 hover:text-text-muted"
+              >
+                {referral.partnerName} ({referral.partnerCompany})
+              </Link>
+            </>
+          ) : referral.partnerCompanySnapshot ? (
+            `Referred by a partner (${referral.partnerCompanySnapshot})`
+          ) : (
+            "Referred by a partner"
+          )}
         </p>
       )}
       {showSourceNote && (

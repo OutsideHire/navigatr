@@ -60,7 +60,14 @@ export function useLogReferral() {
 }
 
 export function useAcceptReferral() {
-  const refresh = useRefresh(true);
+  const refreshAll = useRefresh(true);
+  const queryClient = useQueryClient();
+  const userId = useAuth((s) => s.user?.id);
+  // Accepting also creates the first follow-up task.
+  const refresh = () => {
+    refreshAll();
+    void queryClient.invalidateQueries({ queryKey: ["tasks", userId ?? "anon"] });
+  };
   return useMutation({
     mutationFn: async (referralId: string): Promise<AcceptResult> => {
       const { data, error } = await supabase.rpc("accept_referral", { p_referral_id: referralId });

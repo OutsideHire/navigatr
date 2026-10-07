@@ -12,7 +12,7 @@ vi.mock("@/lib/supabase", () => ({
   supabase: {
     from: (table: string) => {
       if (table !== "referrals") throw new Error(`unexpected table ${table}`);
-      return { select: (...a: unknown[]) => { selectMock(...a); return { eq: (...e: unknown[]) => { eqMock(...e); return { eq: (...e2: unknown[]) => { eqMock(...e2); return { order: orderMock }; } }; } }; } };
+      return { select: (...a: unknown[]) => { selectMock(...a); return { eq: (...e: unknown[]) => { eqMock(...e); return { eq: (...e2: unknown[]) => { eqMock(...e2); return { eq: (...e3: unknown[]) => { eqMock(...e3); return { order: orderMock }; } }; } }; } }; } };
     },
   },
 }));
@@ -39,7 +39,7 @@ describe("useReferralQueue", () => {
     });
     const { result } = renderHook(() => useReferralQueue(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(eqMock.mock.calls).toEqual([["status", "submitted"], ["direction", "inbound"]]);
+    expect(eqMock.mock.calls).toEqual([["status", "submitted"], ["direction", "inbound"], ["can_triage", true]]);
     expect(orderMock).toHaveBeenCalledWith("submitted_at", { ascending: true });
     expect(result.current.data).toEqual([{
       id: "r-1", partnerId: "p-1", partnerName: "Jane", partnerCompany: "Jane & Co",
@@ -47,6 +47,21 @@ describe("useReferralQueue", () => {
       address: "5 Oak St", placeId: null, notes: "Wants a demo",
       submittedAt: "2026-10-07T12:00:00Z", assignedUserId: "user-1",
     }]);
+  });
+
+  it("falls back to the partner snapshot when the partner embed is hidden", async () => {
+    orderMock.mockResolvedValueOnce({
+      data: [{
+        id: "r-2", partner_id: "p-9", company_name: "Hidden Co", contact_name: null,
+        contact_email: null, contact_phone: null, address: null, place_id: null,
+        notes: "", submitted_at: "2026-10-07T12:00:00Z", assigned_user_id: null,
+        partner_company_snapshot: "Snap & Co", partner: null,
+      }],
+      error: null,
+    });
+    const { result } = renderHook(() => useReferralQueue(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0]).toMatchObject({ partnerName: "", partnerCompany: "Snap & Co" });
   });
 
   it("throws the query error", async () => {

@@ -7,10 +7,11 @@ import { ReviewReferralSheet } from "./ReviewReferralSheet";
 import type { QueueReferral } from "../hooks/useReferralQueue";
 
 const accept = vi.fn();
+let acceptPending = false;
 const decline = vi.fn();
 const merge = vi.fn();
 vi.mock("../hooks/useReferralMutations", () => ({
-  useAcceptReferral: () => ({ mutateAsync: accept, isPending: false }),
+  useAcceptReferral: () => ({ mutateAsync: accept, isPending: acceptPending }),
   useDeclineReferral: () => ({ mutateAsync: decline, isPending: false }),
   useMergeReferral: () => ({ mutateAsync: merge, isPending: false }),
 }));
@@ -57,7 +58,7 @@ function renderSheet(onOpenChange = vi.fn()) {
 }
 
 beforeEach(() => {
-  accept.mockReset(); decline.mockReset(); merge.mockReset();
+  acceptPending = false; accept.mockReset(); decline.mockReset(); merge.mockReset();
   checkPlaceDuplicate.mockReset().mockResolvedValue(null);
   toastSuccess.mockReset(); toastError.mockReset();
 });
@@ -77,6 +78,13 @@ describe("ReviewReferralSheet", () => {
     checkPlaceDuplicate.mockResolvedValueOnce({ tier: "phone", dealId: "d-1", companyName: "Zed Cafe", dealHasPlaceId: false });
     renderSheet();
     expect(await screen.findByText(/Possible duplicate: Zed Cafe is already in your team's pipeline/)).toBeInTheDocument();
+  });
+
+  it("disables Merge and Decline while an accept is in flight", () => {
+    acceptPending = true;
+    renderSheet();
+    expect(screen.getByRole("button", { name: "Merge" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Decline" })).toBeDisabled();
   });
 
   it("accepts and closes", async () => {

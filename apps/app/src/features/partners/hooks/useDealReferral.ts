@@ -8,13 +8,17 @@ import { supabase } from "@/lib/supabase";
 export interface DealReferral {
   referralId: string;
   partnerId: string;
-  partnerName: string;
-  partnerCompany: string;
+  /** False when partners RLS hides the partner from this viewer. */
+  partnerVisible: boolean;
+  partnerName: string | null;
+  partnerCompany: string | null;
+  partnerCompanySnapshot: string | null;
 }
 
 interface Row {
   id: string;
   partner_id: string;
+  partner_company_snapshot: string | null;
   partner: { name: string; company: string } | null;
 }
 
@@ -25,7 +29,7 @@ export function useDealReferral(dealId: string | undefined) {
     queryFn: async (): Promise<DealReferral | null> => {
       const { data, error } = await supabase
         .from("referrals")
-        .select("id, partner_id, partner:partners(name, company)")
+        .select("id, partner_id, partner_company_snapshot, partner:partners(name, company)")
         .eq("deal_id", dealId as string)
         .eq("direction", "inbound")
         .not("status", "in", "(declined,withdrawn)")
@@ -38,8 +42,10 @@ export function useDealReferral(dealId: string | undefined) {
       return {
         referralId: row.id,
         partnerId: row.partner_id,
-        partnerName: row.partner?.name ?? "",
-        partnerCompany: row.partner?.company ?? "",
+        partnerVisible: row.partner !== null,
+        partnerName: row.partner?.name ?? null,
+        partnerCompany: row.partner?.company ?? null,
+        partnerCompanySnapshot: row.partner_company_snapshot,
       };
     },
     staleTime: 30_000,

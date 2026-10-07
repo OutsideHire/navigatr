@@ -36,6 +36,7 @@ interface QueueRow {
   notes: string;
   submitted_at: string;
   assigned_user_id: string | null;
+  partner_company_snapshot: string | null;
   partner: { name: string; company: string } | null;
 }
 
@@ -52,18 +53,21 @@ export function useReferralQueue() {
         .from("referrals")
         .select(
           "id, partner_id, company_name, contact_name, contact_email, contact_phone, " +
-            "address, place_id, notes, submitted_at, assigned_user_id, " +
+            "address, place_id, notes, submitted_at, assigned_user_id, partner_company_snapshot, " +
             "partner:partners(name, company)",
         )
         .eq("status", "submitted")
         .eq("direction", "inbound")
+        // RLS shows everything the user can see (including via partner visibility);
+        // only offer rows they can actually triage.
+        .eq("can_triage", true)
         .order("submitted_at", { ascending: true });
       if (error) throw error;
       return ((data ?? []) as unknown as QueueRow[]).map((r) => ({
         id: r.id,
         partnerId: r.partner_id,
         partnerName: r.partner?.name ?? "",
-        partnerCompany: r.partner?.company ?? "",
+        partnerCompany: r.partner?.company ?? r.partner_company_snapshot ?? "",
         companyName: r.company_name,
         contactName: r.contact_name,
         contactEmail: r.contact_email,

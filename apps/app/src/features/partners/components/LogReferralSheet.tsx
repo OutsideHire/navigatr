@@ -21,11 +21,11 @@ export interface LogReferralSheetProps {
 const EMPTY = { companyName: "", contactName: "", contactPhone: "", contactEmail: "", address: "", notes: "" };
 
 const FIELDS: Array<{ key: keyof typeof EMPTY; label: string; type: string; autoComplete: string }> = [
-  { key: "companyName", label: "Business name", type: "text", autoComplete: "organization" },
-  { key: "contactName", label: "Contact name", type: "text", autoComplete: "name" },
-  { key: "contactPhone", label: "Phone", type: "tel", autoComplete: "tel" },
-  { key: "contactEmail", label: "Email", type: "email", autoComplete: "email" },
-  { key: "address", label: "Address", type: "text", autoComplete: "street-address" },
+  { key: "companyName", label: "Business name", type: "text", autoComplete: "off" },
+  { key: "contactName", label: "Contact name", type: "text", autoComplete: "off" },
+  { key: "contactPhone", label: "Phone", type: "tel", autoComplete: "off" },
+  { key: "contactEmail", label: "Email", type: "email", autoComplete: "off" },
+  { key: "address", label: "Address", type: "text", autoComplete: "off" },
 ];
 
 export function LogReferralSheet({ open, onOpenChange, partnerId, partnerName }: LogReferralSheetProps) {

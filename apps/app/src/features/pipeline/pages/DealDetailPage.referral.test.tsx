@@ -13,8 +13,10 @@ import { DEALS_QUERY_KEY } from "../hooks/useDeals";
 let dealReferral: {
   referralId: string;
   partnerId: string;
-  partnerName: string;
-  partnerCompany: string;
+  partnerVisible: boolean;
+  partnerName: string | null;
+  partnerCompany: string | null;
+  partnerCompanySnapshot: string | null;
 } | null = null;
 
 vi.mock("@/features/partners/hooks/useDealReferral", () => ({
@@ -45,11 +47,33 @@ function renderDealDetail() {
 
 describe("DealDetailPage / referred by", () => {
   it("shows who referred the deal, linking to the partner", async () => {
-    dealReferral = { referralId: "r-1", partnerId: "p-1", partnerName: "Jane", partnerCompany: "Jane & Co" };
+    dealReferral = {
+      referralId: "r-1", partnerId: "p-1", partnerVisible: true, partnerName: "Jane",
+      partnerCompany: "Jane & Co", partnerCompanySnapshot: "Jane & Co",
+    };
     renderDealDetail();
     const link = await screen.findByRole("link", { name: "Jane (Jane & Co)" });
     expect(link).toHaveAttribute("href", "/partners/p-1");
     expect(screen.getByText(/Referred by/)).toBeInTheDocument();
+  });
+
+  it("shows plain text, no link, when the partner is outside the viewer's subtree", async () => {
+    dealReferral = {
+      referralId: "r-2", partnerId: "p-2", partnerVisible: false, partnerName: null,
+      partnerCompany: null, partnerCompanySnapshot: "Snap & Co",
+    };
+    renderDealDetail();
+    expect(await screen.findByText("Referred by a partner (Snap & Co)")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Snap|Jane/ })).not.toBeInTheDocument();
+  });
+
+  it("drops the parenthetical when a hidden partner has no snapshot", async () => {
+    dealReferral = {
+      referralId: "r-2", partnerId: "p-2", partnerVisible: false, partnerName: null,
+      partnerCompany: null, partnerCompanySnapshot: null,
+    };
+    renderDealDetail();
+    expect(await screen.findByText("Referred by a partner")).toBeInTheDocument();
   });
 
   it("shows no referral line when the deal has none", async () => {
