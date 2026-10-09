@@ -482,6 +482,9 @@ verify_jwt = true
 [functions.intercom_user_hash]
 verify_jwt = true
 
+[functions.portal_invite]
+verify_jwt = true
+
 [functions.read_calendar_events]
 verify_jwt = true
 
