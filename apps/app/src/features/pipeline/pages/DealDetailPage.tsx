@@ -23,7 +23,8 @@
 
 import * as React from "react";
 import { ADDRESS_UNAVAILABLE } from "@/features/path/hooks/useMerchants";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { useDealReferral } from "@/features/partners/hooks/useDealReferral";
 import { toast } from "sonner";
 import * as Tabs from "@radix-ui/react-tabs";
 import {
@@ -505,6 +506,7 @@ function ContactInfoCard({ deal }: { deal: Deal }) {
 }
 
 function SourceCard({ deal }: { deal: Deal }) {
+  const { data: referral } = useDealReferral(deal.id);
   // Real lead-source metadata (LS-1): source + who set it + when created.
   const setBy = leadSourceSetBy(deal.leadSource);
   const setByLabel = setBy === "system" ? "System set" : setBy === "rep" ? "Rep set" : "Not set";
@@ -533,6 +535,25 @@ function SourceCard({ deal }: { deal: Deal }) {
       </div>
       {showPathOrigin && (
         <p className="mt-3 text-caption text-text-subtle">Created from a Path drop-in.</p>
+      )}
+      {referral && (
+        <p className="mt-3 text-caption text-text-subtle">
+          {referral.partnerVisible ? (
+            <>
+              Referred by{" "}
+              <Link
+                to={`/partners/${referral.partnerId}`}
+                className="text-text-default underline underline-offset-2 hover:text-text-muted"
+              >
+                {referral.partnerName} ({referral.partnerCompany})
+              </Link>
+            </>
+          ) : referral.partnerCompanySnapshot ? (
+            `Referred by a partner (${referral.partnerCompanySnapshot})`
+          ) : (
+            "Referred by a partner"
+          )}
+        </p>
       )}
       {showSourceNote && (
         <div className="mt-4 border-t border-border-subtle pt-4">

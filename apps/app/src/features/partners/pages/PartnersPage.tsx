@@ -57,6 +57,7 @@ import {
 import { formatMoney } from "@/features/pipeline/mockData";
 import { computeCadenceStatus, cadenceSignalLabel } from "../partnerCadence";
 import { AddPartnerSheet } from "../components/AddPartnerSheet";
+import { ReferralQueueCard } from "../components/ReferralQueueCard";
 import { usePartners } from "../hooks/usePartners";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { useViewerScope } from "@/features/scope/useViewerScope";
@@ -429,6 +430,8 @@ export function PartnersPage() {
             </Button>
           </div>
         </header>
+
+        <ReferralQueueCard />
 
         {/* Mobile search — desktop search lives in the hidden sm:flex
             action row above; on mobile that row collapses, so surface

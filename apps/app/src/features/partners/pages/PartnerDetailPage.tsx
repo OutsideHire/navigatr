@@ -62,6 +62,8 @@ import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { Loader2, Check, MessageSquare } from "lucide-react";
 import { Select, type SelectOption, NotesFieldWithMic } from "@/components/navigatr";
 import { ReferralSection } from "../components/ReferralSection";
+import { LogReferralSheet } from "../components/LogReferralSheet";
+import { ReferralQueueCard } from "../components/ReferralQueueCard";
 import { type PartnerStatus } from "../mockData";
 import { useProfile } from "@/features/auth/useProfile";
 import { useAuth } from "@/stores/auth";
@@ -632,6 +634,7 @@ export function PartnerDetailPage() {
   // it. When the form opens, we also scroll the timeline card into view
   // so the form is visible without the user hunting for it.
   const [logTouchOpen, setLogTouchOpen] = React.useState(false);
+  const [logReferralOpen, setLogReferralOpen] = React.useState(false);
   const timelineRef = React.useRef<HTMLDivElement | null>(null);
   const openLogTouch = React.useCallback(() => {
     setLogTouchOpen(true);
@@ -716,6 +719,12 @@ export function PartnerDetailPage() {
           open={logTouchOpen}
           onOpenChange={setLogTouchOpen}
         />
+        <div className="flex justify-end">
+          <Button variant="secondary" size="sm" leadingIcon={Plus} onClick={() => setLogReferralOpen(true)}>
+            Log a referral
+          </Button>
+        </div>
+        <ReferralQueueCard partnerId={partner.id} />
         <ReferralSection
           title="Referred to us"
           deals={inboundDeals}
@@ -734,7 +743,7 @@ export function PartnerDetailPage() {
           }}
           onRemove={async (dealId) => {
             try {
-              await unattribute.mutateAsync({ partnerId: partner.id, dealId });
+              await unattribute.mutateAsync({ partnerId: partner.id, dealId, direction: "inbound" });
               toast.success("Attribution removed");
             } catch (err) {
               toast.error(err instanceof Error ? err.message : "Could not remove attribution");
@@ -760,7 +769,7 @@ export function PartnerDetailPage() {
           }}
           onRemove={async (dealId) => {
             try {
-              await unattribute.mutateAsync({ partnerId: partner.id, dealId });
+              await unattribute.mutateAsync({ partnerId: partner.id, dealId, direction: "outbound" });
               toast.success("Referral removed");
             } catch (err) {
               toast.error(err instanceof Error ? err.message : "Could not remove referral");
@@ -769,6 +778,12 @@ export function PartnerDetailPage() {
           }}
         />
         <EditPartnerSheet open={editOpen} onOpenChange={setEditOpen} partner={partner} />
+        <LogReferralSheet
+          open={logReferralOpen}
+          onOpenChange={setLogReferralOpen}
+          partnerId={partner.id}
+          partnerName={partner.name}
+        />
         <ReferralPreviewSheet
           deal={previewDeal}
           open={previewDeal !== null}

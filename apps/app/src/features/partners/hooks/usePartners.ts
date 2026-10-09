@@ -3,8 +3,9 @@
  *
  * Returns the same shape PartnersPage already consumes (`Partner[]`).
  * RLS scopes results to the user's org; we don't pass an explicit
- * filter. The nested `partner_deals(deal_id)` select gets each
- * partner's attributed deal ids in one round-trip via PostgREST.
+ * filter. The nested `referrals(deal_id, direction, status)` select gets each
+ * partner's linked deal ids in one round-trip; declined, withdrawn, and
+ * not-yet-accepted referrals are dropped.
  *
  * Cache key tail = userId so sign-out invalidates cleanly.
  */
@@ -13,6 +14,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
 import type { Partner, PartnerStatus, PartnerType } from "../mockData";
+import { isLiveLink, type ReferralStatus } from "../lib/referrals";
 
 interface PartnerRow {
   id: string;
@@ -30,15 +32,18 @@ interface PartnerRow {
   owner_id: string | null;
   created_at: string;
   followup_cadence_days: number | null;
-  // Nested via PostgREST embedded resource
-  partner_deals: Array<{ deal_id: string; direction?: string }> | null;
+  // Nested via PostgREST embedded resource (referrals.partner_id FK).
+  referrals: Array<{ deal_id: string | null; direction?: string; status: ReferralStatus }> | null;
   // Owner display name, embedded from profiles via the partners.owner_id FK
   // (Bundle 2, FR-HIER-05). profiles_select is org-wide so it resolves.
   owner: { full_name: string | null } | null;
 }
 
 function toPartner(row: PartnerRow): Partner {
-  const links = row.partner_deals ?? [];
+  const links = (row.referrals ?? []).filter(
+    (l): l is { deal_id: string; direction?: string; status: ReferralStatus } =>
+      l.deal_id !== null && isLiveLink(l.status),
+  );
   return {
     id: row.id,
     name: row.name,
@@ -80,7 +85,7 @@ export function usePartners() {
           "id, name, company, type, status, phone, email, city, " +
             "last_touch_at, next_followup_at, notes, created_by, owner_id, " +
             "created_at, followup_cadence_days, " +
-            "partner_deals(deal_id, direction), " +
+            "referrals(deal_id, direction, status), " +
             "owner:profiles!partners_owner_id_fkey(full_name)",
         )
         .order("updated_at", { ascending: false });
