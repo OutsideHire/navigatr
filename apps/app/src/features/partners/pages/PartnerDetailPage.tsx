@@ -70,6 +70,7 @@ import { useAuth } from "@/stores/auth";
 import { EditPartnerSheet } from "../components/EditPartnerSheet";
 import { PartnerNotesCard } from "../components/PartnerNotesCard";
 import { ReferralPreviewSheet } from "../components/ReferralPreviewSheet";
+import { PortalAccessLine, PortalInviteButton } from "../components/PortalAccess";
 
 // ── Not found ──────────────────────────────────────────────────────
 
@@ -208,6 +209,7 @@ function HeroCard({
             Edit
           </Button>
         )}
+        <PortalInviteButton partnerId={partner.id} email={partner.email} />
       </div>
     </Card>
   );
@@ -232,6 +234,7 @@ function ContactCard({ partner }: { partner: Partner }) {
             {partner.email}
           </a>
         </div>
+        <PortalAccessLine partnerId={partner.id} />
         {partner.city && (
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-violet-20 text-accent-violet">
