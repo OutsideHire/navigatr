@@ -16,6 +16,7 @@ const BRAND: PortalBrand = {
 describe("PortalBrandProvider", () => {
   it("applies the tenant color and tab title, and resets both on unmount", () => {
     document.title = "navigatr";
+    document.documentElement.style.setProperty("--color-brand-primary", "#123456");
     const { unmount, getByText } = render(
       <PortalBrandProvider brand={BRAND}>
         <p>child</p>
@@ -25,6 +26,7 @@ describe("PortalBrandProvider", () => {
     const isDark = useTheme.getState().resolvedTheme === "dark";
     const expected = deriveBrandVars("#0f766e", isDark);
     const root = document.documentElement;
+    expect(expected?.primary).not.toBe("#123456");
     expect(root.style.getPropertyValue("--color-brand-primary")).toBe(expected?.primary);
     expect(root.style.getPropertyValue("--color-brand-primary-foreground")).toBe(expected?.foreground);
     expect(document.title).toBe("Acme ISO");
