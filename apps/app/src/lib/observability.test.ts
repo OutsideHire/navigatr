@@ -233,6 +233,34 @@ describe("observability", () => {
     expect(event.request.url).toContain("page=2");
   });
 
+  it("beforeBreadcrumb strips invite tokens from navigation from/to and fetch/xhr urls", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { initObservability } = await import("./observability");
+    initObservability();
+    const initArg = (Sentry.init as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+      beforeBreadcrumb: (c: { category?: string; data?: Record<string, unknown> }) => {
+        data?: Record<string, unknown>;
+      } | null;
+    };
+    const nav = initArg.beforeBreadcrumb({
+      category: "navigation",
+      data: { from: "/p/acme/invite?token=SECRET1", to: "/p/acme/invite?token=SECRET2&tab=1" },
+    });
+    expect(JSON.stringify(nav)).not.toMatch(/SECRET/);
+    expect(nav?.data?.to).toContain("tab=1");
+    for (const category of ["fetch", "xhr"]) {
+      const out = initArg.beforeBreadcrumb({
+        category,
+        data: { url: "https://x.supabase.co/functions/v1/portal_api/peek_invite?invite=SECRET3&a=1", status_code: 200 },
+      });
+      expect(JSON.stringify(out)).not.toMatch(/SECRET/);
+      expect(out?.data?.status_code).toBe(200);
+    }
+    const other = { category: "ui.click", message: "button" };
+    expect(initArg.beforeBreadcrumb(other)).toBe(other);
+  });
+
   it("beforeSend normalizes an UNHANDLED raw Supabase error (via hint) and scrubs PII in the rewritten value + extra", async () => {
     vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
     const Sentry = await import("@sentry/react");

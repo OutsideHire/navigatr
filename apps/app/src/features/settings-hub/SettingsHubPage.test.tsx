@@ -21,6 +21,9 @@ vi.mock("./tabs/OrganizationTab", () => ({
 vi.mock("./tabs/BrandingTab", () => ({
   BrandingTab: () => <div data-testid="tab-content">BRANDING_TAB_CONTENT</div>,
 }));
+vi.mock("./tabs/PartnerPortalTab", () => ({
+  PartnerPortalTab: () => <div data-testid="tab-content">PARTNER_PORTAL_TAB_CONTENT</div>,
+}));
 vi.mock("./tabs/ProfessionTab", () => ({
   ProfessionTab: () => <div data-testid="tab-content">PROFESSION_TAB_CONTENT</div>,
 }));
@@ -75,21 +78,28 @@ describe("SettingsHubPage — desktop layout", () => {
     expect(screen.getByTestId("tab-content")).toHaveTextContent("BRANDING_TAB_CONTENT");
   });
 
-  it("shows all 6 tabs to an admin in the rail", () => {
+  it("shows all 7 tabs to an admin in the rail", () => {
     profileShape = { data: { role: "admin" } };
     renderAt("/settings");
     const tablist = screen.getByRole("tablist", { name: /settings sections/i });
     const tabs = tablist.querySelectorAll('[role="tab"]');
-    expect(tabs).toHaveLength(6);
+    expect(tabs).toHaveLength(7);
     const labels = Array.from(tabs).map((t) => t.textContent);
     expect(labels).toEqual([
       "Personal",
       "Organization",
       "Integrations",
       "Branding",
+      "Partner portal",
       "Profession",
       "Danger zone",
     ]);
+  });
+
+  it("renders the Partner portal tab for an admin", () => {
+    profileShape = { data: { role: "admin" } };
+    renderAt("/settings?tab=partner-portal");
+    expect(screen.getByTestId("tab-content")).toHaveTextContent("PARTNER_PORTAL_TAB_CONTENT");
   });
 
   it("shows only 3 tabs to a rep", () => {
