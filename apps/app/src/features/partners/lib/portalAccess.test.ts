@@ -25,6 +25,9 @@ describe("portalAccessErrorMessage", () => {
       "The invite was created but the email didn't send. Try Resend invite.",
     );
     expect(portalAccessErrorMessage({ message: "partner_not_visible" })).toBe("You don't have access to do that.");
+    expect(portalAccessErrorMessage({ message: "invalid_transition" })).toBe(
+      "Revoked access can't be suspended. Restore it first if you want to change it.",
+    );
   });
 
   it("covers every code the portal_invite function can return", () => {

@@ -155,6 +155,20 @@ describe("PortalAccessLine", () => {
     expect(screen.getByRole("button", { name: "Revoke access" })).toBeInTheDocument();
   });
 
+  it("closing Manage clears a pending confirm, so reopening shows the actions", async () => {
+    const user = userEvent.setup();
+    state.user = { data: portalUser("active"), isPending: false };
+    render(<PortalAccessLine partnerId="p-1" partnerName="Jane" />);
+    await user.click(screen.getByRole("button", { name: "Manage" }));
+    await user.click(screen.getByRole("button", { name: "Revoke access" }));
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Manage" }));
+    await user.click(screen.getByRole("button", { name: "Manage" }));
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Revoke access" })).toBeInTheDocument();
+    expect(setAccessMutate).not.toHaveBeenCalled();
+  });
+
   it("shows a retry instead of Not invited when the status fails to load", async () => {
     const user = userEvent.setup();
     const refetch = vi.fn();

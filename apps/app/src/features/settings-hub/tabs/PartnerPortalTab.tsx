@@ -5,7 +5,9 @@
  * closed-won value, and copy the portal address.
  *
  * The form remounts whenever the saved state changes (key below), so it always
- * starts from what the server stored, including seeded starting text.
+ * starts from what the server stored, including seeded starting text. A save
+ * also resets the fields from what the server returned: blank terms or consent
+ * means "keep", so the saved row can equal the old one and leave the key as is.
  */
 import * as React from "react";
 import { toast } from "sonner";
@@ -16,7 +18,7 @@ import { TabHeader } from "./TabHeader";
 import { usePortalSettings, useUpdatePortalSettings, type PortalSettings } from "../usePortalSettings";
 
 function formKey(s: PortalSettings): string {
-  return [s.enabled, s.termsVersion, s.consentVersion, s.valueVisibility].join(":");
+  return JSON.stringify([s.enabled, s.termsVersion, s.consentVersion, s.valueVisibility, s.termsText, s.consentText]);
 }
 
 export function PartnerPortalTab() {
@@ -51,7 +53,11 @@ function PartnerPortalForm({ initial }: { initial: PortalSettings }) {
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await update.mutateAsync({ enabled, termsText, consentText, valueVisibility });
+      const saved = await update.mutateAsync({ enabled, termsText, consentText, valueVisibility });
+      setEnabled(saved.enabled);
+      setTermsText(saved.termsText ?? "");
+      setConsentText(saved.consentText ?? "");
+      setValueVisibility(saved.valueVisibility);
       toast.success("Portal settings saved");
     } catch {
       toast.error("Couldn't save the portal settings. Try again.");

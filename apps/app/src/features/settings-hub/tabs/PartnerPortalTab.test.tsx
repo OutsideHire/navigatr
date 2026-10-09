@@ -120,4 +120,24 @@ describe("PartnerPortalTab", () => {
     expect(await screen.findByText(/Version 1\. Partners who join after a change accept the new version\./)).toBeInTheDocument();
     expect(screen.queryByText(/accept again/i)).not.toBeInTheDocument();
   });
+
+  it("shows the kept text after saving blank terms and consent", async () => {
+    const user = userEvent.setup();
+    rpcMock.mockResolvedValueOnce({ data: [SEEDED], error: null }).mockResolvedValueOnce({ data: [SEEDED], error: null });
+    renderTab();
+    const terms = await screen.findByLabelText("Partner terms");
+    await user.clear(terms);
+    await user.clear(screen.getByLabelText("Consent line"));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(rpcMock).toHaveBeenLastCalledWith("update_portal_settings", {
+      p_enabled: true,
+      p_terms_text: "",
+      p_consent_text: "",
+      p_value_visibility: false,
+    });
+    expect(await screen.findByDisplayValue(SEEDED.terms_text)).toBeInTheDocument();
+    expect(screen.getByLabelText("Consent line")).toHaveValue(SEEDED.consent_text);
+    expect(toast.success).toHaveBeenCalledWith("Portal settings saved");
+  });
 });

@@ -110,7 +110,16 @@ export function PortalAccessLine({ partnerId, partnerName }: { partnerId: string
         <span className="min-w-0 flex-1 text-body-md text-text-default">
           Portal: {current ? PORTAL_STATUS_LABEL[current] : "Not invited"}
         </span>
-        <Button variant="tertiary" size="sm" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <Button
+          variant="tertiary"
+          size="sm"
+          aria-expanded={open}
+          onClick={() => {
+            // Closing (or reopening) always starts from the action list.
+            setConfirming(null);
+            setOpen((v) => !v);
+          }}
+        >
           Manage
         </Button>
       </div>

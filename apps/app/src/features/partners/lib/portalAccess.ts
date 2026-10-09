@@ -22,6 +22,7 @@ const ERROR_COPY: Array<[token: string, copy: string]> = [
   ["partner_not_found", "We couldn't find that partner."],
   ["portal_user_not_found", "This partner hasn't been invited yet."],
   ["portal_not_restorable", "This partner's access is already open."],
+  ["invalid_transition", "Revoked access can't be suspended. Restore it first if you want to change it."],
   ["partner_not_visible", "You don't have access to do that."],
   ["not_authorized", "You don't have access to do that."],
 ];
