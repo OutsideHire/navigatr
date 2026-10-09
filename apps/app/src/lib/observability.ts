@@ -28,6 +28,7 @@ import {
   normalizeError,
   normalizeSupabaseSentryEvent,
 } from "./errorFilter";
+import { scrubUrl } from "./scrubUrl";
 
 let initialized = false;
 
@@ -66,6 +67,11 @@ export function initObservability(): void {
       // transient auth-lock contention). See errorFilter.ts.
       ...IGNORED_ERROR_PATTERNS,
     ],
+    // Navigation, fetch and xhr breadcrumbs carry URLs, and an invite link's
+    // token sits in its query string. Scrub before the crumb is even recorded.
+    beforeBreadcrumb(crumb) {
+      return scrubBreadcrumb(crumb);
+    },
     // Strip tokens AND user PII (emails, phone numbers) from every part
     // of the event before it leaves the browser. Sentry events are shared
     // across the dev team + retained by Sentry; an email or phone in an
@@ -218,24 +224,27 @@ export function addBreadcrumb(crumb: {
 
 /**
  * Remove auth-ish tokens from URL query strings before they ship to Sentry.
- * Conservative regex: any param ending in 'token', 'key', or 'code' gets
- * redacted. We'd rather lose a useful debug hint than leak a long-lived
- * invite token in a Sentry breadcrumb.
+ * Masks (rather than removes) so the event still shows a token was present.
+ * Shares its key list with the analytics scrubber in scrubUrl.ts.
  */
 function stripTokensFromUrl(url: string): string {
-  try {
-    const u = new URL(url);
-    const REDACT_KEYS = /(^|_)(token|key|code|secret)$/i;
-    u.searchParams.forEach((_value, key) => {
-      if (REDACT_KEYS.test(key)) {
-        u.searchParams.set(key, "[redacted]");
-      }
-    });
-    return u.toString();
-  } catch {
-    // Not a parseable URL (could be a relative path). Best-effort redact.
-    return url.replace(/([?&](?:[^=&]*(?:token|key|code|secret)[^=&]*)=)[^&]+/gi, "$1[redacted]");
+  return scrubUrl(url, "redact");
+}
+
+const URL_BREADCRUMB_CATEGORIES: ReadonlySet<string> = new Set(["navigation", "fetch", "xhr"]);
+
+/**
+ * Scrubs the URL fields (data.from, data.to, data.url) of navigation, fetch
+ * and xhr breadcrumbs. Other breadcrumbs pass through untouched.
+ */
+export function scrubBreadcrumb<T extends { category?: string; data?: Record<string, unknown> }>(crumb: T): T {
+  if (!crumb.category || !URL_BREADCRUMB_CATEGORIES.has(crumb.category) || !crumb.data) return crumb;
+  const data = { ...crumb.data };
+  for (const field of ["from", "to", "url"]) {
+    const value = data[field];
+    if (typeof value === "string") data[field] = stripTokensFromUrl(value);
   }
+  return { ...crumb, data };
 }
 
 // ---------------------------------------------------------------------------

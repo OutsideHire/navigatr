@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { QueryClient, QueryCache, MutationCache, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { Analytics } from "@vercel/analytics/react";
+import { scrubAnalyticsEvent } from "@/lib/scrubUrl";
 import { Toaster } from "sonner";
 import { App } from "@/App";
 import { initObservability, reportCacheError } from "@/lib/observability";
@@ -57,8 +58,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <App />
       {/* Vercel Web Analytics: cookieless page-view + SPA-route tracking (no
           PII, no consent banner needed). No-ops off Vercel / until enabled in
-          the project dashboard. Custom events go through @/lib/analytics. */}
-      <Analytics />
+          the project dashboard. Custom events go through @/lib/analytics.
+          beforeSend strips invite and auth tokens from the page URL. */}
+      <Analytics beforeSend={scrubAnalyticsEvent} />
       <Toaster
         position="top-center"
         toastOptions={{
