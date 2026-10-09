@@ -50,7 +50,7 @@ language plpgsql security definer set search_path = public, extensions as $$
 declare
   v_org   organizations;
   v_user  portal_users;
-  v_ip    text := coalesce(nullif(btrim(coalesce(p_ip, '')), ''), 'unknown');
+  v_ip    text := nullif(btrim(coalesce(p_ip, '')), '');
   v_bytes bytea;
   v_code  text;
 begin
@@ -61,11 +61,19 @@ begin
   end if;
 
   select * into v_user from portal_users u
-   where u.org_id = v_org.id and lower(u.email) = lower(btrim(coalesce(p_email, '')));
+   where u.org_id = v_org.id and lower(u.email) = lower(btrim(coalesce(p_email, '')))
+     for update;
+  -- Both limits are count-then-insert, so they must be serialized or parallel
+  -- requests all pass the check. The row lock above serializes issuance per
+  -- user; the advisory lock below serializes the per-IP bucket. A missing IP
+  -- has no bucket, so only the per-user limit applies to it.
+  if v_ip is not null then
+    perform pg_advisory_xact_lock(hashtextextended('portal_code_ip:' || v_ip, 0));
+  end if;
 
   -- Every request counts toward the per-IP limit, whether or not the email exists.
   perform public._portal_audit(v_org.id, v_user.id, 'code_request', v_ip, null);
-  if (select count(*) from portal_audit_log a
+  if v_ip is not null and (select count(*) from portal_audit_log a
        where a.action = 'code_request' and a.ip = v_ip
          and a.created_at > now() - interval '1 hour') > 20 then
     return;
@@ -139,7 +147,11 @@ begin
     return;
   end if;
 
-  update portal_tokens set consumed_at = now() where id = v_hit;
+  update portal_tokens set consumed_at = now()
+   where id = v_hit and consumed_at is null and revoked_at is null;
+  if not found then
+    return;
+  end if;
   update portal_tokens t
      set revoked_at = now()
    where t.portal_user_id = v_user.id and t.token_type = 'sign_in_code'

@@ -204,6 +204,27 @@ do $$ declare i int; n int; begin
   if n <> 1 then raise exception 'a different IP must not be affected'; end if;
 end $$;
 
+-- Empty IP: no shared bucket. Codes still issue (per-user limit applies) and 21
+-- empty-IP requests across different users are not blocked.
+do $$ declare i int; n int; begin
+  insert into partners (id, org_id, created_by, owner_id, name, company, type, email)
+  select ('f91a0000-0000-0000-0000-0000000001' || lpad(g::text, 2, '0'))::uuid, '00000000-0000-0000-0000-000000000f91',
+         'f9100000-0000-0000-0000-000000000001', 'f9100000-0000-0000-0000-000000000001', 'E' || g, 'E', 'cpa', 'empty' || g || '@example.com'
+    from generate_series(1, 22) g;
+  insert into portal_users (org_id, partner_id, email, status)
+  select '00000000-0000-0000-0000-000000000f91', ('f91a0000-0000-0000-0000-0000000001' || lpad(g::text, 2, '0'))::uuid,
+         'empty' || g || '@example.com', 'active' from generate_series(1, 22) g;
+  for i in 1..22 loop
+    select count(*) into n from public.portal_issue_code('portal-sign', 'empty' || i || '@example.com', '');
+    if n <> 1 then raise exception 'empty-IP request % should still get a code', i; end if;
+  end loop;
+  select count(*) into n from public.portal_issue_code('portal-sign', 'empty1@example.com', null);
+  if n <> 1 then raise exception 'null IP should still get a code under the user limit'; end if;
+  if exists (select 1 from portal_audit_log where action = 'code_request' and ip = 'unknown') then
+    raise exception 'empty IP must not be recorded as a shared bucket';
+  end if;
+end $$;
+
 -- Sign-out, expiry, revoke and portal-off all end a session on the next lookup.
 do $$ declare v text := (select v from _t where k = 'sess1'); n int; begin
   perform public.portal_sign_out(v);
