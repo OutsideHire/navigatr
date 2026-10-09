@@ -120,6 +120,11 @@ const PrivacyPage = lazy(() =>
   import("@/features/legal/pages/PrivacyPage").then((m) => ({ default: m.PrivacyPage })),
 );
 
+// Partner portal (public, its own sign-in; partners are never Supabase users).
+const PortalRoot = lazy(() =>
+  import("@/features/portal/pages/PortalRoot").then((m) => ({ default: m.PortalRoot })),
+);
+
 // Component preview catalogs (dev / design review). Lazy-loaded for
 // the same reason — they're large story files that nobody reaches in
 // normal use, no reason to inflate the prod bundle.
@@ -224,6 +229,11 @@ export function App() {
           {/* Legal — public, no auth, no AppLayout */}
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
+
+          {/* ===== Partner portal ===== */}
+          {/* Its own session in localStorage, never a Supabase session. Must
+              stay outside PublicOnlyRoute and ProtectedRoute (spec 5.11). */}
+          <Route path="/p/:slug/*" element={<PortalRoot />} />
 
           {/* ===== OAuth + email-confirm landing ===== */}
           {/* Owns the post-signup claim_invite_code flow. Never gated by
