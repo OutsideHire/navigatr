@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { PartnerPortalUser } from "../hooks/usePortalAccess";
@@ -6,7 +6,7 @@ import type { PortalUserStatus } from "../lib/portalAccess";
 
 const state: {
   status: { data?: { enabled: boolean; slug: string } };
-  user: { data: PartnerPortalUser | null; isPending: boolean };
+  user: { data: PartnerPortalUser | null; isPending: boolean; isError?: boolean; refetch?: () => void };
 } = {
   status: { data: { enabled: true, slug: "acme" } },
   user: { data: null, isPending: false },
@@ -90,6 +90,12 @@ describe("PortalInviteButton", () => {
 });
 
 describe("PortalAccessLine", () => {
+  const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+  afterEach(() => {
+    if (originalClipboard) Object.defineProperty(navigator, "clipboard", originalClipboard);
+    else Reflect.deleteProperty(navigator, "clipboard");
+  });
+
   it("is hidden when the org portal is off", () => {
     state.status = { data: { enabled: false, slug: "acme" } };
     render(<PortalAccessLine partnerId="p-1" />);
@@ -113,13 +119,57 @@ describe("PortalAccessLine", () => {
     const user = userEvent.setup();
     state.user = { data: portalUser("active"), isPending: false };
     setAccessMutate.mockResolvedValueOnce("revoked");
-    render(<PortalAccessLine partnerId="p-1" />);
+    render(<PortalAccessLine partnerId="p-1" partnerName="Jane" />);
     expect(screen.getByText("Portal: Active")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Manage" }));
     expect(screen.getByRole("button", { name: "Suspend access" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Revoke access" }));
+    expect(setAccessMutate).not.toHaveBeenCalled();
+    expect(screen.getByText("Revoke Jane's portal access? They are signed out right away.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
     expect(setAccessMutate).toHaveBeenCalledWith({ partnerId: "p-1", status: "revoked" });
     expect(toast.success).toHaveBeenCalledWith("Portal access revoked");
+  });
+
+  it("suspends only after Confirm", async () => {
+    const user = userEvent.setup();
+    state.user = { data: portalUser("active"), isPending: false };
+    setAccessMutate.mockResolvedValueOnce("suspended");
+    render(<PortalAccessLine partnerId="p-1" partnerName="Jane" />);
+    await user.click(screen.getByRole("button", { name: "Manage" }));
+    await user.click(screen.getByRole("button", { name: "Suspend access" }));
+    expect(setAccessMutate).not.toHaveBeenCalled();
+    expect(screen.getByText("Suspend Jane's portal access? They are signed out until you restore it.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(setAccessMutate).toHaveBeenCalledWith({ partnerId: "p-1", status: "suspended" });
+  });
+
+  it("Cancel returns to the panel without changing anything", async () => {
+    const user = userEvent.setup();
+    state.user = { data: portalUser("active"), isPending: false };
+    render(<PortalAccessLine partnerId="p-1" partnerName="Jane" />);
+    await user.click(screen.getByRole("button", { name: "Manage" }));
+    await user.click(screen.getByRole("button", { name: "Revoke access" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(setAccessMutate).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Revoke access" })).toBeInTheDocument();
+  });
+
+  it("shows a retry instead of Not invited when the status fails to load", async () => {
+    const user = userEvent.setup();
+    const refetch = vi.fn();
+    state.user = { data: null, isPending: false, isError: true, refetch };
+    render(<PortalAccessLine partnerId="p-1" partnerName="Jane" />);
+    expect(screen.getByText("Couldn't load portal status.")).toBeInTheDocument();
+    expect(screen.queryByText(/Not invited/)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it("hides the invite button when the status fails to load", () => {
+    state.user = { data: null, isPending: false, isError: true };
+    render(<PortalInviteButton partnerId="p-1" email="jane@example.com" />);
+    expect(screen.queryByRole("button", { name: /invite/i })).toBeNull();
   });
 
   it("restores a suspended partner back to invited", async () => {
@@ -128,6 +178,7 @@ describe("PortalAccessLine", () => {
     setAccessMutate.mockResolvedValueOnce("invited");
     render(<PortalAccessLine partnerId="p-1" />);
     await user.click(screen.getByRole("button", { name: "Manage" }));
+    expect(screen.getByText("Restoring lets you send a new invite. Their old sign-ins stay off.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Restore access" }));
     expect(setAccessMutate).toHaveBeenCalledWith({ partnerId: "p-1", status: "invited" });
   });

@@ -24,7 +24,7 @@ export function PortalInviteButton({ partnerId, email }: { partnerId: string; em
   const invite = useInviteToPortal();
   const address = (email ?? "").trim();
 
-  if (!status.data?.enabled || !address || portalUser.isPending) return null;
+  if (!status.data?.enabled || !address || portalUser.isPending || portalUser.isError) return null;
   const current = portalUser.data?.status ?? null;
   if (current !== null && current !== "invited") return null;
 
@@ -51,13 +51,25 @@ const CHANGE_COPY: Record<PortalAccessChange, { label: string; done: string }> =
   invited: { label: "Restore access", done: "Access restored. Send a new invite so they can sign in." },
 };
 
-export function PortalAccessLine({ partnerId }: { partnerId: string }) {
+export function PortalAccessLine({ partnerId, partnerName }: { partnerId: string; partnerName?: string }) {
   const status = usePortalStatus();
   const portalUser = usePartnerPortalUser(partnerId);
   const setAccess = useSetPortalAccess();
   const [open, setOpen] = React.useState(false);
+  const [confirming, setConfirming] = React.useState<"suspended" | "revoked" | null>(null);
 
   if (!status.data?.enabled) return null;
+  if (portalUser.isError) {
+    return (
+      <div className="flex items-center gap-3">
+        <span className="min-w-0 flex-1 text-body-md text-text-default">Couldn't load portal status.</span>
+        <Button variant="tertiary" size="sm" onClick={() => void portalUser.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  const who = partnerName?.trim() || "this partner";
   const slug = status.data.slug;
   const current = portalUser.data?.status ?? null;
   const changes: PortalAccessChange[] =
@@ -74,6 +86,7 @@ export function PortalAccessLine({ partnerId }: { partnerId: string }) {
       await setAccess.mutateAsync({ partnerId, status: next });
       toast.success(CHANGE_COPY[next].done);
       setOpen(false);
+      setConfirming(null);
     } catch (err) {
       toast.error(portalAccessErrorMessage(err));
     }
@@ -101,15 +114,32 @@ export function PortalAccessLine({ partnerId }: { partnerId: string }) {
           Manage
         </Button>
       </div>
-      {open && (
-        <div className="flex flex-wrap gap-2 pl-12">
+      {open && confirming && (
+        <div className="flex flex-col gap-2 pl-12">
+          <p className="text-body-sm text-text-default">
+            {confirming === "revoked"
+              ? `Revoke ${who}'s portal access? They are signed out right away.`
+              : `Suspend ${who}'s portal access? They are signed out until you restore it.`}
+          </p>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" loading={setAccess.isPending} onClick={() => void change(confirming)}>
+              Confirm
+            </Button>
+            <Button variant="tertiary" size="sm" onClick={() => setConfirming(null)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+      {open && !confirming && (
+        <div className="flex flex-wrap items-center gap-2 pl-12">
           {changes.map((next) => (
             <Button
               key={next}
               variant="secondary"
               size="sm"
               loading={setAccess.isPending}
-              onClick={() => void change(next)}
+              onClick={() => (next === "invited" ? void change(next) : setConfirming(next))}
             >
               {CHANGE_COPY[next].label}
             </Button>
@@ -117,6 +147,11 @@ export function PortalAccessLine({ partnerId }: { partnerId: string }) {
           <Button variant="secondary" size="sm" leadingIcon={Copy} onClick={() => void copy()}>
             Copy portal address
           </Button>
+          {changes.includes("invited") && (
+            <p className="w-full text-body-sm text-text-muted">
+              Restoring lets you send a new invite. Their old sign-ins stay off.
+            </p>
+          )}
         </div>
       )}
     </div>

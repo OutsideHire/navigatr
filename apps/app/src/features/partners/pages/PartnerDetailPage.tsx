@@ -234,7 +234,7 @@ function ContactCard({ partner }: { partner: Partner }) {
             {partner.email}
           </a>
         </div>
-        <PortalAccessLine partnerId={partner.id} />
+        <PortalAccessLine partnerId={partner.id} partnerName={partner.name} />
         {partner.city && (
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-violet-20 text-accent-violet">
