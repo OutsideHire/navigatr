@@ -458,3 +458,100 @@ describe("rpc that throws or rejects", () => {
     expect(await res.json()).toEqual({ error: "server_error" });
   });
 });
+
+describe("length caps (checked before any rpc)", () => {
+  const LONG_SLUG = "a".repeat(65);
+  const LONG_EMAIL = `${"a".repeat(250)}@x.io`;
+  const LONG_TOKEN = "t".repeat(129);
+  const SESSION_ROW = [{ session_token: "s", session_expires_at: "2026-11-01T00:00:00Z" }];
+
+  it("brand: an over-long slug answers the generic 404 without the database", async () => {
+    const { deps, rpc } = setup(() => ok([]));
+    const res = await handlePortalRequest(post("brand", { slug: LONG_SLUG }), deps);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not_available" });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("request_code: an over-long email or slug still answers the generic 200", async () => {
+    const { deps, rpc } = setup(() => ok([]));
+    const a = await handlePortalRequest(post("request_code", { slug: "acme", email: LONG_EMAIL }), deps);
+    const b = await handlePortalRequest(post("request_code", { slug: LONG_SLUG, email: "a@b.co" }), deps);
+    expect(a.status).toBe(200);
+    expect(await a.json()).toEqual({ ok: true });
+    expect(b.status).toBe(200);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("verify_code: an over-long code, email or slug answers the generic 401", async () => {
+    const { deps, rpc } = setup(() => ok(SESSION_ROW));
+    const cases = [
+      { slug: "acme", email: "a@b.co", code: "1".repeat(17) },
+      { slug: "acme", email: LONG_EMAIL, code: "123456" },
+      { slug: LONG_SLUG, email: "a@b.co", code: "123456" },
+    ];
+    for (const body of cases) {
+      const res = await handlePortalRequest(post("verify_code", body), deps);
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({ error: "invalid_code" });
+    }
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("verify_code: spaces do not count toward the code cap", async () => {
+    const { deps, rpc } = setup(() => ok(SESSION_ROW));
+    const res = await handlePortalRequest(
+      post("verify_code", { slug: "acme", email: "a@b.co", code: "1 2 3 4 5 6          " }),
+      deps,
+    );
+    expect(res.status).toBe(200);
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("peek_invite: an over-long token answers the generic 404", async () => {
+    const { deps, rpc } = setup(() => ok([]));
+    const res = await handlePortalRequest(post("peek_invite", { slug: "acme", token: LONG_TOKEN }), deps);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "invalid_invite" });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("accept_invite: an over-long token or slug answers 400 invalid_body", async () => {
+    const { deps, rpc } = setup(() => ok(SESSION_ROW));
+    const a = await handlePortalRequest(post("accept_invite", { slug: "acme", token: LONG_TOKEN, termsVersion: 1 }), deps);
+    const b = await handlePortalRequest(post("accept_invite", { slug: LONG_SLUG, token: "tok", termsVersion: 1 }), deps);
+    expect(a.status).toBe(400);
+    expect(await a.json()).toEqual({ error: "invalid_body" });
+    expect(b.status).toBe(400);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("me: an over-long session header answers 401", async () => {
+    const { deps, rpc } = setup(() => ok([]));
+    const res = await handlePortalRequest(post("me", { slug: "acme" }, { "x-portal-session": LONG_TOKEN }), deps);
+    expect(res.status).toBe(401);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("sign_out: an over-long session header is ignored but still answers ok", async () => {
+    const { deps, rpc } = setup(() => ok(null));
+    const res = await handlePortalRequest(post("sign_out", {}, { "x-portal-session": LONG_TOKEN }), deps);
+    expect(res.status).toBe(200);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("truncates the IP to 64 and the user agent to 512 before the rpc", async () => {
+    const { deps, rpc } = setup(() => ok(SESSION_ROW));
+    await handlePortalRequest(
+      post(
+        "verify_code",
+        { slug: "acme", email: "a@b.co", code: "123456" },
+        { "x-forwarded-for": "9".repeat(100), "user-agent": "u".repeat(2000) },
+      ),
+      deps,
+    );
+    const args = rpc.mock.calls[0][1];
+    expect(String(args.p_ip)).toHaveLength(64);
+    expect(String(args.p_user_agent)).toHaveLength(512);
+  });
+});

@@ -69,6 +69,16 @@ describe("handlePortalInvite", () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
+  it("400s an over-long body or partner id without calling the database", async () => {
+    const { deps, rpc } = setup();
+    const longId = await handlePortalInvite(post({ partnerId: `${PARTNER}${"0".repeat(200)}` }), deps);
+    expect(longId.status).toBe(400);
+    const longBody = await handlePortalInvite(post({ partnerId: PARTNER, pad: "x".repeat(2000) }), deps);
+    expect(longBody.status).toBe(400);
+    expect(await longBody.json()).toEqual({ error: "invalid_body" });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
   it("creates the invite as the verified user and emails the link, never returning the token", async () => {
     const { deps, rpc, sendEmail } = setup();
     const res = await handlePortalInvite(post({ partnerId: PARTNER }), deps);

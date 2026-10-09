@@ -114,6 +114,24 @@ interface LookupRow {
   org_name: string;
 }
 
+/** Input caps, checked before any rpc so oversized input never reaches SQL. */
+export const PORTAL_LIMITS = {
+  slug: 64,
+  email: 254,
+  code: 16,
+  token: 128,
+  ip: 64,
+  userAgent: 512,
+} as const;
+
+function tooLong(value: string, max: number): boolean {
+  return value.length > max;
+}
+
+function truncate(value: string | null, max: number): string | null {
+  return value === null ? null : value.slice(0, max);
+}
+
 export function jsonResponse(
   body: unknown,
   status = 200,
@@ -172,25 +190,48 @@ export async function handlePortalRequest(req: Request, deps: PortalApiDeps): Pr
   }
 
   const slug = str(body.slug).trim().toLowerCase();
-  const ip = clientIp(req.headers);
-  const userAgent = req.headers.get("user-agent");
+  const ip = truncate(clientIp(req.headers), PORTAL_LIMITS.ip);
+  const userAgent = truncate(req.headers.get("user-agent"), PORTAL_LIMITS.userAgent);
+  const slugTooLong = tooLong(slug, PORTAL_LIMITS.slug);
 
   try {
     switch (action as PortalAction) {
       case "brand":
+        if (slugTooLong) return jsonResponse({ error: "not_available" }, 404);
         return await brand(slug, deps);
-      case "request_code":
-        return await requestCode(slug, str(body.email).trim(), ip, deps);
-      case "verify_code":
-        return await verifyCode(slug, str(body.email).trim(), str(body.code), ip, userAgent, deps);
-      case "peek_invite":
-        return await peekInvite(slug, str(body.token).trim(), deps);
-      case "accept_invite":
-        return await acceptInvite(slug, str(body.token).trim(), body.termsVersion, ip, userAgent, deps);
-      case "me":
-        return await me(slug, sessionTokenFrom(req.headers), deps);
-      case "sign_out":
-        return await signOut(sessionTokenFrom(req.headers), deps);
+      case "request_code": {
+        const email = str(body.email).trim();
+        if (slugTooLong || tooLong(email, PORTAL_LIMITS.email)) return jsonResponse({ ok: true });
+        return await requestCode(slug, email, ip, deps);
+      }
+      case "verify_code": {
+        const email = str(body.email).trim();
+        const code = str(body.code).replace(/\s+/g, "");
+        if (slugTooLong || tooLong(email, PORTAL_LIMITS.email) || tooLong(code, PORTAL_LIMITS.code)) {
+          return jsonResponse({ error: "invalid_code" }, 401);
+        }
+        return await verifyCode(slug, email, code, ip, userAgent, deps);
+      }
+      case "peek_invite": {
+        const token = str(body.token).trim();
+        if (slugTooLong || tooLong(token, PORTAL_LIMITS.token)) return jsonResponse({ error: "invalid_invite" }, 404);
+        return await peekInvite(slug, token, deps);
+      }
+      case "accept_invite": {
+        const token = str(body.token).trim();
+        if (slugTooLong || tooLong(token, PORTAL_LIMITS.token)) return jsonResponse({ error: "invalid_body" }, 400);
+        return await acceptInvite(slug, token, body.termsVersion, ip, userAgent, deps);
+      }
+      case "me": {
+        const token = sessionTokenFrom(req.headers);
+        if (slugTooLong || tooLong(token, PORTAL_LIMITS.token)) return jsonResponse({ error: "unauthorized" }, 401);
+        return await me(slug, token, deps);
+      }
+      case "sign_out": {
+        const token = sessionTokenFrom(req.headers);
+        if (tooLong(token, PORTAL_LIMITS.token)) return jsonResponse({ ok: true });
+        return await signOut(token, deps);
+      }
       default:
         return jsonResponse({ error: "not_found" }, 404);
     }
