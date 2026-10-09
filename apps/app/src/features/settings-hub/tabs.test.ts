@@ -32,9 +32,16 @@ describe("visibleTabs", () => {
       "organization",
       "integrations",
       "branding",
+      "partner-portal",
       "profession",
       "danger",
     ]);
+  });
+
+  it("keeps the partner portal tab admin-only", () => {
+    expect(visibleTabs("manager").map((t) => t.id)).not.toContain("partner-portal");
+    expect(resolveTab("partner-portal", "manager")).toEqual({ id: "personal", redirected: true });
+    expect(resolveTab("partner-portal", "admin")).toEqual({ id: "partner-portal", redirected: false });
   });
 
   it("defaults to rep-visible tabs when role is undefined (pre-load state)", () => {

@@ -31,6 +31,7 @@ import { PersonalTab } from "./tabs/PersonalTab";
 import { OrganizationTab } from "./tabs/OrganizationTab";
 import { IntegrationsTab } from "./tabs/IntegrationsTab";
 import { BrandingTab } from "./tabs/BrandingTab";
+import { PartnerPortalTab } from "./tabs/PartnerPortalTab";
 import { ProfessionTab } from "./tabs/ProfessionTab";
 import { DangerZoneTab } from "./tabs/DangerZoneTab";
 
@@ -40,6 +41,7 @@ const TAB_COMPONENTS: Record<SettingsTabId, React.ComponentType> = {
   organization: OrganizationTab,
   integrations: IntegrationsTab,
   branding:     BrandingTab,
+  "partner-portal": PartnerPortalTab,
   profession:   ProfessionTab,
   danger:       DangerZoneTab,
 };
