@@ -7,7 +7,8 @@ import * as React from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { Mail } from "lucide-react";
 import { Button, Card, FormField, Input } from "@/components/navigatr";
-import { PortalApiError, portalApi, type PortalBrand } from "../lib/portalApi";
+import { PortalApiError, isPortalTransientError, portalApi, type PortalBrand } from "../lib/portalApi";
+import { portalReachMessage } from "../components/PortalRetry";
 import { readPortalSession, writePortalSession } from "../lib/portalSession";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -20,11 +21,12 @@ export function PortalSignInPage({ slug, brand }: { slug: string; brand: PortalB
   const [code, setCode] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // Set when the last attempt failed to reach the server; offers a Try again.
+  const [retry, setRetry] = React.useState<(() => void) | null>(null);
 
   if (existing) return <Navigate to={`/p/${slug}/home`} replace />;
 
-  const sendCode = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const doSendCode = async () => {
     const trimmed = email.trim();
     if (!EMAIL_RE.test(trimmed)) {
       setError("Enter a valid email address.");
@@ -32,34 +34,61 @@ export function PortalSignInPage({ slug, brand }: { slug: string; brand: PortalB
     }
     setBusy(true);
     setError(null);
+    setRetry(null);
     try {
       await portalApi.requestCode(slug, trimmed);
       setCode("");
       setStep("code");
-    } catch {
-      setError("We couldn't send a code. Check your connection and try again.");
+    } catch (err) {
+      if (isPortalTransientError(err)) {
+        setError(portalReachMessage(brand.orgName));
+        setRetry(() => () => void doSendCode());
+      } else {
+        setError("We couldn't send a code. Try again.");
+      }
     } finally {
       setBusy(false);
     }
   };
 
-  const verify = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const doVerify = async () => {
     setBusy(true);
     setError(null);
+    setRetry(null);
     try {
       const session = await portalApi.verifyCode(slug, email.trim(), code);
       writePortalSession(slug, session.sessionToken);
       navigate(`/p/${slug}/home`, { replace: true });
     } catch (err) {
-      setError(
-        err instanceof PortalApiError && err.status === 401
-          ? "That code didn't work. Check it, or send a new one."
-          : "We couldn't sign you in. Try again.",
-      );
+      if (isPortalTransientError(err)) {
+        setError(portalReachMessage(brand.orgName));
+        setRetry(() => () => void doVerify());
+      } else {
+        setError(
+          err instanceof PortalApiError && err.status === 401
+            ? "That code didn't work. Check it, or send a new one."
+            : "We couldn't sign you in. Try again.",
+        );
+      }
       setBusy(false);
     }
   };
+
+  const sendCode = (e: React.FormEvent) => {
+    e.preventDefault();
+    void doSendCode();
+  };
+
+  const verify = (e: React.FormEvent) => {
+    e.preventDefault();
+    void doVerify();
+  };
+
+  const retryButton = retry && (
+    <Button type="button" variant="secondary" size="md" disabled={busy} onClick={retry}>
+      Try again
+    </Button>
+  );
 
   if (step === "code") {
     return (
@@ -92,6 +121,7 @@ export function PortalSignInPage({ slug, brand }: { slug: string; brand: PortalB
               {error}
             </p>
           )}
+          {retryButton}
           <Button type="submit" size="lg" fullWidth loading={busy} disabled={code.length !== 6 || busy}>
             Sign in
           </Button>
@@ -102,6 +132,7 @@ export function PortalSignInPage({ slug, brand }: { slug: string; brand: PortalB
             onClick={() => {
               setStep("email");
               setError(null);
+              setRetry(null);
             }}
           >
             Send a new code
@@ -136,6 +167,7 @@ export function PortalSignInPage({ slug, brand }: { slug: string; brand: PortalB
             {error}
           </p>
         )}
+        {retryButton}
         <Button type="submit" size="lg" fullWidth loading={busy} disabled={busy}>
           Email me a code
         </Button>

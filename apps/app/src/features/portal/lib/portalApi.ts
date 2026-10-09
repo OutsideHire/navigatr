@@ -95,6 +95,16 @@ async function portalRequest<T>(
   return payload as T;
 }
 
+/**
+ * True when the portal could not be reached or failed on its side (network,
+ * 5xx, or anything that is not a PortalApiError). Such failures get a retry,
+ * never a "this link is dead" or "wrong code" answer.
+ */
+export function isPortalTransientError(err: unknown): boolean {
+  if (!(err instanceof PortalApiError)) return true;
+  return err.status === 0 || err.status >= 500;
+}
+
 function nullOn(status: number) {
   return (err: unknown): null => {
     if (err instanceof PortalApiError && err.status === status) return null;

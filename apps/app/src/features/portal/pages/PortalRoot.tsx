@@ -9,10 +9,11 @@
 import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { portalApi } from "../lib/portalApi";
+import { isPortalTransientError, portalApi } from "../lib/portalApi";
 import { PortalBrandProvider } from "../PortalBrandProvider";
 import { PortalShell } from "../components/PortalShell";
 import { PortalUnavailablePage } from "./PortalUnavailablePage";
+import { PortalRetry } from "../components/PortalRetry";
 import { PortalSignInPage } from "./PortalSignInPage";
 import { PortalHomePage } from "./PortalHomePage";
 import { PortalInvitePage } from "./PortalInvitePage";
@@ -35,6 +36,9 @@ export function PortalRoot() {
       </div>
     );
   }
+  if (brand.isError && isPortalTransientError(brand.error)) {
+    return <PortalRetry fullPage onRetry={() => void brand.refetch()} busy={brand.isFetching} />;
+  }
   if (brand.isError || !brand.data) return <PortalUnavailablePage />;
 
   const data = brand.data;
@@ -44,7 +48,7 @@ export function PortalRoot() {
         <Routes>
           <Route index element={<PortalSignInPage slug={slug} brand={data} />} />
           <Route path="invite" element={<PortalInvitePage slug={slug} brand={data} />} />
-          <Route path="home" element={<PortalHomePage slug={slug} />} />
+          <Route path="home" element={<PortalHomePage slug={slug} brand={data} />} />
           <Route path="*" element={<Navigate to={`/p/${slug}`} replace />} />
         </Routes>
       </PortalShell>

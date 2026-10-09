@@ -4,14 +4,16 @@
  */
 import * as React from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, LogOut } from "lucide-react";
 import { Button, Card } from "@/components/navigatr";
-import { portalApi } from "../lib/portalApi";
+import { PortalRetry } from "../components/PortalRetry";
+import { portalApi, type PortalBrand } from "../lib/portalApi";
 import { clearPortalSession, readPortalSession } from "../lib/portalSession";
 
-export function PortalHomePage({ slug }: { slug: string }) {
+export function PortalHomePage({ slug, brand }: { slug: string; brand: PortalBrand }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [token] = React.useState(() => readPortalSession(slug));
   const [signingOut, setSigningOut] = React.useState(false);
 
@@ -41,16 +43,7 @@ export function PortalHomePage({ slug }: { slug: string }) {
   }
 
   if (me.isError || !me.data) {
-    return (
-      <Card padding="lg" className="flex flex-col gap-3">
-        <p className="text-body-md text-text-default">
-          We couldn&apos;t load your account. Check your connection and try again.
-        </p>
-        <Button variant="secondary" size="md" onClick={() => void me.refetch()}>
-          Try again
-        </Button>
-      </Card>
-    );
+    return <PortalRetry name={brand.orgName} onRetry={() => void me.refetch()} busy={me.isFetching} />;
   }
 
   const account = me.data;
@@ -63,6 +56,8 @@ export function PortalHomePage({ slug }: { slug: string }) {
       // The session is forgotten on this device either way.
     }
     clearPortalSession(slug);
+    // The cached account must not outlive the session on this device.
+    queryClient.removeQueries({ queryKey: ["portal", "me", slug] });
     navigate(`/p/${slug}`, { replace: true });
   };
 

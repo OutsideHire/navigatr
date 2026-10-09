@@ -108,3 +108,21 @@ describe("portalApi", () => {
     await expect(portalApi.requestCode("acme", "a@b.co")).rejects.toMatchObject({ status: 502, code: "request_failed" });
   });
 });
+
+describe("isPortalTransientError", () => {
+  it("treats network failures, 5xx and unknown errors as retryable", async () => {
+    const { PortalApiError: E, isPortalTransientError } = await import("./portalApi");
+    expect(isPortalTransientError(new E(0, "network_error"))).toBe(true);
+    expect(isPortalTransientError(new E(500, "server_error"))).toBe(true);
+    expect(isPortalTransientError(new E(503, "request_failed"))).toBe(true);
+    expect(isPortalTransientError(new Error("boom"))).toBe(true);
+    expect(isPortalTransientError("weird")).toBe(true);
+  });
+
+  it("treats real outcomes (4xx) as final", async () => {
+    const { PortalApiError: E, isPortalTransientError } = await import("./portalApi");
+    for (const status of [400, 401, 404, 409]) {
+      expect(isPortalTransientError(new E(status, "x"))).toBe(false);
+    }
+  });
+});

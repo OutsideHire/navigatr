@@ -26,8 +26,7 @@ import { clearPortalSession, readPortalSession, writePortalSession } from "../li
 const BRAND = { orgName: "Acme ISO", productName: "navigatr", primaryColor: null, logoUrl: null, darkLogoUrl: null };
 const ME = { partnerName: "Jane", email: "jane@example.com", orgName: "Acme ISO" };
 
-function renderAt(path: string) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderAt(path: string, client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
@@ -177,5 +176,95 @@ describe("PortalRoot", () => {
     await user.click(await screen.findByRole("button", { name: "Sign out" }));
     expect(await screen.findByRole("heading", { name: "Sign in to Acme ISO" })).toBeInTheDocument();
     expect(readPortalSession("acme")).toBeNull();
+  });
+
+  it("offers a retry, not 'unavailable', when the portal can't be reached", async () => {
+    const user = userEvent.setup();
+    api.brand.mockRejectedValueOnce(new PortalApiError(0, "network_error")).mockResolvedValue(BRAND);
+    renderAt("/p/acme");
+    expect(await screen.findByText("We couldn't reach the portal. Check your connection and try again.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "This portal isn't available" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("heading", { name: "Sign in to Acme ISO" })).toBeInTheDocument();
+    expect(api.brand).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers a retry on a 5xx or an unexpected error from branding", async () => {
+    api.brand.mockRejectedValue(new PortalApiError(503, "server_error"));
+    renderAt("/p/acme");
+    expect(await screen.findByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
+  it("still shows 'unavailable' for a genuine client error from branding", async () => {
+    api.brand.mockRejectedValue(new PortalApiError(400, "invalid_body"));
+    renderAt("/p/acme");
+    expect(await screen.findByRole("heading", { name: "This portal isn't available" })).toBeInTheDocument();
+  });
+
+  it("says the ISO can't be reached, not that the code is wrong, when verify fails on the network", async () => {
+    const user = userEvent.setup();
+    api.brand.mockResolvedValue(BRAND);
+    api.requestCode.mockResolvedValue(undefined);
+    api.verifyCode
+      .mockRejectedValueOnce(new PortalApiError(0, "network_error"))
+      .mockResolvedValueOnce({ sessionToken: "s".repeat(64), expiresAt: "2026-11-08T00:00:00Z" });
+    api.me.mockResolvedValue(ME);
+
+    renderAt("/p/acme");
+    await user.type(await screen.findByLabelText("Email"), "jane@example.com");
+    await user.click(screen.getByRole("button", { name: "Email me a code" }));
+    await user.type(await screen.findByLabelText("6-digit code"), "123456");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "We couldn't reach Acme ISO. Check your connection and try again.",
+    );
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Signed in as Jane at Acme ISO")).toBeInTheDocument();
+    expect(api.verifyCode).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers a retry when sending the code fails on the network", async () => {
+    const user = userEvent.setup();
+    api.brand.mockResolvedValue(BRAND);
+    api.requestCode.mockRejectedValueOnce(new PortalApiError(502, "request_failed")).mockResolvedValueOnce(undefined);
+
+    renderAt("/p/acme");
+    await user.type(await screen.findByLabelText("Email"), "jane@example.com");
+    await user.click(screen.getByRole("button", { name: "Email me a code" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "We couldn't reach Acme ISO. Check your connection and try again.",
+    );
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText(/we sent a 6-digit code/i)).toBeInTheDocument();
+  });
+
+  it("offers a retry on home when the account can't be reached", async () => {
+    const user = userEvent.setup();
+    api.brand.mockResolvedValue(BRAND);
+    api.me.mockRejectedValueOnce(new PortalApiError(500, "server_error")).mockResolvedValueOnce(ME);
+    writePortalSession("acme", "live");
+
+    renderAt("/p/acme/home");
+    expect(await screen.findByText("We couldn't reach Acme ISO. Check your connection and try again.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Signed in as Jane at Acme ISO")).toBeInTheDocument();
+    expect(readPortalSession("acme")).toBe("live");
+  });
+
+  it("removes the cached account on sign-out", async () => {
+    const user = userEvent.setup();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    api.brand.mockResolvedValue(BRAND);
+    api.me.mockResolvedValue(ME);
+    api.signOut.mockResolvedValue(undefined);
+    writePortalSession("acme", "live");
+
+    renderAt("/p/acme/home", client);
+    await screen.findByText("Signed in as Jane at Acme ISO");
+    expect(client.getQueryCache().findAll({ queryKey: ["portal", "me", "acme"] })).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Sign out" }));
+    await screen.findByRole("heading", { name: "Sign in to Acme ISO" });
+    expect(client.getQueryCache().findAll({ queryKey: ["portal", "me", "acme"] })).toHaveLength(0);
   });
 });

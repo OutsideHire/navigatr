@@ -9,7 +9,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { Button, Card, Checkbox } from "@/components/navigatr";
-import { PortalApiError, portalApi, type PortalBrand } from "../lib/portalApi";
+import { PortalApiError, isPortalTransientError, portalApi, type PortalBrand } from "../lib/portalApi";
+import { PortalRetry, portalReachMessage } from "../components/PortalRetry";
 import { writePortalSession } from "../lib/portalSession";
 
 function InviteUnavailable({ slug, orgName }: { slug: string; orgName: string }) {
@@ -30,10 +31,17 @@ function InviteUnavailable({ slug, orgName }: { slug: string; orgName: string })
 export function PortalInvitePage({ slug, brand }: { slug: string; brand: PortalBrand }) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const token = (params.get("token") ?? "").trim();
+  // Copy the token out of the URL once, then drop it from the address bar and
+  // history so it cannot linger, be shared, or reach telemetry.
+  const [token] = React.useState(() => (params.get("token") ?? "").trim());
+  const urlHasToken = params.has("token");
+  React.useEffect(() => {
+    if (urlHasToken) navigate(`/p/${slug}/invite`, { replace: true });
+  }, [urlHasToken, slug, navigate]);
   const [agreed, setAgreed] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
+  const [canRetryAccept, setCanRetryAccept] = React.useState(false);
 
   const invite = useQuery({
     queryKey: ["portal", "invite", slug, token],
@@ -50,6 +58,9 @@ export function PortalInvitePage({ slug, brand }: { slug: string; brand: PortalB
       </div>
     );
   }
+  if (invite.isError && isPortalTransientError(invite.error)) {
+    return <PortalRetry name={brand.orgName} onRetry={() => void invite.refetch()} busy={invite.isFetching} />;
+  }
   if (invite.isError || !invite.data) return <InviteUnavailable slug={slug} orgName={brand.orgName} />;
 
   const data = invite.data;
@@ -57,6 +68,7 @@ export function PortalInvitePage({ slug, brand }: { slug: string; brand: PortalB
   const accept = async () => {
     setBusy(true);
     setNotice(null);
+    setCanRetryAccept(false);
     try {
       const session = await portalApi.acceptInvite(slug, token, data.termsVersion);
       writePortalSession(slug, session.sessionToken);
@@ -66,6 +78,9 @@ export function PortalInvitePage({ slug, brand }: { slug: string; brand: PortalB
         setAgreed(false);
         setNotice("The terms were just updated. Please read them again.");
         await invite.refetch();
+      } else if (isPortalTransientError(err)) {
+        setNotice(portalReachMessage(brand.orgName));
+        setCanRetryAccept(true);
       } else {
         setNotice("This invite can't be used anymore. Ask your contact for a new one.");
       }
@@ -98,6 +113,11 @@ export function PortalInvitePage({ slug, brand }: { slug: string; brand: PortalB
         <p role="alert" className="text-body-sm text-status-danger">
           {notice}
         </p>
+      )}
+      {canRetryAccept && (
+        <Button variant="secondary" size="md" disabled={busy} onClick={() => void accept()}>
+          Try again
+        </Button>
       )}
 
       <Checkbox
