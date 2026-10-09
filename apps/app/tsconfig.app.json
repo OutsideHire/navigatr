@@ -49,6 +49,8 @@
     "../../supabase/functions/_shared/persistence/score.ts",
     "../../supabase/functions/_shared/persistence/zonedDate.ts",
     "../../supabase/functions/_shared/portalEmail.ts",
-    "../../supabase/functions/_shared/emailTemplate.ts"
+    "../../supabase/functions/_shared/emailTemplate.ts",
+    "../../supabase/functions/_shared/emailGuard.ts",
+    "../../supabase/functions/_shared/portalApi.ts"
   ]
 }

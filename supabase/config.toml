@@ -457,6 +457,14 @@ verify_jwt = false
 [functions.send_auth_email]
 verify_jwt = false
 
+# portal_api: the partner portal's API. Partners are never Supabase Auth users
+# (spec R2), so there is no JWT to verify and platform verification would reject
+# every partner request. Identity is the x-portal-session token, hashed and
+# checked against portal_sessions in SQL on every request; the functions it
+# calls are service-role only.
+[functions.portal_api]
+verify_jwt = false
+
 # --- verify_jwt = true, each doing its own caller check ------------------------
 #
 # Recorded so a future change is visible in review. Note that verify_jwt is NOT
