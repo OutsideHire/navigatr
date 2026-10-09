@@ -172,6 +172,13 @@ begin
          updated_at        = now()
    where id = v_user_id;
 
+  -- Defence in depth: any session left over from before a suspend or revoke
+  -- (for example one a racing sign-in opened) dies here, so accepting a fresh
+  -- invite never revives it.
+  update portal_sessions s
+     set revoked_at = now()
+   where s.portal_user_id = v_user_id and s.revoked_at is null;
+
   perform public._portal_audit(v_org_id, v_user_id, 'terms_accept', p_ip, null);
   perform public._portal_audit(v_org_id, v_user_id, 'sign_in', p_ip, null);
 

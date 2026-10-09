@@ -46,6 +46,11 @@ begin
     return 'invited';
   end if;
 
+  -- Revoked is final short of a restore; it never steps back down to suspended.
+  if p_status = 'suspended' and v_user.status = 'revoked' then
+    raise exception 'invalid_transition' using errcode = '22023';
+  end if;
+
   update portal_users set status = p_status::portal_user_status, updated_at = now() where id = v_user.id;
   -- Every request looks the session up, so the very next one fails (spec 5.3).
   update portal_sessions s set revoked_at = now()

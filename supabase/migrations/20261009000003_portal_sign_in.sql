@@ -121,7 +121,11 @@ begin
   end if;
 
   select * into v_user from portal_users u
-   where u.org_id = v_org_id and lower(u.email) = lower(btrim(coalesce(p_email, ''))) and u.status = 'active';
+   where u.org_id = v_org_id and lower(u.email) = lower(btrim(coalesce(p_email, ''))) and u.status = 'active'
+     for update;
+  -- The row lock serializes this sign-in against portal_set_access. If a
+  -- suspend or revoke commits while we wait, plpgsql re-reads the row and the
+  -- status = 'active' predicate is applied again, so no session is opened.
   if v_user.id is null then
     return;
   end if;

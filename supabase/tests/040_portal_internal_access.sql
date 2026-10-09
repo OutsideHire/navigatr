@@ -166,4 +166,52 @@ do $$ declare n int; begin
   end if;
 end $$;
 
+-- The revoke is audited with the acting manager.
+do $$ begin
+  perform set_config('role', 'postgres', true);
+  if not exists (select 1 from portal_audit_log where portal_user_id = 'fa1b0000-0000-0000-0000-000000000001'
+                    and action = 'revoke' and actor_user_id = 'fa100000-0000-0000-0000-000000000002') then
+    raise exception 'revoke should be audited with the acting manager';
+  end if;
+end $$;
+
+-- A revoked partner cannot be moved to suspended (only restored).
+do $$ begin
+  perform _t_act('fa100000-0000-0000-0000-000000000002');
+  perform _t_raises('select public.portal_set_access(''fa1a0000-0000-0000-0000-000000000001'', ''suspended'')', 'invalid_transition');
+end $$;
+
+do $$ begin
+  perform set_config('role', 'postgres', true);
+  if (select status::text from portal_users where id = 'fa1b0000-0000-0000-0000-000000000001') is distinct from 'revoked' then
+    raise exception 'a refused transition must leave the partner revoked';
+  end if;
+end $$;
+
+-- Verify-vs-suspend race, defence in depth: a session that slipped in around a
+-- suspend or revoke must not come back to life when the partner is restored,
+-- re-invited, and accepts again.
+do $$ begin
+  perform set_config('role', 'postgres', true);
+  insert into portal_sessions (org_id, portal_user_id, token_hash, expires_at) values
+    ('00000000-0000-0000-0000-000000000fa1', 'fa1b0000-0000-0000-0000-000000000001', encode(extensions.digest('ia-sess-race', 'sha256'), 'hex'), now() + interval '1 day');
+  perform _t_act('fa100000-0000-0000-0000-000000000002');
+  if public.portal_set_access('fa1a0000-0000-0000-0000-000000000001', 'invited') is distinct from 'invited' then
+    raise exception 'restore after revoke should return invited';
+  end if;
+end $$;
+
+do $$ declare v_inv text; v_ver int; v_new text; n int; begin
+  perform set_config('role', 'postgres', true);
+  select invite_token into v_inv from public.portal_create_invite('fa1a0000-0000-0000-0000-000000000001', 'fa100000-0000-0000-0000-000000000002');
+  select partner_terms_version into v_ver from organizations where id = '00000000-0000-0000-0000-000000000fa1';
+  select session_token into v_new from public.portal_accept_invite('portal-ia', v_inv, v_ver, null, null);
+  select count(*) into n from public.portal_session_lookup('portal-ia', v_new);
+  if n <> 1 then raise exception 'the new session from accept should resolve'; end if;
+  foreach v_inv in array array['ia-sess-1', 'ia-sess-2', 'ia-sess-race'] loop
+    select count(*) into n from public.portal_session_lookup('portal-ia', v_inv);
+    if n <> 0 then raise exception 'pre-suspend session % must stay dead after re-invite and accept', v_inv; end if;
+  end loop;
+end $$;
+
 rollback;
