@@ -24,6 +24,7 @@ import type {
   PortalReferralUpdate,
 } from "../../../../../../supabase/functions/_shared/portalReferralApi";
 import type { PortalWindow } from "../../../../../../supabase/functions/_shared/portalSubmission";
+import type { PortalProfile, PortalProfileInput } from "../../../../../../supabase/functions/_shared/portalProfile";
 
 export type {
   PortalDashboard,
@@ -34,6 +35,8 @@ export type {
   PortalReferralSummary,
   PortalReferralUpdate,
   PortalWindow,
+  PortalProfile,
+  PortalProfileInput,
 };
 
 const SUPABASE_URL: string = import.meta.env.VITE_SUPABASE_URL || "http://localhost:54321";
@@ -128,7 +131,9 @@ type PortalAction =
   | "get_referral"
   | "withdraw_referral"
   | "transcribe"
-  | "export_referrals";
+  | "export_referrals"
+  | "get_profile"
+  | "update_profile";
 
 async function portalRequest<T>(
   action: PortalAction,
@@ -269,6 +274,16 @@ export const portalApi = {
   exportReferrals(slug: string, sessionToken: string, period: PortalWindow): Promise<PortalExport> {
     return portalRequest<{ export: PortalExport }>("export_referrals", { slug, window: period }, sessionToken).then(
       (r) => r.export,
+    );
+  },
+
+  getProfile(slug: string, sessionToken: string): Promise<PortalProfile> {
+    return portalRequest<{ profile: PortalProfile }>("get_profile", { slug }, sessionToken).then((r) => r.profile);
+  },
+
+  updateProfile(slug: string, sessionToken: string, input: PortalProfileInput): Promise<PortalProfile> {
+    return portalRequest<{ profile: PortalProfile }>("update_profile", { slug, ...input }, sessionToken).then(
+      (r) => r.profile,
     );
   },
 };

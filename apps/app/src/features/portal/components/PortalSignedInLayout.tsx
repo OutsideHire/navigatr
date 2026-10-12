@@ -7,9 +7,9 @@
  * explicit Sign out also clears it, since the device may be shared.
  */
 import * as React from "react";
-import { Navigate, Outlet, useNavigate } from "react-router-dom";
+import { Link, Navigate, Outlet, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, LogOut } from "lucide-react";
+import { Loader2, LogOut, User } from "lucide-react";
 import { Button } from "@/components/navigatr";
 import { PortalRetry } from "./PortalRetry";
 import { portalApi, type PortalBrand } from "../lib/portalApi";
@@ -78,16 +78,25 @@ export function PortalSignedInLayout({ slug, brand }: { slug: string; brand: Por
         <p className="min-w-0 truncate text-body-sm text-text-muted">
           Signed in as {account.partnerName} at {account.orgName}
         </p>
-        <Button
-          variant="tertiary"
-          size="lg"
-          leadingIcon={LogOut}
-          loading={signingOut}
-          onClick={() => void signOut()}
-          className="shrink-0"
-        >
-          Sign out
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          <Link
+            to={`/p/${slug}/profile`}
+            className="inline-flex min-h-11 items-center gap-1 rounded-radius-sm px-2 text-body-sm font-medium text-brand-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+          >
+            <User className="h-4 w-4" aria-hidden />
+            Profile
+          </Link>
+          <Button
+            variant="tertiary"
+            size="lg"
+            leadingIcon={LogOut}
+            loading={signingOut}
+            onClick={() => void signOut()}
+            className="shrink-0"
+          >
+            Sign out
+          </Button>
+        </div>
       </div>
       <Outlet context={context} />
     </div>

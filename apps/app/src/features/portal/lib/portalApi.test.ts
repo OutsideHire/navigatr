@@ -223,4 +223,25 @@ describe("Phase 2A actions", () => {
     expect(call.headers["x-portal-session"]).toBe("tok");
     expect(call.body).toEqual({ slug: "acme", window: "90d" });
   });
+
+  it("reads and saves the profile with the session", async () => {
+    const PROFILE = { name: "Jane", phone: null, email: "jane@example.com", weeklyDigest: true };
+    fetchMock.mockResolvedValueOnce(respond(200, { profile: PROFILE }));
+    await expect(portalApi.getProfile("acme", "tok")).resolves.toEqual(PROFILE);
+    expect(lastCall().url).toBe(`${PORTAL_API_URL}/get_profile`);
+    expect(lastCall().headers["x-portal-session"]).toBe("tok");
+    expect(lastCall().body).toEqual({ slug: "acme" });
+
+    fetchMock.mockResolvedValueOnce(respond(200, { profile: { ...PROFILE, name: "Jane Smith" } }));
+    await expect(
+      portalApi.updateProfile("acme", "tok", { name: "Jane Smith", phone: null, weeklyDigest: false }),
+    ).resolves.toEqual({ ...PROFILE, name: "Jane Smith" });
+    expect(lastCall().url).toBe(`${PORTAL_API_URL}/update_profile`);
+    expect(lastCall().body).toEqual({ slug: "acme", name: "Jane Smith", phone: null, weeklyDigest: false });
+
+    fetchMock.mockResolvedValueOnce(respond(400, { error: "invalid_body", field: "phone" }));
+    await expect(
+      portalApi.updateProfile("acme", "tok", { name: "Jane", phone: "1", weeklyDigest: true }),
+    ).rejects.toMatchObject({ status: 400, code: "invalid_body", field: "phone" });
+  });
 });
