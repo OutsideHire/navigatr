@@ -7,10 +7,13 @@
 //
 // Routes: POST /functions/v1/portal_api/<action>, where action is one of
 //   brand | request_code | verify_code | peek_invite | accept_invite | me | sign_out
+//   form | dup_check | submit_referral | list_referrals | dashboard | get_referral
+//   withdraw_referral | transcribe   (Phase 1B, session required)
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Resend } from "resend";
 import { handlePortalRequest, type PortalApiDeps } from "../_shared/portalApi.ts";
+import { MOCK_TRANSCRIPT, transcribeWithAssemblyAI } from "../_shared/transcribe.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -21,6 +24,9 @@ const APP_ENV = Deno.env.get("APP_ENV");
 const EMAIL_ALLOWLIST = Deno.env.get("EMAIL_ALLOWLIST") ?? "";
 const FROM_ADDRESS = Deno.env.get("FROM_ADDRESS") ?? "navigatr <invites@send.getnavigatr.io>";
 const APP_BASE_URL = Deno.env.get("APP_BASE_URL") ?? "https://app.getnavigatr.io";
+// Same secret and mock flag as the rep-facing transcribe function.
+const ASSEMBLYAI_API_KEY = Deno.env.get("ASSEMBLYAI_API_KEY") ?? "";
+const TRANSCRIBE_MOCK = Deno.env.get("TRANSCRIBE_MOCK") === "1";
 
 const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 const resend = new Resend(RESEND_API_KEY);
@@ -43,6 +49,10 @@ const deps: PortalApiDeps = {
       ? // deno-lint-ignore no-explicit-any
         (globalThis as any).EdgeRuntime.waitUntil(p)
       : p.catch((e) => console.error("[portal_api] background", e)),
+  transcribe: (audio) =>
+    TRANSCRIBE_MOCK
+      ? Promise.resolve(MOCK_TRANSCRIPT)
+      : transcribeWithAssemblyAI(audio, { fetch, apiKey: ASSEMBLYAI_API_KEY }),
   env: {
     appBaseUrl: APP_BASE_URL,
     fromAddress: FROM_ADDRESS,

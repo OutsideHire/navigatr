@@ -15,6 +15,7 @@
 import { shouldSend } from "./emailGuard.ts";
 import { renderEmail } from "./emailTemplate.ts";
 import { portalCodeEmail, portalFromAddress, portalUrl } from "./portalEmail.ts";
+import { REFERRAL_ACTIONS, handleReferralAction, isReferralAction, type ReferralAction } from "./portalReferralApi.ts";
 
 export const PORTAL_CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -45,8 +46,10 @@ export interface PortalEnv {
 export interface PortalApiDeps {
   rpc(name: string, args: Record<string, unknown>): Promise<PortalRpcResult>;
   sendEmail(msg: PortalEmailMessage): Promise<void>;
-  /** Reserved for later phases; Phase 1A keeps every clock in SQL. */
+  /** Clock for the referral time windows (Phase 1B); defaults to new Date(). */
   now?(): Date;
+  /** Speech-to-text for the portal's dictated notes (Phase 1B). Absent means transcribe answers 500. */
+  transcribe?(audio: Uint8Array<ArrayBuffer>, mime: string): Promise<string>;
   /**
    * Keeps a fire-and-forget promise alive past the response (EdgeRuntime.waitUntil).
    * request_code hands the email send here so its latency cannot reveal whether an
@@ -68,7 +71,8 @@ export type PortalAction =
   | "peek_invite"
   | "accept_invite"
   | "me"
-  | "sign_out";
+  | "sign_out"
+  | ReferralAction;
 
 const ACTIONS: ReadonlySet<string> = new Set<PortalAction>([
   "brand",
@@ -78,6 +82,7 @@ const ACTIONS: ReadonlySet<string> = new Set<PortalAction>([
   "accept_invite",
   "me",
   "sign_out",
+  ...REFERRAL_ACTIONS,
 ]);
 
 interface BrandRow {
@@ -109,6 +114,8 @@ interface InviteRow {
 
 interface LookupRow {
   portal_user_id: string;
+  org_id: string;
+  partner_id: string;
   partner_name: string;
   user_email: string;
   org_name: string;
@@ -232,8 +239,14 @@ export async function handlePortalRequest(req: Request, deps: PortalApiDeps): Pr
         if (tooLong(token, PORTAL_LIMITS.token)) return jsonResponse({ ok: true });
         return await signOut(token, deps);
       }
-      default:
+      default: {
+        if (isReferralAction(action)) {
+          const token = sessionTokenFrom(req.headers);
+          if (slugTooLong || tooLong(token, PORTAL_LIMITS.token)) return jsonResponse({ error: "unauthorized" }, 401);
+          return await referral(action, slug, token, body, ip, deps);
+        }
         return jsonResponse({ error: "not_found" }, 404);
+      }
     }
   } catch (e) {
     // A throwing or rejecting rpc must look exactly like the handled failure for
@@ -397,4 +410,36 @@ async function signOut(token: string, deps: PortalApiDeps): Promise<Response> {
     if (error) console.error("[portal_api] sign out failed:", error.message);
   }
   return jsonResponse({ ok: true });
+}
+
+/**
+ * Phase 1B signed-in actions. The session is looked up on every request, and the
+ * org, partner and portal user it returns are the only scope the referral
+ * functions ever see. A database error during the lookup is a 500 (retry), not a
+ * 401, so a transient failure never signs the partner out.
+ */
+async function referral(
+  action: ReferralAction,
+  slug: string,
+  token: string,
+  body: Record<string, unknown>,
+  ip: string | null,
+  deps: PortalApiDeps,
+): Promise<Response> {
+  if (!token) return jsonResponse({ error: "unauthorized" }, 401);
+  const { data, error } = await deps.rpc("portal_session_lookup", { p_slug: slug, p_token: token });
+  if (error) {
+    console.error("[portal_api] session lookup failed:", error.message);
+    return jsonResponse({ error: "server_error" }, 500);
+  }
+  const row = firstRow<LookupRow>(data);
+  if (!row?.portal_user_id) return jsonResponse({ error: "unauthorized" }, 401);
+  const result = await handleReferralAction(
+    action,
+    { portalUserId: row.portal_user_id, orgId: row.org_id, partnerId: row.partner_id },
+    body,
+    ip,
+    deps,
+  );
+  return jsonResponse(result.body, result.status);
 }
