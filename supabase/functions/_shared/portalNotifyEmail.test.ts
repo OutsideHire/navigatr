@@ -61,6 +61,31 @@ describe("strict keys", () => {
   });
 });
 
+describe("missing keys and single-line subjects", () => {
+  it("drops a payload with a key deleted", () => {
+    const { repEmail: _r, ...noRep } = P;
+    expect(buildPortalNotifyEmail("partner_received", noRep, CTX)).toBeNull();
+    expect(buildPortalNotifyEmail("internal_nudge", { appUrlPath: "/partners", companyNames: ["A"] }, CTX)).toBeNull();
+  });
+
+  it("collapses newlines and tabs in names used in a subject", () => {
+    const e = buildPortalNotifyEmail("partner_received", { ...P, companyName: "Fresh\r\nBcc: x\tBakery", orgName: "Acme\nISO" }, CTX)!;
+    expect(e.subject).toBe("Fresh Bcc: x Bakery: Received by Acme ISO");
+    expect(e.subject).not.toMatch(/[\r\n\t]/);
+  });
+});
+
+describe("nudge overflow", () => {
+  it("uses the true count, not the capped name list", () => {
+    const names = Array.from({ length: 20 }, (_, i) => `Biz ${i + 1}`);
+    const e = buildPortalNotifyEmail("internal_nudge", { appUrlPath: "/partners", companyNames: names, count: 50 }, CTX)!;
+    expect(e.bodyLines[11]).toBe("and 40 more");
+    const ten = Array.from({ length: 10 }, (_, i) => `Biz ${i + 1}`);
+    const f = buildPortalNotifyEmail("internal_nudge", { appUrlPath: "/partners", companyNames: ten, count: 10 }, CTX)!;
+    expect(f.bodyLines).toHaveLength(11);
+  });
+});
+
 describe("parseInternalPayload", () => {
   it("accepts an app path and company names", () => {
     expect(parseInternalPayload({ appUrlPath: "/partners", companyNames: ["A", " B "], count: 2 })).toEqual({

@@ -99,17 +99,22 @@ function text(v: unknown): string | null {
   return typeof v === "string" && v.trim() !== "" ? v.trim() : null;
 }
 
+/** Single-line text: CR, LF and tabs become single spaces so a value can sit in a subject line. */
+function line(v: unknown): string | null {
+  return typeof v === "string" ? text(v.replace(/[\r\n\t]+/g, " ").replace(/ {2,}/g, " ")) : null;
+}
+
 function isLabel(v: unknown): v is PortalLabel {
   return typeof v === "string" && (PORTAL_LABELS as readonly string[]).includes(v);
 }
 
 export function parsePartnerPayload(raw: unknown): PartnerNotifyPayload | null {
   if (!isRecord(raw) || !hasExactKeys(raw, PARTNER_KEYS)) return null;
-  const slug = text(raw.slug);
-  const orgName = text(raw.orgName);
-  const partnerName = text(raw.partnerName);
-  const companyName = text(raw.companyName);
-  const ref = text(raw.ref);
+  const slug = line(raw.slug);
+  const orgName = line(raw.orgName);
+  const partnerName = line(raw.partnerName);
+  const companyName = line(raw.companyName);
+  const ref = line(raw.ref);
   if (!slug || !orgName || !partnerName || !companyName || !ref || !isLabel(raw.label)) return null;
   const value = raw.valueCents;
   const repEmail = text(raw.repEmail);
@@ -121,7 +126,7 @@ export function parsePartnerPayload(raw: unknown): PartnerNotifyPayload | null {
     ref,
     label: raw.label,
     valueCents: typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null,
-    repName: text(raw.repName),
+    repName: line(raw.repName),
     repEmail: repEmail && EMAIL_RE.test(repEmail) ? repEmail : null,
     updateBody: text(raw.updateBody),
   };
@@ -132,7 +137,7 @@ export function parseInternalPayload(raw: unknown): InternalNotifyPayload | null
   const path = typeof raw.appUrlPath === "string" ? raw.appUrlPath : "";
   if (!APP_PATH_RE.test(path) || path.startsWith("//")) return null;
   if (!Array.isArray(raw.companyNames)) return null;
-  const names = raw.companyNames.map(text).filter((n): n is string => n !== null);
+  const names = raw.companyNames.map(line).filter((n): n is string => n !== null);
   if (names.length === 0) return null;
   const count = typeof raw.count === "number" && Number.isSafeInteger(raw.count) ? raw.count : 0;
   return { appUrlPath: path, companyNames: names, count: Math.max(count, names.length) };
@@ -251,7 +256,7 @@ function buildInternal(kind: InternalNotifyKind, p: InternalNotifyPayload, ctx: 
   const n = p.count;
   const noun = n === 1 ? "partner referral" : "partner referrals";
   const shown = p.companyNames.slice(0, 10).map((c) => `- ${c}`);
-  const more = p.companyNames.length > 10 ? [`and ${p.companyNames.length - 10} more`] : [];
+  const more = p.count > shown.length ? [`and ${p.count - shown.length} more`] : [];
   return {
     subject: `${n} ${noun} still waiting for review`,
     preheader: `Received today and still waiting: ${p.companyNames.slice(0, 3).join(", ")}`,
