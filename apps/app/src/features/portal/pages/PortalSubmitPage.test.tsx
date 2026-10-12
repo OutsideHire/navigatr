@@ -29,13 +29,16 @@ vi.mock("../lib/portalApi", async (importOriginal) => {
 
 const dictation = vi.hoisted(() => ({
   onResult: null as null | ((text: string) => void),
+  onUnauthorized: null as null | (() => void),
   toggle: vi.fn(),
   micState: "rest" as string,
+  tooLong: false,
 }));
 vi.mock("../hooks/usePortalDictation", () => ({
-  usePortalDictation: (opts: { onResult: (text: string) => void }) => {
+  usePortalDictation: (opts: { onResult: (text: string) => void; onUnauthorized?: () => void }) => {
     dictation.onResult = opts.onResult;
-    return { micState: dictation.micState, toggle: dictation.toggle };
+    dictation.onUnauthorized = opts.onUnauthorized ?? null;
+    return { micState: dictation.micState, toggle: dictation.toggle, tooLong: dictation.tooLong };
   },
 }));
 
@@ -46,6 +49,7 @@ import { readPortalSession, writePortalSession } from "../lib/portalSession";
 const BRAND = { orgName: "Acme ISO", productName: "navigatr", primaryColor: null, logoUrl: null, darkLogoUrl: null };
 const ME = { partnerName: "Jane", email: "jane@example.com", orgName: "Acme ISO" };
 const FORM = { consentText: "I may share these details.", consentVersion: 3 };
+const WORDING_CHANGED = "The wording changed. Please review it and tick the box again.";
 const DUP = "This business may already be in progress with Acme ISO. You can still send it.";
 
 // Node 25 ships a broken global localStorage: install an in-memory Storage per test.
@@ -71,8 +75,10 @@ function memoryStorage(): Storage {
   };
 }
 
+let client: QueryClient;
+
 function renderAt(path: string) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
@@ -96,6 +102,8 @@ beforeEach(() => {
   dictation.onResult = null;
   dictation.toggle.mockReset();
   dictation.micState = "rest";
+  dictation.tooLong = false;
+  dictation.onUnauthorized = null;
   api.brand.mockResolvedValue(BRAND);
   api.me.mockResolvedValue(ME);
   api.form.mockResolvedValue(FORM);
@@ -213,8 +221,42 @@ describe("PortalSubmitPage", () => {
     await fillRequired(user);
     await user.click(await screen.findByRole("checkbox", { name: "I may share these details." }));
     await user.click(screen.getByRole("button", { name: "Send referral" }));
-    expect(await screen.findByText("The permission wording was just updated. Read it and check the box again.")).toBeInTheDocument();
+    expect(await screen.findByText(WORDING_CHANGED)).toBeInTheDocument();
     expect(await screen.findByRole("checkbox", { name: "New wording." })).not.toBeChecked();
+  });
+
+  it("unticks the box when the wording changes under it, and sends the version that was ticked", async () => {
+    const user = userEvent.setup();
+    api.submitReferral.mockResolvedValue({ id: "r-9", ref: "REF-AAAA0009" });
+    renderAt("/p/acme/new");
+    await fillRequired(user);
+    await user.click(await screen.findByRole("checkbox", { name: "I may share these details." }));
+    expect(screen.getByRole("checkbox", { name: "I may share these details." })).toBeChecked();
+
+    // The ISO edits its wording; the form context refreshes in the background.
+    api.form.mockResolvedValue({ consentText: "New wording.", consentVersion: 4 });
+    await act(() => client.invalidateQueries());
+    expect(await screen.findByRole("checkbox", { name: "New wording." })).not.toBeChecked();
+    expect(screen.getByText(WORDING_CHANGED)).toBeInTheDocument();
+
+    // Sending now is blocked until the new wording is ticked.
+    await user.click(screen.getByRole("button", { name: "Send referral" }));
+    expect(api.submitReferral).not.toHaveBeenCalled();
+    expect(screen.getByText("Check the box to confirm you have permission.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "New wording." }));
+    await user.click(screen.getByRole("button", { name: "Send referral" }));
+    expect(api.submitReferral).toHaveBeenCalledTimes(1);
+    expect(api.submitReferral.mock.calls[0][2]).toMatchObject({ consent: true, consentVersion: 4 });
+  });
+
+  it("keeps the box ticked when a refresh brings back the same wording", async () => {
+    const user = userEvent.setup();
+    renderAt("/p/acme/new");
+    await user.click(await screen.findByRole("checkbox", { name: "I may share these details." }));
+    await act(() => client.invalidateQueries());
+    expect(screen.getByRole("checkbox", { name: "I may share these details." })).toBeChecked();
+    expect(screen.queryByText(WORDING_CHANGED)).not.toBeInTheDocument();
   });
 
   it.each([
@@ -259,7 +301,7 @@ describe("PortalSubmitPage", () => {
     await fillRequired(user);
     await user.click(await screen.findByRole("checkbox", { name: "I may share these details." }));
     await user.click(screen.getByRole("button", { name: "Send referral" }));
-    expect(await screen.findByText(/permission wording was just updated/)).toBeInTheDocument();
+    expect(await screen.findByText(WORDING_CHANGED)).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "I may share these details." })).not.toBeChecked();
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Business name")).toHaveValue("Fresh Bakery");
@@ -316,6 +358,21 @@ describe("PortalSubmitPage", () => {
     expect(
       await screen.findByText("Couldn't turn that into text. Try a shorter clip in a minute, or type it."),
     ).toBeInTheDocument();
+  });
+
+  it("says a clip is too long when the portal refuses its size", async () => {
+    dictation.micState = "error";
+    dictation.tooLong = true;
+    renderAt("/p/acme/new");
+    expect(await screen.findByText("That clip is too long. Keep it under about 2 minutes.")).toBeInTheDocument();
+  });
+
+  it("returns to sign-in when dictation finds the session gone", async () => {
+    renderAt("/p/acme/new");
+    await screen.findByLabelText("Notes (optional)");
+    act(() => dictation.onUnauthorized?.());
+    expect(await screen.findByRole("heading", { name: "Sign in to Acme ISO" })).toBeInTheDocument();
+    expect(readPortalSession("acme")).toBeNull();
   });
 
   it("never names a rep, stage, value or another partner in the duplicate warning", async () => {

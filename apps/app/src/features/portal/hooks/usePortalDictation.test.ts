@@ -20,6 +20,7 @@ vi.mock("../lib/portalApi", async (importOriginal) => {
 });
 
 import { usePortalDictation } from "./usePortalDictation";
+import { PortalApiError } from "../lib/portalApi";
 
 function fakeBlob(): Blob {
   return { arrayBuffer: async () => new TextEncoder().encode("audio").buffer } as unknown as Blob;
@@ -72,5 +73,38 @@ describe("usePortalDictation", () => {
     recorder.blob = null;
     const denied = renderHook(() => usePortalDictation({ slug: "acme", token: "tok", onResult: vi.fn() }));
     expect(denied.result.current.micState).toBe("permission-denied");
+  });
+
+  it("hands a 401 from transcribe to onUnauthorized so the layout can expire the session", async () => {
+    transcribeMock.mockRejectedValue(new PortalApiError(401, "unauthorized"));
+    const onUnauthorized = vi.fn();
+    const { result, rerender } = renderHook(() =>
+      usePortalDictation({ slug: "acme", token: "tok", onResult: vi.fn(), onUnauthorized }),
+    );
+    recorder.state = "recorded";
+    recorder.blob = fakeBlob();
+    rerender();
+    await waitFor(() => expect(onUnauthorized).toHaveBeenCalledTimes(1));
+    expect(result.current.tooLong).toBe(false);
+  });
+
+  it("flags a 413 as too long, and other failures are not", async () => {
+    transcribeMock.mockRejectedValue(new PortalApiError(413, "audio_too_large"));
+    const onUnauthorized = vi.fn();
+    const { result, rerender } = renderHook(() =>
+      usePortalDictation({ slug: "acme", token: "tok", onResult: vi.fn(), onUnauthorized }),
+    );
+    recorder.state = "recorded";
+    recorder.blob = fakeBlob();
+    rerender();
+    await waitFor(() => expect(result.current.micState).toBe("error"));
+    expect(result.current.tooLong).toBe(true);
+    expect(onUnauthorized).not.toHaveBeenCalled();
+
+    // Starting a new recording clears the flag.
+    recorder.state = "idle";
+    rerender();
+    act(() => result.current.toggle());
+    expect(result.current.tooLong).toBe(false);
   });
 });

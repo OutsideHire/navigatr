@@ -50,7 +50,8 @@ const FIELD_MESSAGES: Record<PortalSubmissionField, string> = {
 
 const TOO_MANY = "Too many referrals right now. Try again later.";
 const DICTATION_ERROR = "Couldn't turn that into text. Try a shorter clip in a minute, or type it.";
-const CONSENT_CHANGED = "The permission wording was just updated. Read it and check the box again.";
+const DICTATION_TOO_LONG = "That clip is too long. Keep it under about 2 minutes.";
+const CONSENT_CHANGED = "The wording changed. Please review it and tick the box again.";
 
 const FIELD_IDS: Record<PortalSubmissionField, string> = {
   companyName: "portal-company",
@@ -83,7 +84,9 @@ export function PortalSubmitPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [draft, setDraft] = React.useState<PortalDraft>(() => readPortalDraft(slug));
-  const [consent, setConsent] = React.useState(false);
+  // The consent version the partner ticked against, or null when unticked.
+  // What is sent is this captured version, never whatever the form shows now.
+  const [consentedVersion, setConsentedVersion] = React.useState<number | null>(null);
   const [fieldError, setFieldError] = React.useState<PortalSubmissionField | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -132,16 +135,31 @@ export function PortalSubmitPage() {
     if (unauthorized) expire();
   }, [unauthorized, expire]);
 
+  // The ticked version must match the wording on screen. When a refresh brings
+  // new wording, untick and ask again before anything can be sent.
+  const consentVersion = form.data?.consentVersion;
+  const consent = consentedVersion !== null && consentedVersion === consentVersion;
+  React.useEffect(() => {
+    if (consentVersion === undefined || consentedVersion === null || consentedVersion === consentVersion) return;
+    setConsentedVersion(null);
+    setNotice(CONSENT_CHANGED);
+  }, [consentVersion, consentedVersion]);
+
   const dictation = usePortalDictation({
     slug,
     token,
     onResult: (text) => setDraft((d) => ({ ...d, notes: appendDictated(d.notes, text) })),
+    onUnauthorized: expire,
   });
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.data || busy) return;
-    const input: PortalSubmitInput = { ...draft, consent, consentVersion: form.data.consentVersion };
+    const input: PortalSubmitInput = {
+      ...draft,
+      consent,
+      consentVersion: consentedVersion ?? form.data.consentVersion,
+    };
     const check = validateSubmission(input);
     if (!check.ok) {
       setFieldError(check.field);
@@ -155,7 +173,7 @@ export function PortalSubmitPage() {
       const res = await portalApi.submitReferral(slug, token, input);
       clearPortalDraft(slug);
       setDraft({ ...EMPTY_DRAFT });
-      setConsent(false);
+      setConsentedVersion(null);
       setSent({ ...res, companyName: check.value.companyName });
       void queryClient.invalidateQueries({ queryKey: portalDataKey(slug, token, "dashboard") });
       void queryClient.invalidateQueries({ queryKey: portalDataKey(slug, token, "list") });
@@ -165,7 +183,7 @@ export function PortalSubmitPage() {
         return;
       }
       if (err instanceof PortalApiError && err.code === "consent_changed") {
-        setConsent(false);
+        setConsentedVersion(null);
         setNotice(CONSENT_CHANGED);
         void form.refetch();
       } else if (err instanceof PortalApiError && err.status === 400 && isSubmissionField(err.field)) {
@@ -213,7 +231,12 @@ export function PortalSubmitPage() {
   let consentBlock: React.ReactNode;
   if (form.data) {
     consentBlock = (
-      <Checkbox id="portal-consent" checked={consent} onCheckedChange={setConsent} label={form.data.consentText} />
+      <Checkbox
+        id="portal-consent"
+        checked={consent}
+        onCheckedChange={(checked) => setConsentedVersion(checked ? (form.data?.consentVersion ?? null) : null)}
+        label={form.data.consentText}
+      />
     );
   } else if (form.isPending) {
     consentBlock = <Loader2 className="h-5 w-5 animate-spin text-text-subtle" aria-label="Loading" />;
@@ -351,7 +374,7 @@ export function PortalSubmitPage() {
               rows={4}
               onMicClick={dictation.toggle}
               micState={dictation.micState}
-              errorMessage={DICTATION_ERROR}
+              errorMessage={dictation.tooLong ? DICTATION_TOO_LONG : DICTATION_ERROR}
             />
           </FormField>
 

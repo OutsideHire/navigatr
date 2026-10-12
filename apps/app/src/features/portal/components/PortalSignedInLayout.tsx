@@ -3,6 +3,8 @@
  * route. It checks the session once (me), shows who is signed in with a Sign out
  * button, and hands the pages their context. Any page that gets a 401 calls
  * expire(), which forgets the session on this device and returns to sign-in.
+ * An expiry keeps an unsent referral draft so nothing typed is lost; an
+ * explicit Sign out also clears it, since the device may be shared.
  */
 import * as React from "react";
 import { Navigate, Outlet, useNavigate } from "react-router-dom";
@@ -11,6 +13,7 @@ import { Loader2, LogOut } from "lucide-react";
 import { Button } from "@/components/navigatr";
 import { PortalRetry } from "./PortalRetry";
 import { portalApi, type PortalBrand } from "../lib/portalApi";
+import { clearPortalDraft } from "../lib/portalDraft";
 import { clearPortalSession, readPortalSession } from "../lib/portalSession";
 import type { PortalSignedInContext } from "../lib/portalSignedIn";
 
@@ -65,6 +68,7 @@ export function PortalSignedInLayout({ slug, brand }: { slug: string; brand: Por
     } catch {
       // The session is forgotten on this device either way.
     }
+    clearPortalDraft(slug);
     forget();
   };
 
