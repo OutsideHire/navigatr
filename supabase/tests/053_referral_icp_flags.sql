@@ -51,6 +51,16 @@ do $$ declare f record; begin
       raise exception 'portal function % could return ICP flags: %', f.sig, f.res;
     end if;
   end loop;
+  -- No partner function so much as reads the column.
+  for f in
+    select p.oid::regprocedure::text as sig
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname like 'portal\_%' and p.prokind = 'f'
+       and pg_get_functiondef(p.oid) ilike '%icp_flags%'
+  loop
+    raise exception 'portal function % mentions icp_flags', f.sig;
+  end loop;
 end $$;
 
 -- 2. A rep-logged referral is flagged at insert (role switches from here on).

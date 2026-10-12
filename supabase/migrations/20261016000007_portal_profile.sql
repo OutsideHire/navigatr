@@ -72,6 +72,17 @@ declare
 begin
   perform public._portal_assert_scope(p_org, p_partner, p_portal_user);
 
+  -- Lock the active portal user row before any write, so a concurrent
+  -- portal_purge_user (which locks the same row) either runs first and this
+  -- save is refused, or waits until this save commits and then erases it.
+  perform 1 from portal_users u
+   where u.id = p_portal_user and u.org_id = p_org and u.partner_id = p_partner
+     and u.status = 'active'
+     for update;
+  if not found then
+    raise exception 'not_authorized' using errcode = '42501';
+  end if;
+
   -- Field rules mirror _shared/portalProfile.ts.
   if v_name = '' or char_length(v_name) > 120 then
     raise exception 'invalid_input:name' using errcode = '22023';

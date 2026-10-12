@@ -4,7 +4,8 @@
 --
 -- Fixture (org ref-assign): boss administrator; Mia Mgr (manager) under boss;
 -- Rita Rep under Mia; Rob Rep under boss in another branch; Dee Rep under Mia,
--- deactivated. Partner P1 owned by Rita, P2 owned by Rob. Org ref-assign-b: Bob.
+-- deactivated. Partner P1 owned by Rita, P2 owned by Rob, P3 owned by Dee.
+-- Org ref-assign-b: Bob.
 
 begin;
 
@@ -30,7 +31,8 @@ insert into profiles (id, org_id, role, role_level, full_name, email, role_path,
 
 insert into partners (id, org_id, created_by, owner_id, name, company, type) values
   ('a055a000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000001055', 'a0550000-0000-0000-0000-000000000003', 'a0550000-0000-0000-0000-000000000003', 'Jane CPA', 'Jane & Co', 'cpa'),
-  ('a055a000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001055', 'a0550000-0000-0000-0000-000000000004', 'a0550000-0000-0000-0000-000000000004', 'Pat CPA',  'Pat & Co',  'cpa');
+  ('a055a000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001055', 'a0550000-0000-0000-0000-000000000004', 'a0550000-0000-0000-0000-000000000004', 'Pat CPA',  'Pat & Co',  'cpa'),
+  ('a055a000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000001055', 'a0550000-0000-0000-0000-000000000001', 'a0550000-0000-0000-0000-000000000005', 'Dee CPA',  'Dee & Co',  'cpa');
 
 create or replace function _t_act(p_user uuid) returns void language plpgsql as $$
 begin
@@ -110,6 +112,22 @@ do $$ begin
 
   perform _t_act('a0550000-0000-0000-0000-000000000006');
   perform _t_raises($q$select public.can_user_see_partner('a0550000-0000-0000-0000-000000000003', 'a055a000-0000-0000-0000-000000000001')$q$, 'partner_not_visible');
+end $$;
+
+-- 4. An administrator asks about people who cannot take the partner.
+do $$ begin
+  perform _t_act('a0550000-0000-0000-0000-000000000001');
+  -- A target in another org is refused outright, even for an administrator.
+  perform _t_raises($q$select public.can_user_see_partner('a0550000-0000-0000-0000-000000000006', 'a055a000-0000-0000-0000-000000000001')$q$, 'not_authorized');
+  -- A target that does not exist is refused the same way.
+  perform _t_raises($q$select public.can_user_see_partner('a0550000-0000-0000-0000-0000000000ff', 'a055a000-0000-0000-0000-000000000001')$q$, 'not_authorized');
+  -- A deactivated target sees nothing, not even the partner they still own.
+  if public.can_user_see_partner('a0550000-0000-0000-0000-000000000005', 'a055a000-0000-0000-0000-000000000003') is distinct from false then
+    raise exception 'a deactivated user cannot see a partner, even their own';
+  end if;
+  if public.can_user_see_partner('a0550000-0000-0000-0000-000000000005', 'a055a000-0000-0000-0000-000000000001') is distinct from false then
+    raise exception 'a deactivated user cannot see a teammate''s partner';
+  end if;
 end $$;
 
 rollback;

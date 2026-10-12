@@ -148,13 +148,35 @@ do $$ begin
   if _t_change_rows('a0560000-0000-0000-0000-000000000004') <> 0 then raise exception 'another org sees nothing'; end if;
 end $$;
 
--- 5. Twenty saves an hour, then rate_limited.
-do $$ begin
+-- 5. Twenty saves an hour, then rate_limited: the 20th save is allowed, the
+-- 21st is refused.
+do $$ declare n int; begin
   perform set_config('role', 'postgres', true);
+  select count(*) into n from portal_audit_log
+   where portal_user_id = 'a056b000-0000-0000-0000-000000000001' and action = 'profile_update'
+     and created_at > now() - interval '1 hour';
+  -- Top up to 19 saves in the last hour.
   insert into portal_audit_log (org_id, portal_user_id, action)
   select '00000000-0000-0000-0000-000000001056', 'a056b000-0000-0000-0000-000000000001', 'profile_update'
-    from generate_series(1, 20);
+    from generate_series(1, 19 - n);
+  perform * from public.portal_update_profile('00000000-0000-0000-0000-000000001056', 'a056a000-0000-0000-0000-000000000001', 'a056b000-0000-0000-0000-000000000001', 'Jane Smith', '(555) 056-2222', true, null);
+  select count(*) into n from portal_audit_log
+   where portal_user_id = 'a056b000-0000-0000-0000-000000000001' and action = 'profile_update'
+     and created_at > now() - interval '1 hour';
+  if n <> 20 then raise exception 'the 20th save in an hour is allowed and audited, got % saves', n; end if;
   perform _t_raises($q$select public.portal_update_profile('00000000-0000-0000-0000-000000001056', 'a056a000-0000-0000-0000-000000000001', 'a056b000-0000-0000-0000-000000000001', 'Jane', null, true, null)$q$, 'rate_limited');
+end $$;
+
+-- 5b. The save locks the active portal user row before writing, so it cannot
+-- interleave with portal_purge_user (which locks the same row).
+do $$ declare d text; begin
+  d := pg_get_functiondef('public.portal_update_profile(uuid, uuid, uuid, text, text, boolean, text)'::regprocedure);
+  if d !~ 'from portal_users u\s+where u\.id = p_portal_user and u\.org_id = p_org and u\.partner_id = p_partner\s+and u\.status = ''active''\s+for update' then
+    raise exception 'portal_update_profile must lock the active portal user row';
+  end if;
+  if position('for update' in d) > position('insert into partner_profile_changes' in d) then
+    raise exception 'the portal user lock must come before any write';
+  end if;
 end $$;
 
 -- 6. Erase (controller ruling D2): portal_purge_user also clears the partner's
@@ -168,6 +190,9 @@ do $$ declare n int; begin
      jsonb_build_object('companyName', 'Acme', 'partnerName', 'Jane Smith'), 't056:pending'),
     ('00000000-0000-0000-0000-000000001056', 'partner_received', 'a056f000-0000-0000-0000-000000000001', 'a056b000-0000-0000-0000-000000000001',
      jsonb_build_object('companyName', 'Acme'), 't056:nokey');
+  insert into portal_email_outbox (org_id, kind, referral_id, portal_user_id, payload, dedupe_key, sent_at, attempts) values
+    ('00000000-0000-0000-0000-000000001056', 'partner_accepted', 'a056f000-0000-0000-0000-000000000001', 'a056b000-0000-0000-0000-000000000001',
+     jsonb_build_object('companyName', 'Acme', 'partnerName', 'Jane Smith'), 't056:sent', now() - interval '1 day', 1);
   perform _t_act('a0560000-0000-0000-0000-000000000001');
   perform public.portal_purge_user('a056a000-0000-0000-0000-000000000001');
   perform set_config('role', 'postgres', true);
@@ -183,6 +208,12 @@ do $$ declare n int; begin
   if n <> 0 then raise exception 'purge must null partnerName in every payload, % keep it', n; end if;
   if (select payload ->> 'companyName' from portal_email_outbox where dedupe_key = 't056:pending') <> 'Acme' then
     raise exception 'other payload fields are untouched';
+  end if;
+  if (select jsonb_typeof(payload -> 'partnerName') from portal_email_outbox where dedupe_key = 't056:sent') is distinct from 'null' then
+    raise exception 'an already sent email must not keep the partner name either';
+  end if;
+  if not exists (select 1 from portal_email_outbox where dedupe_key = 't056:sent' and sent_at is not null and dropped_at is null) then
+    raise exception 'a sent email stays sent';
   end if;
   if exists (select 1 from portal_email_outbox where dedupe_key = 't056:nokey' and payload ? 'partnerName') then
     raise exception 'a payload without partnerName must not gain the key';

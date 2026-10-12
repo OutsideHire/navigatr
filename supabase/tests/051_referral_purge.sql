@@ -10,6 +10,7 @@
 --   R3 P1 rep    withdrawn   95 days ago  purged
 --   R4 P1 portal submitted  200 days ago  kept (not closed)
 --   R5 P1 portal declined   130 days ago, already purged yesterday: untouched
+--   R7 P1 rep    declined   100 days ago, then reinstated (now submitted): kept
 -- Org B portal-purge-b (retention 30 days): bob administrator, partner PB with
 -- portal user PUB, RB declined 40 days ago: purged.
 
@@ -71,6 +72,18 @@ update referral_status_history h
     ('a051f000-0000-0000-0000-000000000006'::uuid, now() - interval '40 days')
   ) as v(id, closed_at)
  where h.referral_id = v.id;
+
+-- R7: declined long ago, then reinstated. Its old declined history row stays,
+-- but it is open again, so the purge must leave it alone.
+insert into referrals (
+  id, org_id, partner_id, direction, source, status, company_name, contact_name,
+  contact_phone, notes, decline_reason, partner_company_snapshot, assigned_user_id, submitted_at
+) values
+  ('a051f000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000001051', 'a051a000-0000-0000-0000-000000000001', 'inbound', 'rep_entered', 'declined', 'Back Again Co', 'Rex', '5550510007', 'reinstated note', 'outside_icp', 'Jane & Co', 'a0510000-0000-0000-0000-000000000002', now() - interval '120 days');
+update referral_status_history set created_at = now() - interval '100 days'
+ where referral_id = 'a051f000-0000-0000-0000-000000000007';
+update referrals set status = 'submitted', decline_reason = null
+ where id = 'a051f000-0000-0000-0000-000000000007';
 
 -- D1: R1 also has a Google place id, a decline note copied into its history (as
 -- decline_referral does), and an audit row carrying a partner IP.
@@ -142,6 +155,20 @@ do $$ declare j record; begin
   end if;
 end $$;
 
+-- 2b. The erase re-checks the purge predicate at UPDATE time (the candidate
+-- SELECT takes no row locks, so a referral reinstated in between must be
+-- skipped) and every later statement runs on the RETURNING set only.
+do $$ declare d text; begin
+  d := pg_get_functiondef('public.purge_declined_referrals(timestamptz)'::regprocedure);
+  if (length(d) - length(replace(d, 'r.status in (''declined'',''withdrawn'')', ''))) / length('r.status in (''declined'',''withdrawn'')') < 2
+     or (length(d) - length(replace(d, 'r.purged_at is null', ''))) / length('r.purged_at is null') < 2 then
+    raise exception 'the purge UPDATE must re-check purged_at and status, not trust the candidate list';
+  end if;
+  if position('returning r.id' in d) = 0 then
+    raise exception 'the purge UPDATE must rebuild the id set from RETURNING';
+  end if;
+end $$;
+
 -- 3. Run the purge: R1, R3 and RB go; everything else stays.
 do $$ declare n int; r record; begin
   n := public.purge_declined_referrals(now());
@@ -179,6 +206,14 @@ do $$ declare n int; r record; begin
   select * into r from referrals where id = 'a051f000-0000-0000-0000-000000000004';
   if r.purged_at is not null or r.contact_name is distinct from 'Wes' then
     raise exception 'a submitted referral is never purged: %', row_to_json(r);
+  end if;
+  select * into r from referrals where id = 'a051f000-0000-0000-0000-000000000007';
+  if r.purged_at is not null or r.contact_name is distinct from 'Rex' or r.notes <> 'reinstated note' then
+    raise exception 'a reinstated referral is open again and must not be purged: %', row_to_json(r);
+  end if;
+  if exists (select 1 from portal_audit_log where action = 'purge'
+              and referral_id = 'a051f000-0000-0000-0000-000000000007') then
+    raise exception 'a reinstated referral gets no purge audit row';
   end if;
   select * into r from referrals where id = 'a051f000-0000-0000-0000-000000000005';
   if r.purged_at > now() - interval '12 hours' then

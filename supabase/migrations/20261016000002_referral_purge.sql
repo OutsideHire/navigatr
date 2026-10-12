@@ -57,17 +57,34 @@ begin
   end if;
 
   -- Status is not in the SET list, so no history row and no status email.
-  update referrals r
-     set contact_name          = null,
-         contact_email         = null,
-         contact_phone         = null,
-         address               = null,
-         notes                 = '',
-         consent_text_snapshot = null,
-         decline_note          = null,
-         place_id              = null,
-         purged_at             = v_now
-   where r.id = any(v_ids);
+  -- The candidate set was read without row locks, so the UPDATE re-checks the
+  -- purge predicate: a referral reinstated (or already purged) since the
+  -- SELECT is skipped. Every later statement runs on the rows actually erased.
+  with erased as (
+    update referrals r
+       set contact_name          = null,
+           contact_email         = null,
+           contact_phone         = null,
+           address               = null,
+           notes                 = '',
+           consent_text_snapshot = null,
+           decline_note          = null,
+           place_id              = null,
+           purged_at             = v_now
+      from organizations o
+     where r.id = any(v_ids)
+       and o.id = r.org_id
+       and r.purged_at is null
+       and r.status in ('declined','withdrawn')
+       and coalesce(public._referral_status_since(r.id, r.status), r.updated_at)
+           <= v_now - make_interval(days => o.declined_retention_days)
+    returning r.id
+  )
+  select coalesce(array_agg(e.id), '{}'::uuid[]) into v_ids from erased e;
+
+  if cardinality(v_ids) = 0 then
+    return 0;
+  end if;
 
   delete from referral_updates u where u.referral_id = any(v_ids);
 

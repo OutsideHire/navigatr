@@ -106,6 +106,23 @@ do $$ declare d record; begin
     raise exception 'purged detail keeps company, industry and urgency: %', row_to_json(d);
   end if;
 
+  -- K4 is marked purged but its row still holds personal details, so the
+  -- gating is on purged_at, not on the columns already being empty.
+  if not exists (select 1 from referrals where id = 'a052f000-0000-0000-0000-000000000004'
+                  and contact_name = 'Gil' and contact_phone = '5550520004') then
+    raise exception 'fixture: K4 must still hold personal details';
+  end if;
+  select * into d from public.portal_get_referral('00000000-0000-0000-0000-000000001052', 'a052a000-0000-0000-0000-000000000001', 'a052b000-0000-0000-0000-000000000001', 'a052f000-0000-0000-0000-000000000004', null);
+  if d.id is null then raise exception 'K4 detail must be returned'; end if;
+  if d.details_removed is not true then
+    raise exception 'a purged portal referral must say its details were removed: %', row_to_json(d);
+  end if;
+  if d.contact_name is not null or d.contact_phone is not null or d.address is not null
+     or d.notes is not null or d.can_withdraw then
+    raise exception 'a purged referral must return no personal details even if the row still has them: %', row_to_json(d);
+  end if;
+  if d.company_name <> 'Ghost Co' then raise exception 'K4 keeps its company name: %', row_to_json(d); end if;
+
   select * into d from public.portal_get_referral('00000000-0000-0000-0000-000000001052', 'a052a000-0000-0000-0000-000000000001', 'a052b000-0000-0000-0000-000000000001', 'a052f000-0000-0000-0000-000000000003', null);
   if d.details_removed or d.contact_name is distinct from 'Ann' or not d.can_withdraw then
     raise exception 'a live referral detail is unchanged: %', row_to_json(d);

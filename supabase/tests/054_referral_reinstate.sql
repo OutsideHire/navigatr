@@ -198,8 +198,8 @@ do $$ declare n int; r record; begin
   if r.status <> 'submitted' or r.duplicate_of_deal_id is not null or r.duplicate_of_referral_id is not null then
     raise exception 'reinstate must clear both duplicate pointers: %', row_to_json(r);
   end if;
-  if (public.accept_referral('a054f000-0000-0000-0000-000000000016') ->> 'result') is null then
-    raise exception 'accept after reinstate needs no override reason';
+  if (public.accept_referral('a054f000-0000-0000-0000-000000000016') ->> 'result') is distinct from 'accepted' then
+    raise exception 'accept after reinstate needs no override reason (expected result accepted)';
   end if;
 end $$;
 

@@ -13,6 +13,12 @@ alter table portal_email_outbox add constraint portal_email_outbox_kind_check ch
   'partner_closed_won','partner_withdrawn','partner_update',
   'internal_new_referral','internal_nudge','internal_reinstate_available'));
 
+-- Reinstatement looks up the duplicates a holder blocks (duplicate_of_referral_id
+-- = holder) whenever the holder closes. Most referrals have no holder.
+create index if not exists referrals_duplicate_of_referral_idx
+  on public.referrals (duplicate_of_referral_id)
+  where duplicate_of_referral_id is not null;
+
 -- 2. Eligibility -------------------------------------------------------------------
 create or replace function public._referral_reinstatable(p_referral uuid)
 returns boolean language sql stable security definer set search_path = public, extensions as $$
