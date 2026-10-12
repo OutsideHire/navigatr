@@ -139,6 +139,20 @@ describe("form token", () => {
       expect(await checkFormToken(SECRET, "acme", "tok123", bad, ISSUED + 10_000)).toBe("invalid");
     }
   });
+
+  it("rejects a non-canonical timestamp with a leading zero, even with a valid signature for it", async () => {
+    const t = await signFormToken(SECRET, "acme", "tok123", ISSUED);
+    const mac = t.split(".")[1];
+    expect(await checkFormToken(SECRET, "acme", "tok123", `0${ISSUED}.${mac}`, ISSUED + 10_000)).toBe("invalid");
+    expect(await checkFormToken(SECRET, "acme", "tok123", `0.${"0".repeat(64)}`, ISSUED + 10_000)).toBe("invalid");
+  });
+
+  it("keeps the slug and the link token apart, so moving a separator never yields the same signature", async () => {
+    // With "." as the delimiter, ("a.b", "c") and ("a", "b.c") signed the same message.
+    const a = await signFormToken(SECRET, "a.b", "c", ISSUED);
+    expect(await checkFormToken(SECRET, "a", "b.c", a, ISSUED + 10_000)).toBe("invalid");
+    expect(await checkFormToken(SECRET, "a.b", "c", a, ISSUED + 10_000)).toBe("ok");
+  });
 });
 
 describe("fakeRef", () => {
@@ -395,6 +409,7 @@ describe("handlePublicFormAction", () => {
         p_referrer_email: "joe@bank.example",
         p_consent_version: 2,
         p_ip: "203.0.113.5",
+        p_captcha_passed: false,
       });
       expect(sendEmail).toHaveBeenCalledTimes(1);
       expect(background).toHaveBeenCalledTimes(1);
@@ -484,7 +499,7 @@ describe("handlePublicFormAction", () => {
       );
       expect(res.status).toBe(200);
       expect(passed.fetchFn).toHaveBeenCalledTimes(1);
-      expect(passed.rpc).toHaveBeenCalledWith("portal_public_submit", expect.anything());
+      expect(passed.rpc).toHaveBeenCalledWith("portal_public_submit", expect.objectContaining({ p_captcha_passed: true }));
 
       const failed = setup(routes(7), {}, false);
       expect(
@@ -574,9 +589,32 @@ describe("handlePublicFormAction", () => {
       expect(fetchFn).not.toHaveBeenCalled();
     });
 
+    it("tells the database a check passed only when Turnstile verified a token in this request", async () => {
+      // Under the soft limits with a token in the body: no check runs, so nothing is claimed.
+      const unchecked = setup(routes(0));
+      await handlePublicFormAction("public_submit", "acme", "tok123", await body({ captchaToken: "tt-ok" }), "203.0.113.5", unchecked.deps);
+      expect(unchecked.fetchFn).not.toHaveBeenCalled();
+      expect(unchecked.rpc).toHaveBeenCalledWith("portal_public_submit", expect.objectContaining({ p_captcha_passed: false }));
+      // Over the link limit with a verified token: claimed.
+      const verified = setup(routes(0, undefined, 10));
+      await handlePublicFormAction("public_submit", "acme", "tok123", await body({ captchaToken: "tt-ok" }), "203.0.113.5", verified.deps);
+      expect(verified.fetchFn).toHaveBeenCalledTimes(1);
+      expect(verified.rpc).toHaveBeenCalledWith("portal_public_submit", expect.objectContaining({ p_captcha_passed: true }));
+    });
+
+    it("answers captcha_required when the database's own soft limit trips (a parallel burst)", async () => {
+      const { deps, sendEmail } = setup(routes(0, { data: null, error: { message: "captcha_required" } }));
+      expect(await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", deps)).toEqual({
+        status: 429,
+        body: { error: "captcha_required" },
+      });
+      expect(sendEmail).not.toHaveBeenCalled();
+    });
+
     it("maps database refusals", async () => {
       const cases: Array<[string, unknown]> = [
         ["rate_limited", { status: 429, body: { error: "rate_limited" } }],
+        ["captcha_required", { status: 429, body: { error: "captcha_required" } }],
         ["consent_changed", { status: 409, body: { error: "consent_changed" } }],
         ["invalid_input:phone", { status: 400, body: { error: "invalid_body", field: "phone" } }],
         ["invalid_input:referrerEmail", { status: 400, body: { error: "invalid_body", field: "referrerEmail" } }],

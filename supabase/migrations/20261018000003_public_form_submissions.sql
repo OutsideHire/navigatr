@@ -9,8 +9,9 @@
 -- No duplicate check of any kind happens here (FR-PORT-34): nothing a public
 -- caller gets back depends on what the tenant already has.
 --
--- Service role only (portal_api): portal_public_form, portal_public_submit,
--- portal_public_rate. Internal users read through RLS (2B-2 builds the queue).
+-- Service role only (portal_api): portal_public_form, portal_public_counts,
+-- portal_public_submit. portal_public_rate is internal to portal_public_counts.
+-- Internal users read through RLS (2B-2 builds the queue).
 
 -- 1. Submissions -----------------------------------------------------------------
 create table referral_form_submissions (
@@ -130,8 +131,12 @@ $$;
 
 -- 5. Store a submission (FR-PORT-25, 26, 29, 31) ------------------------------------------
 -- Zero rows when the link is not available. Field rules mirror
--- _shared/portalPublicForm.ts. The hard limit of 30 per IP per hour is checked
--- here, serialized per IP, so parallel posts cannot race past it.
+-- _shared/portalPublicForm.ts. Every limit is checked again here under advisory
+-- locks, so parallel posts cannot race past the edge's pre-check:
+--   hard: 50 per link, 200 per org, 30 per IP per hour (rate_limited);
+--   soft: 10 per link or 5 per IP per hour, or no IP at all, needs
+--         p_captcha_passed (captcha_required). portal_api passes true only
+--         after Turnstile verified a token in that same request.
 create or replace function public.portal_public_submit(
   p_slug            text,
   p_token           text,
@@ -143,7 +148,8 @@ create or replace function public.portal_public_submit(
   p_referred_by     text,
   p_referrer_email  text,
   p_consent_version integer,
-  p_ip              text
+  p_ip              text,
+  p_captcha_passed  boolean default false
 )
 returns table (id uuid, ref text, org_name text, logo_url text, primary_color text)
 language plpgsql security definer set search_path = public, extensions as $$
@@ -159,6 +165,9 @@ declare
   v_by      text := nullif(btrim(coalesce(p_referred_by, '')), '');
   v_ref_em  text := nullif(lower(btrim(coalesce(p_referrer_email, ''))), '');
   v_ip      text := left(nullif(btrim(coalesce(p_ip, '')), ''), 64);
+  v_passed  boolean := coalesce(p_captcha_passed, false);
+  v_link_n  integer;
+  v_ip_n    integer := 0;
   v_id      uuid;
 begin
   select l.* into v_link from referral_form_links l where l.id = public._portal_public_link(p_slug, p_token);
@@ -195,8 +204,9 @@ begin
   -- R6 server-keyed hard caps that do not trust any client header: 50 per link and
   -- 200 per org per hour, serialized (link, org, then IP: always this order).
   perform pg_advisory_xact_lock(hashtextextended('portal_public_link:' || v_link.id::text, 0));
-  if (select count(*) from referral_form_submissions s
-       where s.form_link_id = v_link.id and s.submitted_at > now() - interval '1 hour') >= 50 then
+  select count(*)::integer into v_link_n from referral_form_submissions s
+   where s.form_link_id = v_link.id and s.submitted_at > now() - interval '1 hour';
+  if v_link_n >= 50 then
     raise exception 'rate_limited' using errcode = 'P0001';
   end if;
   perform pg_advisory_xact_lock(hashtextextended('portal_public_org:' || v_org.id::text, 0));
@@ -207,10 +217,17 @@ begin
 
   if v_ip is not null then
     perform pg_advisory_xact_lock(hashtextextended('portal_public_ip:' || v_ip, 0));
-    if (select count(*) from referral_form_submissions s
-         where s.submitter_ip = v_ip and s.submitted_at > now() - interval '1 hour') >= 30 then
+    select count(*)::integer into v_ip_n from referral_form_submissions s
+     where s.submitter_ip = v_ip and s.submitted_at > now() - interval '1 hour';
+    if v_ip_n >= 30 then
       raise exception 'rate_limited' using errcode = 'P0001';
     end if;
+  end if;
+
+  -- Soft limits, still under the locks: the edge's pre-check alone could be raced
+  -- by a parallel burst. A missing IP counts as over the per-IP limit (R3).
+  if not v_passed and (v_link_n >= 10 or v_ip is null or v_ip_n >= 5) then
+    raise exception 'captcha_required' using errcode = 'P0001';
   end if;
 
   insert into referral_form_submissions (
@@ -224,7 +241,8 @@ begin
     public._portal_consent_text(v_org.consent_text), v_ip
   ) returning referral_form_submissions.id into v_id;
 
-  perform public._portal_audit(v_org.id, null, 'public_submit', v_ip, null);
+  -- No IP on the audit row: it lives only on the submission, where the 2B-2 purge erases it.
+  perform public._portal_audit(v_org.id, null, 'public_submit', null, null);
 
   return query
     select v_id, public._portal_referral_ref(v_id), o.name, b.logo_url, b.primary_color
@@ -237,10 +255,10 @@ end $$;
 revoke execute on function public._portal_public_link(text, text) from public, anon, authenticated, service_role;
 
 revoke execute on function public.portal_public_form(text, text) from public, anon, authenticated;
-revoke execute on function public.portal_public_rate(text, integer) from public, anon, authenticated;
-revoke execute on function public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text) from public, anon, authenticated;
+-- Only portal_public_counts (security definer) calls it; nothing outside the database does.
+revoke execute on function public.portal_public_rate(text, integer) from public, anon, authenticated, service_role;
+revoke execute on function public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean) from public, anon, authenticated;
 grant  execute on function public.portal_public_form(text, text) to service_role;
-grant  execute on function public.portal_public_rate(text, integer) to service_role;
 revoke execute on function public.portal_public_counts(text, text, text) from public, anon, authenticated;
 grant  execute on function public.portal_public_counts(text, text, text) to service_role;
-grant  execute on function public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text) to service_role;
+grant  execute on function public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean) to service_role;

@@ -79,20 +79,20 @@ end $$;
 -- 1. Privileges (before any role switch).
 do $$ begin
   if not has_function_privilege('service_role', 'public.portal_public_form(text, text)', 'EXECUTE')
-     or not has_function_privilege('service_role', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text)', 'EXECUTE')
-     or not has_function_privilege('service_role', 'public.portal_public_rate(text, integer)', 'EXECUTE')
+     or not has_function_privilege('service_role', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean)', 'EXECUTE')
      or not has_function_privilege('service_role', 'public.portal_public_counts(text, text, text)', 'EXECUTE') then
     raise exception 'service_role should execute the public form functions';
   end if;
   if has_function_privilege('authenticated', 'public.portal_public_form(text, text)', 'EXECUTE')
      or has_function_privilege('anon', 'public.portal_public_form(text, text)', 'EXECUTE')
-     or has_function_privilege('authenticated', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text)', 'EXECUTE')
-     or has_function_privilege('anon', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean)', 'EXECUTE')
+     or has_function_privilege('service_role', 'public.portal_public_rate(text, integer)', 'EXECUTE')
      or has_function_privilege('authenticated', 'public.portal_public_rate(text, integer)', 'EXECUTE')
      or has_function_privilege('anon', 'public.portal_public_rate(text, integer)', 'EXECUTE')
      or has_function_privilege('authenticated', 'public.portal_public_counts(text, text, text)', 'EXECUTE')
      or has_function_privilege('anon', 'public.portal_public_counts(text, text, text)', 'EXECUTE') then
-    raise exception 'the public form functions are service role only';
+    raise exception 'the public form functions are service role only, and portal_public_rate is internal to portal_public_counts';
   end if;
   if has_function_privilege('service_role', 'public._portal_public_link(text, text)', 'EXECUTE')
      or has_function_privilege('authenticated', 'public._portal_public_link(text, text)', 'EXECUTE') then
@@ -168,10 +168,14 @@ do $$ declare v record; s referral_form_submissions; n integer; begin
     raise exception 'stored submission is wrong: %', row_to_json(s);
   end if;
   perform set_config('t.s_rita', v.id::text, true);
+  -- The IP lives only on the submission row, where the 2B-2 purge can erase it; the audit row has none.
   if not exists (select 1 from portal_audit_log a
                   where a.org_id = '00000000-0000-0000-0000-000000001058' and a.action = 'public_submit'
-                    and a.ip = '198.51.100.1' and a.portal_user_id is null and a.actor_user_id is null) then
-    raise exception 'a public submission is audited with its IP';
+                    and a.ip is null and a.portal_user_id is null and a.actor_user_id is null) then
+    raise exception 'a public submission is audited';
+  end if;
+  if exists (select 1 from portal_audit_log a where a.action = 'public_submit' and a.ip is not null) then
+    raise exception 'a public submission audit row never carries the IP';
   end if;
 
   select * into v from public.portal_public_submit(
@@ -247,15 +251,15 @@ do $$ begin
   end if;
 end $$;
 
--- 6. The hard limit: 30 per IP per hour, whatever the edge decided.
+-- 6. The hard limit: 30 per IP per hour, whatever the edge decided (even with a passed check).
 do $$ begin
   for i in 1..30 loop
     perform public.portal_public_submit('pf-pub', 'tenantLinkToken00001', 'Cap Co ' || i, 'Cap', 'cap@cap.example',
-                                        '555 010 0110', 'Needs a terminal.', null, null, 2, '203.0.113.30');
+                                        '555 010 0110', 'Needs a terminal.', null, null, 2, '203.0.113.30', true);
   end loop;
-  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Cap Co 31','Cap','cap@cap.example','555 010 0110','Needs a terminal.',null,null,2,'203.0.113.30')$q$, 'rate_limited');
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Cap Co 31','Cap','cap@cap.example','555 010 0110','Needs a terminal.',null,null,2,'203.0.113.30',true)$q$, 'rate_limited');
   if (select count(*) from public.portal_public_submit('pf-pub', 'tenantLinkToken00001', 'Other IP Co', 'Oz', 'oz@other.example',
-                                                       '555 010 0111', 'Fine.', null, null, 2, '203.0.113.31')) <> 1 then
+                                                       '555 010 0111', 'Fine.', null, null, 2, '203.0.113.31', true)) <> 1 then
     raise exception 'another IP is not limited';
   end if;
 end $$;
@@ -312,6 +316,79 @@ do $$ declare c record; begin
     raise exception 'the 200th in the org is allowed';
   end if;
   perform _t_raises($q$select * from public.portal_public_submit('pf-pub-d','orgDTenantToken00001','Org 201','Ann','a@b.example','5550100100','Notes.',null,null,0,'198.51.100.202')$q$, 'rate_limited');
+end $$;
+
+-- 6c. The soft limits in SQL too, so a parallel burst cannot race past the edge's
+-- pre-check: 10 per link or 5 per IP an hour (or no IP at all) needs a passed check.
+do $$ begin
+  insert into organizations (id, name, slug, invite_code, portal_enabled, consent_text, consent_version) values
+    ('00000000-0000-0000-0000-000000001458', 'Public Org E', 'pf-pub-e', 'pf-pub-e-a1', true, null, 0),
+    ('00000000-0000-0000-0000-000000001558', 'Public Org F', 'pf-pub-f', 'pf-pub-f-a1', true, null, 0);
+  update organizations set public_form_enabled = true
+   where id in ('00000000-0000-0000-0000-000000001458', '00000000-0000-0000-0000-000000001558');
+  insert into referral_form_links (id, org_id, link_type, user_id, token, retired_at) values
+    ('a058c000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-000000001458', 'tenant', null, 'orgETenantToken00001', null),
+    ('a058c000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-000000001558', 'tenant', null, 'orgFTenantToken00001', null);
+
+  -- Link: 9 recent (distinct IPs) and one over an hour old, which does not count.
+  insert into referral_form_submissions
+    (org_id, form_link_id, link_type, company_name, contact_name, contact_email, contact_phone, notes,
+     consent_version, consent_text_snapshot, submitter_ip, submitted_at)
+  select '00000000-0000-0000-0000-000000001458', 'a058c000-0000-0000-0000-0000000000e1', 'tenant', 'Soft Co ' || g, 'L',
+         'l@x.example', '5550100100', 'n', 0, 'c', '192.0.5.' || g, now() - interval '5 minutes'
+    from generate_series(1, 9) g;
+  insert into referral_form_submissions
+    (org_id, form_link_id, link_type, company_name, contact_name, contact_email, contact_phone, notes,
+     consent_version, consent_text_snapshot, submitter_ip, submitted_at) values
+    ('00000000-0000-0000-0000-000000001458', 'a058c000-0000-0000-0000-0000000000e1', 'tenant', 'Soft Old', 'L',
+     'l@x.example', '5550100100', 'n', 0, 'c', '192.0.5.200', now() - interval '61 minutes');
+  if (select count(*) from public.portal_public_submit('pf-pub-e','orgETenantToken00001','Tenth','Ann','a@b.example','5550100100','Notes.',null,null,0,'198.51.100.210')) <> 1 then
+    raise exception 'at 9 on the link a send without the check goes through (the old row is not counted)';
+  end if;
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub-e','orgETenantToken00001','Eleventh','Ann','a@b.example','5550100100','Notes.',null,null,0,'198.51.100.211')$q$, 'captcha_required');
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub-e','orgETenantToken00001','Eleventh','Ann','a@b.example','5550100100','Notes.',null,null,0,'198.51.100.211',false)$q$, 'captcha_required');
+  if (select count(*) from public.portal_public_submit('pf-pub-e','orgETenantToken00001','Eleventh','Ann','a@b.example','5550100100','Notes.',null,null,0,'198.51.100.211',true)) <> 1 then
+    raise exception 'at 10 on the link a passed check goes through';
+  end if;
+
+  -- Link hard cap boundary: 11 recent now; top up to 49, the 50th goes through, the 51st does not.
+  insert into referral_form_submissions
+    (org_id, form_link_id, link_type, company_name, contact_name, contact_email, contact_phone, notes,
+     consent_version, consent_text_snapshot, submitter_ip, submitted_at)
+  select '00000000-0000-0000-0000-000000001458', 'a058c000-0000-0000-0000-0000000000e1', 'tenant', 'Soft Co x' || g, 'L',
+         'l@x.example', '5550100100', 'n', 0, 'c', '192.0.6.' || g, now() - interval '5 minutes'
+    from generate_series(1, 38) g;
+  if (select count(*) from public.portal_public_submit('pf-pub-e','orgETenantToken00001','Fiftieth','Ann','a@b.example','5550100100','Notes.',null,null,0,'198.51.100.212',true)) <> 1 then
+    raise exception 'the 50th on the link is allowed';
+  end if;
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub-e','orgETenantToken00001','Fifty-first','Ann','a@b.example','5550100100','Notes.',null,null,0,'198.51.100.213',true)$q$, 'rate_limited');
+
+  -- IP: 4 recent from one address on another org's link and one old; the 5th goes through, then the check is needed.
+  insert into referral_form_submissions
+    (org_id, form_link_id, link_type, company_name, contact_name, contact_email, contact_phone, notes,
+     consent_version, consent_text_snapshot, submitter_ip, submitted_at)
+  select '00000000-0000-0000-0000-000000001158', 'a058c000-0000-0000-0000-000000000007', 'tenant', 'Ip Co ' || g, 'L',
+         'l@x.example', '5550100100', 'n', 0, 'c', '203.0.113.60', now() - interval '5 minutes'
+    from generate_series(1, 4) g;
+  insert into referral_form_submissions
+    (org_id, form_link_id, link_type, company_name, contact_name, contact_email, contact_phone, notes,
+     consent_version, consent_text_snapshot, submitter_ip, submitted_at) values
+    ('00000000-0000-0000-0000-000000001158', 'a058c000-0000-0000-0000-000000000007', 'tenant', 'Ip Old', 'L',
+     'l@x.example', '5550100100', 'n', 0, 'c', '203.0.113.60', now() - interval '61 minutes');
+  if (select count(*) from public.portal_public_submit('pf-pub-f','orgFTenantToken00001','Ip Fifth','Ann','a@b.example','5550100100','Notes.',null,null,0,'203.0.113.60')) <> 1 then
+    raise exception 'at 4 from an IP a send without the check goes through (the old row is not counted)';
+  end if;
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub-f','orgFTenantToken00001','Ip Sixth','Ann','a@b.example','5550100100','Notes.',null,null,0,'203.0.113.60')$q$, 'captcha_required');
+  if (select count(*) from public.portal_public_submit('pf-pub-f','orgFTenantToken00001','Ip Sixth','Ann','a@b.example','5550100100','Notes.',null,null,0,'203.0.113.60',true)) <> 1 then
+    raise exception 'at 5 from an IP a passed check goes through';
+  end if;
+
+  -- No IP at all counts as over the per-IP limit (R3).
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub-f','orgFTenantToken00001','No Ip','Ann','a@b.example','5550100100','Notes.',null,null,0,null)$q$, 'captcha_required');
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub-f','orgFTenantToken00001','No Ip','Ann','a@b.example','5550100100','Notes.',null,null,0,'   ')$q$, 'captcha_required');
+  if (select count(*) from public.portal_public_submit('pf-pub-f','orgFTenantToken00001','No Ip','Ann','a@b.example','5550100100','Notes.',null,null,0,null,true)) <> 1 then
+    raise exception 'no IP with a passed check goes through';
+  end if;
 end $$;
 
 -- 7. Who can read a submission (role switches from here on).

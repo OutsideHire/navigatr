@@ -5,7 +5,7 @@
  * sign-in. Bot mitigation (FR-PORT-30) is invisible to people:
  *   - a hidden "website" field that only bots fill (the honeypot);
  *   - a signed form token: an HMAC over the slug, the link token and the issue
- *     time, so the server can tell how long the form was open without storing
+ *     time (newline-separated, which neither a slug nor a link token can hold), so the server can tell how long the form was open without storing
  *     anything, and a post under 3 seconds is treated as a bot;
  *   - a per-IP count across every tenant: past 5 an hour the caller must pass
  *     Cloudflare Turnstile, and past 30 nothing goes through.
@@ -190,9 +190,21 @@ async function hmacSha256Hex(secret: string, message: string): Promise<string> {
   return hex(new Uint8Array(await globalThis.crypto.subtle.sign("HMAC", key, encoder.encode(message))));
 }
 
-/** `<issuedAtMs>.<hex HMAC-SHA256 of "slug.token.issuedAtMs">`. */
+/**
+ * The signed message: slug, link token and issue time joined by "\n". A "."
+ * delimiter was ambiguous ("a.b" + "c" and "a" + "b.c" signed the same bytes);
+ * slugs and link tokens never contain a newline.
+ */
+function formTokenMessage(slug: string, token: string, issuedAtMs: number): string {
+  return `${slug}\n${token}\n${issuedAtMs}`;
+}
+
+/** Canonical only: no leading zero, so one issue time has exactly one spelling. */
+const FORM_TOKEN_RE = /^([1-9]\d{0,15})\.([0-9a-f]{64})$/;
+
+/** `<issuedAtMs>.<hex HMAC-SHA256 of "slug\ntoken\nissuedAtMs">`. */
 export async function signFormToken(secret: string, slug: string, token: string, issuedAtMs: number): Promise<string> {
-  return `${issuedAtMs}.${await hmacSha256Hex(secret, `${slug}.${token}.${issuedAtMs}`)}`;
+  return `${issuedAtMs}.${await hmacSha256Hex(secret, formTokenMessage(slug, token, issuedAtMs))}`;
 }
 
 export type FormTokenCheck = "ok" | "too_fast" | "invalid";
@@ -209,10 +221,10 @@ export async function checkFormToken(
   formToken: string,
   nowMs: number,
 ): Promise<FormTokenCheck> {
-  const m = /^(\d{1,16})\.([0-9a-f]{64})$/.exec(formToken);
+  const m = FORM_TOKEN_RE.exec(formToken);
   if (!m) return "invalid";
   const issuedAt = Number(m[1]);
-  const expected = await hmacSha256Hex(secret, `${slug}.${token}.${issuedAt}`);
+  const expected = await hmacSha256Hex(secret, formTokenMessage(slug, token, issuedAt));
   if (!timingSafeEquals(expected, m[2])) return "invalid";
   const age = nowMs - issuedAt;
   if (age > PUBLIC_FORM_MAX_AGE_MS) return "invalid";
@@ -412,13 +424,16 @@ async function publicSubmit(
   if (parsedLink !== null) linkCount = parsedLink;
   if (parsedIp === null) ipCount = Math.max(ipCount, PUBLIC_SOFT_LIMIT_PER_HOUR);
   if (ipCount >= PUBLIC_HARD_LIMIT_PER_HOUR) return err(429, "rate_limited");
+  // True only when Turnstile verified a token in THIS request. portal_public_submit re-checks the
+  // soft limits under its locks (a parallel burst can pass this pre-check) and needs this flag.
+  let captchaPassed = false;
   if (ipCount >= PUBLIC_SOFT_LIMIT_PER_HOUR || linkCount >= PUBLIC_LINK_SOFT_LIMIT_PER_HOUR) {
     const captchaToken = str(body.captchaToken).trim();
-    const passed =
+    captchaPassed =
       captchaToken !== "" &&
       captchaToken.length <= PUBLIC_FORM_LIMITS.captchaToken &&
       (await verifyTurnstile(deps.fetch, deps.env.turnstileSecretKey, captchaToken, ip));
-    if (!passed) return err(429, "captcha_required");
+    if (!captchaPassed) return err(429, "captcha_required");
   }
 
   const { data, error } = await deps.rpc("portal_public_submit", {
@@ -433,10 +448,12 @@ async function publicSubmit(
     p_referrer_email: s.referrerEmail,
     p_consent_version: s.consentVersion,
     p_ip: ip,
+    p_captcha_passed: captchaPassed,
   });
   if (error) {
     const message = error.message;
     if (message.includes("rate_limited")) return err(429, "rate_limited");
+    if (message.includes("captcha_required")) return err(429, "captcha_required");
     if (message.includes("consent_changed")) return err(409, "consent_changed");
     const field = /invalid_input:([A-Za-z]+)/.exec(message)?.[1];
     if (field && isPublicFormField(field)) return err(400, "invalid_body", { field });
