@@ -81,14 +81,17 @@ interface ClaimedRow {
 
 type Outcome = "sent" | "dropped" | "failed";
 
+const EMAIL_LIKE = /[^\s<>"'@]+@[^\s<>"'@]+\.[^\s<>"'@]+/g;
+
+/** A provider error, safe for logs and last_error: no addresses, at most 500 characters. */
 function errorText(e: unknown): string {
-  return (e instanceof Error ? e.message : String(e)).slice(0, 500);
+  return (e instanceof Error ? e.message : String(e)).replace(EMAIL_LIKE, "[email]").slice(0, 500);
 }
 
 async function markOnce(deps: PortalNotifyDeps, id: string, outcome: Outcome, error: string | null): Promise<string | null> {
   try {
     const res = await deps.rpc("mark_portal_email", { p_id: id, p_outcome: outcome, p_error: error });
-    return res.error ? res.error.message : null;
+    return res.error ? errorText(res.error.message) : null;
   } catch (e) {
     return errorText(e);
   }

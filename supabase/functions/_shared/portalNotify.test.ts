@@ -173,6 +173,30 @@ describe("drainPortalEmails", () => {
     expect((marks[0].p_error as string).length).toBe(500);
   });
 
+  it("scrubs email addresses from a provider error in the logs and last_error", async () => {
+    const { deps, sendEmail, marks } = setup([partnerRow("e-1")]);
+    sendEmail.mockRejectedValueOnce(new Error("bad recipient jane@example.com"));
+    await drainPortalEmails(deps);
+    expect(marks).toEqual([{ p_id: "e-1", p_outcome: "failed", p_error: "bad recipient [email]" }]);
+    const logged = [...logSpy.mock.calls, ...errorSpy.mock.calls].flat().map(String).join("\n");
+    expect(logged).toContain("bad recipient [email]");
+    expect(logged).not.toContain("jane@example.com");
+  });
+
+  it("does not retry a failed mark on a dropped row", async () => {
+    let calls = 0;
+    const { deps, sendEmail } = setup([partnerRow("e-1", { payload: { ...PARTNER_PAYLOAD, label: "lost" } })], {}, {
+      mark_portal_email: () => {
+        calls += 1;
+        return { data: null, error: { message: "blip" } };
+      },
+    });
+    const summary = await drainPortalEmails(deps);
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(calls).toBe(1);
+    expect(summary).toMatchObject({ claimed: 1, dropped: 1 });
+  });
+
   it("keeps draining when the nudge step fails", async () => {
     const { deps, sendEmail } = setup([INTERNAL_ROW], {}, {
       enqueue_portal_nudges: () => ({ data: null, error: { message: "lock timeout" } }),
