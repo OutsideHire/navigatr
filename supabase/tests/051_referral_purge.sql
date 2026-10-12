@@ -40,6 +40,8 @@ insert into portal_users (id, org_id, partner_id, email, status, terms_ip, notif
 
 insert into portal_sessions (org_id, portal_user_id, token_hash, expires_at, ip, user_agent) values
   ('00000000-0000-0000-0000-000000001051', 'a051b000-0000-0000-0000-000000000001', 't051-session', now() + interval '1 day', '198.51.100.7', 'Phone browser');
+insert into portal_tokens (org_id, portal_user_id, token_type, token_hash, expires_at, ip) values
+  ('00000000-0000-0000-0000-000000001051', 'a051b000-0000-0000-0000-000000000001', 'sign_in_code', 't051-code', now() + interval '10 minutes', '198.51.100.7');
 insert into portal_audit_log (org_id, portal_user_id, action, ip) values
   ('00000000-0000-0000-0000-000000001051', 'a051b000-0000-0000-0000-000000000001', 'sign_in', '198.51.100.7');
 
@@ -154,7 +156,11 @@ do $$ declare n int; r record; begin
   end if;
   if r.company_name <> 'Old Bakery' or r.industry <> 'restaurant' or r.urgency <> 'this_week'
      or r.decline_reason <> 'outside_icp' or r.partner_company_snapshot <> 'Jane & Co'
-     or r.status <> 'declined' or r.partner_id <> 'a051a000-0000-0000-0000-000000000001' then
+     or r.status <> 'declined' or r.partner_id <> 'a051a000-0000-0000-0000-000000000001'
+     or r.source <> 'portal_signed_in'
+     or r.assigned_user_id is distinct from 'a0510000-0000-0000-0000-000000000002'
+     or r.submitted_at is null
+     or r.submitted_at not between now() - interval '110 days 1 hour' and now() - interval '109 days 23 hours' then
     raise exception 'R1 kept fields changed: %', row_to_json(r);
   end if;
 
@@ -181,6 +187,14 @@ do $$ declare n int; r record; begin
 
   select count(*) into n from referral_status_history where referral_id = 'a051f000-0000-0000-0000-000000000001';
   if n <> 1 then raise exception 'status history must be kept as is, got % rows', n; end if;
+  if exists (select 1 from referral_status_history
+              where referral_id = 'a051f000-0000-0000-0000-000000000001' and note is not null) then
+    raise exception 'R1 history note must be erased (rows kept)';
+  end if;
+  if not exists (select 1 from referral_status_history
+                  where referral_id = 'a051f000-0000-0000-0000-000000000002' and note = 'kept note') then
+    raise exception 'R2 history note must stay';
+  end if;
 end $$;
 
 -- 4. Updates, emails and the audit trail.
@@ -214,6 +228,17 @@ do $$ declare n int; begin
                                              'a051f000-0000-0000-0000-000000000003',
                                              'a051f000-0000-0000-0000-000000000006');
   if n <> 3 then raise exception 'one purge audit row per purged referral, got %', n; end if;
+  if exists (select 1 from portal_audit_log where action = 'purge' and ip is not null) then
+    raise exception 'purge audit rows must carry no IP';
+  end if;
+  if not exists (select 1 from portal_audit_log
+                  where referral_id = 'a051f000-0000-0000-0000-000000000001' and action = 'sign_in') then
+    raise exception 'the R1 sign_in audit row must be kept (only its IP is erased)';
+  end if;
+  if exists (select 1 from portal_audit_log
+              where referral_id = 'a051f000-0000-0000-0000-000000000001' and ip is not null) then
+    raise exception 'R1 audit rows must not keep an IP after the purge';
+  end if;
 end $$;
 
 -- 5. A second run finds nothing.
@@ -245,6 +270,13 @@ do $$ declare u record; n int; begin
    where portal_user_id = 'a051b000-0000-0000-0000-000000000001'
      and (revoked_at is null or ip is not null or user_agent is not null);
   if n <> 0 then raise exception 'sessions must be revoked with no IP or user agent'; end if;
+  select count(*) into n from portal_tokens
+   where portal_user_id = 'a051b000-0000-0000-0000-000000000001'
+     and (revoked_at is null or ip is not null);
+  if n <> 0 then raise exception 'tokens must be revoked with no IP'; end if;
+  if not exists (select 1 from portal_tokens where token_hash = 't051-code') then
+    raise exception 'the token row is kept, just revoked';
+  end if;
   select count(*) into n from portal_audit_log
    where portal_user_id = 'a051b000-0000-0000-0000-000000000001' and ip is not null;
   if n <> 0 then raise exception 'audit rows must not keep the partner IP'; end if;
