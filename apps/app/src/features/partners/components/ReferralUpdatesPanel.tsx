@@ -1,10 +1,13 @@
 /**
  * ReferralUpdatesPanel: under "Referred by" on Deal Detail (spec 5.7). Lists
  * what was shared with the partner, newest first, and opens ShareUpdateSheet.
- * Short and scannable: reps read it in the field.
+ * Short and scannable: reps read it in the field. The Share button only shows
+ * when the org's partner portal is on (get_portal_status); updates already
+ * shared stay listed either way.
  */
 import * as React from "react";
 import { Button } from "@/components/navigatr";
+import { usePortalStatus } from "../hooks/usePortalAccess";
 import { useReferralUpdates } from "../hooks/useReferralUpdates";
 import { ShareUpdateSheet } from "./ShareUpdateSheet";
 
@@ -15,6 +18,8 @@ function shortDate(iso: string): string {
 
 export function ReferralUpdatesPanel({ referralId, partnerLabel }: { referralId: string; partnerLabel: string }) {
   const { data: updates, isError } = useReferralUpdates(referralId);
+  const { data: portal } = usePortalStatus();
+  const canShare = portal?.enabled === true;
   const [open, setOpen] = React.useState(false);
 
   return (
@@ -35,10 +40,14 @@ export function ReferralUpdatesPanel({ referralId, partnerLabel }: { referralId:
         </div>
       )}
       {isError && <p className="text-caption text-text-subtle">Couldn't load shared updates.</p>}
-      <Button variant="secondary" className="self-start" onClick={() => setOpen(true)}>
-        Share update with partner
-      </Button>
-      <ShareUpdateSheet open={open} onOpenChange={setOpen} referralId={referralId} partnerLabel={partnerLabel} />
+      {canShare && (
+        <>
+          <Button variant="secondary" className="self-start" onClick={() => setOpen(true)}>
+            Share update with partner
+          </Button>
+          <ShareUpdateSheet open={open} onOpenChange={setOpen} referralId={referralId} partnerLabel={partnerLabel} />
+        </>
+      )}
     </div>
   );
 }

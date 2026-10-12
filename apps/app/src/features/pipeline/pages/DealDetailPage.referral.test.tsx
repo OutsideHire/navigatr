@@ -3,7 +3,7 @@
  * nothing when the deal has no referral.
  */
 import { render, screen } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DealDetailPage } from "./DealDetailPage";
@@ -29,6 +29,11 @@ vi.mock("@/features/partners/hooks/useReferralUpdates", () => ({
   usePublishReferralUpdate: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
+let portalEnabled = true;
+vi.mock("@/features/partners/hooks/usePortalAccess", () => ({
+  usePortalStatus: () => ({ data: { enabled: portalEnabled, slug: "acme" } }),
+}));
+
 vi.mock("../hooks/useDealContacts", () => ({
   useDealContacts: () => ({ data: [], isLoading: false }),
   useCreateDealContact: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -51,7 +56,22 @@ function renderDealDetail() {
   );
 }
 
+beforeEach(() => {
+  portalEnabled = true;
+});
+
 describe("DealDetailPage / referred by", () => {
+  it("hides Share update with partner when the org's portal is off", async () => {
+    portalEnabled = false;
+    dealReferral = {
+      referralId: "r-1", partnerId: "p-1", partnerVisible: true, partnerName: "Jane",
+      partnerCompany: "Jane & Co", partnerCompanySnapshot: "Jane & Co",
+    };
+    renderDealDetail();
+    expect(await screen.findByRole("link", { name: "Jane (Jane & Co)" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Share update with partner" })).not.toBeInTheDocument();
+  });
+
   it("shows who referred the deal, linking to the partner", async () => {
     dealReferral = {
       referralId: "r-1", partnerId: "p-1", partnerVisible: true, partnerName: "Jane",
