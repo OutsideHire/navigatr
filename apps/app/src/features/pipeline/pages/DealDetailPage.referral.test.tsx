@@ -23,6 +23,12 @@ vi.mock("@/features/partners/hooks/useDealReferral", () => ({
   useDealReferral: () => ({ data: dealReferral }),
 }));
 
+vi.mock("@/features/partners/hooks/useReferralUpdates", () => ({
+  REFERRAL_UPDATE_MAX: 1000,
+  useReferralUpdates: () => ({ data: [] }),
+  usePublishReferralUpdate: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
 vi.mock("../hooks/useDealContacts", () => ({
   useDealContacts: () => ({ data: [], isLoading: false }),
   useCreateDealContact: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -55,6 +61,7 @@ describe("DealDetailPage / referred by", () => {
     const link = await screen.findByRole("link", { name: "Jane (Jane & Co)" });
     expect(link).toHaveAttribute("href", "/partners/p-1");
     expect(screen.getByText(/Referred by/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Share update with partner" })).toBeInTheDocument();
   });
 
   it("shows plain text, no link, when the partner is outside the viewer's subtree", async () => {
@@ -81,5 +88,6 @@ describe("DealDetailPage / referred by", () => {
     renderDealDetail();
     await screen.findByText("Source");
     expect(screen.queryByText(/Referred by/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Share update with partner" })).not.toBeInTheDocument();
   });
 });

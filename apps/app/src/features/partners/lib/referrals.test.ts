@@ -48,6 +48,8 @@ describe("referralErrorMessage", () => {
     expect(referralErrorMessage({ message: "invalid_direction" }, "x")).toBe("That link could not be removed.");
     expect(referralErrorMessage({ message: "not_authorized" }, "x")).toBe("You don't have access to do that.");
     expect(referralErrorMessage({ message: "company_required" }, "x")).toBe("Add the business name.");
+    expect(referralErrorMessage({ message: "update_required" }, "x")).toBe("Write the update first.");
+    expect(referralErrorMessage({ message: "update_too_long" }, "x")).toBe("Keep the update under 1,000 characters.");
   });
 
   it("falls back for unknown errors and non-errors", () => {
