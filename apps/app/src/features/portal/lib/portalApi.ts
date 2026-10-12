@@ -16,20 +16,27 @@
  */
 import type {
   PortalDashboard,
+  PortalExport,
+  PortalExportRow,
   PortalForm,
   PortalReferralDetail,
   PortalReferralSummary,
   PortalReferralUpdate,
 } from "../../../../../../supabase/functions/_shared/portalReferralApi";
 import type { PortalWindow } from "../../../../../../supabase/functions/_shared/portalSubmission";
+import type { PortalProfile, PortalProfileInput } from "../../../../../../supabase/functions/_shared/portalProfile";
 
 export type {
   PortalDashboard,
+  PortalExport,
+  PortalExportRow,
   PortalForm,
   PortalReferralDetail,
   PortalReferralSummary,
   PortalReferralUpdate,
   PortalWindow,
+  PortalProfile,
+  PortalProfileInput,
 };
 
 const SUPABASE_URL: string = import.meta.env.VITE_SUPABASE_URL || "http://localhost:54321";
@@ -123,7 +130,10 @@ type PortalAction =
   | "dashboard"
   | "get_referral"
   | "withdraw_referral"
-  | "transcribe";
+  | "transcribe"
+  | "export_referrals"
+  | "get_profile"
+  | "update_profile";
 
 async function portalRequest<T>(
   action: PortalAction,
@@ -260,5 +270,20 @@ export const portalApi = {
 
   transcribe(slug: string, sessionToken: string, audio: string, mime: string): Promise<string> {
     return portalRequest<{ text: string }>("transcribe", { slug, audio, mime }, sessionToken).then((r) => r.text);
+  },
+  exportReferrals(slug: string, sessionToken: string, period: PortalWindow): Promise<PortalExport> {
+    return portalRequest<{ export: PortalExport }>("export_referrals", { slug, window: period }, sessionToken).then(
+      (r) => r.export,
+    );
+  },
+
+  getProfile(slug: string, sessionToken: string): Promise<PortalProfile> {
+    return portalRequest<{ profile: PortalProfile }>("get_profile", { slug }, sessionToken).then((r) => r.profile);
+  },
+
+  updateProfile(slug: string, sessionToken: string, input: PortalProfileInput): Promise<PortalProfile> {
+    return portalRequest<{ profile: PortalProfile }>("update_profile", { slug, ...input }, sessionToken).then(
+      (r) => r.profile,
+    );
   },
 };

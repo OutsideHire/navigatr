@@ -190,10 +190,13 @@ export function PortalReferralPage() {
         </section>
       </Card>
 
-      {(shown.length > 0 || r.notes) && (
+      {(shown.length > 0 || r.notes || r.detailsRemoved) && (
         <Card padding="lg">
           <section className="flex flex-col gap-2">
             <h2 className="text-body-strong text-text-default">What you sent</h2>
+            {r.detailsRemoved && (
+              <p className="text-body-md text-text-muted">Contact details for this referral were removed for privacy.</p>
+            )}
             {shown.length > 0 && (
               <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1">
                 {shown.map(([k, v]) => (

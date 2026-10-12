@@ -268,4 +268,22 @@ describe("PortalReferralPage", () => {
     await screen.findByRole("heading", { name: "Fresh Bakery" });
     expect(screen.queryByRole("heading", { name: /Updates from/ })).toBeNull();
   });
+
+  it("says when the contact details were removed", async () => {
+    api.getReferral.mockResolvedValue({
+      ...DETAIL,
+      label: "Not Moving Forward",
+      canWithdraw: false,
+      contactName: null,
+      contactEmail: null,
+      contactPhone: null,
+      address: null,
+      notes: null,
+      detailsRemoved: true,
+    });
+    renderAt("/p/acme/r/r-1");
+    expect(await screen.findByText("Contact details for this referral were removed for privacy.")).toBeInTheDocument();
+    expect(screen.getByText("Restaurant")).toBeInTheDocument();
+    expect(screen.queryByText("Ann")).toBeNull();
+  });
 });

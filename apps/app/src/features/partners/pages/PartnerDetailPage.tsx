@@ -71,6 +71,9 @@ import { EditPartnerSheet } from "../components/EditPartnerSheet";
 import { PartnerNotesCard } from "../components/PartnerNotesCard";
 import { ReferralPreviewSheet } from "../components/ReferralPreviewSheet";
 import { PortalAccessLine, PortalInviteButton } from "../components/PortalAccess";
+import { PortalEraseData } from "../components/PortalEraseData";
+import { PartnerProfileChanges } from "../components/PartnerProfileChanges";
+import { ReinstatableReferralsCard } from "../components/ReinstatableReferralsCard";
 
 // ── Not found ──────────────────────────────────────────────────────
 
@@ -235,6 +238,8 @@ function ContactCard({ partner }: { partner: Partner }) {
           </a>
         </div>
         <PortalAccessLine partnerId={partner.id} partnerName={partner.name} />
+        <PortalEraseData partnerId={partner.id} partnerName={partner.name} />
+        <PartnerProfileChanges partnerId={partner.id} />
         {partner.city && (
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-radius-full bg-accent-violet-20 text-accent-violet">
@@ -728,6 +733,7 @@ export function PartnerDetailPage() {
           </Button>
         </div>
         <ReferralQueueCard partnerId={partner.id} />
+        <ReinstatableReferralsCard partnerId={partner.id} />
         <ReferralSection
           title="Referred to us"
           deals={inboundDeals}

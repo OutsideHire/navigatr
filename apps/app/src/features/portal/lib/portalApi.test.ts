@@ -212,3 +212,36 @@ describe("Phase 1B actions", () => {
     expect(lastCall().body).toEqual({ slug: "acme", referralId: "r-x" });
   });
 });
+
+describe("Phase 2A actions", () => {
+  it("exports the chosen period with the session", async () => {
+    const EXPORT = { valueVisible: false, rows: [] };
+    fetchMock.mockResolvedValueOnce(respond(200, { export: EXPORT }));
+    await expect(portalApi.exportReferrals("acme", "tok", "90d")).resolves.toEqual(EXPORT);
+    const call = lastCall();
+    expect(call.url).toBe(`${PORTAL_API_URL}/export_referrals`);
+    expect(call.headers["x-portal-session"]).toBe("tok");
+    expect(call.body).toEqual({ slug: "acme", window: "90d" });
+  });
+
+  it("reads and saves the profile with the session", async () => {
+    const PROFILE = { name: "Jane", phone: null, email: "jane@example.com", weeklyDigest: true };
+    fetchMock.mockResolvedValueOnce(respond(200, { profile: PROFILE }));
+    await expect(portalApi.getProfile("acme", "tok")).resolves.toEqual(PROFILE);
+    expect(lastCall().url).toBe(`${PORTAL_API_URL}/get_profile`);
+    expect(lastCall().headers["x-portal-session"]).toBe("tok");
+    expect(lastCall().body).toEqual({ slug: "acme" });
+
+    fetchMock.mockResolvedValueOnce(respond(200, { profile: { ...PROFILE, name: "Jane Smith" } }));
+    await expect(
+      portalApi.updateProfile("acme", "tok", { name: "Jane Smith", phone: null, weeklyDigest: false }),
+    ).resolves.toEqual({ ...PROFILE, name: "Jane Smith" });
+    expect(lastCall().url).toBe(`${PORTAL_API_URL}/update_profile`);
+    expect(lastCall().body).toEqual({ slug: "acme", name: "Jane Smith", phone: null, weeklyDigest: false });
+
+    fetchMock.mockResolvedValueOnce(respond(400, { error: "invalid_body", field: "phone" }));
+    await expect(
+      portalApi.updateProfile("acme", "tok", { name: "Jane", phone: "1", weeklyDigest: true }),
+    ).rejects.toMatchObject({ status: 400, code: "invalid_body", field: "phone" });
+  });
+});

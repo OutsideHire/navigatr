@@ -110,3 +110,19 @@ export function useSetPortalAccess() {
     },
   });
 }
+
+/** Offboarding (NFR-PORT-09): administrators erase the partner's portal identity. */
+export function usePurgePortalUser() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (partnerId: string): Promise<void> => {
+      const { error } = await supabase.rpc("portal_purge_user", { p_partner_id: partnerId });
+      if (error) throw error;
+    },
+    onSuccess: (_result, partnerId) => {
+      void queryClient.invalidateQueries({ queryKey: PARTNER_PORTAL_USER_QUERY_KEY(partnerId) });
+      // The erase blanks the partner's own profile edits (usePartnerProfileChanges).
+      void queryClient.invalidateQueries({ queryKey: ["partners", "profile-changes", partnerId] });
+    },
+  });
+}

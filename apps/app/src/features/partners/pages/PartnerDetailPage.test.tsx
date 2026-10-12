@@ -87,6 +87,16 @@ vi.mock("../components/PortalAccess", () => ({
     <div data-testid="portal-access" data-partner={partnerId} />
   ),
 }));
+vi.mock("../components/ReinstatableReferralsCard", () => ({
+  ReinstatableReferralsCard: ({ partnerId }: { partnerId: string }) => <div data-testid="reinstatable" data-partner={partnerId} />,
+}));
+vi.mock("../components/PartnerProfileChanges", () => ({
+  PartnerProfileChanges: ({ partnerId }: { partnerId: string }) => <div data-testid="profile-changes" data-partner={partnerId} />,
+}));
+vi.mock("../components/PortalEraseData", () => ({
+  PortalEraseData: ({ partnerId }: { partnerId: string }) => <div data-testid="portal-erase" data-partner={partnerId} />,
+}));
+
 
 function deal(id: string, valueCents: number): Deal {
   return {
@@ -359,5 +369,11 @@ describe("PartnerDetailPage / partner portal controls", () => {
     expect(screen.getByTestId("portal-invite")).toHaveAttribute("data-partner", "p1");
     expect(screen.getByTestId("portal-invite")).toHaveAttribute("data-email", "p1@example.com");
     expect(screen.getByTestId("portal-access")).toHaveAttribute("data-partner", "p1");
+  });
+  it("mounts the reinstate card, the partner's own edits and the erase control for this partner", () => {
+    renderPage({ partners: [partner({ id: "p1" })], deals: [], partnerId: "p1" });
+    expect(screen.getByTestId("reinstatable")).toHaveAttribute("data-partner", "p1");
+    expect(screen.getByTestId("profile-changes")).toHaveAttribute("data-partner", "p1");
+    expect(screen.getByTestId("portal-erase")).toHaveAttribute("data-partner", "p1");
   });
 });

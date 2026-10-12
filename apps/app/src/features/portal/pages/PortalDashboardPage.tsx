@@ -7,12 +7,20 @@
 import * as React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { ChevronRight, Loader2, Plus } from "lucide-react";
+import { ChevronRight, Download, Loader2, Plus } from "lucide-react";
 import { Button, Card } from "@/components/navigatr";
 import { cn } from "@/lib/utils";
-import { PortalRetry } from "../components/PortalRetry";
+import { PortalRetry, portalReachMessage } from "../components/PortalRetry";
 import { PortalLabelChip } from "../components/PortalLabelChip";
-import { PORTAL_POLL_MS, isPortalUnauthorized, portalApi, portalDataKey, type PortalWindow } from "../lib/portalApi";
+import {
+  PORTAL_POLL_MS,
+  isPortalTransientError,
+  isPortalUnauthorized,
+  portalApi,
+  portalDataKey,
+  type PortalWindow,
+} from "../lib/portalApi";
+import { buildReferralsCsv, downloadCsv, referralsCsvFilename } from "../lib/portalCsv";
 import { formatConversion, formatPortalDate, formatPortalMoney } from "../lib/portalFormat";
 import { usePortalSignedIn } from "../lib/portalSignedIn";
 import { PORTAL_WINDOWS } from "../../../../../../supabase/functions/_shared/portalSubmission";
@@ -50,6 +58,28 @@ export function PortalDashboardPage() {
   React.useEffect(() => {
     if (unauthorized) expire();
   }, [unauthorized, expire]);
+
+  const [exporting, setExporting] = React.useState(false);
+  const [exportError, setExportError] = React.useState<string | null>(null);
+
+  const exportCsv = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const data = await portalApi.exportReferrals(slug, token, period);
+      downloadCsv(referralsCsvFilename(slug, new Date()), buildReferralsCsv(data));
+    } catch (err) {
+      if (isPortalUnauthorized(err)) {
+        expire();
+        return;
+      }
+      setExportError(
+        isPortalTransientError(err) ? portalReachMessage(brand.orgName) : "We couldn't build the file. Try again.",
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
 
   let content: React.ReactNode;
   if (unauthorized || (!stats.data && !stats.isError) || (!list.data && !list.isError)) {
@@ -111,6 +141,27 @@ export function PortalDashboardPage() {
             ))}
           </ul>
         )}
+
+        {referrals.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <Button
+              variant="secondary"
+              size="lg"
+              fullWidth
+              leadingIcon={Download}
+              loading={exporting}
+              disabled={exporting}
+              onClick={() => void exportCsv()}
+            >
+              Download CSV
+            </Button>
+            {exportError && (
+              <p role="alert" className="text-body-sm text-status-danger">
+                {exportError}
+              </p>
+            )}
+          </div>
+        )}
       </>
     );
   }
@@ -130,7 +181,11 @@ export function PortalDashboardPage() {
             key={w.value}
             type="button"
             aria-pressed={period === w.value}
-            onClick={() => setPeriod(w.value)}
+            onClick={() => {
+              setPeriod(w.value);
+              // An export error was about the previous period.
+              setExportError(null);
+            }}
             className={cn(
               "min-h-11 rounded-radius-sm px-1 text-caption font-medium",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary",

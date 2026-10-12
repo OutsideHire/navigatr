@@ -369,6 +369,7 @@ describe("get_referral", () => {
         label: "In Progress",
         submittedAt: "2026-10-01T12:00:00Z",
         canWithdraw: false,
+        detailsRemoved: false,
         rep: { name: "Rita Rep", email: "rita@acme.example" },
         history: [
           { label: "Received", at: "2026-10-01T12:00:00Z" },
@@ -578,5 +579,230 @@ describe("1A rules on the referral actions", () => {
     const res = await handlePortalRequest(post("dashboard", {}), deps);
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: "server_error" });
+  });
+});
+
+describe("export_referrals", () => {
+  const ROWS = [
+    {
+      ref: "REF-AAAA0001",
+      company_name: "Fresh Bakery",
+      status: "won",
+      submitted_at: "2026-10-01T12:00:00Z",
+      last_activity_at: "2026-10-05T12:00:00Z",
+      won_value_cents: 500000,
+      value_visible: true,
+      icp_flags: ["chain:Subway"],
+      decline_reason: "outside_icp",
+    },
+    {
+      ref: "REF-AAAA0002",
+      company_name: "Corner Cafe",
+      status: "declined",
+      submitted_at: "2026-09-20T12:00:00Z",
+      last_activity_at: "2026-09-21T12:00:00Z",
+      won_value_cents: null,
+      value_visible: true,
+    },
+  ];
+
+  it("returns labelled rows for the session scope and the chosen window", async () => {
+    const { deps, rpc } = setup({ portal_export_referrals: () => ok(ROWS) });
+    const { status, json } = await call("export_referrals", { window: "30d" }, deps);
+    expect(rpc).toHaveBeenCalledWith("portal_export_referrals", {
+      p_org: "o-1",
+      p_partner: "p-1",
+      p_since: "2026-09-12T15:00:00.000Z",
+    });
+    expect(status).toBe(200);
+    expect(json).toEqual({
+      export: {
+        valueVisible: true,
+        rows: [
+          {
+            ref: "REF-AAAA0001",
+            companyName: "Fresh Bakery",
+            label: "Closed Won",
+            submittedAt: "2026-10-01T12:00:00Z",
+            lastActivityAt: "2026-10-05T12:00:00Z",
+            closedWonValueCents: 500000,
+          },
+          {
+            ref: "REF-AAAA0002",
+            companyName: "Corner Cafe",
+            label: "Not Moving Forward",
+            submittedAt: "2026-09-20T12:00:00Z",
+            lastActivityAt: "2026-09-21T12:00:00Z",
+            closedWonValueCents: null,
+          },
+        ],
+      },
+    });
+    const text = JSON.stringify(json);
+    for (const leak of ['"won"', '"declined"', "outside_icp", "chain:", "icp"]) expect(text).not.toContain(leak);
+  });
+
+  it("never sends a value when the ISO hides it, even if a row carries one", async () => {
+    const hidden = ROWS.map((r) => ({ ...r, value_visible: false }));
+    const { deps } = setup({ portal_export_referrals: () => ok(hidden) });
+    const { json } = await call("export_referrals", {}, deps);
+    const out = json.export as { valueVisible: boolean; rows: Array<{ closedWonValueCents: number | null }> };
+    expect(out.valueVisible).toBe(false);
+    expect(out.rows.map((r) => r.closedWonValueCents)).toEqual([null, null]);
+    expect(JSON.stringify(json)).not.toContain("500000");
+  });
+
+  it("drops a row whose status has no partner label, and rejects an unknown window", async () => {
+    const { deps } = setup({ portal_export_referrals: () => ok([{ ...ROWS[0], status: "bogus" }]) });
+    expect((await call("export_referrals", {}, deps)).json).toEqual({ export: { valueVisible: false, rows: [] } });
+    const bad = await call("export_referrals", { window: "5y" }, deps);
+    expect(bad.status).toBe(400);
+    expect(bad.json).toEqual({ error: "invalid_body", field: "window" });
+  });
+
+  it("answers a generic 500 when the export fails", async () => {
+    const { deps } = setup({ portal_export_referrals: () => fail("boom") });
+    const res = await call("export_referrals", {}, deps);
+    expect(res.status).toBe(500);
+    expect(res.json).toEqual({ error: "server_error" });
+  });
+});
+
+describe("get_profile and update_profile", () => {
+  const ROW = {
+    name: "Jane",
+    phone: "5550100100",
+    email: "jane@example.com",
+    weekly_digest: true,
+    org_id: "secret-org",
+    notification_prefs: { digest: true, other: "x" },
+  };
+
+  it("reads the session partner's profile from an allowlist", async () => {
+    const { deps, rpc } = setup({ portal_get_profile: () => ok([ROW]) });
+    const { status, json } = await call("get_profile", {}, deps);
+    expect(rpc).toHaveBeenCalledWith("portal_get_profile", { p_org: "o-1", p_partner: "p-1", p_portal_user: "u-1" });
+    expect(status).toBe(200);
+    expect(json).toEqual({ profile: { name: "Jane", phone: "5550100100", email: "jane@example.com", weeklyDigest: true } });
+  });
+
+  it("saves trimmed values through the session scope, ignoring ids in the body", async () => {
+    const { deps, rpc } = setup({
+      portal_update_profile: () => ok([{ ...ROW, name: "Jane Smith", phone: null, weekly_digest: false }]),
+    });
+    const { status, json } = await call(
+      "update_profile",
+      { name: " Jane Smith ", phone: "", weeklyDigest: false, orgId: "x", partnerId: "y", portalUserId: "z" },
+      deps,
+    );
+    expect(rpc).toHaveBeenCalledWith("portal_update_profile", {
+      p_org: "o-1",
+      p_partner: "p-1",
+      p_portal_user: "u-1",
+      p_name: "Jane Smith",
+      p_phone: null,
+      p_weekly_digest: false,
+      p_ip: "203.0.113.9",
+    });
+    expect(status).toBe(200);
+    expect(json).toEqual({ profile: { name: "Jane Smith", phone: null, email: "jane@example.com", weeklyDigest: false } });
+  });
+
+  it("rejects bad input before any profile call", async () => {
+    const { deps, rpc } = setup();
+    const res = await call("update_profile", { name: "", phone: null, weeklyDigest: true }, deps);
+    expect(res.status).toBe(400);
+    expect(res.json).toEqual({ error: "invalid_body", field: "name" });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps the server's field error and the rate limit", async () => {
+    const field = setup({ portal_update_profile: () => fail("invalid_input:phone") });
+    expect((await call("update_profile", { name: "Jane", phone: "5550100100", weeklyDigest: true }, field.deps)).json).toEqual({
+      error: "invalid_body",
+      field: "phone",
+    });
+    const limited = setup({ portal_update_profile: () => fail("rate_limited") });
+    const res = await call("update_profile", { name: "Jane", phone: null, weeklyDigest: true }, limited.deps);
+    expect(res.status).toBe(429);
+    expect(res.json).toEqual({ error: "rate_limited" });
+  });
+
+  it("echoes only a profile field from a server field error", async () => {
+    for (const message of ["invalid_input:notes", "invalid_input:contactName", "invalid_input:weeklyDigest"]) {
+      const { deps } = setup({ portal_update_profile: () => fail(message) });
+      const res = await call("update_profile", { name: "Jane", phone: null, weeklyDigest: true }, deps);
+      expect(res.status).toBe(400);
+      expect(res.json).toEqual({ error: "invalid_body" });
+    }
+    const name = setup({ portal_update_profile: () => fail("invalid_input:name") });
+    expect((await call("update_profile", { name: "Jane", phone: null, weeklyDigest: true }, name.deps)).json).toEqual({
+      error: "invalid_body",
+      field: "name",
+    });
+  });
+
+  it("returns a profile whose stored name is blank instead of failing", async () => {
+    const { deps } = setup({ portal_get_profile: () => ok([{ ...ROW, name: "" }]) });
+    const res = await call("get_profile", {}, deps);
+    expect(res.status).toBe(200);
+    expect(res.json).toEqual({ profile: { name: "", phone: "5550100100", email: "jane@example.com", weeklyDigest: true } });
+  });
+
+  it("answers 500 when no profile row comes back", async () => {
+    const { deps } = setup({ portal_get_profile: () => ok([]) });
+    const res = await call("get_profile", {}, deps);
+    expect(res.status).toBe(500);
+    expect(res.json).toEqual({ error: "server_error" });
+  });
+});
+
+describe("get_referral after a purge", () => {
+  const PURGED = {
+    id: RID,
+    ref: "REF-3F9A21C0",
+    company_name: "Fresh Bakery",
+    contact_name: "PURGED-SECRET name",
+    contact_email: "purged-secret@example.com",
+    contact_phone: "5550100100",
+    address: "PURGED-SECRET address",
+    industry: "restaurant",
+    urgency: "this_week",
+    notes: "PURGED-SECRET notes",
+    status: "declined",
+    source: "portal_signed_in",
+    submitted_at: "2026-06-01T12:00:00Z",
+    rep_name: "Rita Rep",
+    rep_email: "rita@acme.example",
+    can_withdraw: false,
+    details_removed: true,
+  };
+
+  it("returns no personal details for a purged referral and says so", async () => {
+    const { deps } = setup({
+      portal_get_referral: () => ok([PURGED]),
+      portal_referral_history: () => ok([{ status: "declined", created_at: "2026-06-02T12:00:00Z" }]),
+      portal_referral_updates: () => ok([]),
+    });
+    const { status, json } = await call("get_referral", { referralId: RID }, deps);
+    expect(status).toBe(200);
+    const detail = json.referral as Record<string, unknown>;
+    expect(detail.detailsRemoved).toBe(true);
+    for (const key of ["contactName", "contactEmail", "contactPhone", "address", "notes"]) expect(detail[key]).toBeNull();
+    expect(detail).toMatchObject({ companyName: "Fresh Bakery", industry: "restaurant", urgency: "this_week", label: "Not Moving Forward" });
+    const text = JSON.stringify(json);
+    expect(text).not.toContain("PURGED-SECRET");
+    expect(text).not.toContain("purged-secret@example.com");
+    expect(text).not.toContain("5550100100");
+  });
+
+  it("does not claim removed details for a referral a rep logged", async () => {
+    const { deps } = setup({
+      portal_get_referral: () => ok([{ ...PURGED, source: "rep_logged" }]),
+      portal_referral_history: () => ok([{ status: "declined", created_at: "2026-06-02T12:00:00Z" }]),
+      portal_referral_updates: () => ok([]),
+    });
+    const { json } = await call("get_referral", { referralId: RID }, deps);
+    expect((json.referral as Record<string, unknown>).detailsRemoved).toBe(false);
   });
 });

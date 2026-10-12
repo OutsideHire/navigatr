@@ -29,6 +29,8 @@ export interface QueueReferral {
   duplicateOfDealId?: string | null;
   /** How soon the partner said to reach out (portal only): this_week, this_month, no_rush. */
   urgency?: string | null;
+  /** Advisory ICP flags set at submission, e.g. "chain:Subway" (FR-PORT-58). Never block triage. */
+  icpFlags?: string[];
 }
 
 interface QueueRow {
@@ -48,6 +50,7 @@ interface QueueRow {
   duplicate_of_referral_id?: string | null;
   duplicate_of_deal_id?: string | null;
   urgency?: string | null;
+  icp_flags?: string[] | null;
   partner: { name: string; company: string } | null;
 }
 
@@ -65,7 +68,7 @@ export function useReferralQueue() {
         .select(
           "id, partner_id, company_name, contact_name, contact_email, contact_phone, " +
             "address, place_id, notes, submitted_at, assigned_user_id, partner_company_snapshot, " +
-            "source, duplicate_of_referral_id, duplicate_of_deal_id, urgency, " +
+            "source, duplicate_of_referral_id, duplicate_of_deal_id, urgency, icp_flags, " +
             "partner:partners(name, company)",
         )
         .eq("status", "submitted")
@@ -93,6 +96,7 @@ export function useReferralQueue() {
         duplicateOfReferralId: r.duplicate_of_referral_id ?? null,
         duplicateOfDealId: r.duplicate_of_deal_id ?? null,
         urgency: r.urgency ?? null,
+        icpFlags: r.icp_flags ?? [],
       }));
     },
     staleTime: 30_000,

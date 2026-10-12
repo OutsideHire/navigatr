@@ -9,6 +9,7 @@
 //   brand | request_code | verify_code | peek_invite | accept_invite | me | sign_out
 //   form | dup_check | submit_referral | list_referrals | dashboard | get_referral
 //   withdraw_referral | transcribe   (Phase 1B, session required)
+//   export_referrals | get_profile | update_profile   (Phase 2A, session required)
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Resend } from "resend";

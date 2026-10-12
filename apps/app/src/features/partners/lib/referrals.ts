@@ -58,6 +58,7 @@ const ERROR_COPY: Array<[token: string, copy: string]> = [
   ["override_reason_required", "Add a short reason to accept a possible duplicate."],
   ["update_required", "Write the update first."],
   ["update_too_long", "Keep the update under 1,000 characters."],
+  ["referral_not_reinstatable", "This referral can't be reinstated now."],
   ["not_authorized", "You don't have access to do that."],
 ];
 
@@ -68,4 +69,28 @@ export function referralErrorMessage(err: unknown, fallback: string): string {
       : "";
   const hit = ERROR_COPY.find(([token]) => message.includes(token));
   return hit ? hit[1] : fallback;
+}
+
+/**
+ * Who may reassign a referral: the same gate as reassign_referral (a manager or
+ * admin role, or the administrator level). The server re-checks; this only
+ * decides whether to show the action.
+ */
+export function canReassignReferrals(
+  profile: { role?: string | null; role_level?: string | null } | null | undefined,
+): boolean {
+  if (!profile) return false;
+  return profile.role === "manager" || profile.role === "admin" || profile.role_level === "administrator";
+}
+
+/** Advisory ICP lines for triage (FR-PORT-58). Unknown flags are dropped. */
+export function icpFlagLabels(flags: readonly string[] | null | undefined): string[] {
+  const out: string[] = [];
+  for (const flag of flags ?? []) {
+    if (!flag.startsWith("chain:")) continue;
+    // The sheet adds ". Check before accepting.", so drop a trailing period here.
+    const brand = flag.slice("chain:".length).trim().replace(/\.+$/, "").trim();
+    if (brand) out.push(`Looks like a chain: ${brand}`);
+  }
+  return out;
 }
