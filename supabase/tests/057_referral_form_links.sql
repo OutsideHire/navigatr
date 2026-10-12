@@ -165,6 +165,7 @@ do $$ declare v record; v_t text; v_r text; begin
   end if;
   perform _t_raises($q$select public.regenerate_referral_link('user', 'a0570000-0000-0000-0000-000000000004')$q$, 'not_authorized');
   perform _t_raises($q$select public.regenerate_referral_link('user', 'a0570000-0000-0000-0000-0000000000ff')$q$, 'not_authorized');
+  perform _t_raises($q$select public.regenerate_referral_link('user', 'a0570000-0000-0000-0000-000000000003')$q$, 'not_authorized');
 
   perform set_config('role', 'postgres', true);
   if (select count(*) from referral_form_links
@@ -188,6 +189,9 @@ do $$ declare v record; begin
   if v.link_token is not null or v.public_form_enabled then
     raise exception 'no tenant link while the form is off';
   end if;
+  if public.regenerate_referral_link('user') is not null then
+    raise exception 'regenerating returns null while the form is off';
+  end if;
 
   perform _t_act('a0570000-0000-0000-0000-000000000003');
   perform _t_raises($q$select * from public.get_my_referral_link()$q$, 'not_authorized');
@@ -196,6 +200,9 @@ do $$ declare v record; begin
   perform set_config('role', 'postgres', true);
   if exists (select 1 from referral_form_links where org_id = '00000000-0000-0000-0000-000000001157') then
     raise exception 'nothing is created while the public form is off';
+  end if;
+  if exists (select 1 from portal_audit_log where org_id = '00000000-0000-0000-0000-000000001157' and action = 'link_regenerate') then
+    raise exception 'nothing is audited while the public form is off';
   end if;
 end $$;
 

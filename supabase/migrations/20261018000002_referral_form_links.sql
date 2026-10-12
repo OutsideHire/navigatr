@@ -173,11 +173,16 @@ begin
     if v_target <> v_uid and not public.caller_is_admin() then
       raise exception 'not_authorized' using errcode = '42501';
     end if;
-    if not exists (select 1 from profiles pr where pr.id = v_target and pr.org_id = v_org) then
+    if not exists (select 1 from profiles pr
+                    where pr.id = v_target and pr.org_id = v_org and pr.deactivated_at is null) then
       raise exception 'not_authorized' using errcode = '42501';
     end if;
   else
     raise exception 'invalid_link_type' using errcode = '22023';
+  end if;
+
+  if not public._referral_form_open(v_org) then
+    return null;
   end if;
 
   perform pg_advisory_xact_lock(
