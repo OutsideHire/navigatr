@@ -26,6 +26,26 @@ vi.mock("@/features/pipeline/hooks/useDeals", () => ({
     { id: "d-3", companyName: "Closed Co", stage: "won" },
   ] }),
 }));
+const profileState: { data: { role: string; role_level: string } | null } = {
+  data: { role: "rep", role_level: "sales_professional" },
+};
+vi.mock("@/features/auth/useProfile", () => ({ useProfile: () => profileState }));
+const reassignMutate = vi.fn();
+const assigneesState: { data: Array<{ id: string; name: string }> | undefined } = { data: undefined };
+const seesState: { data: boolean | undefined; isError: boolean; isFetching: boolean } = {
+  data: true,
+  isError: false,
+  isFetching: false,
+};
+const seesArgs: unknown[][] = [];
+vi.mock("../hooks/useReassignReferral", () => ({
+  useReferralAssignees: () => assigneesState,
+  useAssigneeSeesPartner: (...a: unknown[]) => {
+    seesArgs.push(a);
+    return seesState;
+  },
+  useReassignReferral: () => ({ mutateAsync: reassignMutate, isPending: false }),
+}));
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
 vi.mock("@/components/navigatr", async (orig) => {
@@ -68,6 +88,17 @@ beforeEach(() => {
   acceptPending = false; accept.mockReset(); decline.mockReset(); merge.mockReset();
   checkPlaceDuplicate.mockReset().mockResolvedValue(null);
   toastSuccess.mockReset(); toastError.mockReset();
+  profileState.data = { role: "rep", role_level: "sales_professional" };
+  assigneesState.data = [
+    { id: "user-1", name: "Rita Rep" },
+    { id: "user-2", name: "Rob Rep" },
+    { id: "user-3", name: "Mia Mgr" },
+  ];
+  seesState.data = true;
+  seesState.isError = false;
+  seesState.isFetching = false;
+  seesArgs.length = 0;
+  reassignMutate.mockReset();
 });
 
 describe("ReviewReferralSheet", () => {
@@ -234,5 +265,79 @@ describe("ReviewReferralSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "Merge" }));
     const labels = screen.getAllByRole("option").map((o) => o.textContent).filter((l) => l !== "--");
     expect(labels).toEqual(["Alpha Gym", "Zed Cafe"]);
+  });
+});
+
+describe("ReviewReferralSheet: chain advisory and reassign", () => {
+  it("shows an advisory chain line, ignores unknown flags, and still allows accept", () => {
+    render(<ReviewReferralSheet referral={{ ...referral, icpFlags: ["chain:Subway", "mystery:x"] }} open onOpenChange={vi.fn()} />);
+    expect(screen.getByText("Looks like a chain: Subway. Check before accepting.")).toBeInTheDocument();
+    expect(screen.queryByText(/mystery/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Accept" })).toBeEnabled();
+  });
+
+  it("offers no Reassign to a rep", () => {
+    renderSheet();
+    expect(screen.queryByRole("button", { name: "Reassign" })).toBeNull();
+  });
+
+  it("lets a manager reassign to a teammate who can see the partner", async () => {
+    profileState.data = { role: "manager", role_level: "sales_manager" };
+    reassignMutate.mockResolvedValueOnce(true);
+    const onOpenChange = renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Reassign" }));
+    expect(screen.getByText("Now with Rita Rep.")).toBeInTheDocument();
+    const labels = screen.getAllByRole("option").map((o) => o.textContent).filter((l) => l !== "--");
+    expect(labels).toEqual(["Rob Rep", "Mia Mgr"]);
+    await userEvent.selectOptions(screen.getByLabelText("Pick a teammate…"), "user-2");
+    expect(seesArgs.at(-1)).toEqual(["user-2", "p-1"]);
+    expect(screen.queryByText(/can't see/)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Reassign referral" }));
+    expect(reassignMutate).toHaveBeenCalledWith({ referralId: "r-1", userId: "user-2" });
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(toastSuccess).toHaveBeenCalledWith("Reassigned to Rob Rep");
+  });
+
+  it("warns before confirming when the new owner cannot see the partner", async () => {
+    profileState.data = { role: "admin", role_level: "administrator" };
+    seesState.data = false;
+    renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Reassign" }));
+    await userEvent.selectOptions(screen.getByLabelText("Pick a teammate…"), "user-2");
+    expect(screen.getByText("Rob Rep can't see Jane's partner record. They will still see this referral.")).toBeInTheDocument();
+    expect(reassignMutate).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Reassign referral" })).toBeEnabled();
+  });
+
+  it("waits for the check before allowing the reassign", async () => {
+    profileState.data = { role: "manager", role_level: "sales_manager" };
+    seesState.data = undefined;
+    seesState.isFetching = true;
+    renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Reassign" }));
+    await userEvent.selectOptions(screen.getByLabelText("Pick a teammate…"), "user-3");
+    expect(screen.getByRole("button", { name: "Reassign referral" })).toBeDisabled();
+  });
+
+  it("still allows the reassign when partner access could not be checked", async () => {
+    profileState.data = { role: "manager", role_level: "sales_manager" };
+    seesState.data = undefined;
+    seesState.isError = true;
+    renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Reassign" }));
+    await userEvent.selectOptions(screen.getByLabelText("Pick a teammate…"), "user-3");
+    expect(screen.getByText("Couldn't check partner access. You can still reassign.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reassign referral" })).toBeEnabled();
+  });
+
+  it("toasts and stays open when the reassign is refused", async () => {
+    profileState.data = { role: "manager", role_level: "sales_manager" };
+    reassignMutate.mockRejectedValueOnce(new Error("You don't have access to do that."));
+    const onOpenChange = renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Reassign" }));
+    await userEvent.selectOptions(screen.getByLabelText("Pick a teammate…"), "user-2");
+    await userEvent.click(screen.getByRole("button", { name: "Reassign referral" }));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("You don't have access to do that."));
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 });

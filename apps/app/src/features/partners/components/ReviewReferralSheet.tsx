@@ -10,20 +10,27 @@
  * preselected. Accepting it anyway needs a short written reason, which lands in
  * the referral's history (FR-PORT-47). Merge stays available. The urgency the
  * partner picked shows with the details.
+ *
+ * Phase 2A: a business that looks like a chain gets an advisory line
+ * (FR-PORT-58); it never blocks anything. Managers and administrators can
+ * reassign the referral to a teammate they can see, and are warned BEFORE
+ * confirming when that teammate cannot see the partner (FR-PORT-55).
  */
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import { Button, Select, NotesFieldWithMic } from "@/components/navigatr";
+import { useProfile } from "@/features/auth/useProfile";
 import { usePlaceDuplicateCheck } from "@/features/pipeline/hooks/usePlaceDuplicateCheck";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import type { QueueReferral } from "../hooks/useReferralQueue";
 import { useAcceptReferral, useDeclineReferral, useMergeReferral } from "../hooks/useReferralMutations";
-import { DECLINE_REASON_OPTIONS, type DeclineReason } from "../lib/referrals";
+import { useAssigneeSeesPartner, useReassignReferral, useReferralAssignees } from "../hooks/useReassignReferral";
+import { DECLINE_REASON_OPTIONS, canReassignReferrals, icpFlagLabels, type DeclineReason } from "../lib/referrals";
 import { urgencyLabel } from "../../../../../../supabase/functions/_shared/portalSubmission";
 
-type Mode = "main" | "decline" | "merge" | "override";
+type Mode = "main" | "decline" | "merge" | "override" | "reassign";
 
 export interface ReviewReferralSheetProps {
   referral: QueueReferral | null;
@@ -39,8 +46,12 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
   const accept = useAcceptReferral();
   const decline = useDeclineReferral();
   const merge = useMergeReferral();
+  const reassign = useReassignReferral();
   const { checkPlaceDuplicate } = usePlaceDuplicateCheck();
   const { data: deals = [] } = useDeals();
+  const profile = useProfile();
+  const canReassign = canReassignReferrals(profile.data);
+  const assignees = useReferralAssignees(open && canReassign);
 
   const [mode, setMode] = React.useState<Mode>("main");
   const [reason, setReason] = React.useState<DeclineReason | "">("");
@@ -48,9 +59,14 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
   const [mergeDealId, setMergeDealId] = React.useState("");
   const [dupName, setDupName] = React.useState<string | null>(null);
   const [overrideReason, setOverrideReason] = React.useState("");
+  const [assigneeId, setAssigneeId] = React.useState("");
 
   const referralId = referral?.id;
   const flagged = isFlagged(referral);
+  const seesPartner = useAssigneeSeesPartner(
+    mode === "reassign" && assigneeId ? assigneeId : null,
+    referral?.partnerId ?? null,
+  );
 
   React.useEffect(() => {
     setMode("main");
@@ -59,6 +75,7 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
     setMergeDealId("");
     setDupName(null);
     setOverrideReason("");
+    setAssigneeId("");
     // Keyed on the referral id so a refetch with a new object does not reset the sheet.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, referralId]);
@@ -85,7 +102,19 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
     [deals],
   );
 
+  const currentAssigneeId = referral?.assignedUserId ?? null;
+  const assigneeOptions = React.useMemo(
+    () => (assignees.data ?? [])
+      .filter((a) => a.id !== currentAssigneeId)
+      .map((a) => ({ value: a.id, label: a.name })),
+    [assignees.data, currentAssigneeId],
+  );
+
   if (!referral) return null;
+
+  const currentOwner = (assignees.data ?? []).find((a) => a.id === referral.assignedUserId)?.name ?? null;
+  const pickedName = (assignees.data ?? []).find((a) => a.id === assigneeId)?.name ?? "";
+  const flags = icpFlagLabels(referral.icpFlags);
 
   const run = async (fn: () => Promise<void>) => {
     try {
@@ -120,6 +149,13 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
     if (!mergeDealId) return;
     await merge.mutateAsync({ referralId: referral.id, dealId: mergeDealId });
     toast.success("Merged into the existing deal");
+    onOpenChange(false);
+  });
+
+  const onReassign = () => run(async () => {
+    if (!assigneeId) return;
+    await reassign.mutateAsync({ referralId: referral.id, userId: assigneeId });
+    toast.success(`Reassigned to ${pickedName}`);
     onOpenChange(false);
   });
 
@@ -172,6 +208,12 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
             <p className="whitespace-pre-wrap text-body-md text-text-muted">{referral.notes}</p>
           )}
 
+          {flags.map((f) => (
+            <p key={f} className="rounded-radius-sm bg-surface-sunken p-3 text-body-sm text-text-muted">
+              {f}. Check before accepting.
+            </p>
+          ))}
+
           {flagged && (
             <p className="rounded-radius-sm bg-status-warning-bg p-3 text-body-sm text-status-warning">
               Possible duplicate of an earlier referral. Decline (duplicate) is preselected; you can still accept or merge.
@@ -198,6 +240,11 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
                 <Button variant="secondary" className="flex-1" disabled={accept.isPending} onClick={() => setMode("merge")}>Merge</Button>
                 <Button variant="secondary" className="flex-1" disabled={accept.isPending} onClick={() => setMode("decline")}>Decline</Button>
               </div>
+              {canReassign && (
+                <Button variant="tertiary" disabled={accept.isPending} onClick={() => setMode("reassign")}>
+                  Reassign
+                </Button>
+              )}
             </div>
           )}
 
@@ -275,6 +322,41 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
                   onClick={onMerge}
                 >
                   Merge into deal
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {mode === "reassign" && (
+            <div className="flex flex-col gap-3">
+              {currentOwner && <p className="text-body-sm text-text-muted">Now with {currentOwner}.</p>}
+              <label className="flex flex-col gap-1.5">
+                <span className="text-caption font-medium text-text-muted">New owner</span>
+                <Select
+                  value={assigneeId}
+                  onValueChange={setAssigneeId}
+                  placeholder="Pick a teammate…"
+                  options={assigneeOptions}
+                />
+              </label>
+              {assigneeId && seesPartner.data === false && (
+                <p className="rounded-radius-sm bg-status-warning-bg p-3 text-body-sm text-status-warning">
+                  {pickedName} can't see {referral.partnerName}'s partner record. They will still see this referral.
+                </p>
+              )}
+              {assigneeId && seesPartner.isError && (
+                <p className="text-body-sm text-text-muted">Couldn't check partner access. You can still reassign.</p>
+              )}
+              <div className="flex gap-2">
+                <Button variant="secondary" className="flex-1" onClick={() => setMode("main")}>Back</Button>
+                <Button
+                  variant="primary"
+                  className="flex-1"
+                  disabled={!assigneeId || seesPartner.isFetching || reassign.isPending}
+                  loading={reassign.isPending}
+                  onClick={onReassign}
+                >
+                  Reassign referral
                 </Button>
               </div>
             </div>

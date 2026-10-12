@@ -47,6 +47,7 @@ describe("useReferralQueue", () => {
       address: "5 Oak St", placeId: null, notes: "Wants a demo",
       submittedAt: "2026-10-07T12:00:00Z", assignedUserId: "user-1",
       source: "rep_entered", duplicateOfReferralId: null, duplicateOfDealId: null, urgency: null,
+      icpFlags: [],
     }]);
   });
 
@@ -90,5 +91,21 @@ describe("useReferralQueue", () => {
     orderMock.mockResolvedValueOnce({ data: null, error: { message: "boom" } });
     const { result } = renderHook(() => useReferralQueue(), { wrapper });
     await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+  it("carries the advisory ICP flags", async () => {
+    orderMock.mockResolvedValueOnce({
+      data: [{
+        id: "r-4", partner_id: "p-1", company_name: "Subway #12", contact_name: "Ann",
+        contact_email: null, contact_phone: "5550100001", address: null, place_id: null,
+        notes: "", submitted_at: "2026-10-12T12:00:00Z", assigned_user_id: "user-1",
+        icp_flags: ["chain:Subway"],
+        partner: { name: "Jane", company: "Jane & Co" },
+      }],
+      error: null,
+    });
+    const { result } = renderHook(() => useReferralQueue(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(selectMock.mock.calls[0][0]).toContain("icp_flags");
+    expect(result.current.data?.[0].icpFlags).toEqual(["chain:Subway"]);
   });
 });
