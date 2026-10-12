@@ -27,6 +27,7 @@ export type SettingsTabId =
   | "organization"
   | "integrations"
   | "branding"
+  | "partner-portal"
   | "profession"
   | "danger";
 
@@ -65,6 +66,7 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
   { id: "organization", label: "Organization", roles: ["rep", "manager", "admin"], group: "account"   },
   { id: "integrations", label: "Integrations", roles: ["rep", "manager", "admin"], group: "account"   },
   { id: "branding",     label: "Branding",     roles: ["admin"],                   group: "workspace" },
+  { id: "partner-portal", label: "Partner portal", roles: ["admin"],               group: "workspace" },
   { id: "profession",   label: "Profession",   roles: ["manager", "admin"],        group: "workspace" },
   { id: "danger",       label: "Danger zone",  roles: ["admin"],                   group: "advanced"  },
 ];

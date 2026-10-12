@@ -77,6 +77,16 @@ vi.mock("../components/ReferralPreviewSheet", () => ({
   ReferralPreviewSheet: ({ deal, open }: { deal: { id: string } | null; open: boolean }) =>
     open && deal ? <div data-testid="referral-preview" data-deal={deal.id} /> : null,
 }));
+// Portal controls are exercised in PortalAccess.test.tsx; here we only check
+// that the page mounts them for this partner.
+vi.mock("../components/PortalAccess", () => ({
+  PortalInviteButton: ({ partnerId, email }: { partnerId: string; email: string | null | undefined }) => (
+    <div data-testid="portal-invite" data-partner={partnerId} data-email={email ?? ""} />
+  ),
+  PortalAccessLine: ({ partnerId }: { partnerId: string }) => (
+    <div data-testid="portal-access" data-partner={partnerId} />
+  ),
+}));
 
 function deal(id: string, valueCents: number): Deal {
   return {
@@ -340,5 +350,14 @@ describe("PartnerDetailPage / log a referral", () => {
     renderPage({ partners: [partner({ id: "p1" })], deals: [], partnerId: "p1" });
     fireEvent.click(screen.getByRole("button", { name: "Log a referral" }));
     expect(screen.getByTestId("log-referral-sheet")).toBeInTheDocument();
+  });
+});
+
+describe("PartnerDetailPage / partner portal controls", () => {
+  it("mounts the invite button and the access line for this partner", () => {
+    renderPage({ partners: [partner({ id: "p1" })], deals: [], partnerId: "p1" });
+    expect(screen.getByTestId("portal-invite")).toHaveAttribute("data-partner", "p1");
+    expect(screen.getByTestId("portal-invite")).toHaveAttribute("data-email", "p1@example.com");
+    expect(screen.getByTestId("portal-access")).toHaveAttribute("data-partner", "p1");
   });
 });
