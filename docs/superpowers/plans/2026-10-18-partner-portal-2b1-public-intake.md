@@ -104,6 +104,7 @@ The staging deploy runs `node tools/check-secrets.mjs staging`, which fails if a
    - `TURNSTILE_SECRET_KEY`: the Cloudflare test secret `1x0000000000000000000000000000000AA` on staging and demo until the real one exists; the real secret on production.
 3. Vercel environment variable `VITE_TURNSTILE_SITE_KEY`: the test site key `1x00000000000000000000AA` for Preview (staging); the real site key for Production. A rebuild picks it up.
 4. Local development (optional): `supabase/functions/.env` with `PUBLIC_FORM_SIGNING_SECRET=local-dev-only` and `TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA`, and `VITE_TURNSTILE_SITE_KEY=1x00000000000000000000AA` in `apps/app/.env.local`.
+5. On staging, submit one test referral and check the portal_api log for which client IP header arrived (cf-connecting-ip expected). Look at the request headers in the invocation's metadata (Dashboard, Edge Functions, portal_api, Invocations); no code logs IPs, and none should be added for production. If cf-connecting-ip is missing or a client-sent value survives, `clientIp` in `supabase/functions/_shared/portalApi.ts` needs a different header order; the per-link and per-org limits in SQL hold either way.
 
 Nothing is visible to customers after this ships: `public_form_enabled` defaults to false and has no UI until 2B-2. Trying it end to end on staging waits for the 2B-2 toggle (or a one-off staging-only update Ryan explicitly approves; never production).
 
