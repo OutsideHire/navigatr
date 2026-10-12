@@ -119,7 +119,7 @@ export interface PortalReferralDetail {
   label: PortalLabel;
   submittedAt: string;
   canWithdraw: boolean;
-  /** The ISO's retention period passed and the contact details were erased (FR-PORT-92). */
+  /** The ISO's retention period passed and the partner's own typed contact details were erased (FR-PORT-92). Always false for a rep-logged referral. */
   detailsRemoved: boolean;
   rep: PortalRepContact | null;
   history: PortalHistoryEntry[];
@@ -377,7 +377,7 @@ async function getReferral(scope: ReferralScope, body: Body, ip: string | null, 
     label,
     submittedAt: str(row.submitted_at),
     canWithdraw: personal && row.can_withdraw === true,
-    detailsRemoved: removed,
+    detailsRemoved: typed && removed,
     rep: repName || repEmail ? { name: repName ?? "", email: repEmail } : null,
     history,
     updates,

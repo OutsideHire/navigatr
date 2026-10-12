@@ -774,4 +774,14 @@ describe("get_referral after a purge", () => {
     expect(text).not.toContain("purged-secret@example.com");
     expect(text).not.toContain("5550100100");
   });
+
+  it("does not claim removed details for a referral a rep logged", async () => {
+    const { deps } = setup({
+      portal_get_referral: () => ok([{ ...PURGED, source: "rep_logged" }]),
+      portal_referral_history: () => ok([{ status: "declined", created_at: "2026-06-02T12:00:00Z" }]),
+      portal_referral_updates: () => ok([]),
+    });
+    const { json } = await call("get_referral", { referralId: RID }, deps);
+    expect((json.referral as Record<string, unknown>).detailsRemoved).toBe(false);
+  });
 });

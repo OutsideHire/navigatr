@@ -212,3 +212,15 @@ describe("Phase 1B actions", () => {
     expect(lastCall().body).toEqual({ slug: "acme", referralId: "r-x" });
   });
 });
+
+describe("Phase 2A actions", () => {
+  it("exports the chosen period with the session", async () => {
+    const EXPORT = { valueVisible: false, rows: [] };
+    fetchMock.mockResolvedValueOnce(respond(200, { export: EXPORT }));
+    await expect(portalApi.exportReferrals("acme", "tok", "90d")).resolves.toEqual(EXPORT);
+    const call = lastCall();
+    expect(call.url).toBe(`${PORTAL_API_URL}/export_referrals`);
+    expect(call.headers["x-portal-session"]).toBe("tok");
+    expect(call.body).toEqual({ slug: "acme", window: "90d" });
+  });
+});

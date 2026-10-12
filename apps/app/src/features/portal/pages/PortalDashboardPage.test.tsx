@@ -20,11 +20,18 @@ const api = vi.hoisted(() => ({
   getReferral: vi.fn(),
   withdrawReferral: vi.fn(),
   transcribe: vi.fn(),
+  exportReferrals: vi.fn(),
 }));
 
 vi.mock("../lib/portalApi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/portalApi")>();
   return { ...actual, portalApi: api };
+});
+
+const csv = vi.hoisted(() => ({ download: vi.fn() }));
+vi.mock("../lib/portalCsv", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/portalCsv")>();
+  return { ...actual, downloadCsv: csv.download };
 });
 
 import { PortalRoot } from "./PortalRoot";
@@ -92,6 +99,7 @@ function renderHome(client = new QueryClient({ defaultOptions: { queries: { retr
 beforeEach(() => {
   Object.defineProperty(window, "localStorage", { value: memoryStorage(), writable: true, configurable: true });
   Object.values(api).forEach((fn) => fn.mockReset());
+  csv.download.mockReset();
   api.brand.mockResolvedValue(BRAND);
   api.me.mockResolvedValue(ME);
   api.dashboard.mockResolvedValue(STATS);
@@ -199,5 +207,58 @@ describe("PortalDashboardPage", () => {
     expect(api.dashboard).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("link", { name: /Fresh Bakery/ })).toBeInTheDocument();
     expect(screen.queryByText(/We couldn't reach/)).toBeNull();
+  });
+
+  it("downloads the partner's referrals for the chosen period as a CSV", async () => {
+    const user = userEvent.setup();
+    api.exportReferrals.mockResolvedValue({
+      valueVisible: false,
+      rows: [
+        {
+          ref: "REF-AAAA0001",
+          companyName: "Fresh Bakery",
+          label: "In Progress",
+          submittedAt: "2026-10-01T12:00:00Z",
+          lastActivityAt: "2026-10-05T12:00:00Z",
+          closedWonValueCents: null,
+        },
+      ],
+    });
+    renderHome();
+    await screen.findByRole("link", { name: /Fresh Bakery/ });
+    await user.click(screen.getByRole("button", { name: "30 days" }));
+    await user.click(screen.getByRole("button", { name: "Download CSV" }));
+    expect(api.exportReferrals).toHaveBeenCalledWith("acme", "live", "30d");
+    expect(csv.download).toHaveBeenCalledTimes(1);
+    const [filename, content] = csv.download.mock.calls[0] as [string, string];
+    expect(filename).toMatch(/^acme-referrals-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(content).toBe(
+      "Reference,Business,Status,Sent,Last update\r\nREF-AAAA0001,Fresh Bakery,In Progress,2026-10-01,2026-10-05\r\n",
+    );
+  });
+
+  it("offers no download when there are no referrals", async () => {
+    api.listReferrals.mockResolvedValue([]);
+    renderHome();
+    await screen.findByText("Nothing here yet. Send Acme ISO a business and follow it here.");
+    expect(screen.queryByRole("button", { name: "Download CSV" })).toBeNull();
+  });
+
+  it("says when the file could not be built, and keeps the list", async () => {
+    const user = userEvent.setup();
+    api.exportReferrals.mockRejectedValue(new PortalApiError(0, "network_error"));
+    renderHome();
+    await user.click(await screen.findByRole("button", { name: "Download CSV" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("We couldn't reach Acme ISO. Check your connection and try again.");
+    expect(csv.download).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: /Fresh Bakery/ })).toBeInTheDocument();
+  });
+
+  it("returns to sign-in when the session is gone during the export", async () => {
+    const user = userEvent.setup();
+    api.exportReferrals.mockRejectedValue(new PortalApiError(401, "unauthorized"));
+    renderHome();
+    await user.click(await screen.findByRole("button", { name: "Download CSV" }));
+    expect(await screen.findByRole("heading", { name: "Sign in to Acme ISO" })).toBeInTheDocument();
   });
 });

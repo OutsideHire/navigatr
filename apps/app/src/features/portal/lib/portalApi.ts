@@ -16,6 +16,8 @@
  */
 import type {
   PortalDashboard,
+  PortalExport,
+  PortalExportRow,
   PortalForm,
   PortalReferralDetail,
   PortalReferralSummary,
@@ -25,6 +27,8 @@ import type { PortalWindow } from "../../../../../../supabase/functions/_shared/
 
 export type {
   PortalDashboard,
+  PortalExport,
+  PortalExportRow,
   PortalForm,
   PortalReferralDetail,
   PortalReferralSummary,
@@ -123,7 +127,8 @@ type PortalAction =
   | "dashboard"
   | "get_referral"
   | "withdraw_referral"
-  | "transcribe";
+  | "transcribe"
+  | "export_referrals";
 
 async function portalRequest<T>(
   action: PortalAction,
@@ -260,5 +265,10 @@ export const portalApi = {
 
   transcribe(slug: string, sessionToken: string, audio: string, mime: string): Promise<string> {
     return portalRequest<{ text: string }>("transcribe", { slug, audio, mime }, sessionToken).then((r) => r.text);
+  },
+  exportReferrals(slug: string, sessionToken: string, period: PortalWindow): Promise<PortalExport> {
+    return portalRequest<{ export: PortalExport }>("export_referrals", { slug, window: period }, sessionToken).then(
+      (r) => r.export,
+    );
   },
 };
