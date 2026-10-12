@@ -19,6 +19,12 @@ import {
   type PortalRpcResult,
 } from "../../../../../supabase/functions/_shared/portalApi";
 import { PORTAL_LABELS } from "../../../../../supabase/functions/_shared/portalLabels";
+import {
+  KIND_LABEL,
+  PARTNER_NOTIFY_KINDS,
+  buildPortalNotifyEmail,
+} from "../../../../../supabase/functions/_shared/portalNotifyEmail";
+import { POWERED_BY, renderEmail } from "../../../../../supabase/functions/_shared/emailTemplate";
 
 const api = vi.hoisted(() => ({
   brand: vi.fn(),
@@ -377,5 +383,106 @@ describe("rendered portal pages: UI copy audit", () => {
     await user.click(screen.getByRole("button", { name: "Send referral" }));
     await screen.findByRole("heading", { name: "Referral sent" });
     expectCleanScreen();
+  });
+});
+
+describe("partner emails: copy audit", () => {
+  const RID = "3f9a21c0-1111-4222-8333-444455556666";
+  const CTX = { appBaseUrl: "https://app.getnavigatr.io", referralId: RID };
+  // Hostile markup in every free field the SQL can carry.
+  const XSS = "<script>alert(1)</script>";
+  const IMG = "<img src=x onerror=alert(2)>";
+  const STAGES = ["new", "contacted", "qualified", "proposal", "negotiation"];
+  const TOKEN_RE = new RegExp(`\\b(${[...INTERNAL_STATUSES, ...STAGES].join("|")})\\b`);
+  // The template's generic link-fallback sentence uses the everyday word "working"; it is not a status.
+  const TEMPLATE_FALLBACK = /Button not working\?/g;
+  const REASON_RE = /\b[a-z]+(?:_[a-z]+)+\b/;
+
+  const payload = (label: string) => ({
+    slug: "acme",
+    orgName: "Acme ISO",
+    partnerName: `Jane ${IMG}`,
+    companyName: `Fresh Bakery ${XSS}`,
+    ref: "REF-3F9A21C0",
+    label,
+    valueCents: 500000,
+    repName: `Rita Rep ${IMG}`,
+    repEmail: "rita@acme.example",
+    updateBody: `Spoke with the owner today. Demo next Tuesday.\n${XSS}\n${IMG}`,
+  });
+
+  const CASES: Array<[string, string]> = PARTNER_NOTIFY_KINDS.flatMap((kind): Array<[string, string]> =>
+    kind === "partner_update" ? PORTAL_LABELS.map((label): [string, string] => [kind, label]) : [[kind, KIND_LABEL[kind]]],
+  );
+
+  it("covers every kind and every label", () => {
+    expect(CASES.length).toBe(PARTNER_NOTIFY_KINDS.length - 1 + PORTAL_LABELS.length);
+  });
+
+  it.each(CASES)("%s labelled %s: partner words only, the ISO's name, the locked credit", (kind, label) => {
+    const built = buildPortalNotifyEmail(kind, payload(label), CTX);
+    expect(built).not.toBeNull();
+    const e = built!;
+    const copy = [e.subject, e.preheader, e.heading, ...e.bodyLines, e.ctaLabel, e.footnote].join("\n");
+    expect(copy).toContain("Acme ISO");
+    expect(copy).not.toMatch(/navigatr/i);
+
+    const { html, text } = renderEmail({ ...e, brand: { name: "Acme ISO", logoUrl: null, primaryColor: null } });
+    const visibleHtml = html
+      .replace(/<style[\s\S]*?<\/style>/g, "")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/https?:\/\/\S+/g, "")
+      .replace(TEMPLATE_FALLBACK, "");
+    const visibleText = text.replace(/https?:\/\/\S+/g, "").replace(TEMPLATE_FALLBACK, "");
+
+    for (const [name, s] of [["subject", e.subject], ["text", visibleText], ["html", visibleHtml]] as const) {
+      expect(s.match(TOKEN_RE), `${kind}/${label}: status or stage token in ${name}`).toBeNull();
+      expect(s.match(FORBIDDEN_WORDS), `${kind}/${label}: forbidden word in ${name}`).toBeNull();
+      expect(s.match(REASON_RE), `${kind}/${label}: reason code in ${name}`).toBeNull();
+    }
+
+    // The locked credit is present exactly once and is the only mention of navigatr.
+    expect(visibleText).toContain(POWERED_BY);
+    expect(visibleText.split(POWERED_BY).length - 1).toBe(1);
+    expect(visibleText.replace(POWERED_BY, "")).not.toMatch(/navigatr/i);
+    expect(e.subject).not.toMatch(/navigatr/i);
+    expect(visibleHtml.split(POWERED_BY).length - 1).toBe(1);
+    expect(visibleHtml.replace(POWERED_BY, "")).not.toMatch(/navigatr/i);
+
+    // Hostile markup is escaped, never raw.
+    expect(html).not.toContain("<script");
+    expect(html).not.toContain("<img src=x");
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).toContain("&lt;img src=x");
+    if (kind === "partner_update") expect(html).toContain("Demo next Tuesday.");
+  });
+
+  it("drops a payload that carries any key beyond the allowlist", () => {
+    for (const kind of PARTNER_NOTIFY_KINDS) {
+      const label = kind === "partner_update" ? "Accepted" : KIND_LABEL[kind];
+      for (const extra of [
+        { status: "lost" },
+        { stage: "proposal" },
+        { decline_reason: "outside_icp" },
+        { notes: `${SECRET} deal note` },
+        { other_partner: OTHER_PARTNER },
+      ]) {
+        expect(buildPortalNotifyEmail(kind, { ...payload(label), ...extra }, CTX)).toBeNull();
+      }
+    }
+  });
+
+  it("drops every partner email whose label is an internal status", () => {
+    for (const kind of PARTNER_NOTIFY_KINDS) {
+      for (const status of INTERNAL_STATUSES) {
+        expect(buildPortalNotifyEmail(kind, payload(status), CTX)).toBeNull();
+      }
+    }
+  });
+
+  it("shows no amount when the ISO hides closed-won value", () => {
+    const won = buildPortalNotifyEmail("partner_closed_won", { ...payload("Closed Won"), valueCents: null }, CTX);
+    expect(won).not.toBeNull();
+    expect(renderEmail(won!).text).not.toContain("$");
   });
 });
