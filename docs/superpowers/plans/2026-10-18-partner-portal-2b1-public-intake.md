@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Every active internal user gets a personal public referral form link, administrators get one company link, and anyone holding a link can send a business through a branded, sign-in-free form protected by a honeypot, a minimum time-to-submit, a per-connection limit and (past the limit) a Cloudflare Turnstile check. Submissions are stored as Unattributed Submissions routed to the link's rep (or their manager, or the administrator queue), and the submitter gets a confirmation with a reference. Ships dark: no tenant can turn the form on until Phase 2B-2 adds the toggle and triage.
+**Goal:** Every active internal user gets a personal public referral form link, administrators get one company link, and anyone holding a link can send a business through a branded, sign-in-free form protected by a honeypot, a minimum time-to-submit, a per-connection limit and (past the limit) a Cloudflare Turnstile check. Submissions are stored as Unattributed Submissions routed to the link's rep (or their manager, or the administrator queue), and the person sending sees a reference on screen and, if they gave their own email, gets a confirmation email. Ships dark: no tenant can turn the form on until Phase 2B-2 adds the toggle and triage.
 
 **Architecture:** Every rule lives in SQL. Links live in `referral_form_links` (no direct client access; three authenticated RPCs). Public submissions live in their own table `referral_form_submissions`, never in `referrals`. The public side is two new unauthenticated `portal_api` actions (`public_form`, `public_submit`) in a new pure module `_shared/portalPublicForm.ts`; they call three service-role-only SQL functions. The form token the server hands out is an HMAC over the slug, the link token and the issue time, so the minimum time-to-submit cannot be faked. Turnstile's script loads in the browser only after the server answers `captcha_required`. The rep app gets a "Share referral form" sheet on the Partners page (link, QR, download, native share, new link).
 
@@ -19,12 +19,12 @@
 - New tables enable RLS and `revoke all ... from anon, authenticated` first (default privileges from 20260813000002 grant `authenticated` full DML on new tables). `referral_form_links` gets no grant and no policy. `referral_form_submissions` gets a column-level SELECT grant (never `submitter_ip`) and one SELECT policy.
 - pgcrypto calls are schema-qualified (`extensions.gen_random_bytes`).
 - Link tokens: 16 random bytes, base64url, no padding (22 characters of `[A-Za-z0-9_-]`). Stored in plain text: a link is a routing key the rep re-copies, not a credential.
-- Public field caps (brief scope 4, mirrors `PORTAL_FIELD_LIMITS`): company 160, contact name 120, email 254, phone 40 with at least 7 digits, notes 4000, "who referred" 160. Company, contact name, email, phone and notes are required (FR-PORT-29).
+- Public field caps (brief scope 4, mirrors `PORTAL_FIELD_LIMITS`): company 160, contact name 120, email 254, phone 40 with at least 7 digits, notes 4000, "who referred" 160, the referrer's own email 254 (validated like any email). Company, contact name, email, phone and notes are required (FR-PORT-29); "who referred" and "Your email" are optional.
 - Bot rules (FR-PORT-30, brief scope 6): minimum time-to-submit 3 seconds, form token valid 24 hours, honeypot field `website`, soft limit 5 per IP per hour (then Turnstile), hard limit 30 per IP per hour even with Turnstile. A too-fast post or a filled honeypot answers exactly like success with a random reference and writes nothing.
 - FR-PORT-34: no duplicate check of any kind at intake, and no response differs by whether the business exists.
 - Turnstile: test site key `1x00000000000000000000AA`, test secret `1x0000000000000000000000000000000AA` (always pass) for local and staging until Ryan creates the real site. Script URL `https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit`, verify URL `https://challenges.cloudflare.com/turnstile/v0/siteverify`. The script loads only after a `captcha_required` answer.
 - Edge secrets `PUBLIC_FORM_SIGNING_SECRET` and `TURNSTILE_SECRET_KEY` fail closed when unset: no signing secret means the form answers `not_available`; no Turnstile secret means a connection over the soft limit can never pass. Client key `VITE_TURNSTILE_SITE_KEY`; unset means a connection over the soft limit sees "try again later".
-- Public copy names the ISO, never "navigatr", never echoes internal tokens, and never uses the lowercase words submitted, accepted, working, won, lost, declined or withdrawn. The confirmation email carries the ISO name and the reference only, never text the submitter typed. Partner and public pages keep 44px tap targets (`min-h-11` or `size="lg"`).
+- Public copy names the ISO, never "navigatr", never echoes internal tokens, and never uses the lowercase words submitted, accepted, working, won, lost, declined or withdrawn. The confirmation email (FR-PORT-33, controller ruling) goes ONLY to the optional referrer email (`referrer_email`), never to the business contact's email; no referrer email means no confirmation email (the on-screen reference still shows). It carries the ISO name and the reference only, never text the submitter typed. Partner and public pages keep 44px tap targets (`min-h-11` or `size="lg"`).
 - `_shared` modules are dependency-free TS with no Deno globals at module scope, import each other with the `.ts` extension, and their tests import without the extension. Every new `_shared` source file is added to the `include` list in `apps/app/tsconfig.app.json`.
 - DB tests: plain psql scripts `supabase/tests/057_referral_form_links.sql` and `058_public_form_submissions.sql`, wrapped in `begin; ... rollback;`, assertions via `do $$ ... raise exception ... $$`. Seed every fixture BEFORE the first role switch. Service-role-only functions are called as `postgres` (switch back with `perform set_config('role', 'postgres', true);`). Assert function privileges with `has_function_privilege` and table or column privileges with `has_table_privilege` or `has_column_privilege`, never by calling something the role cannot execute: local Postgres 17.6 segfaults on a live function-level permission denied.
 - Run DB tests locally: `supabase start`, then `supabase db reset && ./tools/run-db-tests.sh "postgresql://postgres:postgres@127.0.0.1:54322/postgres"`. One file: `psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -q -f supabase/tests/NNN_name.sql`.
@@ -40,7 +40,7 @@
 1. **A quick send right after the form (re)loads.** The server treats a form token younger than 3 seconds as a bot and answers with a fake success, so a person who clicks "Send another" and fills nothing, or who re-sends right after a "page was open a while" refetch, would lose the referral silently. Expected: the page never sends a token younger than 3.5 seconds (it waits), and never refetches the form on window focus. Pinned in Task 9 (`waitForFormAge` is awaited with the form's load time; a focus event does not refetch) and Task 8 (`sendDelay` unit test).
 2. **A link that dies between load and send** (regenerated, or the ISO turns the form off). Expected: the page shows "This form isn't available", never "Thanks for the referral". Pinned in Task 6 (zero rows from `portal_public_submit` answers 404) and Task 9 (404 on send shows the unavailable card).
 3. **An environment without a Turnstile site key** (Vercel env not set). Expected: a connection over the limit sees "Too many referrals from this connection right now. Try again later.", no broken widget, no script load. Pinned in Task 9.
-4. **The confirmation email as a spam relay.** Anyone can type any email address. Expected: the email says only the ISO name and the reference, never the company, notes or "who referred" text, and respects the non-production allowlist. Pinned in Task 6 and Task 10.
+4. **The confirmation email as a spam relay, or a surprise to the business.** Anyone can type any email address. Expected: the email goes only to the optional "Your email" address (never to the business contact), is not sent at all when that field is blank, says only the ISO name and the reference (never the company, notes or "who referred" text), and respects the non-production allowlist. Pinned in Task 6 and Task 10.
 5. **A deactivated or unplaced rep's printed QR code.** Expected: the form still works, does not show that rep's name, and the submission routes to their manager (or the administrator queue when there is no active manager). Pinned in Task 3 (DB test 058).
 
 ---
@@ -86,7 +86,7 @@
 5. **The 30 per hour hard limit is enforced in SQL too**, inside `portal_public_submit` under a per-IP advisory lock, so parallel posts cannot race past the edge pre-check. The soft limit (5, then Turnstile) stays at the edge.
 6. **A missing, forged or expired (over 24 hours) form token answers `409 form_expired`**, not a fake success: a person who left the tab open overnight gets "send it again" instead of a silent loss. Only too-fast (under 3 seconds) and the honeypot get the fake success. The page waits until its token is 3.5 seconds old before sending and never refetches the form on focus (Review Focus 1).
 7. **`public_form` returns no brand.** `PortalRoot` already loads the brand through `portal_brand` before any route renders. The response is `{ orgName, repName, consentText, consentVersion, formToken }`.
-8. **The confirmation email goes to the contact email**, the only email on the form (FR-PORT-29). It has no button, so `renderEmail` gets an optional button; output with a button is byte-identical (the snapshot files are unchanged).
+8. **The confirmation email goes only to a new optional "Your email" field** (controller ruling on FR-PORT-33, whose "submitter" is not the business contact). `referral_form_submissions.referrer_email` (cap 254, validated like other emails, lowercased, nullable, erased by the 2B-2 purge with the other personal fields). Blank means no confirmation email; the business contact's email never receives one. The email has no button, so `renderEmail` gets an optional button; output with a button is byte-identical (the snapshot files are unchanged).
 9. **CRON_SECRET has no local or CI provisioning to mirror.** Cron functions are not served locally and CI runs only the pure `_shared` tests and `deno check`, which inject secrets. So the two new secrets are added to `supabase/secrets.manifest.json` (required in staging, demo and production, which makes the deploy check enforce them and the CI audit pass), and local development puts them in `supabase/functions/.env` (gitignored by the root `.env` rule), which `supabase functions serve` reads.
 10. **`get_my_referral_link` and `get_tenant_referral_link` return a null token and create nothing while the form is off.** "On" is `portal_enabled and public_form_enabled and not is_disabled`, the same test the public side uses, so a link is never shown that would not work.
 11. **Every active user gets a personal link.** Bundle 2 lets any active org member create and own partners (`partners_insert` checks only `org_id = user_org_id()` and `created_by = auth.uid()`).
@@ -646,10 +646,10 @@ EOF
 **Interfaces:**
 - Consumes (SQL, Task 2): `referral_form_links`, `public.referral_route_user(uuid)`, `public._referral_form_open(uuid)`; existing `public._portal_consent_text(text)`, `public._portal_referral_ref(uuid)`, `public._portal_audit(...)`, `public.user_org_id()`, `public.caller_is_admin()`, `public.user_can_see_owner(uuid)`, `org_branding (org_id, logo_url, primary_color)`.
 - Produces (SQL):
-  - Table `referral_form_submissions (id, org_id, form_link_id, link_type, assigned_user_id, company_name, contact_name, contact_email, contact_phone, notes, referred_by_text, consent_version, consent_text_snapshot, submitter_ip, submitted_at, triaged_at, triaged_by, outcome, referral_id, deal_id, purged_at)`. Authenticated may SELECT every column except `submitter_ip`, through policy `referral_form_submissions_select` (assignee and everyone above them, or the administrator queue for administrators, same org).
+  - Table `referral_form_submissions (id, org_id, form_link_id, link_type, assigned_user_id, company_name, contact_name, contact_email, contact_phone, notes, referred_by_text, referrer_email, consent_version, consent_text_snapshot, submitter_ip, submitted_at, triaged_at, triaged_by, outcome, referral_id, deal_id, purged_at)`. Authenticated may SELECT every column except `submitter_ip`, through policy `referral_form_submissions_select` (assignee and everyone above them, or the administrator queue for administrators, same org).
   - `public._portal_public_link(p_slug text, p_token text) returns uuid`: private. The active link id, or null when the org is unknown, the portal or public form is off, the org is disabled, the token is unknown or retired, or a user link's user is not in that org.
   - `public.portal_public_form(p_slug text, p_token text) returns table (org_name text, rep_name text, consent_text text, consent_version integer)`: service role only. Zero rows when not available (generic).
-  - `public.portal_public_submit(p_slug text, p_token text, p_company text, p_contact_name text, p_contact_email text, p_contact_phone text, p_notes text, p_referred_by text, p_consent_version integer, p_ip text) returns table (id uuid, ref text, org_name text, logo_url text, primary_color text)`: service role only. Zero rows when not available. Errors `consent_changed`, `invalid_input:<field>` with field one of `companyName`, `contactName`, `email`, `phone`, `notes`, `referredBy`, and `rate_limited` (30 per IP per hour across all orgs).
+  - `public.portal_public_submit(p_slug text, p_token text, p_company text, p_contact_name text, p_contact_email text, p_contact_phone text, p_notes text, p_referred_by text, p_referrer_email text, p_consent_version integer, p_ip text) returns table (id uuid, ref text, org_name text, logo_url text, primary_color text)`: service role only. Zero rows when not available. Errors `consent_changed`, `invalid_input:<field>` with field one of `companyName`, `contactName`, `email`, `phone`, `notes`, `referredBy`, `referrerEmail`, and `rate_limited` (30 per IP per hour across all orgs).
   - `public.portal_public_rate(p_ip text, p_window_minutes integer) returns integer`: service role only. Submissions from that IP across all orgs in the window; 0 for a blank IP.
 
 - [ ] **Step 1: Write the failing DB test**
@@ -738,14 +738,14 @@ end $$;
 -- 1. Privileges (before any role switch).
 do $$ begin
   if not has_function_privilege('service_role', 'public.portal_public_form(text, text)', 'EXECUTE')
-     or not has_function_privilege('service_role', 'public.portal_public_submit(text, text, text, text, text, text, text, text, integer, text)', 'EXECUTE')
+     or not has_function_privilege('service_role', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text)', 'EXECUTE')
      or not has_function_privilege('service_role', 'public.portal_public_rate(text, integer)', 'EXECUTE') then
     raise exception 'service_role should execute the public form functions';
   end if;
   if has_function_privilege('authenticated', 'public.portal_public_form(text, text)', 'EXECUTE')
      or has_function_privilege('anon', 'public.portal_public_form(text, text)', 'EXECUTE')
-     or has_function_privilege('authenticated', 'public.portal_public_submit(text, text, text, text, text, text, text, text, integer, text)', 'EXECUTE')
-     or has_function_privilege('anon', 'public.portal_public_submit(text, text, text, text, text, text, text, text, integer, text)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text)', 'EXECUTE')
      or has_function_privilege('authenticated', 'public.portal_public_rate(text, integer)', 'EXECUTE')
      or has_function_privilege('anon', 'public.portal_public_rate(text, integer)', 'EXECUTE') then
     raise exception 'the public form functions are service role only';
@@ -807,7 +807,7 @@ end $$;
 do $$ declare v record; s referral_form_submissions; n integer; begin
   select * into v from public.portal_public_submit(
     'pf-pub', 'ritaLinkToken0000001', '  Fresh Bakery ', ' Ann Owner ', ' ANN@Bakery.Example ',
-    '(555) 010-0100', ' Needs a new terminal. ', ' Joe at the bank ', 2, '198.51.100.1');
+    '(555) 010-0100', ' Needs a new terminal. ', ' Joe at the bank ', ' Joe@Bank.Example ', 2, '198.51.100.1');
   if v.id is null or v.ref <> 'REF-' || upper(left(v.id::text, 8)) or v.org_name <> 'Public Org' then
     raise exception 'submit returns the id, the reference and the org name, got %', row_to_json(v);
   end if;
@@ -818,6 +818,7 @@ do $$ declare v record; s referral_form_submissions; n integer; begin
      or s.company_name <> 'Fresh Bakery' or s.contact_name <> 'Ann Owner'
      or s.contact_email <> 'ann@bakery.example' or s.contact_phone <> '(555) 010-0100'
      or s.notes <> 'Needs a new terminal.' or s.referred_by_text <> 'Joe at the bank'
+     or s.referrer_email is distinct from 'joe@bank.example'
      or s.consent_version <> 2 or s.consent_text_snapshot <> 'I may share this.'
      or s.submitter_ip <> '198.51.100.1' or s.triaged_at is not null or s.outcome is not null then
     raise exception 'stored submission is wrong: %', row_to_json(s);
@@ -830,21 +831,22 @@ do $$ declare v record; s referral_form_submissions; n integer; begin
   end if;
 
   select * into v from public.portal_public_submit(
-    'pf-pub', 'deeLinkToken00000001', 'Corner Cafe', 'Cal', 'cal@cafe.example', '555 010 0101', 'Wants a quote.', '  ', 2, '198.51.100.2');
+    'pf-pub', 'deeLinkToken00000001', 'Corner Cafe', 'Cal', 'cal@cafe.example', '555 010 0101', 'Wants a quote.', '  ', null, 2, '198.51.100.2');
   select * into s from referral_form_submissions where id = v.id;
-  if s.assigned_user_id is distinct from 'a0580000-0000-0000-0000-000000000002' or s.referred_by_text is not null then
-    raise exception 'a deactivated rep''s link routes to their manager; blank "who referred" is null';
+  if s.assigned_user_id is distinct from 'a0580000-0000-0000-0000-000000000002' or s.referred_by_text is not null
+     or s.referrer_email is not null then
+    raise exception 'a deactivated rep''s link routes to their manager; blank "who referred" and no referrer email are null';
   end if;
   perform set_config('t.s_mia', v.id::text, true);
 
   select * into v from public.portal_public_submit(
-    'pf-pub', 'umaLinkToken00000001', 'Uma Co', 'Una', 'una@uma.example', '555 010 0102', 'Call after 3.', null, 2, '198.51.100.3');
+    'pf-pub', 'umaLinkToken00000001', 'Uma Co', 'Una', 'una@uma.example', '555 010 0102', 'Call after 3.', null, null, 2, '198.51.100.3');
   if (select assigned_user_id from referral_form_submissions where id = v.id) is not null then
     raise exception 'an unplaced rep with no manager routes to the administrator queue';
   end if;
 
   select * into v from public.portal_public_submit(
-    'pf-pub', 'tenantLinkToken00001', 'Tenant Co', 'Tia', 'tia@tenant.example', '555 010 0103', 'Saw the website.', null, 2, '198.51.100.4');
+    'pf-pub', 'tenantLinkToken00001', 'Tenant Co', 'Tia', 'tia@tenant.example', '555 010 0103', 'Saw the website.', null, null, 2, '198.51.100.4');
   select * into s from referral_form_submissions where id = v.id;
   if s.assigned_user_id is not null or s.link_type <> 'tenant' then
     raise exception 'the tenant link goes to the administrator queue';
@@ -853,9 +855,9 @@ do $$ declare v record; s referral_form_submissions; n integer; begin
 
   select count(*) into n from referral_form_submissions;
   if (select count(*) from public.portal_public_submit(
-        'pf-pub', 'retiredLinkToken0001', 'Ghost Co', 'G', 'g@ghost.example', '555 010 0104', 'n', null, 2, '198.51.100.5')) <> 0
+        'pf-pub', 'retiredLinkToken0001', 'Ghost Co', 'G', 'g@ghost.example', '555 010 0104', 'n', null, null, 2, '198.51.100.5')) <> 0
      or (select count(*) from public.portal_public_submit(
-        'pf-pub-b', 'orgBTenantToken00001', 'Ghost Co', 'G', 'g@ghost.example', '555 010 0104', 'n', null, 0, '198.51.100.5')) <> 0 then
+        'pf-pub-b', 'orgBTenantToken00001', 'Ghost Co', 'G', 'g@ghost.example', '555 010 0104', 'n', null, null, 0, '198.51.100.5')) <> 0 then
     raise exception 'an unavailable link answers with nothing';
   end if;
   if (select count(*) from referral_form_submissions) <> n then
@@ -865,17 +867,19 @@ end $$;
 
 -- 4. Field rules and the consent version.
 do $$ begin
-  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','  ','Ann','a@b.example','5550100100','Notes.',null,2,'198.51.100.9')$q$, 'invalid_input:companyName');
-  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001',repeat('x',161),'Ann','a@b.example','5550100100','Notes.',null,2,'198.51.100.9')$q$, 'invalid_input:companyName');
-  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','','a@b.example','5550100100','Notes.',null,2,'198.51.100.9')$q$, 'invalid_input:contactName');
-  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann','nope','5550100100','Notes.',null,2,'198.51.100.9')$q$, 'invalid_input:email');
-  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann',null,'5550100100','Notes.',null,2,'198.51.100.9')$q$, 'invalid_input:email');
-  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann','a@b.example','555-01',  'Notes.',null,2,'198.51.100.9')$q$, 'invalid_input:phone');
-  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann','a@b.example',null,'Notes.',null,2,'198.51.100.9')$q$, 'invalid_input:phone');
-  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann','a@b.example','5550100100','  ',null,2,'198.51.100.9')$q$, 'invalid_input:notes');
-  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann','a@b.example','5550100100',repeat('n',4001),null,2,'198.51.100.9')$q$, 'invalid_input:notes');
-  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann','a@b.example','5550100100','Notes.',repeat('r',161),2,'198.51.100.9')$q$, 'invalid_input:referredBy');
-  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann','a@b.example','5550100100','Notes.',null,1,'198.51.100.9')$q$, 'consent_changed');
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','  ','Ann','a@b.example','5550100100','Notes.',null,null,2,'198.51.100.9')$q$, 'invalid_input:companyName');
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001',repeat('x',161),'Ann','a@b.example','5550100100','Notes.',null,null,2,'198.51.100.9')$q$, 'invalid_input:companyName');
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','','a@b.example','5550100100','Notes.',null,null,2,'198.51.100.9')$q$, 'invalid_input:contactName');
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann','nope','5550100100','Notes.',null,null,2,'198.51.100.9')$q$, 'invalid_input:email');
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann',null,'5550100100','Notes.',null,null,2,'198.51.100.9')$q$, 'invalid_input:email');
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann','a@b.example','555-01',  'Notes.',null,null,2,'198.51.100.9')$q$, 'invalid_input:phone');
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann','a@b.example',null,'Notes.',null,null,2,'198.51.100.9')$q$, 'invalid_input:phone');
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann','a@b.example','5550100100','  ',null,null,2,'198.51.100.9')$q$, 'invalid_input:notes');
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann','a@b.example','5550100100',repeat('n',4001),null,null,2,'198.51.100.9')$q$, 'invalid_input:notes');
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann','a@b.example','5550100100','Notes.',repeat('r',161),null,2,'198.51.100.9')$q$, 'invalid_input:referredBy');
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann','a@b.example','5550100100','Notes.',null,'not-an-email',2,'198.51.100.9')$q$, 'invalid_input:referrerEmail');
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann','a@b.example','5550100100','Notes.',null,repeat('e',250) || '@b.co',2,'198.51.100.9')$q$, 'invalid_input:referrerEmail');
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Co','Ann','a@b.example','5550100100','Notes.',null,null,1,'198.51.100.9')$q$, 'consent_changed');
 end $$;
 
 -- 5. The per-IP count spans every org and only the window.
@@ -903,11 +907,11 @@ end $$;
 do $$ begin
   for i in 1..30 loop
     perform public.portal_public_submit('pf-pub', 'tenantLinkToken00001', 'Cap Co ' || i, 'Cap', 'cap@cap.example',
-                                        '555 010 0110', 'Needs a terminal.', null, 2, '203.0.113.30');
+                                        '555 010 0110', 'Needs a terminal.', null, null, 2, '203.0.113.30');
   end loop;
-  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Cap Co 31','Cap','cap@cap.example','555 010 0110','Needs a terminal.',null,2,'203.0.113.30')$q$, 'rate_limited');
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub','tenantLinkToken00001','Cap Co 31','Cap','cap@cap.example','555 010 0110','Needs a terminal.',null,null,2,'203.0.113.30')$q$, 'rate_limited');
   if (select count(*) from public.portal_public_submit('pf-pub', 'tenantLinkToken00001', 'Other IP Co', 'Oz', 'oz@other.example',
-                                                       '555 010 0111', 'Fine.', null, 2, '203.0.113.31')) <> 1 then
+                                                       '555 010 0111', 'Fine.', null, null, 2, '203.0.113.31')) <> 1 then
     raise exception 'another IP is not limited';
   end if;
 end $$;
@@ -969,6 +973,9 @@ create table referral_form_submissions (
   contact_phone         text check (contact_phone is null or char_length(contact_phone) <= 40),
   notes                 text check (notes is null or char_length(notes) <= 4000),
   referred_by_text      text check (referred_by_text is null or char_length(referred_by_text) <= 160),
+  -- Optional: the sender's own email, the only address the confirmation goes to
+  -- (FR-PORT-33). Personal data: the 2B-2 purge erases it with the contact fields.
+  referrer_email        text check (referrer_email is null or char_length(referrer_email) <= 254),
   -- NFR-PORT-07: the consent wording and version the submitter agreed to.
   consent_version       integer not null,
   consent_text_snapshot text,
@@ -994,7 +1001,7 @@ revoke all on referral_form_submissions from anon, authenticated;
 -- Everything but the submitter's IP address.
 grant select (
   id, org_id, form_link_id, link_type, assigned_user_id, company_name, contact_name,
-  contact_email, contact_phone, notes, referred_by_text, consent_version, consent_text_snapshot,
+  contact_email, contact_phone, notes, referred_by_text, referrer_email, consent_version, consent_text_snapshot,
   submitted_at, triaged_at, triaged_by, outcome, referral_id, deal_id, purged_at
 ) on referral_form_submissions to authenticated;
 
@@ -1068,6 +1075,7 @@ create or replace function public.portal_public_submit(
   p_contact_phone   text,
   p_notes           text,
   p_referred_by     text,
+  p_referrer_email  text,
   p_consent_version integer,
   p_ip              text
 )
@@ -1083,6 +1091,7 @@ declare
   v_phone   text := btrim(coalesce(p_contact_phone, ''));
   v_notes   text := btrim(coalesce(p_notes, ''));
   v_by      text := nullif(btrim(coalesce(p_referred_by, '')), '');
+  v_ref_em  text := nullif(lower(btrim(coalesce(p_referrer_email, ''))), '');
   v_ip      text := left(nullif(btrim(coalesce(p_ip, '')), ''), 64);
   v_id      uuid;
 begin
@@ -1113,6 +1122,9 @@ begin
   if v_by is not null and length(v_by) > 160 then
     raise exception 'invalid_input:referredBy' using errcode = '22023';
   end if;
+  if v_ref_em is not null and (length(v_ref_em) > 254 or position('@' in v_ref_em) < 2) then
+    raise exception 'invalid_input:referrerEmail' using errcode = '22023';
+  end if;
 
   if v_ip is not null then
     perform pg_advisory_xact_lock(hashtextextended('portal_public_ip:' || v_ip, 0));
@@ -1124,12 +1136,12 @@ begin
 
   insert into referral_form_submissions (
     org_id, form_link_id, link_type, assigned_user_id, company_name, contact_name,
-    contact_email, contact_phone, notes, referred_by_text, consent_version,
+    contact_email, contact_phone, notes, referred_by_text, referrer_email, consent_version,
     consent_text_snapshot, submitter_ip
   ) values (
     v_org.id, v_link.id, v_link.link_type,
     case when v_link.link_type = 'user' then public.referral_route_user(v_link.user_id) end,
-    v_company, v_contact, v_email, v_phone, v_notes, v_by, v_org.consent_version,
+    v_company, v_contact, v_email, v_phone, v_notes, v_by, v_ref_em, v_org.consent_version,
     public._portal_consent_text(v_org.consent_text), v_ip
   ) returning referral_form_submissions.id into v_id;
 
@@ -1147,10 +1159,10 @@ revoke execute on function public._portal_public_link(text, text) from public, a
 
 revoke execute on function public.portal_public_form(text, text) from public, anon, authenticated;
 revoke execute on function public.portal_public_rate(text, integer) from public, anon, authenticated;
-revoke execute on function public.portal_public_submit(text, text, text, text, text, text, text, text, integer, text) from public, anon, authenticated;
+revoke execute on function public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text) from public, anon, authenticated;
 grant  execute on function public.portal_public_form(text, text) to service_role;
 grant  execute on function public.portal_public_rate(text, integer) to service_role;
-grant  execute on function public.portal_public_submit(text, text, text, text, text, text, text, text, integer, text) to service_role;
+grant  execute on function public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text) to service_role;
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
@@ -1181,15 +1193,15 @@ EOF
 **Interfaces:**
 - Consumes: `PORTAL_FIELD_LIMITS` from `_shared/portalSubmission.ts`; `timingSafeEquals(a: string, b: string): boolean` from `_shared/cronAuth.ts`.
 - Produces (TS, `_shared/portalPublicForm.ts`):
-  - `export const PUBLIC_FORM_LIMITS: { companyName: 160; contactName: 120; email: 254; phone: 40; notes: 4000; referredBy: 160; formToken: 128; captchaToken: 2048 }`
+  - `export const PUBLIC_FORM_LIMITS: { companyName: 160; contactName: 120; email: 254; phone: 40; notes: 4000; referredBy: 160; referrerEmail: 254; formToken: 128; captchaToken: 2048 }`
   - `export const PUBLIC_FORM_MIN_AGE_MS = 3000`, `PUBLIC_FORM_MAX_AGE_MS = 86400000`, `PUBLIC_SOFT_LIMIT_PER_HOUR = 5`, `PUBLIC_HARD_LIMIT_PER_HOUR = 30`, `PUBLIC_HONEYPOT_FIELD = "website"`
-  - `export type PublicFormField = "companyName" | "contactName" | "email" | "phone" | "notes" | "referredBy" | "consent"`
+  - `export type PublicFormField = "companyName" | "contactName" | "email" | "phone" | "notes" | "referredBy" | "referrerEmail" | "consent"`
   - `export const PUBLIC_FORM_FIELDS: readonly PublicFormField[]`, `export function isPublicFormField(value: unknown): value is PublicFormField`
-  - `export interface PublicSubmission { companyName: string; contactName: string; email: string; phone: string; notes: string; referredBy: string | null; consentVersion: number }`
+  - `export interface PublicSubmission { companyName: string; contactName: string; email: string; phone: string; notes: string; referredBy: string | null; referrerEmail: string | null; consentVersion: number }`
   - `export type PublicSubmissionCheck = { ok: true; value: PublicSubmission } | { ok: false; field: PublicFormField }`
   - `export function validatePublicSubmission(input: Readonly<Record<string, unknown>>): PublicSubmissionCheck`
   - `export interface PortalPublicForm { orgName: string; repName: string | null; consentText: string; consentVersion: number; formToken: string }`
-  - `export type PortalPublicSubmitInput = { companyName: string; contactName: string; email: string; phone: string; notes: string; referredBy: string; consent: boolean; consentVersion: number; formToken: string; website: string; captchaToken?: string }`
+  - `export type PortalPublicSubmitInput = { companyName: string; contactName: string; email: string; phone: string; notes: string; referredBy: string; referrerEmail: string; consent: boolean; consentVersion: number; formToken: string; website: string; captchaToken?: string }`
   - `export interface PortalPublicSubmitted { ref: string }`
   - `export function signFormToken(secret: string, slug: string, token: string, issuedAtMs: number): Promise<string>` (format `<issuedAtMs>.<64 hex>`)
   - `export type FormTokenCheck = "ok" | "too_fast" | "invalid"`
@@ -1226,6 +1238,7 @@ const GOOD = {
   phone: " (555) 010-0100 ",
   notes: " Needs a new terminal. ",
   referredBy: " Joe at the bank ",
+  referrerEmail: " Joe@Bank.Example ",
   consent: true,
   consentVersion: 2,
 };
@@ -1241,6 +1254,7 @@ describe("validatePublicSubmission", () => {
         phone: "(555) 010-0100",
         notes: "Needs a new terminal.",
         referredBy: "Joe at the bank",
+        referrerEmail: "joe@bank.example",
         consentVersion: 2,
       },
     });
@@ -1252,6 +1266,14 @@ describe("validatePublicSubmission", () => {
     const { referredBy: _omit, ...rest } = GOOD;
     const missing = validatePublicSubmission(rest);
     expect(missing.ok && missing.value.referredBy).toBeNull();
+  });
+
+  it("turns a blank or missing referrer email into null (no confirmation email)", () => {
+    const blank = validatePublicSubmission({ ...GOOD, referrerEmail: "  " });
+    expect(blank.ok && blank.value.referrerEmail).toBeNull();
+    const { referrerEmail: _omit, ...rest } = GOOD;
+    const missing = validatePublicSubmission(rest);
+    expect(missing.ok && missing.value.referrerEmail).toBeNull();
   });
 
   it.each([
@@ -1268,6 +1290,9 @@ describe("validatePublicSubmission", () => {
     ["notes", { notes: "  " }],
     ["notes", { notes: "n".repeat(PUBLIC_FORM_LIMITS.notes + 1) }],
     ["referredBy", { referredBy: "r".repeat(PUBLIC_FORM_LIMITS.referredBy + 1) }],
+    ["referrerEmail", { referrerEmail: "not-an-email" }],
+    ["referrerEmail", { referrerEmail: `${"a".repeat(250)}@b.co` }],
+    ["referrerEmail", { referrerEmail: 42 }],
     ["consent", { consent: false }],
     ["consent", { consent: "true" }],
     ["consent", { consentVersion: "2" }],
@@ -1422,6 +1447,7 @@ export const PUBLIC_FORM_LIMITS = {
   phone: PORTAL_FIELD_LIMITS.phone,
   notes: PORTAL_FIELD_LIMITS.notes,
   referredBy: 160,
+  referrerEmail: PORTAL_FIELD_LIMITS.email,
   formToken: 128,
   captchaToken: 2048,
 } as const;
@@ -1437,7 +1463,15 @@ export const PUBLIC_HARD_LIMIT_PER_HOUR = 30;
 /** The honeypot: a field people never see and bots fill. */
 export const PUBLIC_HONEYPOT_FIELD = "website";
 
-export type PublicFormField = "companyName" | "contactName" | "email" | "phone" | "notes" | "referredBy" | "consent";
+export type PublicFormField =
+  | "companyName"
+  | "contactName"
+  | "email"
+  | "phone"
+  | "notes"
+  | "referredBy"
+  | "referrerEmail"
+  | "consent";
 
 export const PUBLIC_FORM_FIELDS: readonly PublicFormField[] = [
   "companyName",
@@ -1446,6 +1480,7 @@ export const PUBLIC_FORM_FIELDS: readonly PublicFormField[] = [
   "phone",
   "notes",
   "referredBy",
+  "referrerEmail",
   "consent",
 ];
 
@@ -1460,6 +1495,8 @@ export interface PublicSubmission {
   phone: string;
   notes: string;
   referredBy: string | null;
+  /** The sender's own email: the only address the confirmation goes to (FR-PORT-33). */
+  referrerEmail: string | null;
   consentVersion: number;
 }
 
@@ -1484,6 +1521,8 @@ export type PortalPublicSubmitInput = {
   phone: string;
   notes: string;
   referredBy: string;
+  /** Optional "Your email": "" for none. */
+  referrerEmail: string;
   consent: boolean;
   consentVersion: number;
   formToken: string;
@@ -1498,7 +1537,7 @@ export interface PortalPublicSubmitted {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** Required: company, contact name, email, phone, notes (FR-PORT-29). Optional: who referred. */
+/** Required: company, contact name, email, phone, notes (FR-PORT-29). Optional: who referred, the sender's own email. */
 export function validatePublicSubmission(input: Readonly<Record<string, unknown>>): PublicSubmissionCheck {
   const text = (key: string): string => {
     const v = input[key];
@@ -1518,6 +1557,12 @@ export function validatePublicSubmission(input: Readonly<Record<string, unknown>
   if (!notes || notes.length > PUBLIC_FORM_LIMITS.notes) return fail("notes");
   const referredBy = text("referredBy");
   if (referredBy.length > PUBLIC_FORM_LIMITS.referredBy) return fail("referredBy");
+  const rawReferrer = input.referrerEmail;
+  if (rawReferrer !== undefined && rawReferrer !== null && typeof rawReferrer !== "string") return fail("referrerEmail");
+  const referrerEmail = text("referrerEmail").toLowerCase();
+  if (referrerEmail && (referrerEmail.length > PUBLIC_FORM_LIMITS.referrerEmail || !EMAIL_RE.test(referrerEmail))) {
+    return fail("referrerEmail");
+  }
 
   if (input.consent !== true) return fail("consent");
   const consentVersion = input.consentVersion;
@@ -1525,7 +1570,16 @@ export function validatePublicSubmission(input: Readonly<Record<string, unknown>
 
   return {
     ok: true,
-    value: { companyName, contactName, email, phone, notes, referredBy: referredBy || null, consentVersion },
+    value: {
+      companyName,
+      contactName,
+      email,
+      phone,
+      notes,
+      referredBy: referredBy || null,
+      referrerEmail: referrerEmail || null,
+      consentVersion,
+    },
   };
 }
 
@@ -1806,9 +1860,10 @@ Append to `supabase/functions/_shared/portalEmail.ts`:
 
 ```ts
 /**
- * Confirmation for a public referral form submission (FR-PORT-33). It goes to
- * the email typed on the form, which anyone can type, so it carries only the
- * ISO's name and the reference: never the company, notes or other text the
+ * Confirmation for a public referral form submission (FR-PORT-33). It goes
+ * only to the optional "Your email" the sender typed (never to the business
+ * contact), which anyone can type, so it carries only the ISO's name and the
+ * reference: never the company, notes or other text the
  * submitter wrote (the form must not become a way to send arbitrary text
  * through the ISO's name). No button: there is nothing for the reader to open.
  */
@@ -1862,6 +1917,7 @@ EOF
     - `export interface PublicFormEnv { fromAddress: string; appEnv: string | null | undefined; emailAllowlist: string; publicFormSigningSecret?: string | null; turnstileSecretKey?: string | null }`
     - `export interface PublicFormDeps { rpc(name: string, args: Record<string, unknown>): Promise<{ data: unknown; error: { message: string } | null }>; sendEmail(msg: { from: string; to: string; subject: string; html: string; text: string }): Promise<void>; background?(p: Promise<unknown>): void; fetch?: FetchLike; now?(): Date; env: PublicFormEnv }`
     - `export function handlePublicFormAction(action: PublicFormAction, slug: string, token: string, body: Record<string, unknown>, ip: string | null, deps: PublicFormDeps): Promise<ActionResult>`
+  - Confirmation email: sent only when `referrerEmail` is non-blank, only to that address; never to `email` (the business contact).
   - Responses: `public_form` (body `{ slug, token }`) answers `{ form: PortalPublicForm }`, `404 { error: "not_available" }`, `503 { error: "not_available" }` (signing secret unset) or `500`. `public_submit` (body `{ slug, token, ...PortalPublicSubmitInput }`) answers `{ submission: { ref } }` (also for too-fast and honeypot), `400 { error: "invalid_body", field }`, `409 { error: "form_expired" }`, `409 { error: "consent_changed" }`, `429 { error: "captcha_required" }`, `429 { error: "rate_limited" }`, `404 { error: "not_available" }`, `503` or `500`.
   - `_shared/portalApi.ts`: `PortalEnv` gains optional `publicFormSigningSecret?: string | null` and `turnstileSecretKey?: string | null`; `PortalApiDeps` gains optional `fetch?(input: string, init: RequestInit): Promise<Response>`; `PortalAction` includes `PublicFormAction`. Neither public action reads `x-portal-session`.
 
@@ -1928,6 +1984,7 @@ describe("handlePublicFormAction", () => {
       phone: "(555) 010-0100",
       notes: "Needs a new terminal.",
       referredBy: "Joe at the bank",
+      referrerEmail: "joe@bank.example",
       consent: true,
       consentVersion: 2,
       formToken: await signFormToken(SECRET, "acme", "tok123", NOW - ageMs),
@@ -1992,7 +2049,7 @@ describe("handlePublicFormAction", () => {
   });
 
   describe("public_submit", () => {
-    it("stores the referral, emails only the ISO name and reference, and answers the reference", async () => {
+    it("stores the referral, emails only the ISO name and reference to the referrer, and answers the reference", async () => {
       const { deps, rpc, sendEmail, background } = setup(routes(0));
       const res = await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", deps);
       expect(res).toEqual({ status: 200, body: { submission: { ref: "REF-1A2B3C4D" } } });
@@ -2006,21 +2063,38 @@ describe("handlePublicFormAction", () => {
         p_contact_phone: "(555) 010-0100",
         p_notes: "Needs a new terminal.",
         p_referred_by: "Joe at the bank",
+        p_referrer_email: "joe@bank.example",
         p_consent_version: 2,
         p_ip: "203.0.113.5",
       });
       expect(sendEmail).toHaveBeenCalledTimes(1);
       expect(background).toHaveBeenCalledTimes(1);
       const msg = sendEmail.mock.calls[0][0];
-      expect(msg.to).toBe("ann@bakery.example");
+      expect(msg.to).toBe("joe@bank.example");
       expect(msg.from).toBe('"Acme ISO" <invites@send.getnavigatr.io>');
       expect(msg.subject).toBe("Acme ISO received your referral");
       expect(msg.text).toContain("REF-1A2B3C4D");
       expect(msg.html).toContain("#0f766e");
-      for (const typed of ["Fresh Bakery", "Ann Owner", "Needs a new terminal.", "Joe at the bank", "555"]) {
+      for (const typed of ["Fresh Bakery", "Ann Owner", "ann@bakery.example", "Needs a new terminal.", "Joe at the bank", "555"]) {
         expect(msg.text).not.toContain(typed);
         expect(msg.html).not.toContain(typed);
       }
+    });
+
+    it("sends no confirmation without a referrer email, and never to the business contact", async () => {
+      const { deps, rpc, sendEmail } = setup(routes(0));
+      const res = await handlePublicFormAction("public_submit", "acme", "tok123", await body({ referrerEmail: "" }), null, deps);
+      expect(res).toEqual({ status: 200, body: { submission: { ref: "REF-1A2B3C4D" } } });
+      expect(rpc).toHaveBeenCalledWith("portal_public_submit", expect.objectContaining({ p_referrer_email: null }));
+      expect(sendEmail).not.toHaveBeenCalled();
+    });
+
+    it("points at a malformed referrer email", async () => {
+      const { deps, rpc } = setup(routes(0));
+      expect(
+        await handlePublicFormAction("public_submit", "acme", "tok123", await body({ referrerEmail: "joe@" }), null, deps),
+      ).toEqual({ status: 400, body: { error: "invalid_body", field: "referrerEmail" } });
+      expect(rpc).not.toHaveBeenCalled();
     });
 
     it("answers a too-fast post or a filled honeypot exactly like success, writing and sending nothing", async () => {
@@ -2111,6 +2185,7 @@ describe("handlePublicFormAction", () => {
         ["rate_limited", { status: 429, body: { error: "rate_limited" } }],
         ["consent_changed", { status: 409, body: { error: "consent_changed" } }],
         ["invalid_input:phone", { status: 400, body: { error: "invalid_body", field: "phone" } }],
+        ["invalid_input:referrerEmail", { status: 400, body: { error: "invalid_body", field: "referrerEmail" } }],
         ["invalid_input:address", { status: 500, body: { error: "server_error" } }],
         ["boom", { status: 500, body: { error: "server_error" } }],
       ];
@@ -2369,6 +2444,7 @@ async function publicSubmit(
     p_contact_phone: s.phone,
     p_notes: s.notes,
     p_referred_by: s.referredBy,
+    p_referrer_email: s.referrerEmail,
     p_consent_version: s.consentVersion,
     p_ip: ip,
   });
@@ -2382,7 +2458,8 @@ async function publicSubmit(
   }
   const row = one<SubmitRow>(data);
   if (!row || !str(row.ref)) return err(404, "not_available");
-  sendConfirmation(s.email, str(row.org_name), str(row.ref), row, deps);
+  // FR-PORT-33 (controller ruling): only to the sender's own optional email, never the business contact.
+  if (s.referrerEmail) sendConfirmation(s.referrerEmail, str(row.org_name), str(row.ref), row, deps);
   return submitted(str(row.ref));
 }
 
@@ -2599,6 +2676,7 @@ Append inside the `describe("portalApi", ...)` block of `apps/app/src/features/p
       phone: "5550100100",
       notes: "Needs a terminal.",
       referredBy: "",
+      referrerEmail: "",
       consent: true,
       consentVersion: 2,
       formToken: "1.ab",
@@ -3161,6 +3239,7 @@ const SENT = {
   phone: "555 010 0100",
   notes: "Needs a new terminal.",
   referredBy: "",
+  referrerEmail: "",
   website: "",
   consent: true,
   consentVersion: 2,
@@ -3221,9 +3300,33 @@ describe("PortalPublicFormPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Thanks for the referral" })).toBeInTheDocument();
     expect(screen.getByText("Acme ISO has it. Your reference is REF-1A2B3C4D.")).toBeInTheDocument();
+    expect(screen.queryByText("A confirmation email is on its way.")).toBeNull();
     expect(api.publicSubmit).toHaveBeenCalledWith("acme", "tok123", { ...SENT, referredBy: "Joe" });
     expect(timing.wait).toHaveBeenCalledWith(expect.any(Number));
     expect(document.body.textContent).not.toMatch(/navigatr/i);
+  });
+
+  it("asks for the sender's own email as optional and promises a confirmation only when given", async () => {
+    const user = userEvent.setup();
+    api.publicSubmit.mockResolvedValue({ ref: "REF-1A2B3C4D" });
+    renderAt();
+    await fill(user);
+    expect(screen.getByText("For a confirmation. Optional.")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Your email (optional)"), "joe@bank.example");
+    await user.click(screen.getByRole("button", { name: "Send referral" }));
+    expect(await screen.findByText("A confirmation email is on its way.")).toBeInTheDocument();
+    expect(api.publicSubmit).toHaveBeenCalledWith("acme", "tok123", { ...SENT, referrerEmail: "joe@bank.example" });
+  });
+
+  it("points at a malformed referrer email before sending", async () => {
+    const user = userEvent.setup();
+    renderAt();
+    await fill(user);
+    await user.type(screen.getByLabelText("Your email (optional)"), "joe@");
+    await user.click(screen.getByRole("button", { name: "Send referral" }));
+    expect(screen.getByText("Check your email address, or leave it blank.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Your email (optional)")).toHaveFocus();
+    expect(api.publicSubmit).not.toHaveBeenCalled();
   });
 
   it("speaks for the ISO when the link has no rep", async () => {
@@ -3409,10 +3512,20 @@ type Draft = {
   phone: string;
   notes: string;
   referredBy: string;
+  referrerEmail: string;
   website: string;
 };
 
-const EMPTY: Draft = { companyName: "", contactName: "", email: "", phone: "", notes: "", referredBy: "", website: "" };
+const EMPTY: Draft = {
+  companyName: "",
+  contactName: "",
+  email: "",
+  phone: "",
+  notes: "",
+  referredBy: "",
+  referrerEmail: "",
+  website: "",
+};
 
 const FIELD_MESSAGES: Record<PublicFormField, string> = {
   companyName: "Add the business name.",
@@ -3421,6 +3534,7 @@ const FIELD_MESSAGES: Record<PublicFormField, string> = {
   phone: "Add a phone number with at least 7 digits.",
   notes: "Add a note about what the business needs.",
   referredBy: "Shorten this to 160 characters or fewer.",
+  referrerEmail: "Check your email address, or leave it blank.",
   consent: "Check the box to confirm you have permission.",
 };
 
@@ -3431,6 +3545,7 @@ const FIELD_IDS: Record<PublicFormField, string> = {
   phone: "pf-phone",
   notes: "pf-notes",
   referredBy: "pf-referred-by",
+  referrerEmail: "pf-referrer-email",
   consent: "pf-consent",
 };
 
@@ -3465,6 +3580,8 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
   const [busy, setBusy] = React.useState(false);
   const [captchaKey, setCaptchaKey] = React.useState<number | null>(null);
   const [sentRef, setSentRef] = React.useState<string | null>(null);
+  // Whether the sender gave their own email, so a confirmation is on its way.
+  const [confirmationSent, setConfirmationSent] = React.useState(false);
   const [gone, setGone] = React.useState(false);
   const inFlight = React.useRef(false);
 
@@ -3507,6 +3624,7 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
       await waitForFormAge(form.dataUpdatedAt);
       const res = await portalApi.publicSubmit(slug, token, input);
       setCaptchaKey(null);
+      setConfirmationSent(check.value.referrerEmail !== null);
       setSentRef(res.ref);
     } catch (err) {
       if (err instanceof PortalApiError && err.status === 404) {
@@ -3561,7 +3679,7 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
         <div className="flex flex-col gap-1">
           <h1 className="text-heading-lg text-text-default">Thanks for the referral</h1>
           <p className="text-body-md text-text-default">{`${brand.orgName} has it. Your reference is ${sentRef}.`}</p>
-          <p className="text-body-sm text-text-muted">A confirmation email is on its way.</p>
+          {confirmationSent && <p className="text-body-sm text-text-muted">A confirmation email is on its way.</p>}
         </div>
         <Button
           variant="secondary"
@@ -3670,6 +3788,23 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
             maxLength={PUBLIC_FORM_LIMITS.referredBy}
             value={draft.referredBy}
             onChange={(e) => update("referredBy")(e.target.value)}
+          />
+        </FormField>
+
+        <FormField
+          label="Your email (optional)"
+          htmlFor={FIELD_IDS.referrerEmail}
+          helper="For a confirmation. Optional."
+          error={errorFor("referrerEmail")}
+        >
+          <Input
+            id={FIELD_IDS.referrerEmail}
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            maxLength={PUBLIC_FORM_LIMITS.referrerEmail}
+            value={draft.referrerEmail}
+            onChange={(e) => update("referrerEmail")(e.target.value)}
           />
         </FormField>
 
@@ -3885,6 +4020,7 @@ describe("public referral form: responses", () => {
       phone: "5550100100",
       notes: `${SECRET} typed by the submitter`,
       referredBy: "Joe",
+      referrerEmail: "joe@bank.example",
       consent: true,
       consentVersion: 2,
       formToken: await signFormToken(SIGNING, "acme", "tok123", NOW - 10_000),
@@ -3921,6 +4057,8 @@ describe("public referral form: responses", () => {
     await post(deps, "public_submit", await submitBody());
     expect(sendEmail).toHaveBeenCalledTimes(1);
     const msg = sendEmail.mock.calls[0][0];
+    expect(msg.to).toBe("joe@bank.example");
+    expect(`${msg.subject} ${msg.text} ${msg.html}`).not.toContain("ann@bakery.example");
     for (const part of [msg.subject, msg.text]) {
       expect(part.match(FORBIDDEN_WORDS)).toBeNull();
       expect(part).not.toContain(SECRET);
@@ -4839,7 +4977,7 @@ git push -u origin HEAD
 gh pr create --base main --title "Partner Portal 2B-1: referral form links and public intake" --body "$(cat <<'EOF'
 ## Summary
 - Every rep has a personal public referral form link, and administrators have one company link (for the website and printed material). The Partners page gets a "Share referral form" button: copy the link, show a QR code, download the QR image, share through the phone, or get a new link (the old one stops working).
-- Anyone with a link can send a business without signing in: company, contact name, email, phone and notes are required, "Who referred this business?" is optional, plus the ISO's consent line. They see a reference number and get a confirmation email that says only the ISO's name and that reference.
+- Anyone with a link can send a business without signing in: company, contact name, email, phone and notes are required, "Who referred this business?" is optional, plus the ISO's consent line. They see a reference number. If they fill in the optional "Your email", that address (never the business's) gets a confirmation email that says only the ISO's name and that reference.
 - Bot protection people never notice: a hidden trap field, a minimum of 3 seconds to fill the form, and a limit of 5 per hour per connection. Past that, a Cloudflare Turnstile check appears (its script loads only then). Past 30 an hour, nothing goes through.
 - A referral through a rep's link goes to that rep, or to their manager if the rep is deactivated or unplaced, or to the administrator queue. The company link goes to the administrator queue. Submissions are stored separately from referrals until 2B-2 adds triage.
 - Nothing about whether the business is already known ever reaches the public form (no duplicate check at intake).
@@ -4857,6 +4995,7 @@ Plan: docs/superpowers/plans/2026-10-18-partner-portal-2b1-public-intake.md
 - The rep's name shows on the form only when the referral will reach that rep.
 - Submissions also store the consent wording and version, like portal referrals.
 - A form left open over 24 hours asks the person to send again instead of silently dropping it; only too-fast and trap-field posts get the silent fake success, and the page waits until it is safe to send.
+- The confirmation goes only to a new optional "Your email" field (stored as referrer_email), never to the business contact; no email given means no confirmation email.
 - The confirmation email has no button, so the shared email template's button became optional (existing emails are byte-identical).
 
 ## Not in this PR
