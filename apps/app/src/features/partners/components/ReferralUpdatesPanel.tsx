@@ -14,7 +14,7 @@ function shortDate(iso: string): string {
 }
 
 export function ReferralUpdatesPanel({ referralId, partnerLabel }: { referralId: string; partnerLabel: string }) {
-  const { data: updates } = useReferralUpdates(referralId);
+  const { data: updates, isError } = useReferralUpdates(referralId);
   const [open, setOpen] = React.useState(false);
 
   return (
@@ -34,6 +34,7 @@ export function ReferralUpdatesPanel({ referralId, partnerLabel }: { referralId:
           </ul>
         </div>
       )}
+      {isError && <p className="text-caption text-text-subtle">Couldn't load shared updates.</p>}
       <Button variant="secondary" className="self-start" onClick={() => setOpen(true)}>
         Share update with partner
       </Button>

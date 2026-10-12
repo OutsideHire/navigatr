@@ -3,10 +3,11 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 
 import { ReferralUpdatesPanel } from "./ReferralUpdatesPanel";
 
+let loadError = false;
 let updates: Array<{ id: string; body: string; publishedAt: string; authorName: string | null }> | undefined = [];
 vi.mock("../hooks/useReferralUpdates", () => ({
   REFERRAL_UPDATE_MAX: 1000,
-  useReferralUpdates: () => ({ data: updates }),
+  useReferralUpdates: () => ({ data: updates, isError: loadError }),
   usePublishReferralUpdate: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 vi.mock("@/components/navigatr", async (orig) => {
@@ -21,6 +22,7 @@ vi.mock("@/components/navigatr", async (orig) => {
 
 beforeEach(() => {
   updates = [];
+  loadError = false;
 });
 
 describe("ReferralUpdatesPanel", () => {
@@ -40,6 +42,14 @@ describe("ReferralUpdatesPanel", () => {
   it("shows only the button when nothing was shared yet", () => {
     render(<ReferralUpdatesPanel referralId="r-1" partnerLabel="Jane" />);
     expect(screen.queryByText("SHARED WITH PARTNER")).toBeNull();
+    expect(screen.getByRole("button", { name: "Share update with partner" })).toBeInTheDocument();
+  });
+
+  it("says so when the updates cannot load, and keeps the button", () => {
+    loadError = true;
+    updates = undefined;
+    render(<ReferralUpdatesPanel referralId="r-1" partnerLabel="Jane" />);
+    expect(screen.getByText("Couldn't load shared updates.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Share update with partner" })).toBeInTheDocument();
   });
 

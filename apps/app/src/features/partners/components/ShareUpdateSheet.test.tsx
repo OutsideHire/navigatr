@@ -4,9 +4,10 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ShareUpdateSheet } from "./ShareUpdateSheet";
 
 const publishMock = vi.fn();
+let pending = false;
 vi.mock("../hooks/useReferralUpdates", () => ({
   REFERRAL_UPDATE_MAX: 1000,
-  usePublishReferralUpdate: () => ({ mutateAsync: publishMock, isPending: false }),
+  usePublishReferralUpdate: () => ({ mutateAsync: publishMock, isPending: pending }),
 }));
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
@@ -23,6 +24,7 @@ vi.mock("@/components/navigatr", async (orig) => {
 
 beforeEach(() => {
   publishMock.mockReset();
+  pending = false;
   toastSuccess.mockReset();
   toastError.mockReset();
 });
@@ -37,7 +39,7 @@ describe("ShareUpdateSheet", () => {
   it("names the partner and says only this text is shared", () => {
     setup();
     expect(screen.getByRole("heading", { name: "Share an update with Jane" })).toBeInTheDocument();
-    expect(screen.getByText("They see this on their referral, word for word. Nothing else you write is shared.")).toBeInTheDocument();
+    expect(screen.getByText("Jane sees this on their referral, word for word, and gets it by email if they have portal access. This is not an internal note.")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("What should the partner know?")).toBeInTheDocument();
   });
 
@@ -57,6 +59,26 @@ describe("ShareUpdateSheet", () => {
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(publishMock).toHaveBeenCalledWith("Demo booked");
     expect(toastSuccess).toHaveBeenCalledWith("Update shared with Jane.");
+  });
+
+  it("ignores a second click while a publish is in flight", async () => {
+    let resolve: (v: string) => void = () => {};
+    publishMock.mockReturnValueOnce(new Promise<string>((r) => { resolve = r; }));
+    setup();
+    fireEvent.change(screen.getByLabelText("Update"), { target: { value: "Demo booked" } });
+    const btn = screen.getByRole("button", { name: "Share update" });
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    expect(publishMock).toHaveBeenCalledTimes(1);
+    resolve("u-1");
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+  });
+
+  it("disables sharing while the publish is pending", () => {
+    pending = true;
+    setup();
+    fireEvent.change(screen.getByLabelText("Update"), { target: { value: "Demo booked" } });
+    expect(screen.getByRole("button", { name: "Share update" })).toBeDisabled();
   });
 
   it("blocks more than 1000 characters", () => {

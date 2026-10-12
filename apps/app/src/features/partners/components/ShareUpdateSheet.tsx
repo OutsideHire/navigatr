@@ -22,6 +22,7 @@ export interface ShareUpdateSheetProps {
 export function ShareUpdateSheet({ open, onOpenChange, referralId, partnerLabel }: ShareUpdateSheetProps) {
   const publish = usePublishReferralUpdate(referralId);
   const [body, setBody] = React.useState("");
+  const inFlight = React.useRef(false);
 
   React.useEffect(() => {
     if (open) setBody("");
@@ -32,13 +33,16 @@ export function ShareUpdateSheet({ open, onOpenChange, referralId, partnerLabel 
   const canShare = length > 0 && !tooLong && !publish.isPending;
 
   const onShare = async () => {
-    if (!canShare) return;
+    if (!canShare || inFlight.current) return;
+    inFlight.current = true;
     try {
       await publish.mutateAsync(body);
       toast.success(`Update shared with ${partnerLabel}.`);
       onOpenChange(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't share the update");
+    } finally {
+      inFlight.current = false;
     }
   };
 
@@ -60,7 +64,7 @@ export function ShareUpdateSheet({ open, onOpenChange, referralId, partnerLabel 
           </div>
 
           <p className="text-body-sm text-text-muted">
-            They see this on their referral, word for word. Nothing else you write is shared.
+            {partnerLabel} sees this on their referral, word for word, and gets it by email if they have portal access. This is not an internal note.
           </p>
 
           <NotesFieldWithMic
