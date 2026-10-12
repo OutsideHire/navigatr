@@ -28,6 +28,7 @@ export function ShareUpdateSheet({ open, onOpenChange, referralId, partnerLabel 
     if (open) setBody("");
   }, [open]);
 
+  const sentenceLabel = partnerLabel.charAt(0).toUpperCase() + partnerLabel.slice(1);
   const length = body.trim().length;
   const tooLong = length > REFERRAL_UPDATE_MAX;
   const canShare = length > 0 && !tooLong && !publish.isPending;
@@ -64,7 +65,7 @@ export function ShareUpdateSheet({ open, onOpenChange, referralId, partnerLabel 
           </div>
 
           <p className="text-body-sm text-text-muted">
-            {partnerLabel} sees this on their referral, word for word, and gets it by email if they have portal access. This is not an internal note.
+            {sentenceLabel} sees this on their referral, word for word, and gets it by email if they have portal access. This is not an internal note.
           </p>
 
           <NotesFieldWithMic

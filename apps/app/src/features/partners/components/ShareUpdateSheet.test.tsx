@@ -29,9 +29,9 @@ beforeEach(() => {
   toastError.mockReset();
 });
 
-function setup() {
+function setup(partnerLabel = "Jane") {
   const onOpenChange = vi.fn();
-  render(<ShareUpdateSheet open onOpenChange={onOpenChange} referralId="r-1" partnerLabel="Jane" />);
+  render(<ShareUpdateSheet open onOpenChange={onOpenChange} referralId="r-1" partnerLabel={partnerLabel} />);
   return onOpenChange;
 }
 
@@ -41,6 +41,11 @@ describe("ShareUpdateSheet", () => {
     expect(screen.getByRole("heading", { name: "Share an update with Jane" })).toBeInTheDocument();
     expect(screen.getByText("Jane sees this on their referral, word for word, and gets it by email if they have portal access. This is not an internal note.")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("What should the partner know?")).toBeInTheDocument();
+  });
+
+  it("starts the explainer with a capital letter when the partner is hidden", () => {
+    setup("the partner");
+    expect(screen.getByText("The partner sees this on their referral, word for word, and gets it by email if they have portal access. This is not an internal note.")).toBeInTheDocument();
   });
 
   it("needs some text", () => {
