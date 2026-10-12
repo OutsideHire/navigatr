@@ -12,7 +12,7 @@
  */
 import { shouldSend } from "./emailGuard.ts";
 import { renderEmail } from "./emailTemplate.ts";
-import { portalFromAddress, portalInviteEmail, portalUrl } from "./portalEmail.ts";
+import { fetchPortalEmailBrand, portalFromAddress, portalInviteEmail, portalUrl } from "./portalEmail.ts";
 import {
   firstRow,
   jsonResponse,
@@ -105,7 +105,9 @@ export async function handlePortalInvite(req: Request, deps: PortalInviteDeps): 
       partnerName: row.partner_name,
       inviteUrl: portalUrl(deps.env.appBaseUrl, row.org_slug, `/invite?token=${encodeURIComponent(row.invite_token)}`),
     });
-    const { html, text } = renderEmail(built);
+    // Phase 1C: the ISO's logo and color. Never throws; a failed lookup sends it name-only.
+    const brand = await fetchPortalEmailBrand(deps.rpc, row.org_slug, row.org_name);
+    const { html, text } = renderEmail({ ...built, brand });
     stage = "send";
     try {
       await deps.sendEmail({

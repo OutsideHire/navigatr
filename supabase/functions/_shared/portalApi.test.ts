@@ -204,6 +204,35 @@ describe("request_code", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
   });
+
+  it("brands the code email with the ISO's logo and color from the issued row", async () => {
+    const branded = ok([
+      {
+        code: "123456",
+        recipient: "jane@example.com",
+        org_name: "Acme ISO",
+        org_slug: "acme",
+        logo_url: "https://cdn.example/acme.png",
+        primary_color: "#0A7C45",
+      },
+    ]);
+    const { deps, rpc, sendEmail } = setup(() => branded);
+    await handlePortalRequest(post("request_code", { slug: "acme", email: "jane@example.com" }), deps);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    const msg = sendEmail.mock.calls[0][0];
+    expect(msg.html).toContain('src="https://cdn.example/acme.png"');
+    expect(msg.html).toContain("background:#0A7C45;");
+    expect(msg.html).toContain("Powered by navigatr");
+    expect(msg.html).not.toContain("icons/icon-192x192.png");
+  });
+
+  it("shows the ISO name in the header when the org has no branding", async () => {
+    const { deps, sendEmail } = setup(() => ISSUED);
+    await handlePortalRequest(post("request_code", { slug: "acme", email: "jane@example.com" }), deps);
+    const msg = sendEmail.mock.calls[0][0];
+    expect(msg.html).toContain("Acme ISO</span>");
+    expect(msg.html).not.toContain("icons/icon-192x192.png");
+  });
 });
 
 describe("verify_code", () => {

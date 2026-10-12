@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderEmail } from "./emailTemplate";
+import { POWERED_BY, brandAccent, readableTextOn, renderEmail } from "./emailTemplate";
 
 describe("renderEmail", () => {
   const base = {
@@ -53,5 +53,81 @@ describe("renderEmail", () => {
     const without = renderEmail(base);
     expect(without.html).not.toContain("482913");
     expect(without.text).not.toContain("Code:");
+  });
+});
+
+describe("renderEmail with a tenant brand", () => {
+  const base = {
+    preheader: "Acme ISO has your referral.",
+    heading: "Acme ISO has your referral",
+    bodyLines: ["Thanks for sending Fresh Bakery."],
+    ctaLabel: "View referral",
+    ctaUrl: "https://app.getnavigatr.io/p/acme/r/r-1",
+    footnote: "You're getting this because you send referrals to Acme ISO.",
+  };
+
+  it("shows the ISO logo instead of the navigatr mark", () => {
+    const { html } = renderEmail({
+      ...base,
+      brand: { name: "Acme ISO", logoUrl: "https://cdn.example/acme.png", primaryColor: null },
+    });
+    expect(html).toContain('src="https://cdn.example/acme.png"');
+    expect(html).toContain('alt="Acme ISO"');
+    expect(html).not.toContain("icons/icon-192x192.png");
+    expect(html).not.toContain(">navigatr</td>");
+  });
+
+  it("shows the ISO name as text when there is no usable logo", () => {
+    for (const logoUrl of [null, "", "javascript:alert(1)", "data:image/png;base64,AAAA"]) {
+      const { html } = renderEmail({ ...base, brand: { name: "Acme <ISO>", logoUrl, primaryColor: null } });
+      expect(html).toContain("Acme &lt;ISO&gt;</span>");
+      expect(html).not.toContain("javascript:");
+      expect(html).not.toContain("data:image");
+      expect(html).not.toContain("icons/icon-192x192.png");
+    }
+  });
+
+  it("uses the ISO color for the button and the footer link, with readable button text", () => {
+    const dark = renderEmail({ ...base, brand: { name: "Acme ISO", logoUrl: null, primaryColor: "#0A7C45" } }).html;
+    expect(dark).toContain("background:#0A7C45;");
+    expect(dark).toContain("color:#0A7C45;word-break:break-all;");
+    expect(dark).toContain("color:#FFFFFF;text-decoration:none;");
+    expect(dark).not.toContain("#5856EB");
+
+    const light = renderEmail({ ...base, brand: { name: "Acme ISO", logoUrl: null, primaryColor: "#FFD500" } }).html;
+    expect(light).toContain("background:#FFD500;");
+    expect(light).toContain("color:#0B1220;text-decoration:none;");
+  });
+
+  it("falls back to the default color for a color that is not #rrggbb", () => {
+    for (const primaryColor of [null, "", "red", "#FFF", "#12345G", "#0A7C45;background:url(x)"]) {
+      const { html } = renderEmail({ ...base, brand: { name: "Acme ISO", logoUrl: null, primaryColor } });
+      expect(html).toContain("background:#5856EB;");
+      expect(html).not.toContain("url(x)");
+    }
+  });
+
+  it("always adds the locked Powered by line, in html and text", () => {
+    const out = renderEmail({ ...base, brand: { name: "Acme ISO", logoUrl: null, primaryColor: null } });
+    expect(out.html).toContain(`>${POWERED_BY}</p>`);
+    expect(out.text.endsWith(`\n\n${POWERED_BY}`)).toBe(true);
+    const plain = renderEmail(base);
+    expect(plain.html).not.toContain(POWERED_BY);
+    expect(plain.text).not.toContain(POWERED_BY);
+  });
+});
+
+describe("brandAccent and readableTextOn", () => {
+  it("accepts only #rrggbb", () => {
+    expect(brandAccent("#0a7c45")).toBe("#0a7c45");
+    expect(brandAccent("0A7C45")).toBe("#5856EB");
+    expect(brandAccent(undefined)).toBe("#5856EB");
+  });
+
+  it("picks the text color with the better contrast", () => {
+    expect(readableTextOn("#5856EB")).toBe("#FFFFFF");
+    expect(readableTextOn("#000000")).toBe("#FFFFFF");
+    expect(readableTextOn("#FFD500")).toBe("#0B1220");
+    expect(readableTextOn("#FFFFFF")).toBe("#0B1220");
   });
 });

@@ -2,14 +2,15 @@
  * Partner portal emails (spec 5.8, the Phase 1A subset): the invite and the
  * sign-in code. Built on the shared branded template (emailTemplate.ts).
  *
- * The ISO's name is the sender display name and appears in the copy. The
- * template header still shows the navigatr mark until per-tenant email
- * branding lands with the referral emails in Phase 1C.
+ * The ISO's name is the sender display name and appears in the copy. Since
+ * Phase 1C every portal email is rendered with the ISO's brand (logo or name,
+ * color, and the locked "Powered by navigatr" line): see portalEmailBrand and
+ * fetchPortalEmailBrand below.
  *
  * Pure, dependency-free TS (no Deno globals) so the app's vitest can verify it,
  * matching the other _shared modules.
  */
-import type { EmailOptions } from "./emailTemplate.ts";
+import type { EmailBrand, EmailOptions } from "./emailTemplate.ts";
 
 export interface PortalEmail extends EmailOptions {
   subject: string;
@@ -65,4 +66,39 @@ export function portalCodeEmail(args: { orgName: string; code: string; signInUrl
     ctaUrl: args.signInUrl,
     footnote: "If you didn't ask for this code, you can ignore this email.",
   };
+}
+
+/**
+ * The email brand for an ISO from a portal_brand or portal_issue_code row.
+ * renderEmail validates the logo URL and the color; this only drops values
+ * that are not non-empty strings.
+ */
+export function portalEmailBrand(
+  orgName: string,
+  row: { logo_url?: unknown; primary_color?: unknown } | null | undefined,
+): EmailBrand {
+  const logo = row?.logo_url;
+  const color = row?.primary_color;
+  return {
+    name: orgName,
+    logoUrl: typeof logo === "string" && logo !== "" ? logo : null,
+    primaryColor: typeof color === "string" && color !== "" ? color : null,
+  };
+}
+
+export type PortalBrandRpc = (
+  name: string,
+  args: Record<string, unknown>,
+) => Promise<{ data: unknown; error: { message: string } | null }>;
+
+/** Look the ISO's brand up by slug. Never throws: a failed lookup sends the email name-only. */
+export async function fetchPortalEmailBrand(rpc: PortalBrandRpc, slug: string, orgName: string): Promise<EmailBrand> {
+  try {
+    const { data, error } = await rpc("portal_brand", { p_slug: slug });
+    if (error) return portalEmailBrand(orgName, null);
+    const row = Array.isArray(data) ? data[0] : data;
+    return portalEmailBrand(orgName, row !== null && typeof row === "object" ? (row as Record<string, unknown>) : null);
+  } catch {
+    return portalEmailBrand(orgName, null);
+  }
 }

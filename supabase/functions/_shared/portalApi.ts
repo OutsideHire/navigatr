@@ -14,7 +14,7 @@
  */
 import { shouldSend } from "./emailGuard.ts";
 import { renderEmail } from "./emailTemplate.ts";
-import { portalCodeEmail, portalFromAddress, portalUrl } from "./portalEmail.ts";
+import { portalCodeEmail, portalEmailBrand, portalFromAddress, portalUrl } from "./portalEmail.ts";
 import { REFERRAL_ACTIONS, handleReferralAction, isReferralAction, type ReferralAction } from "./portalReferralApi.ts";
 
 export const PORTAL_CORS_HEADERS: Record<string, string> = {
@@ -98,6 +98,9 @@ interface IssuedCodeRow {
   recipient: string;
   org_name: string;
   org_slug: string;
+  /** Phase 1C: the ISO's brand rides along so the send needs no second lookup. */
+  logo_url?: string | null;
+  primary_color?: string | null;
 }
 
 interface SessionRow {
@@ -298,7 +301,7 @@ async function requestCode(slug: string, email: string, ip: string | null, deps:
       code: row.code,
       signInUrl: portalUrl(deps.env.appBaseUrl, row.org_slug),
     });
-    const { html, text } = renderEmail(built);
+    const { html, text } = renderEmail({ ...built, brand: portalEmailBrand(row.org_name, row) });
     // Not awaited: response time must not depend on whether an email was sent.
     const sending = deps
       .sendEmail({
