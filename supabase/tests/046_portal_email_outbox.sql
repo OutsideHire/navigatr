@@ -79,6 +79,10 @@ insert into referrals (id, org_id, partner_id, direction, source, status, compan
   ('a046f000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-000000001046', 'a046a000-0000-0000-0000-0000000000e1', 'inbound', 'portal_signed_in', 'submitted', 'RI Co'),
   ('a046f000-0000-0000-0000-0000000000e2', '00000000-0000-0000-0000-000000001046', 'a046a000-0000-0000-0000-0000000000e2', 'inbound', 'portal_signed_in', 'submitted', 'RR Co');
 
+-- The referral fixtures above fire the 1C enqueue triggers (20261014000003); clear
+-- that trigger output so these tests exercise only the hand-built outbox rows.
+delete from portal_email_outbox;
+
 insert into portal_email_outbox (id, org_id, kind, referral_id, portal_user_id, recipient_user_id, payload, dedupe_key, attempts, sent_at) values
   ('a046e000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000001046', 'partner_received',      'a046f000-0000-0000-0000-000000000001', 'a046b000-0000-0000-0000-000000000001', null, '{"label":"Received"}', 't46:e1', 0, null),
   ('a046e000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001046', 'partner_accepted',      'a046f000-0000-0000-0000-000000000002', 'a046b000-0000-0000-0000-000000000002', null, '{"label":"Accepted"}', 't46:e2', 0, null),
