@@ -57,6 +57,8 @@
     "../../supabase/functions/_shared/portalSubmission.ts",
     "../../supabase/functions/_shared/transcribe.ts",
     "../../supabase/functions/_shared/portalReferralApi.ts",
-    "../../supabase/functions/_shared/portalNotifyEmail.ts"
+    "../../supabase/functions/_shared/portalNotifyEmail.ts",
+    "../../supabase/functions/_shared/portalNotify.ts",
+    "../../supabase/functions/_shared/cronAuth.ts"
   ]
 }
