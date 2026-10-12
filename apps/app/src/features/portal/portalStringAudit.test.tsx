@@ -25,6 +25,7 @@ import {
   buildPortalNotifyEmail,
 } from "../../../../../supabase/functions/_shared/portalNotifyEmail";
 import { POWERED_BY, renderEmail } from "../../../../../supabase/functions/_shared/emailTemplate";
+import { buildReferralsCsv } from "./lib/portalCsv";
 
 const api = vi.hoisted(() => ({
   brand: vi.fn(),
@@ -42,6 +43,9 @@ const api = vi.hoisted(() => ({
   getReferral: vi.fn(),
   withdrawReferral: vi.fn(),
   transcribe: vi.fn(),
+  exportReferrals: vi.fn(),
+  getProfile: vi.fn(),
+  updateProfile: vi.fn(),
 }));
 
 vi.mock("./lib/portalApi", async (importOriginal) => {
@@ -69,7 +73,11 @@ const FORBIDDEN_VALUES = new Set([
   "rep_entered",
   "portal_signed_in",
 ]);
-const FORBIDDEN_KEYS = ["status", "stage", "source", "decline_reason", "declineReason", "decline_note", "declineNote"];
+const FORBIDDEN_KEYS = [
+  "status", "stage", "source", "decline_reason", "declineReason", "decline_note", "declineNote", "icp_flags", "icpFlags",
+];
+// Erased personal details a purged row might still carry: never passed through.
+const PURGED_SECRET = "PURGED-PERSONAL";
 const FORBIDDEN_WORDS =
   /\b(submitted|accepted|working|won|lost|declined|withdrawn|contacted|qualified|proposal|duplicate|outside_footprint|outside_icp|insufficient_contact|existing_customer|withdrawn_by_partner|rep_entered|portal_signed_in)\b/;
 const SECRET = "INTERNAL-SECRET";
@@ -97,6 +105,7 @@ function auditJson(body: unknown) {
   expect(keys.filter((k) => FORBIDDEN_KEYS.includes(k))).toEqual([]);
   expect(JSON.stringify(body)).not.toContain(SECRET);
   expect(JSON.stringify(body)).not.toContain(OTHER_PARTNER);
+  expect(JSON.stringify(body)).not.toContain("chain:");
 }
 
 describe("portal_api responses", () => {
@@ -106,10 +115,12 @@ describe("portal_api responses", () => {
     stage: "proposal",
     deal_notes: `${SECRET} deal note`,
     other_partner: OTHER_PARTNER,
+    icp_flags: ["chain:Subway"],
   };
 
-  function deps(status: string, source = "portal_signed_in"): PortalApiDeps {
+  function deps(status: string, source = "portal_signed_in", purged = false): PortalApiDeps {
     const repTyped = source === "rep_entered";
+    const personal = (value: string) => (purged ? `${PURGED_SECRET} ${value}` : value);
     const rpc = vi.fn(async (name: string): Promise<PortalRpcResult> => {
       switch (name) {
         case "portal_session_lookup":
@@ -137,19 +148,20 @@ describe("portal_api responses", () => {
               id: "3f9a21c0-1111-4222-8333-444455556666",
               ref: "REF-3F9A21C0",
               company_name: "Fresh Bakery",
-              contact_name: repTyped ? `${REP_SECRET} contact` : "Ann",
-              contact_email: repTyped ? "rep-secret@internal.example" : "ann@fresh.example",
-              contact_phone: "5550100100",
-              address: repTyped ? `${REP_SECRET} address` : "5 Oak St",
+              contact_name: repTyped ? `${REP_SECRET} contact` : personal("Ann"),
+              contact_email: repTyped ? "rep-secret@internal.example" : personal("ann@fresh.example"),
+              contact_phone: personal("5550100100"),
+              address: repTyped ? `${REP_SECRET} address` : personal("5 Oak St"),
               industry: "restaurant",
               urgency: "this_week",
-              notes: repTyped ? REP_SECRET : "Wants a demo",
+              notes: repTyped ? REP_SECRET : personal("Wants a demo"),
               status,
               source,
               submitted_at: "2026-10-01T12:00:00Z",
               rep_name: "Rita Rep",
               rep_email: "rita@acme.example",
               can_withdraw: status === "submitted",
+              details_removed: purged,
               ...hostile,
             }],
             error: null,
@@ -178,6 +190,25 @@ describe("portal_api responses", () => {
             data: [{ submitted: 7, active: 3, closed_won: 1, not_moving_forward: 2, won_value_cents: 123456, value_visible: false, ...hostile }],
             error: null,
           };
+        case "portal_export_referrals":
+          return {
+            data: INTERNAL_STATUSES.map((s, i) => ({
+              ref: `REF-0000000${i}`,
+              company_name: "Fresh Bakery",
+              status: s,
+              submitted_at: "2026-10-01T12:00:00Z",
+              last_activity_at: "2026-10-02T12:00:00Z",
+              won_value_cents: 123456,
+              value_visible: false,
+              ...hostile,
+            })),
+            error: null,
+          };
+        case "portal_get_profile":
+          return {
+            data: [{ name: "Jane", phone: "5550100100", email: "j@x.co", weekly_digest: true, ...hostile }],
+            error: null,
+          };
         default:
           throw new Error(`unexpected rpc ${name}`);
       }
@@ -189,14 +220,14 @@ describe("portal_api responses", () => {
     };
   }
 
-  async function call(action: string, body: Record<string, unknown>, status: string, source?: string) {
+  async function call(action: string, body: Record<string, unknown>, status: string, source?: string, purged = false) {
     const res = await handlePortalRequest(
       new Request(`https://proj.supabase.co/functions/v1/portal_api/${action}`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-portal-session": "tok" },
         body: JSON.stringify({ slug: "acme", ...body }),
       }),
-      deps(status, source),
+      deps(status, source, purged),
     );
     expect(res.status).toBe(200);
     return res.json();
@@ -225,6 +256,33 @@ describe("portal_api responses", () => {
     const dash = await call("dashboard", {}, "submitted");
     auditJson(dash);
     expect(JSON.stringify(dash)).not.toContain("123456");
+  });
+
+  it.each(INTERNAL_STATUSES)("never passes erased details through for a purged referral that is %s", async (status) => {
+    const body = await call("get_referral", { referralId: "3f9a21c0-1111-4222-8333-444455556666" }, status, "portal_signed_in", true);
+    auditJson(body);
+    expect(JSON.stringify(body)).not.toContain(PURGED_SECRET);
+    expect(body.referral).toMatchObject({ detailsRemoved: true, contactName: null, contactEmail: null, contactPhone: null, address: null, notes: null });
+  });
+
+  it("export leaks nothing internal, and the CSV built from it carries no internal token", async () => {
+    const body = await call("export_referrals", {}, "submitted");
+    auditJson(body);
+    expect(body.export.rows).toHaveLength(INTERNAL_STATUSES.length);
+    expect(body.export.valueVisible).toBe(false);
+    expect(JSON.stringify(body)).not.toContain("123456");
+    const csv = buildReferralsCsv(body.export);
+    expect(csv.match(FORBIDDEN_WORDS)).toBeNull();
+    expect(csv).not.toContain(SECRET);
+    expect(csv).not.toContain(OTHER_PARTNER);
+    expect(csv).not.toContain("chain:");
+    expect(csv).not.toMatch(/navigatr/i);
+  });
+
+  it("profile leaks nothing beyond the four profile fields", async () => {
+    const body = await call("get_profile", {}, "submitted");
+    auditJson(body);
+    expect(Object.keys(body.profile).sort()).toEqual(["email", "name", "phone", "weeklyDigest"]);
   });
 });
 
@@ -382,6 +440,38 @@ describe("rendered portal pages: UI copy audit", () => {
     await user.click(await screen.findByRole("checkbox", { name: "I have permission to share this business's contact details." }));
     await user.click(screen.getByRole("button", { name: "Send referral" }));
     await screen.findByRole("heading", { name: "Referral sent" });
+    expectCleanScreen();
+  });
+
+  it("profile page", async () => {
+    api.getProfile.mockResolvedValue({ name: "Jane", phone: null, email: "jane@example.com", weeklyDigest: true });
+    renderAt("/p/acme/profile");
+    await screen.findByRole("heading", { name: "Your profile" });
+    expectCleanScreen();
+  });
+
+  it("detail page after the contact details were removed", async () => {
+    api.getReferral.mockResolvedValue({
+      id: "r-1",
+      ref: "REF-AAAA0001",
+      companyName: "Fresh Bakery",
+      contactName: null,
+      contactEmail: null,
+      contactPhone: null,
+      address: null,
+      industry: "restaurant",
+      urgency: null,
+      notes: null,
+      label: "Not Moving Forward",
+      submittedAt: "2026-06-01T12:00:00Z",
+      canWithdraw: false,
+      detailsRemoved: true,
+      rep: null,
+      history: [{ label: "Received", at: "2026-06-01T12:00:00Z" }, { label: "Not Moving Forward", at: "2026-06-02T12:00:00Z" }],
+      updates: [],
+    });
+    renderAt("/p/acme/r/r-1");
+    await screen.findByText("Contact details for this referral were removed for privacy.");
     expectCleanScreen();
   });
 });
