@@ -48,11 +48,11 @@ function renderAt(path = "/p/acme/refer/tok123") {
 }
 
 async function fill(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(await screen.findByLabelText("Business name"), "Fresh Bakery");
-  await user.type(screen.getByLabelText("Contact name"), "Ann Owner");
-  await user.type(screen.getByLabelText("Email"), "ann@bakery.example");
-  await user.type(screen.getByLabelText("Phone"), "555 010 0100");
-  await user.type(screen.getByLabelText("Notes"), "Needs a new terminal.");
+  await user.type(await screen.findByLabelText(/^Business name/), "Fresh Bakery");
+  await user.type(screen.getByLabelText(/^Contact name/), "Ann Owner");
+  await user.type(screen.getByLabelText(/^Email/), "ann@bakery.example");
+  await user.type(screen.getByLabelText(/^Phone/), "555 010 0100");
+  await user.type(screen.getByLabelText(/^Notes/), "Needs a new terminal.");
   await user.click(screen.getByRole("checkbox", { name: FORM.consentText }));
 }
 
@@ -175,7 +175,7 @@ describe("PortalPublicFormPage", () => {
     renderAt();
     await user.click(await screen.findByRole("button", { name: "Send referral" }));
     expect(screen.getByText("Add the business name.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Business name")).toHaveFocus();
+    expect(screen.getByLabelText(/^Business name/)).toHaveFocus();
     expect(api.publicSubmit).not.toHaveBeenCalled();
   });
 
@@ -261,7 +261,7 @@ describe("PortalPublicFormPage", () => {
 
   it("does not refetch the form when the window regains focus", async () => {
     renderAt();
-    await screen.findByLabelText("Business name");
+    await screen.findByLabelText(/^Business name/);
     focusManager.setFocused(false);
     focusManager.setFocused(true);
     await Promise.resolve();
@@ -275,7 +275,7 @@ describe("PortalPublicFormPage", () => {
     await fill(user);
     await user.click(screen.getByRole("button", { name: "Send referral" }));
     await user.click(await screen.findByRole("button", { name: "Send another" }));
-    expect(await screen.findByLabelText("Business name")).toHaveValue("");
+    expect(await screen.findByLabelText(/^Business name/)).toHaveValue("");
     await waitFor(() => expect(api.publicForm).toHaveBeenCalledTimes(2));
   });
 
@@ -331,5 +331,76 @@ describe("PortalPublicFormPage", () => {
     await fill(user);
     await user.click(screen.getByRole("button", { name: "Send referral" }));
     expect(await screen.findByText("The check couldn't load. Try again later.")).toBeInTheDocument();
+  });
+  it("marks the five required fields and the consent box, with 44px inputs", async () => {
+    renderAt();
+    await screen.findByLabelText(/^Business name/);
+    for (const name of [/^Business name/, /^Contact name/, /^Email/, /^Phone/, /^Notes/]) {
+      const field = screen.getByLabelText(name);
+      expect(field).toHaveAttribute("aria-required", "true");
+      const label = document.querySelector(`label[for="${field.id}"]`);
+      expect(label?.textContent).toMatch(/\*$/);
+    }
+    for (const name of ["Who referred this business? (optional)", "Your email (optional)"]) {
+      expect(screen.getByLabelText(name)).not.toHaveAttribute("aria-required");
+    }
+    expect(screen.getByRole("checkbox", { name: FORM.consentText })).toHaveAttribute("aria-required", "true");
+    for (const name of [/^Business name/, /^Contact name/, /^Email/, /^Phone/, "Who referred this business? (optional)", "Your email (optional)"]) {
+      expect(screen.getByLabelText(name).parentElement).toHaveClass("h-12");
+    }
+    expect(screen.getByLabelText(/^Notes/).parentElement).toHaveClass("min-h-11");
+  });
+
+  it("moves focus and re-announces the problem again when the same field is still wrong", async () => {
+    const user = userEvent.setup();
+    renderAt();
+    await user.click(await screen.findByRole("button", { name: "Send referral" }));
+    const first = screen.getByText("Add the business name.");
+    expect(screen.getByLabelText(/^Business name/)).toHaveFocus();
+    await user.click(screen.getByLabelText(/^Contact name/));
+    await user.click(screen.getByRole("button", { name: "Send referral" }));
+    expect(screen.getByLabelText(/^Business name/)).toHaveFocus();
+    const second = screen.getByText("Add the business name.");
+    expect(second).toHaveAttribute("role", "alert");
+    expect(second).not.toBe(first);
+  });
+
+  it("keeps a check token that arrives while the form has a problem, and sends it next time", async () => {
+    const user = userEvent.setup();
+    api.publicSubmit
+      .mockRejectedValueOnce(new PortalApiError(429, "captcha_required"))
+      .mockResolvedValueOnce({ ref: "REF-00000003" });
+    let pass: (t: string) => void = () => {};
+    turnstile.render.mockImplementation((_el: HTMLElement, opts: { callback: (t: string) => void }) => {
+      pass = opts.callback;
+      return "w1";
+    });
+    renderAt();
+    await fill(user);
+    await user.click(screen.getByRole("button", { name: "Send referral" }));
+    await waitFor(() => expect(turnstile.render).toHaveBeenCalledTimes(1));
+    await user.clear(screen.getByLabelText(/^Business name/));
+    pass("captcha-early");
+    expect(await screen.findByText("Add the business name.")).toBeInTheDocument();
+    expect(api.publicSubmit).toHaveBeenCalledTimes(1);
+    await user.type(screen.getByLabelText(/^Business name/), "Fresh Bakery");
+    await user.click(screen.getByRole("button", { name: "Send referral" }));
+    expect(await screen.findByRole("heading", { name: "Thanks for the referral" })).toBeInTheDocument();
+    expect(api.publicSubmit).toHaveBeenLastCalledWith("acme", "tok123", { ...SENT, captchaToken: "captcha-early" });
+  });
+
+  it("shows the new consent wording after it changed, unticked", async () => {
+    const user = userEvent.setup();
+    api.publicForm
+      .mockResolvedValueOnce(FORM)
+      .mockResolvedValueOnce({ ...FORM, consentText: "New wording: I may share this and be contacted.", consentVersion: 3 });
+    api.publicSubmit.mockRejectedValueOnce(new PortalApiError(409, "consent_changed"));
+    renderAt();
+    await fill(user);
+    await user.click(screen.getByRole("button", { name: "Send referral" }));
+    expect(await screen.findByText("The wording changed. Please review it and tick the box again.")).toBeInTheDocument();
+    const box = await screen.findByRole("checkbox", { name: "New wording: I may share this and be contacted." });
+    expect(box).not.toBeChecked();
+    expect(screen.queryByRole("checkbox", { name: FORM.consentText })).toBeNull();
   });
 });

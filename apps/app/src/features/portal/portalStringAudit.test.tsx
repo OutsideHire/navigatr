@@ -681,11 +681,11 @@ describe("rendered portal pages: UI copy audit", () => {
     await screen.findByRole("heading", { name: "Refer a business to Acme ISO" });
     expectCleanScreen();
 
-    await user.type(screen.getByLabelText("Business name"), "Fresh Bakery");
-    await user.type(screen.getByLabelText("Contact name"), "Ann");
-    await user.type(screen.getByLabelText("Email"), "ann@bakery.example");
-    await user.type(screen.getByLabelText("Phone"), "5550100100");
-    await user.type(screen.getByLabelText("Notes"), "Needs a terminal.");
+    await user.type(screen.getByLabelText(/^Business name/), "Fresh Bakery");
+    await user.type(screen.getByLabelText(/^Contact name/), "Ann");
+    await user.type(screen.getByLabelText(/^Email/), "ann@bakery.example");
+    await user.type(screen.getByLabelText(/^Phone/), "5550100100");
+    await user.type(screen.getByLabelText(/^Notes/), "Needs a terminal.");
     await user.click(screen.getByRole("checkbox", { name: "I may share this." }));
     await user.click(screen.getByRole("button", { name: "Send referral" }));
     await screen.findByRole("heading", { name: "Thanks for the referral" });
@@ -715,11 +715,11 @@ describe("rendered portal pages: UI copy audit", () => {
       return user;
     }
     async function fillAll(user: ReturnType<typeof userEvent.setup>, referrerEmail = "") {
-      await user.type(screen.getByLabelText("Business name"), "Fresh Bakery");
-      await user.type(screen.getByLabelText("Contact name"), "Ann");
-      await user.type(screen.getByLabelText("Email"), "ann@bakery.example");
-      await user.type(screen.getByLabelText("Phone"), "5550100100");
-      await user.type(screen.getByLabelText("Notes"), "Needs a terminal.");
+      await user.type(screen.getByLabelText(/^Business name/), "Fresh Bakery");
+      await user.type(screen.getByLabelText(/^Contact name/), "Ann");
+      await user.type(screen.getByLabelText(/^Email/), "ann@bakery.example");
+      await user.type(screen.getByLabelText(/^Phone/), "5550100100");
+      await user.type(screen.getByLabelText(/^Notes/), "Needs a terminal.");
       if (referrerEmail) await user.type(screen.getByLabelText("Your email (optional)"), referrerEmail);
       await user.click(screen.getByRole("checkbox", { name: "I may share this." }));
       await user.click(screen.getByRole("button", { name: "Send referral" }));

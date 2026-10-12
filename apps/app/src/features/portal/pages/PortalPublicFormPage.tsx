@@ -107,6 +107,9 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
   // The consent version ticked against, or null when unticked.
   const [consentedVersion, setConsentedVersion] = React.useState<number | null>(null);
   const [fieldError, setFieldError] = React.useState<PublicFormField | null>(null);
+  // Bumped on every client or server field error, so the same field failing twice
+  // still moves focus and re-announces its message.
+  const [fieldErrorSeq, setFieldErrorSeq] = React.useState(0);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [captchaKey, setCaptchaKey] = React.useState<number | null>(null);
@@ -139,13 +142,22 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
 
   React.useEffect(() => {
     if (fieldError !== null) document.getElementById(FIELD_IDS[fieldError])?.focus();
-  }, [fieldError]);
+  }, [fieldError, fieldErrorSeq]);
+
+  const pointAt = (field: PublicFormField) => {
+    setFieldError(field);
+    setFieldErrorSeq((n) => n + 1);
+  };
 
   const update = (key: keyof Draft) => (value: string) => setDraft((d) => ({ ...d, [key]: value }));
   const consent = consentedVersion !== null && consentedVersion === form.data?.consentVersion;
 
   const send = async (fresh?: string) => {
-    if (!form.data || inFlight.current) return;
+    if (!form.data || inFlight.current) {
+      // A check token that arrives now is not lost: the next send uses it.
+      if (fresh) tokenRef.current = fresh;
+      return;
+    }
     const captchaToken = fresh ?? tokenRef.current ?? undefined;
     const input: PortalPublicSubmitInput = {
       ...draft,
@@ -156,7 +168,8 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
     };
     const check = validatePublicSubmission(input);
     if (!check.ok) {
-      setFieldError(check.field);
+      if (fresh) tokenRef.current = fresh;
+      pointAt(check.field);
       setNotice(null);
       return;
     }
@@ -203,7 +216,7 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
         setNotice(CONSENT_CHANGED);
         void form.refetch();
       } else if (err instanceof PortalApiError && err.status === 400 && isPublicFormField(err.field)) {
-        setFieldError(err.field);
+        pointAt(err.field);
       } else if (isPortalTransientError(err)) {
         setNotice(portalReachMessage(brand.orgName));
       } else {
@@ -259,6 +272,8 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
   const data = form.data;
   const errorFor = (field: PublicFormField): string | undefined =>
     fieldError === field ? FIELD_MESSAGES[field] : undefined;
+  // A new key for the field in error remounts its message, so a repeat is announced again.
+  const keyFor = (field: PublicFormField): string => (fieldError === field ? `${field}-err-${fieldErrorSeq}` : field);
   const siteKey = turnstileSiteKey();
 
   return (
@@ -280,8 +295,9 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
           </p>
         </div>
 
-        <FormField label="Business name" htmlFor={FIELD_IDS.companyName} error={errorFor("companyName")}>
+        <FormField label="Business name" key={keyFor("companyName")} htmlFor={FIELD_IDS.companyName} required error={errorFor("companyName")}>
           <Input
+            size="lg"
             id={FIELD_IDS.companyName}
             autoComplete="organization"
             maxLength={PUBLIC_FORM_LIMITS.companyName}
@@ -290,8 +306,9 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
           />
         </FormField>
 
-        <FormField label="Contact name" htmlFor={FIELD_IDS.contactName} error={errorFor("contactName")}>
+        <FormField label="Contact name" key={keyFor("contactName")} htmlFor={FIELD_IDS.contactName} required error={errorFor("contactName")}>
           <Input
+            size="lg"
             id={FIELD_IDS.contactName}
             autoComplete="name"
             maxLength={PUBLIC_FORM_LIMITS.contactName}
@@ -300,8 +317,9 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
           />
         </FormField>
 
-        <FormField label="Email" htmlFor={FIELD_IDS.email} error={errorFor("email")}>
+        <FormField label="Email" key={keyFor("email")} htmlFor={FIELD_IDS.email} required error={errorFor("email")}>
           <Input
+            size="lg"
             id={FIELD_IDS.email}
             type="email"
             inputMode="email"
@@ -312,8 +330,9 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
           />
         </FormField>
 
-        <FormField label="Phone" htmlFor={FIELD_IDS.phone} error={errorFor("phone")}>
+        <FormField label="Phone" key={keyFor("phone")} htmlFor={FIELD_IDS.phone} required error={errorFor("phone")}>
           <Input
+            size="lg"
             id={FIELD_IDS.phone}
             type="tel"
             inputMode="tel"
@@ -324,8 +343,9 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
           />
         </FormField>
 
-        <FormField label="Notes" htmlFor={FIELD_IDS.notes} error={errorFor("notes")}>
+        <FormField label="Notes" key={keyFor("notes")} htmlFor={FIELD_IDS.notes} required error={errorFor("notes")}>
           <Textarea
+            className="min-h-11"
             id={FIELD_IDS.notes}
             rows={4}
             maxLength={PUBLIC_FORM_LIMITS.notes}
@@ -337,10 +357,12 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
 
         <FormField
           label="Who referred this business? (optional)"
+          key={keyFor("referredBy")}
           htmlFor={FIELD_IDS.referredBy}
           error={errorFor("referredBy")}
         >
           <Input
+            size="lg"
             id={FIELD_IDS.referredBy}
             autoComplete="off"
             maxLength={PUBLIC_FORM_LIMITS.referredBy}
@@ -351,11 +373,13 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
 
         <FormField
           label="Your email (optional)"
+          key={keyFor("referrerEmail")}
           htmlFor={FIELD_IDS.referrerEmail}
           helper="For a confirmation. Optional."
           error={errorFor("referrerEmail")}
         >
           <Input
+            size="lg"
             id={FIELD_IDS.referrerEmail}
             type="email"
             inputMode="email"
@@ -384,12 +408,13 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
         <div className="flex flex-col gap-1">
           <Checkbox
             id={FIELD_IDS.consent}
+            required
             checked={consent}
             onCheckedChange={(checked) => setConsentedVersion(checked ? data.consentVersion : null)}
             label={data.consentText}
           />
           {fieldError === "consent" && (
-            <p role="alert" className="text-caption text-status-danger">
+            <p key={fieldErrorSeq} role="alert" className="text-caption text-status-danger">
               {FIELD_MESSAGES.consent}
             </p>
           )}
