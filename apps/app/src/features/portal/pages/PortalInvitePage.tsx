@@ -12,6 +12,7 @@ import { Button, Card, Checkbox } from "@/components/navigatr";
 import { PortalApiError, isPortalTransientError, portalApi, type PortalBrand } from "../lib/portalApi";
 import { PortalRetry, portalReachMessage } from "../components/PortalRetry";
 import { writePortalSession } from "../lib/portalSession";
+import { clearInviteToken, readInviteToken, writeInviteToken } from "../lib/portalInviteToken";
 
 function InviteUnavailable({ slug, orgName }: { slug: string; orgName: string }) {
   const navigate = useNavigate();
@@ -32,8 +33,17 @@ export function PortalInvitePage({ slug, brand }: { slug: string; brand: PortalB
   const navigate = useNavigate();
   const [params] = useSearchParams();
   // Copy the token out of the URL once, then drop it from the address bar and
-  // history so it cannot linger, be shared, or reach telemetry.
-  const [token] = React.useState(() => (params.get("token") ?? "").trim());
+  // history so it cannot linger, be shared, or reach telemetry. It is also kept
+  // in this tab's sessionStorage for this portal only, so reloading the terms
+  // screen does not lose it; accepting clears it.
+  const [token] = React.useState(() => {
+    const fromUrl = (params.get("token") ?? "").trim();
+    if (fromUrl) {
+      writeInviteToken(slug, fromUrl);
+      return fromUrl;
+    }
+    return readInviteToken(slug) ?? "";
+  });
   const urlHasToken = params.has("token");
   React.useEffect(() => {
     if (urlHasToken) navigate(`/p/${slug}/invite`, { replace: true });
@@ -49,6 +59,13 @@ export function PortalInvitePage({ slug, brand }: { slug: string; brand: PortalB
     enabled: token.length > 0,
     retry: false,
   });
+
+  // A stored invite the server says is dead must not be replayed on reload.
+  const inviteInvalid =
+    (invite.isError && !isPortalTransientError(invite.error)) || (invite.isSuccess && !invite.data);
+  React.useEffect(() => {
+    if (inviteInvalid) clearInviteToken(slug);
+  }, [inviteInvalid, slug]);
 
   if (!token) return <InviteUnavailable slug={slug} orgName={brand.orgName} />;
   if (invite.isPending) {
@@ -72,6 +89,7 @@ export function PortalInvitePage({ slug, brand }: { slug: string; brand: PortalB
     try {
       const session = await portalApi.acceptInvite(slug, token, data.termsVersion);
       writePortalSession(slug, session.sessionToken);
+      clearInviteToken(slug);
       navigate(`/p/${slug}/home`, { replace: true });
     } catch (err) {
       if (err instanceof PortalApiError && err.code === "terms_changed") {
