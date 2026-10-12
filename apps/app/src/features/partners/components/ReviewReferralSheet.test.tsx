@@ -52,6 +52,13 @@ const referral: QueueReferral = {
   submittedAt: "2026-10-07T12:00:00Z", assignedUserId: "user-1",
 };
 
+const flagged: QueueReferral = {
+  ...referral,
+  source: "portal_signed_in",
+  duplicateOfReferralId: null,
+  duplicateOfDealId: "d-1",
+};
+
 function renderSheet(onOpenChange = vi.fn()) {
   render(<ReviewReferralSheet referral={referral} open onOpenChange={onOpenChange} />);
   return onOpenChange;
@@ -148,6 +155,58 @@ describe("ReviewReferralSheet", () => {
     expect(merge).toHaveBeenCalledWith({ referralId: "r-1", dealId: "d-1" });
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(toastSuccess).toHaveBeenCalledWith("Merged into the existing deal");
+  });
+
+  it("says when a referral came through the partner portal", () => {
+    render(<ReviewReferralSheet referral={{ ...referral, source: "portal_signed_in" }} open onOpenChange={vi.fn()} />);
+    expect(screen.getByText("Sent through the partner portal")).toBeInTheDocument();
+  });
+
+  it("shows no portal or duplicate cue for a rep-logged referral", () => {
+    render(<ReviewReferralSheet referral={{ ...referral, source: "rep_entered" }} open onOpenChange={vi.fn()} />);
+    expect(screen.queryByText("Sent through the partner portal")).toBeNull();
+    expect(screen.queryByText(/Possible duplicate of an earlier referral/)).toBeNull();
+  });
+
+  it("flags a probable duplicate and preselects Decline (duplicate)", async () => {
+    render(<ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} />);
+    expect(screen.getByText(/Possible duplicate of an earlier referral/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Decline" }));
+    expect(screen.getByLabelText("Pick a reason…")).toHaveValue("duplicate");
+    expect(screen.getByRole("button", { name: "Decline referral" })).toBeEnabled();
+  });
+
+  it("needs a written reason to accept a flagged referral", async () => {
+    accept.mockResolvedValueOnce({ result: "accepted", dealId: "d-9" });
+    const onOpenChange = vi.fn();
+    render(<ReviewReferralSheet referral={flagged} open onOpenChange={onOpenChange} />);
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(accept).not.toHaveBeenCalled();
+    const go = screen.getByRole("button", { name: "Accept anyway" });
+    expect(go).toBeDisabled();
+    await userEvent.type(screen.getByPlaceholderText("Why accept it anyway?"), "Different location");
+    await userEvent.click(go);
+    expect(accept).toHaveBeenCalledWith({ referralId: "r-1", overrideReason: "Different location" });
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it("still lets the rep merge a flagged referral", async () => {
+    merge.mockResolvedValueOnce(undefined);
+    render(<ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Merge" }));
+    await userEvent.selectOptions(screen.getByLabelText("Pick a deal…"), "d-1");
+    await userEvent.click(screen.getByRole("button", { name: "Merge into deal" }));
+    expect(merge).toHaveBeenCalledWith({ referralId: "r-1", dealId: "d-1" });
+  });
+
+  it("switches to Merge when the override finds the business already in the pipeline", async () => {
+    accept.mockResolvedValueOnce({ result: "duplicate", dealId: "d-1" });
+    render(<ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await userEvent.type(screen.getByPlaceholderText("Why accept it anyway?"), "Different location");
+    await userEvent.click(screen.getByRole("button", { name: "Accept anyway" }));
+    expect(await screen.findByRole("button", { name: "Merge into deal" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Pick a deal…")).toHaveValue("d-1");
   });
 
   it("lists only open deals sorted by company name", async () => {

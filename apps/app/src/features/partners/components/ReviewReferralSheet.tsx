@@ -4,6 +4,11 @@
  * (lead source Partner referral, first follow-up task); Decline needs a reason;
  * Merge links it to a deal the rep can already see and leaves that deal's lead
  * source alone. Same Radix Dialog shell as SendReferralSheet.
+ *
+ * Phase 1B: a referral sent through the partner portal says so, and one the
+ * portal flagged as a probable duplicate arrives with Decline (duplicate)
+ * preselected. Accepting it anyway needs a short written reason, which lands in
+ * the referral's history (FR-PORT-47). Merge stays available.
  */
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -16,12 +21,16 @@ import type { QueueReferral } from "../hooks/useReferralQueue";
 import { useAcceptReferral, useDeclineReferral, useMergeReferral } from "../hooks/useReferralMutations";
 import { DECLINE_REASON_OPTIONS, type DeclineReason } from "../lib/referrals";
 
-type Mode = "main" | "decline" | "merge";
+type Mode = "main" | "decline" | "merge" | "override";
 
 export interface ReviewReferralSheetProps {
   referral: QueueReferral | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+}
+
+function isFlagged(referral: QueueReferral | null): boolean {
+  return Boolean(referral && (referral.duplicateOfReferralId || referral.duplicateOfDealId));
 }
 
 export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewReferralSheetProps) {
@@ -36,15 +45,20 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
   const [note, setNote] = React.useState("");
   const [mergeDealId, setMergeDealId] = React.useState("");
   const [dupName, setDupName] = React.useState<string | null>(null);
+  const [overrideReason, setOverrideReason] = React.useState("");
 
   const referralId = referral?.id;
+  const flagged = isFlagged(referral);
 
   React.useEffect(() => {
     setMode("main");
-    setReason("");
+    setReason(isFlagged(referral) ? "duplicate" : "");
     setNote("");
     setMergeDealId("");
     setDupName(null);
+    setOverrideReason("");
+    // Keyed on the referral id so a refetch with a new object does not reset the sheet.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, referralId]);
 
   React.useEffect(() => {
@@ -79,8 +93,10 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
     }
   };
 
-  const onAccept = () => run(async () => {
-    const res = await accept.mutateAsync(referral.id);
+  const onAccept = (reasonText?: string) => run(async () => {
+    const res = await accept.mutateAsync(
+      reasonText ? { referralId: referral.id, overrideReason: reasonText } : referral.id,
+    );
     if (res.result === "accepted") {
       toast.success("Accepted. Deal created.");
       onOpenChange(false);
@@ -135,6 +151,9 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
             <span className="text-caption text-text-muted">
               From {referral.partnerName} · {referral.partnerCompany} · {submitted}
             </span>
+            {referral.source === "portal_signed_in" && (
+              <span className="text-caption text-text-muted">Sent through the partner portal</span>
+            )}
           </div>
 
           <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1">
@@ -150,6 +169,12 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
             <p className="whitespace-pre-wrap text-body-md text-text-muted">{referral.notes}</p>
           )}
 
+          {flagged && (
+            <p className="rounded-radius-sm bg-status-warning-bg p-3 text-body-sm text-status-warning">
+              Possible duplicate of an earlier referral. Decline (duplicate) is preselected; you can still accept or merge.
+            </p>
+          )}
+
           {dupName && (
             <p className="rounded-radius-sm bg-status-warning-bg p-3 text-body-sm text-status-warning">
               Possible duplicate: {dupName} is already in your team's pipeline.
@@ -158,12 +183,38 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
 
           {mode === "main" && (
             <div className="flex flex-col gap-2 pt-1">
-              <Button variant="primary" loading={accept.isPending} disabled={accept.isPending} onClick={onAccept}>
+              <Button
+                variant="primary"
+                loading={accept.isPending}
+                disabled={accept.isPending}
+                onClick={() => (flagged ? setMode("override") : onAccept())}
+              >
                 Accept
               </Button>
               <div className="flex gap-2">
                 <Button variant="secondary" className="flex-1" disabled={accept.isPending} onClick={() => setMode("merge")}>Merge</Button>
                 <Button variant="secondary" className="flex-1" disabled={accept.isPending} onClick={() => setMode("decline")}>Decline</Button>
+              </div>
+            </div>
+          )}
+
+          {mode === "override" && (
+            <div className="flex flex-col gap-3">
+              <p className="text-body-sm text-text-muted">
+                Say why you are accepting a possible duplicate. The reason is saved in the referral's history.
+              </p>
+              <NotesFieldWithMic value={overrideReason} onChange={setOverrideReason} placeholder="Why accept it anyway?" />
+              <div className="flex gap-2">
+                <Button variant="secondary" className="flex-1" onClick={() => setMode("main")}>Back</Button>
+                <Button
+                  variant="primary"
+                  className="flex-1"
+                  disabled={!overrideReason.trim() || accept.isPending}
+                  loading={accept.isPending}
+                  onClick={() => onAccept(overrideReason.trim())}
+                >
+                  Accept anyway
+                </Button>
               </div>
             </div>
           )}
