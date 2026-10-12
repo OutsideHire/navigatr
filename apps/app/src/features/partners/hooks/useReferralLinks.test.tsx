@@ -98,6 +98,24 @@ describe("useRegenerateReferralLink", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ["referral-links"] });
   });
 
+  it("waits for the links to refresh before resolving", async () => {
+    rpcMock.mockResolvedValueOnce({ data: "newtok", error: null });
+    const { wrapper, spy } = setup();
+    let release: () => void = () => {};
+    spy.mockImplementationOnce(() => new Promise<void>((r) => (release = r)));
+    const { result } = renderHook(() => useRegenerateReferralLink(), { wrapper });
+    let settled = false;
+    const done = result.current.mutateAsync({ linkType: "user" }).then((v) => {
+      settled = true;
+      return v;
+    });
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 10));
+    expect(settled).toBe(false);
+    release();
+    await expect(done).resolves.toBe("newtok");
+  });
+
   it("says so when the form is off (the server returns no token)", async () => {
     rpcMock.mockResolvedValueOnce({ data: null, error: null });
     const { wrapper } = setup();

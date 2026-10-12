@@ -73,8 +73,7 @@ export function useRegenerateReferralLink() {
       if (typeof data !== "string" || data === "") throw new Error("The referral form is turned off right now.");
       return data;
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["referral-links"] });
-    },
+    // Returned, so mutateAsync resolves only once both links (and their QR codes) are fresh.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["referral-links"] }),
   });
 }

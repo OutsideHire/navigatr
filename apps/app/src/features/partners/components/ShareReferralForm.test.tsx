@@ -2,22 +2,41 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+type LinkQuery = {
+  data: { enabled: boolean; slug: string; token: string | null } | null | undefined;
+  isError?: boolean;
+  isFetching?: boolean;
+  refetch?: () => unknown;
+};
 const state = vi.hoisted(() => ({
-  mine: { data: { enabled: true, slug: "acme", token: "myTok123" } as { enabled: boolean; slug: string; token: string | null } | null | undefined },
-  tenant: { data: { enabled: true, slug: "acme", token: "coTok456" } as { enabled: boolean; slug: string; token: string | null } | null | undefined },
+  mine: { data: { enabled: true, slug: "acme", token: "myTok123" } } as LinkQuery,
+  tenant: { data: { enabled: true, slug: "acme", token: "coTok456" } } as LinkQuery,
   tenantEnabled: [] as boolean[],
   roleLevel: "sales_professional",
   regenerate: vi.fn(),
   qr: vi.fn(),
+  listeners: new Set<() => void>(),
 }));
-vi.mock("../hooks/useReferralLinks", () => ({
-  useMyReferralLink: () => state.mine,
-  useTenantReferralLink: (enabled: boolean) => {
-    state.tenantEnabled.push(enabled);
-    return enabled ? state.tenant : { data: undefined };
-  },
-  useRegenerateReferralLink: () => ({ mutateAsync: state.regenerate, isPending: false }),
-}));
+/** Swap the user's link the way a refetch after invalidation would, re-rendering every reader. */
+function setMine(next: LinkQuery) {
+  state.mine = next;
+  state.listeners.forEach((l) => l());
+}
+vi.mock("../hooks/useReferralLinks", async () => {
+  const React = await import("react");
+  const subscribe = (l: () => void) => {
+    state.listeners.add(l);
+    return () => state.listeners.delete(l);
+  };
+  return {
+    useMyReferralLink: () => React.useSyncExternalStore(subscribe, () => state.mine),
+    useTenantReferralLink: (enabled: boolean) => {
+      state.tenantEnabled.push(enabled);
+      return enabled ? state.tenant : { data: undefined };
+    },
+    useRegenerateReferralLink: () => ({ mutateAsync: state.regenerate, isPending: false }),
+  };
+});
 vi.mock("@/features/auth/useProfile", () => ({ useProfile: () => ({ data: { role_level: state.roleLevel } }) }));
 vi.mock("../lib/referralQr", () => ({
   referralQrDataUrl: (url: string) => state.qr(url),
@@ -29,7 +48,7 @@ vi.mock("sonner", () => ({
   toast: { success: (...a: unknown[]) => toastSuccess(...a), error: (...a: unknown[]) => toastError(...a) },
 }));
 
-import { ShareReferralFormButton } from "./ShareReferralForm";
+import { ShareReferralFormButton, ShareReferralFormSheet } from "./ShareReferralForm";
 
 const MY_URL = `${window.location.origin}/p/acme/refer/myTok123`;
 const CO_URL = `${window.location.origin}/p/acme/refer/coTok456`;
@@ -115,6 +134,9 @@ describe("ShareReferralFormButton", () => {
 
     share.mockRejectedValueOnce(new DOMException("cancelled", "AbortError"));
     await user.click(screen.getByRole("button", { name: "Share" }));
+    // Let the rejected share settle before asserting that nothing was copied.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(share).toHaveBeenCalledTimes(2);
     expect(writeText).not.toHaveBeenCalled();
 
     share.mockRejectedValueOnce(new Error("not allowed"));
@@ -149,6 +171,7 @@ describe("ShareReferralFormButton", () => {
     state.roleLevel = "administrator";
     state.regenerate.mockResolvedValue("x");
     const user = await open();
+    expect(state.tenantEnabled).toContain(true);
     expect(screen.getByText(CO_URL)).toBeInTheDocument();
     expect(await screen.findByRole("img", { name: "QR code for the company link" })).toBeInTheDocument();
     const downloads = screen.getAllByRole("link", { name: "Download QR" });
@@ -168,5 +191,57 @@ describe("ShareReferralFormButton", () => {
     expect(screen.queryByRole("link", { name: "Download QR" })).toBeNull();
     expect(screen.getByRole("button", { name: "Copy link" })).toBeInTheDocument();
     expect(await screen.findByText("Couldn't make the QR code. The link above still works.")).toBeInTheDocument();
+  });
+
+  it("draws the QR code for the new link after getting a new one", async () => {
+    state.regenerate.mockImplementationOnce(async () => {
+      // What the refetch after invalidation brings back.
+      setMine({ data: { enabled: true, slug: "acme", token: "newTok789" } });
+      return "newTok789";
+    });
+    const user = await open();
+    expect(await screen.findByRole("img", { name: "QR code for your link" })).toHaveAttribute("src", `data:image/png;base64,${btoa(MY_URL)}`);
+    await user.click(screen.getByRole("button", { name: "Get a new link" }));
+    await user.click(screen.getByRole("button", { name: "Get new link" }));
+    const NEW_URL = `${window.location.origin}/p/acme/refer/newTok789`;
+    expect(await screen.findByText(NEW_URL)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: "QR code for your link" })).toHaveAttribute("src", `data:image/png;base64,${btoa(NEW_URL)}`),
+    );
+    expect(state.qr).toHaveBeenLastCalledWith(NEW_URL);
+  });
+
+  it("says the link could not load, with a retry, instead of spinning forever", async () => {
+    const refetch = vi.fn();
+    state.mine = { data: undefined, isError: true, refetch };
+    const user = userEvent.setup();
+    render(<ShareReferralFormSheet open onOpenChange={() => {}} />);
+    expect(screen.getByText("Couldn't load your link. Try again.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Loading")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("says the same when the server returns no link", () => {
+    state.mine = { data: null, refetch: vi.fn() };
+    render(<ShareReferralFormSheet open onOpenChange={() => {}} />);
+    expect(screen.getByText("Couldn't load your link. Try again.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy link" })).toBeNull();
+  });
+
+  it("shows the note in the company section when only that link fails", async () => {
+    state.roleLevel = "administrator";
+    state.tenant = { data: undefined, isError: true, refetch: vi.fn() };
+    await open();
+    expect(screen.getByText(MY_URL)).toBeInTheDocument();
+    const company = screen.getByRole("region", { name: "Company link" });
+    expect(company).toHaveTextContent("Couldn't load your link. Try again.");
+    expect(screen.queryByLabelText("Loading")).toBeNull();
+  });
+
+  it("still shows a spinner while a link is loading", () => {
+    state.mine = { data: undefined, isFetching: true, refetch: vi.fn() };
+    render(<ShareReferralFormSheet open onOpenChange={() => {}} />);
+    expect(screen.getByLabelText("Loading")).toBeInTheDocument();
   });
 });

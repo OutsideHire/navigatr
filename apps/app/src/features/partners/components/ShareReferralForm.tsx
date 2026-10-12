@@ -71,7 +71,7 @@ export function ShareReferralFormSheet({ open, onOpenChange }: { open: boolean; 
             description="Referrals sent through this link come to you."
             confirmText="Get a new link? Your old link and QR code stop working right away."
             linkType="user"
-            link={mine.data}
+            query={mine}
           />
           {isAdmin && (
             <ReferralLinkPanel
@@ -80,7 +80,7 @@ export function ShareReferralFormSheet({ open, onOpenChange }: { open: boolean; 
               description="For your website and printed material. Referrals go to the administrator queue."
               confirmText="Get a new company link? The old link and QR code stop working right away."
               linkType="tenant"
-              link={tenant.data}
+              query={tenant}
             />
           )}
         </Dialog.Content>
@@ -89,21 +89,30 @@ export function ShareReferralFormSheet({ open, onOpenChange }: { open: boolean; 
   );
 }
 
+/** The parts of a link query the panel reads. */
+interface LinkQueryState {
+  data: ReferralLink | null | undefined;
+  isError?: boolean;
+  isFetching?: boolean;
+  refetch?: () => unknown;
+}
+
 function ReferralLinkPanel({
   title,
   qrAlt,
   description,
   confirmText,
   linkType,
-  link,
+  query,
 }: {
   title: string;
   qrAlt: string;
   description: string;
   confirmText: string;
   linkType: ReferralLinkType;
-  link: ReferralLink | null | undefined;
+  query: LinkQueryState;
 }) {
+  const link = query.data;
   const regenerate = useRegenerateReferralLink();
   const [confirming, setConfirming] = React.useState(false);
   const [qr, setQr] = React.useState<string | null>(null);
@@ -167,7 +176,23 @@ function ReferralLinkPanel({
         <h3 className="text-body-strong text-text-default">{title}</h3>
         <p className="text-body-sm text-text-muted">{description}</p>
       </div>
-      {link === undefined && <Loader2 className="h-5 w-5 animate-spin text-text-subtle" aria-label="Loading" />}
+      {!url && (query.isError || link === null || (link !== undefined && !link.token)) ? (
+        // An error or an empty answer: say so, never spin forever.
+        <div className="flex flex-col items-start gap-2">
+          <p className="text-body-sm text-text-muted">Couldn&apos;t load your link. Try again.</p>
+          <Button
+            variant="secondary"
+            size="lg"
+            leadingIcon={RefreshCw}
+            loading={query.isFetching}
+            onClick={() => void query.refetch?.()}
+          >
+            Try again
+          </Button>
+        </div>
+      ) : (
+        link === undefined && <Loader2 className="h-5 w-5 animate-spin text-text-subtle" aria-label="Loading" />
+      )}
       {url && (
         <>
           <p className="break-all rounded-radius-sm bg-surface-sunken p-3 text-body-sm text-text-default">{url}</p>
