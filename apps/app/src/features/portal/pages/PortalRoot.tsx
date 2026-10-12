@@ -15,8 +15,9 @@ import { PortalShell } from "../components/PortalShell";
 import { PortalUnavailablePage } from "./PortalUnavailablePage";
 import { PortalRetry } from "../components/PortalRetry";
 import { PortalSignInPage } from "./PortalSignInPage";
-import { PortalHomePage } from "./PortalHomePage";
 import { PortalInvitePage } from "./PortalInvitePage";
+import { PortalSignedInLayout } from "../components/PortalSignedInLayout";
+import { PortalDashboardPage } from "./PortalDashboardPage";
 
 export function PortalRoot() {
   const { slug: rawSlug = "" } = useParams<{ slug: string }>();
@@ -48,7 +49,9 @@ export function PortalRoot() {
         <Routes>
           <Route index element={<PortalSignInPage slug={slug} brand={data} />} />
           <Route path="invite" element={<PortalInvitePage slug={slug} brand={data} />} />
-          <Route path="home" element={<PortalHomePage slug={slug} brand={data} />} />
+          <Route element={<PortalSignedInLayout slug={slug} brand={data} />}>
+            <Route path="home" element={<PortalDashboardPage />} />
+          </Route>
           <Route path="*" element={<Navigate to={`/p/${slug}`} replace />} />
         </Routes>
       </PortalShell>

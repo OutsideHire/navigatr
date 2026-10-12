@@ -12,7 +12,17 @@ const api = vi.hoisted(() => ({
   acceptInvite: vi.fn(),
   me: vi.fn(),
   signOut: vi.fn(),
+  form: vi.fn(),
+  dupCheck: vi.fn(),
+  submitReferral: vi.fn(),
+  listReferrals: vi.fn(),
+  dashboard: vi.fn(),
+  getReferral: vi.fn(),
+  withdrawReferral: vi.fn(),
+  transcribe: vi.fn(),
 }));
+
+const EMPTY_DASHBOARD = { submitted: 0, active: 0, closedWon: 0, conversionRate: null, valueVisible: false };
 
 vi.mock("../lib/portalApi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/portalApi")>();
@@ -74,6 +84,8 @@ beforeEach(() => {
   Object.defineProperty(window, "localStorage", { value: memoryStorage(), writable: true, configurable: true });
   Object.values(api).forEach((fn) => fn.mockReset());
   api.brand.mockResolvedValue(BRAND);
+  api.dashboard.mockResolvedValue(EMPTY_DASHBOARD);
+  api.listReferrals.mockResolvedValue([]);
   clearPortalSession("acme");
 });
 

@@ -27,7 +27,7 @@ export function PortalRetry({
         <WifiOff className="h-6 w-6" aria-hidden />
       </span>
       <p className="text-body-md text-text-default">{portalReachMessage(name)}</p>
-      <Button variant="secondary" size="md" loading={busy} disabled={busy} onClick={onRetry}>
+      <Button variant="secondary" size="lg" loading={busy} disabled={busy} onClick={onRetry}>
         Try again
       </Button>
     </Card>
