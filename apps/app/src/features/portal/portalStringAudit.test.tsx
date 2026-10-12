@@ -153,6 +153,20 @@ describe("portal_api responses", () => {
             data: INTERNAL_STATUSES.map((s, i) => ({ status: s, created_at: `2026-10-0${i + 1}T12:00:00Z`, actor_type: "user", note: SECRET })),
             error: null,
           };
+        case "portal_referral_updates":
+          return {
+            data: [
+              {
+                body: "Demo booked for Tuesday",
+                published_at: "2026-10-05T12:00:00Z",
+                author_name: "Rita Rep",
+                author_user_id: SECRET,
+                author_email: `${SECRET}@internal.example`,
+                status,
+              },
+            ],
+            error: null,
+          };
         case "portal_dashboard_stats":
           return {
             data: [{ submitted: 7, active: 3, closed_won: 1, not_moving_forward: 2, won_value_cents: 123456, value_visible: false, ...hostile }],
@@ -310,6 +324,9 @@ describe("rendered portal pages: UI copy audit", () => {
       canWithdraw: label === "Received",
       rep: label === "Received" ? null : { name: "Rita Rep", email: "rita@acme.example" },
       history: HISTORY,
+      updates: [
+        { body: "Demo booked for Tuesday", publishedAt: "2026-10-05T12:00:00Z", authorName: label === "Received" ? null : "Rita Rep" },
+      ],
     });
     renderAt("/p/acme/r/r-1");
     await screen.findByRole("heading", { name: "Fresh Bakery" });
@@ -334,6 +351,7 @@ describe("rendered portal pages: UI copy audit", () => {
       canWithdraw: true,
       rep: null,
       history: [{ label: "Received", at: "2026-10-01T12:00:00Z" }],
+      updates: [],
     });
     api.withdrawReferral.mockRejectedValue(new PortalApiError(409, "not_withdrawable"));
     renderAt("/p/acme/r/r-1");

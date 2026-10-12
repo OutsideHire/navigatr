@@ -326,10 +326,23 @@ describe("get_referral", () => {
     { status: "working", created_at: "2026-10-04T12:00:00Z" },
   ];
 
+  const UPDATES = [
+    {
+      body: "Demo booked for Tuesday",
+      published_at: "2026-10-05T12:00:00Z",
+      author_name: "Rita Rep",
+      author_user_id: "author-uuid-secret",
+      author_email: "author-secret@internal.example",
+    },
+    { body: "  Called the owner  ", published_at: "2026-10-04T12:00:00Z", author_name: null },
+    { body: "   ", published_at: "2026-10-03T12:00:00Z", author_name: "Rita Rep" },
+  ];
+
   it("returns the allowlisted detail with labelled, collapsed history", async () => {
     const { deps, rpc } = setup({
       portal_get_referral: () => ok([DETAIL]),
       portal_referral_history: () => ok(HISTORY),
+      portal_referral_updates: () => ok(UPDATES),
     });
     const { status, json } = await call("get_referral", { referralId: RID }, deps);
     expect(rpc).toHaveBeenCalledWith("portal_get_referral", {
@@ -362,10 +375,23 @@ describe("get_referral", () => {
           { label: "Accepted", at: "2026-10-02T12:00:00Z" },
           { label: "In Progress", at: "2026-10-03T12:00:00Z" },
         ],
+        updates: [
+          { body: "Demo booked for Tuesday", publishedAt: "2026-10-05T12:00:00Z", authorName: "Rita Rep" },
+          { body: "Called the owner", publishedAt: "2026-10-04T12:00:00Z", authorName: null },
+        ],
       },
     });
+    expect(rpc).toHaveBeenCalledWith("portal_referral_updates", { p_org: "o-1", p_partner: "p-1", p_referral: RID });
     const text = JSON.stringify(json);
-    for (const leak of ["working", "portal_signed_in", "outside_icp", "internal decline note", "proposal"]) {
+    for (const leak of [
+      "working",
+      "portal_signed_in",
+      "outside_icp",
+      "internal decline note",
+      "proposal",
+      "author-uuid-secret",
+      "author-secret@internal.example",
+    ]) {
       expect(text).not.toContain(leak);
     }
   });
@@ -374,6 +400,7 @@ describe("get_referral", () => {
     const { deps } = setup({
       portal_get_referral: () => ok([{ ...DETAIL, source: "rep_entered", can_withdraw: true }]),
       portal_referral_history: () => ok([]),
+      portal_referral_updates: () => ok([]),
     });
     const { json } = await call("get_referral", { referralId: RID }, deps);
     const detail = json.referral as Record<string, unknown>;
@@ -388,9 +415,34 @@ describe("get_referral", () => {
     const { deps } = setup({
       portal_get_referral: () => ok([{ ...DETAIL, rep_name: null, rep_email: null }]),
       portal_referral_history: () => ok([]),
+      portal_referral_updates: () => ok([]),
     });
     const { json } = await call("get_referral", { referralId: RID }, deps);
     expect((json.referral as Record<string, unknown>).rep).toBeNull();
+  });
+
+  it("returns an empty list when nothing was published", async () => {
+    const { deps } = setup({
+      portal_get_referral: () => ok([DETAIL]),
+      portal_referral_history: () => ok([]),
+      portal_referral_updates: () => ok([]),
+    });
+    const { json } = await call("get_referral", { referralId: RID }, deps);
+    expect((json.referral as Record<string, unknown>).updates).toEqual([]);
+  });
+
+  it("degrades to no updates when they cannot be read, instead of breaking the page", async () => {
+    const { deps } = setup({
+      portal_get_referral: () => ok([DETAIL]),
+      portal_referral_history: () => ok([]),
+      portal_referral_updates: () => fail("boom"),
+    });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { status, json } = await call("get_referral", { referralId: RID }, deps);
+    expect(status).toBe(200);
+    expect((json.referral as Record<string, unknown>).updates).toEqual([]);
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
   });
 
   it("404s a missing, foreign, or malformed id the same way", async () => {

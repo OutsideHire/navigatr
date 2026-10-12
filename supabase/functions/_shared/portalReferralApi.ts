@@ -78,6 +78,14 @@ export interface PortalRepContact {
   email: string | null;
 }
 
+/** An update a rep published on the referral (spec 5.7): the only rep-written text a partner sees. */
+export interface PortalReferralUpdate {
+  body: string;
+  publishedAt: string;
+  /** The rep who wrote it, or null (the page then shows the ISO's name). */
+  authorName: string | null;
+}
+
 export interface PortalReferralDetail {
   id: string;
   ref: string;
@@ -94,6 +102,8 @@ export interface PortalReferralDetail {
   canWithdraw: boolean;
   rep: PortalRepContact | null;
   history: PortalHistoryEntry[];
+  /** Newest first. */
+  updates: PortalReferralUpdate[];
 }
 
 type Body = Record<string, unknown>;
@@ -302,6 +312,22 @@ async function getReferral(scope: ReferralScope, body: Body, ip: string | null, 
     rows<Record<string, unknown>>(hist.data).map((h) => ({ status: h.status, at: h.created_at })),
   );
 
+  // Spec 5.7: referral_updates.body is the only rep-written text a partner ever
+  // sees. Three fields are read; nothing else in the row is passed on. A failed
+  // lookup degrades to no updates (logged) rather than breaking the page.
+  const upd = await deps.rpc("portal_referral_updates", { ...scopeArgs(scope), p_referral: id });
+  const updates: PortalReferralUpdate[] = [];
+  if (upd.error) {
+    console.error("[portal_api] referral_updates failed:", upd.error.message);
+  } else {
+    for (const u of rows<Record<string, unknown>>(upd.data)) {
+      const body = str(u.body).trim();
+      const publishedAt = str(u.published_at);
+      if (!body || !publishedAt) continue;
+      updates.push({ body, publishedAt, authorName: strOrNull(u.author_name) });
+    }
+  }
+
   // Defense in depth: SQL already blanks these for a rep-logged referral; never
   // pass rep-written text through even if a row carried it (spec 6).
   const typed = row.source === "portal_signed_in";
@@ -323,6 +349,7 @@ async function getReferral(scope: ReferralScope, body: Body, ip: string | null, 
     canWithdraw: typed && row.can_withdraw === true,
     rep: repName || repEmail ? { name: repName ?? "", email: repEmail } : null,
     history,
+    updates,
   };
   return ok({ referral: out });
 }
