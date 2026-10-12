@@ -126,3 +126,89 @@ describe("isPortalTransientError", () => {
     }
   });
 });
+
+describe("Phase 1B actions", () => {
+  it("sends the session header and the slug for every referral action", async () => {
+    const { PORTAL_POLL_MS, portalDataKey } = await import("./portalApi");
+    expect(PORTAL_POLL_MS).toBe(30_000);
+    expect(portalDataKey("acme", "tok", "list", "all")).toEqual(["portal", "data", "acme", "tok", "list", "all"]);
+
+    fetchMock.mockResolvedValueOnce(respond(200, { form: { consentText: "I may share.", consentVersion: 2 } }));
+    await expect(portalApi.form("acme", "tok")).resolves.toEqual({ consentText: "I may share.", consentVersion: 2 });
+    expect(lastCall().url).toBe(`${PORTAL_API_URL}/form`);
+    expect(lastCall().headers["x-portal-session"]).toBe("tok");
+    expect(lastCall().body).toEqual({ slug: "acme" });
+
+    fetchMock.mockResolvedValueOnce(respond(200, { probableDuplicate: true }));
+    await expect(portalApi.dupCheck("acme", "tok", { companyName: "Co", phone: "555", address: "" })).resolves.toBe(true);
+    expect(lastCall().body).toEqual({ slug: "acme", companyName: "Co", phone: "555", address: "" });
+
+    fetchMock.mockResolvedValueOnce(respond(200, { referrals: [] }));
+    await expect(portalApi.listReferrals("acme", "tok", "90d")).resolves.toEqual([]);
+    expect(lastCall().url).toBe(`${PORTAL_API_URL}/list_referrals`);
+    expect(lastCall().body).toEqual({ slug: "acme", window: "90d" });
+
+    const dash = { submitted: 1, active: 1, closedWon: 0, conversionRate: null, valueVisible: false };
+    fetchMock.mockResolvedValueOnce(respond(200, { dashboard: dash }));
+    await expect(portalApi.dashboard("acme", "tok", "all")).resolves.toEqual(dash);
+
+    fetchMock.mockResolvedValueOnce(respond(200, { ok: true }));
+    await portalApi.withdrawReferral("acme", "tok", "r-1");
+    expect(lastCall().url).toBe(`${PORTAL_API_URL}/withdraw_referral`);
+    expect(lastCall().body).toEqual({ slug: "acme", referralId: "r-1" });
+
+    fetchMock.mockResolvedValueOnce(respond(200, { text: "Hello" }));
+    await expect(portalApi.transcribe("acme", "tok", "YWJj", "audio/webm")).resolves.toBe("Hello");
+    expect(lastCall().body).toEqual({ slug: "acme", audio: "YWJj", mime: "audio/webm" });
+  });
+
+  it("submits a referral and returns its id and reference", async () => {
+    const input = {
+      companyName: "Fresh Bakery",
+      contactName: "Ann",
+      email: "ann@fresh.example",
+      phone: "",
+      address: "",
+      industry: "restaurant",
+      urgency: "",
+      notes: "",
+      consent: true,
+      consentVersion: 3,
+    };
+    fetchMock.mockResolvedValueOnce(respond(200, { referral: { id: "r-9", ref: "REF-AAAA0009" } }));
+    await expect(portalApi.submitReferral("acme", "tok", input)).resolves.toEqual({ id: "r-9", ref: "REF-AAAA0009" });
+    expect(lastCall().body).toEqual({ slug: "acme", ...input });
+  });
+
+  it("carries the field name of a 400 and recognizes a dead session", async () => {
+    const { isPortalUnauthorized } = await import("./portalApi");
+    fetchMock.mockResolvedValueOnce(respond(400, { error: "invalid_body", field: "emailOrPhone" }));
+    const err = await portalApi
+      .submitReferral("acme", "tok", {
+        companyName: "Co",
+        contactName: "A",
+        email: "",
+        phone: "",
+        address: "",
+        industry: "",
+        urgency: "",
+        notes: "",
+        consent: true,
+        consentVersion: 1,
+      })
+      .catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 400, code: "invalid_body", field: "emailOrPhone" });
+
+    fetchMock.mockResolvedValueOnce(respond(401, { error: "unauthorized" }));
+    const dead = await portalApi.dashboard("acme", "old", "all").catch((e: unknown) => e);
+    expect(isPortalUnauthorized(dead)).toBe(true);
+    expect(isPortalUnauthorized(new PortalApiError(500, "server_error"))).toBe(false);
+    expect(new PortalApiError(500, "server_error").field).toBeNull();
+  });
+
+  it("returns null for a referral that is missing or not the partner's", async () => {
+    fetchMock.mockResolvedValueOnce(respond(404, { error: "not_found" }));
+    await expect(portalApi.getReferral("acme", "tok", "r-x")).resolves.toBeNull();
+    expect(lastCall().body).toEqual({ slug: "acme", referralId: "r-x" });
+  });
+});
