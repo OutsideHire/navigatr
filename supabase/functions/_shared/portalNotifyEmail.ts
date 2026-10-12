@@ -259,12 +259,12 @@ function buildInternal(kind: InternalNotifyKind, p: InternalNotifyPayload, ctx: 
   const more = p.count > shown.length ? [`and ${p.count - shown.length} more`] : [];
   return {
     subject: `${n} ${noun} still waiting for review`,
-    preheader: `Received today and still waiting: ${p.companyNames.slice(0, 3).join(", ")}`,
+    preheader: `Still waiting for review: ${p.companyNames.slice(0, 3).join(", ")}`,
     heading: `${n} ${noun} still waiting`,
-    bodyLines: ["These came in through your referral portal today and have not been reviewed yet:", ...shown, ...more],
+    bodyLines: ["These came in through your referral portal and are still waiting for review:", ...shown, ...more],
     ctaLabel: "Review referrals",
     ctaUrl: url,
-    footnote: "You get this once, at the end of your day, when partner referrals from today are still waiting.",
+    footnote: "You get this at the end of your day when partner referrals are still waiting for review.",
     audience: "internal",
     orgName: null,
     replyTo: null,

@@ -214,10 +214,14 @@ describe("internal emails", () => {
   it("nudge: one line per business, singular and plural", () => {
     const one = buildPortalNotifyEmail("internal_nudge", { appUrlPath: "/partners", companyNames: ["Fresh Bakery"], count: 1 }, CTX)!;
     expect(one.subject).toBe("1 partner referral still waiting for review");
+    expect(one.preheader).toBe("Still waiting for review: Fresh Bakery");
     expect(one.bodyLines).toEqual([
-      "These came in through your referral portal today and have not been reviewed yet:",
+      "These came in through your referral portal and are still waiting for review:",
       "- Fresh Bakery",
     ]);
+    expect(one.footnote).toBe("You get this at the end of your day when partner referrals are still waiting for review.");
+    // The digest can cover up to 7 days, so it never says "today".
+    expect([one.preheader, ...one.bodyLines, one.footnote].join(" ")).not.toMatch(/today/i);
     const two = buildPortalNotifyEmail("internal_nudge", { appUrlPath: "/partners", companyNames: ["A Co", "B Co"], count: 2 }, CTX)!;
     expect(two.subject).toBe("2 partner referrals still waiting for review");
     expect(two.ctaUrl).toBe(`${BASE}/partners`);
