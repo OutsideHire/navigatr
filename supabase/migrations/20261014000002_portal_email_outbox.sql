@@ -36,7 +36,7 @@ create table portal_email_outbox (
   failed_at         timestamptz,
   constraint portal_email_outbox_recipient_check check (
     case when kind like 'partner\_%'
-         then portal_user_id is not null and recipient_user_id is null
+         then portal_user_id is not null and recipient_user_id is null and referral_id is not null
          else recipient_user_id is not null and portal_user_id is null
     end)
 );
@@ -73,13 +73,15 @@ begin
         and s.created_at < now() - interval '48 hours'
         for update skip locked);
 
-  -- Exhausted: all 5 attempts used without a settle, so give up for good.
+  -- Exhausted: all 5 attempts used without a settle, so give up for good. The
+  -- 10 minute lease leaves an in-flight fifth attempt alone so it can still settle.
   update portal_email_outbox o
      set failed_at = now()
    where o.id in (
      select s.id from portal_email_outbox s
       where s.sent_at is null and s.dropped_at is null and s.failed_at is null
         and s.attempts >= 5
+        and (s.last_attempt_at is null or s.last_attempt_at < now() - interval '10 minutes')
         for update skip locked);
 
   return query
@@ -98,15 +100,18 @@ begin
     select o.id,
            case when o.portal_user_id is not null then pu.email else pr.email end as email,
            case when o.portal_user_id is not null
-                then coalesce(pu.status = 'active' and org.portal_enabled and not org.is_disabled, false)
+                then coalesce(pu.status = 'active' and org.portal_enabled and not org.is_disabled
+                              and rf.id is not null and rf.org_id = o.org_id
+                              and rf.partner_id = pu.partner_id, false)
                 else coalesce(pr.deactivated_at is null and pr.org_id = o.org_id
-                              and pr.email is not null and not org.is_disabled, false)
+                              and nullif(btrim(pr.email), '') is not null and not org.is_disabled, false)
            end as live
       from portal_email_outbox o
       join picked k on k.id = o.id
       join organizations org on org.id = o.org_id
       left join portal_users pu on pu.id = o.portal_user_id and pu.org_id = o.org_id
       left join profiles pr on pr.id = o.recipient_user_id
+      left join referrals rf on rf.id = o.referral_id
   ),
   dropped as (
     update portal_email_outbox o
