@@ -27,8 +27,9 @@ export interface EmailOptions {
   heading: string;
   /** One paragraph per line. */
   bodyLines: string[];
-  ctaLabel: string;
-  ctaUrl: string;
+  /** Button label. A button shows only when both ctaLabel and ctaUrl are set. */
+  ctaLabel?: string;
+  ctaUrl?: string;
   /** Small footer note (expiry / "wasn't you"). */
   footnote: string;
   /** Optional prominent one-time code (magic-link / OTP), shown above the button. */
@@ -111,6 +112,24 @@ export function renderEmail(opts: EmailOptions): { html: string; text: string } 
       </td></tr>`
     : "";
 
+  const ctaLabel = opts.ctaLabel ?? "";
+  const ctaUrl = opts.ctaUrl ?? "";
+  const hasCta = ctaLabel !== "" && ctaUrl !== "";
+  const ctaHtml = hasCta
+    ? `<tr><td style="padding:8px 28px 4px;">
+        <table role="presentation" cellpadding="0" cellspacing="0">
+          <tr><td style="background:${accent};border-radius:9px;">
+            <a href="${escUrl(ctaUrl)}" style="display:inline-block;padding:12px 22px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;color:${accentText};text-decoration:none;">${esc(ctaLabel)}</a>
+          </td></tr>
+        </table>
+      </td></tr>`
+    : "";
+  const ctaFallback = hasCta
+    ? `<br>
+          Button not working? Paste this link into your browser:<br>
+          <a href="${escUrl(ctaUrl)}" style="color:${accent};word-break:break-all;">${escUrl(ctaUrl)}</a>`
+    : "";
+
   const html = `<!doctype html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="color-scheme" content="light only"></head>
@@ -127,18 +146,10 @@ export function renderEmail(opts: EmailOptions): { html: string; text: string } 
         <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${bodyHtml}</div>
       </td></tr>
       ${codeHtml}
-      <tr><td style="padding:8px 28px 4px;">
-        <table role="presentation" cellpadding="0" cellspacing="0">
-          <tr><td style="background:${accent};border-radius:9px;">
-            <a href="${escUrl(opts.ctaUrl)}" style="display:inline-block;padding:12px 22px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;color:${accentText};text-decoration:none;">${esc(opts.ctaLabel)}</a>
-          </td></tr>
-        </table>
-      </td></tr>
+      ${ctaHtml}
       <tr><td style="padding:18px 28px 24px;">
         <p style="margin:16px 0 0;border-top:1px solid #F0F2F7;padding-top:14px;font-size:11.5px;line-height:1.5;color:#8089A1;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
-          ${esc(opts.footnote)}<br>
-          Button not working? Paste this link into your browser:<br>
-          <a href="${escUrl(opts.ctaUrl)}" style="color:${accent};word-break:break-all;">${escUrl(opts.ctaUrl)}</a>
+          ${esc(opts.footnote)}${ctaFallback}
         </p>${poweredBy}
       </td></tr>
     </table>
@@ -151,8 +162,7 @@ export function renderEmail(opts: EmailOptions): { html: string; text: string } 
     "",
     ...opts.bodyLines,
     ...(opts.code ? ["", `Code: ${opts.code}`] : []),
-    "",
-    `${opts.ctaLabel}: ${opts.ctaUrl}`,
+    ...(hasCta ? ["", `${ctaLabel}: ${ctaUrl}`] : []),
     "",
     opts.footnote,
     ...(brand ? ["", POWERED_BY] : []),

@@ -25,6 +25,7 @@ import {
   buildPortalNotifyEmail,
 } from "../../../../../supabase/functions/_shared/portalNotifyEmail";
 import { POWERED_BY, renderEmail } from "../../../../../supabase/functions/_shared/emailTemplate";
+import { PUBLIC_HONEYPOT_FIELD, signFormToken } from "../../../../../supabase/functions/_shared/portalPublicForm";
 import { buildReferralsCsv } from "./lib/portalCsv";
 
 const api = vi.hoisted(() => ({
@@ -46,12 +47,21 @@ const api = vi.hoisted(() => ({
   exportReferrals: vi.fn(),
   getProfile: vi.fn(),
   updateProfile: vi.fn(),
+  publicForm: vi.fn(),
+  publicSubmit: vi.fn(),
 }));
 
 vi.mock("./lib/portalApi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./lib/portalApi")>();
   return { ...actual, portalApi: api };
 });
+
+const turnstile = vi.hoisted(() => ({ siteKey: "1x00000000000000000000AA", render: vi.fn() }));
+vi.mock("./lib/turnstile", () => ({
+  turnstileSiteKey: () => turnstile.siteKey,
+  loadTurnstile: () => Promise.resolve({ render: turnstile.render, remove: vi.fn() }),
+}));
+vi.mock("./lib/publicFormTiming", () => ({ waitForFormAge: () => Promise.resolve() }));
 
 import { PortalRoot } from "./pages/PortalRoot";
 import { PortalApiError } from "./lib/portalApi";
@@ -72,6 +82,7 @@ const FORBIDDEN_VALUES = new Set([
   "withdrawn_by_partner",
   "rep_entered",
   "portal_signed_in",
+  "portal_public",
 ]);
 const FORBIDDEN_KEYS = [
   "status", "stage", "source", "decline_reason", "declineReason", "decline_note", "declineNote", "icp_flags", "icpFlags",
@@ -79,7 +90,7 @@ const FORBIDDEN_KEYS = [
 // Erased personal details a purged row might still carry: never passed through.
 const PURGED_SECRET = "PURGED-PERSONAL";
 const FORBIDDEN_WORDS =
-  /\b(submitted|accepted|working|won|lost|declined|withdrawn|contacted|qualified|proposal|duplicate|outside_footprint|outside_icp|insufficient_contact|existing_customer|withdrawn_by_partner|rep_entered|portal_signed_in)\b/;
+  /\b(submitted|accepted|working|won|lost|declined|withdrawn|contacted|qualified|proposal|duplicate|outside_footprint|outside_icp|insufficient_contact|existing_customer|withdrawn_by_partner|rep_entered|portal_signed_in|portal_public)\b/;
 const SECRET = "INTERNAL-SECRET";
 // The injected name of a different partner: no response may ever carry it.
 const OTHER_PARTNER = "Someone Else CPA";
@@ -329,6 +340,187 @@ function expectCleanScreen() {
   expect(text).not.toMatch(/navigatr/i);
 }
 
+describe("public referral form: responses", () => {
+  const NOW = Date.parse("2026-10-18T12:00:00Z");
+  const SIGNING = "audit-signing-secret";
+  const REP_EMAIL = "rita@acme.example";
+
+  function publicDeps() {
+    const rpc = vi.fn(async (name: string): Promise<PortalRpcResult> => {
+      switch (name) {
+        case "portal_public_form":
+          return {
+            data: [
+              {
+                org_name: "Acme ISO",
+                rep_name: "Rita Rep",
+                consent_text: "I may share this.",
+                consent_version: 2,
+                org_id: SECRET,
+                user_id: SECRET,
+                token: SECRET,
+                email: REP_EMAIL,
+                status: "submitted",
+              },
+            ],
+            error: null,
+          };
+        case "portal_public_counts":
+          return { data: [{ ip_count: 0, link_count: 0 }], error: null };
+        case "portal_public_submit":
+          return {
+            data: [
+              {
+                id: "1a2b3c4d-0000-0000-0000-000000000000",
+                ref: "REF-1A2B3C4D",
+                org_name: "Acme ISO",
+                logo_url: null,
+                primary_color: null,
+                assigned_user_id: SECRET,
+                source: "portal_public",
+              },
+            ],
+            error: null,
+          };
+        default:
+          return { data: null, error: { message: `unexpected ${name}` } };
+      }
+    });
+    const sendEmail = vi.fn(async (_msg: { from: string; to: string; subject: string; html: string; text: string }) => {});
+    const deps: PortalApiDeps = {
+      rpc,
+      sendEmail,
+      now: () => new Date(NOW),
+      env: {
+        appBaseUrl: "https://app.getnavigatr.io",
+        fromAddress: "navigatr <invites@send.getnavigatr.io>",
+        appEnv: "production",
+        emailAllowlist: "",
+        publicFormSigningSecret: SIGNING,
+      },
+    };
+    return { deps, sendEmail };
+  }
+
+  async function post(deps: PortalApiDeps, action: string, body: Record<string, unknown>) {
+    const res = await handlePortalRequest(
+      new Request(`https://proj.supabase.co/functions/v1/portal_api/${action}`, {
+        method: "POST",
+        // A resolvable client IP: with none the server counts the caller as over the soft limit.
+        headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.7" },
+        body: JSON.stringify(body),
+      }),
+      deps,
+    );
+    return { status: res.status, json: (await res.json()) as Record<string, unknown> };
+  }
+
+  async function submitBody(overrides: Record<string, unknown> = {}) {
+    return {
+      slug: "acme",
+      token: "tok123",
+      companyName: "Fresh Bakery",
+      contactName: "Ann Owner",
+      email: "ann@bakery.example",
+      phone: "5550100100",
+      notes: `${SECRET} typed by the submitter`,
+      referredBy: "Joe",
+      referrerEmail: "joe@bank.example",
+      consent: true,
+      consentVersion: 2,
+      formToken: await signFormToken(SIGNING, "acme", "tok123", NOW - 10_000),
+      [PUBLIC_HONEYPOT_FIELD]: "",
+      ...overrides,
+    };
+  }
+
+  it("the form carries only the five public fields", async () => {
+    const { status, json } = await post(publicDeps().deps, "public_form", { slug: "acme", token: "tok123" });
+    expect(status).toBe(200);
+    auditJson(json);
+    const form = json.form as Record<string, unknown>;
+    expect(Object.keys(form).sort()).toEqual(["consentText", "consentVersion", "formToken", "orgName", "repName"]);
+    expect(JSON.stringify(json)).not.toContain(REP_EMAIL);
+    expect(JSON.stringify(json)).not.toMatch(/navigatr/i);
+  });
+
+  it("a real submission and a bot's look exactly alike", async () => {
+    const real = await post(publicDeps().deps, "public_submit", await submitBody());
+    const bot = await post(publicDeps().deps, "public_submit", await submitBody({ [PUBLIC_HONEYPOT_FIELD]: "spam" }));
+    for (const r of [real, bot]) {
+      expect(r.status).toBe(200);
+      auditJson(r.json);
+      expect(Object.keys(r.json)).toEqual(["submission"]);
+      expect(Object.keys(r.json.submission as object)).toEqual(["ref"]);
+      expect((r.json.submission as { ref: string }).ref).toMatch(/^REF-[0-9A-F]{8}$/);
+      expect(JSON.stringify(r.json)).not.toMatch(/navigatr/i);
+    }
+  });
+
+  it("every refusal body is clean too", async () => {
+    const stale = await submitBody({ formToken: "garbage" });
+    const cases: Array<[string, () => Promise<{ status: number; json: Record<string, unknown> }>, number, string]> = [
+      ["captcha_required", async () => {
+        const d = publicDeps().deps;
+        const rpc = d.rpc;
+        d.rpc = async (name, args) => (name === "portal_public_counts" ? { data: [{ ip_count: 5, link_count: 0 }], error: null } : rpc(name, args));
+        return post(d, "public_submit", await submitBody());
+      }, 429, "captcha_required"],
+      ["rate_limited", async () => {
+        const d = publicDeps().deps;
+        const rpc = d.rpc;
+        d.rpc = async (name, args) => (name === "portal_public_counts" ? { data: [{ ip_count: 30, link_count: 0 }], error: null } : rpc(name, args));
+        return post(d, "public_submit", await submitBody());
+      }, 429, "rate_limited"],
+      ["form_expired", () => post(publicDeps().deps, "public_submit", stale), 409, "form_expired"],
+      ["consent_changed", async () => {
+        const d = publicDeps().deps;
+        const rpc = d.rpc;
+        d.rpc = async (name, args) => (name === "portal_public_submit" ? { data: null, error: { message: `consent_changed ${SECRET}` } } : rpc(name, args));
+        return post(d, "public_submit", await submitBody());
+      }, 409, "consent_changed"],
+      ["invalid_body", async () => post(publicDeps().deps, "public_submit", await submitBody({ email: "nope" })), 400, "invalid_body"],
+    ];
+    for (const [name, run, status, error] of cases) {
+      const r = await run();
+      expect(r.status, name).toBe(status);
+      expect(r.json.error, name).toBe(error);
+      auditJson(r.json);
+      expect(JSON.stringify(r.json)).not.toMatch(/navigatr/i);
+    }
+    const bad = await (cases[4][1]());
+    expect(bad.json.field).toBe("email");
+  });
+
+  it("the confirmation email carries no submitter text and no internal word", async () => {
+    const { deps, sendEmail } = publicDeps();
+    await post(deps, "public_submit", await submitBody());
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    const msg = sendEmail.mock.calls[0][0];
+    expect(msg.to).toBe("joe@bank.example");
+    expect(`${msg.subject} ${msg.text} ${msg.html}`).not.toContain("ann@bakery.example");
+    for (const part of [msg.subject, msg.text]) {
+      expect(part.match(FORBIDDEN_WORDS)).toBeNull();
+      expect(part).not.toContain(SECRET);
+      expect(part).not.toContain("Fresh Bakery");
+      expect(part).not.toContain("Joe");
+    }
+    const visibleHtml = msg.html
+      .replace(/<style[\s\S]*?<\/style>/g, "")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/https?:\/\/\S+/g, "")
+      .replace(/Button not working\?/g, "")
+      .replace(POWERED_BY, "");
+    expect(visibleHtml.match(FORBIDDEN_WORDS)).toBeNull();
+    for (const typed of ["Fresh Bakery", "Ann Owner", "Ann", "Joe", "Needs", "typed by the submitter"]) {
+      expect(msg.html).not.toContain(typed);
+    }
+    expect(msg.html).not.toContain(SECRET);
+    expect(msg.html.replace(POWERED_BY, "")).not.toMatch(/navigatr/i);
+    expect(msg.text.replace(POWERED_BY, "")).not.toMatch(/navigatr/i);
+  });
+});
+
 describe("rendered portal pages: UI copy audit", () => {
   const HISTORY = PORTAL_LABELS.map((label, i) => ({ label, at: `2026-10-0${i + 1}T12:00:00Z` }));
 
@@ -473,6 +665,152 @@ describe("rendered portal pages: UI copy audit", () => {
     renderAt("/p/acme/r/r-1");
     await screen.findByText("Contact details for this referral were removed for privacy.");
     expectCleanScreen();
+  });
+
+  it("public form and its confirmation", async () => {
+    const user = userEvent.setup();
+    api.publicForm.mockResolvedValue({
+      orgName: "Acme ISO",
+      repName: "Rita Rep",
+      consentText: "I may share this.",
+      consentVersion: 2,
+      formToken: "1.ab",
+    });
+    api.publicSubmit.mockResolvedValue({ ref: "REF-1A2B3C4D" });
+    renderAt("/p/acme/refer/tok123");
+    await screen.findByRole("heading", { name: "Refer a business to Acme ISO" });
+    expectCleanScreen();
+
+    await user.type(screen.getByLabelText(/^Business name/), "Fresh Bakery");
+    await user.type(screen.getByLabelText(/^Contact name/), "Ann");
+    await user.type(screen.getByLabelText(/^Email/), "ann@bakery.example");
+    await user.type(screen.getByLabelText(/^Phone/), "5550100100");
+    await user.type(screen.getByLabelText(/^Notes/), "Needs a terminal.");
+    await user.click(screen.getByRole("checkbox", { name: "I may share this." }));
+    await user.click(screen.getByRole("button", { name: "Send referral" }));
+    await screen.findByRole("heading", { name: "Thanks for the referral" });
+    expectCleanScreen();
+  });
+
+  it("public form unavailable", async () => {
+    api.publicForm.mockResolvedValue(null);
+    renderAt("/p/acme/refer/old");
+    await screen.findByRole("heading", { name: "This form isn't available" });
+    expectCleanScreen();
+  });
+
+  describe("public form: every page state", () => {
+    const FORM = { orgName: "Acme ISO", repName: "Rita Rep", consentText: "I may share this.", consentVersion: 2, formToken: "1.ab" };
+
+    beforeEach(() => {
+      turnstile.siteKey = "1x00000000000000000000AA";
+      turnstile.render.mockReset();
+      api.publicForm.mockResolvedValue(FORM);
+    });
+
+    async function open() {
+      const user = userEvent.setup();
+      renderAt("/p/acme/refer/tok123");
+      await screen.findByRole("heading", { name: "Refer a business to Acme ISO" });
+      return user;
+    }
+    async function fillAll(user: ReturnType<typeof userEvent.setup>, referrerEmail = "") {
+      await user.type(screen.getByLabelText(/^Business name/), "Fresh Bakery");
+      await user.type(screen.getByLabelText(/^Contact name/), "Ann");
+      await user.type(screen.getByLabelText(/^Email/), "ann@bakery.example");
+      await user.type(screen.getByLabelText(/^Phone/), "5550100100");
+      await user.type(screen.getByLabelText(/^Notes/), "Needs a terminal.");
+      if (referrerEmail) await user.type(screen.getByLabelText("Your email (optional)"), referrerEmail);
+      await user.click(screen.getByRole("checkbox", { name: "I may share this." }));
+      await user.click(screen.getByRole("button", { name: "Send referral" }));
+    }
+
+    it("a field error from client validation", async () => {
+      const user = await open();
+      await user.click(screen.getByRole("button", { name: "Send referral" }));
+      await screen.findByText("Add the business name.");
+      expectCleanScreen();
+    });
+
+    it("the server naming a field", async () => {
+      api.publicSubmit.mockRejectedValue(new PortalApiError(400, "invalid_body", "email"));
+      const user = await open();
+      await fillAll(user);
+      await screen.findByText("Add a valid email address.");
+      expectCleanScreen();
+    });
+
+    it("the check prompt, then the failed check notice", async () => {
+      api.publicSubmit.mockRejectedValue(new PortalApiError(429, "captcha_required"));
+      turnstile.render.mockImplementation((_el: HTMLElement, opts: { callback: (t: string) => void }) => {
+        queueMicrotask(() => opts.callback("captcha-bad"));
+        return "w1";
+      });
+      const user = await open();
+      await fillAll(user);
+      await screen.findByText("That check didn't go through. Try it again.");
+      expectCleanScreen();
+    });
+
+    it("the check prompt while the check is shown", async () => {
+      api.publicSubmit.mockRejectedValue(new PortalApiError(429, "captcha_required"));
+      turnstile.render.mockImplementation(() => "w1");
+      const user = await open();
+      await fillAll(user);
+      await screen.findByText("One more step. Complete the check below and we'll send it.");
+      expectCleanScreen();
+    });
+
+    it("the check could not load", async () => {
+      api.publicSubmit.mockRejectedValue(new PortalApiError(429, "captcha_required"));
+      turnstile.render.mockImplementation(() => {
+        throw new Error("boom");
+      });
+      const user = await open();
+      await fillAll(user);
+      await screen.findByText("The check couldn't load. Try again later.");
+      expectCleanScreen();
+    });
+
+    it("the rate limit notice", async () => {
+      api.publicSubmit.mockRejectedValue(new PortalApiError(429, "rate_limited"));
+      const user = await open();
+      await fillAll(user);
+      await screen.findByText("Too many referrals from this connection right now. Try again later.");
+      expectCleanScreen();
+    });
+
+    it("the page expired and the wording changed notices", async () => {
+      api.publicSubmit.mockRejectedValueOnce(new PortalApiError(409, "form_expired"));
+      const user = await open();
+      await fillAll(user);
+      await screen.findByText("This page was open for a while. Check your details and send it again.");
+      expectCleanScreen();
+    });
+
+    it("a load error with the retry button", async () => {
+      api.publicForm.mockReset();
+      api.publicForm.mockRejectedValue(new PortalApiError(0, "network_error"));
+      renderAt("/p/acme/refer/tok123");
+      await screen.findByRole("button", { name: "Try again" });
+      expectCleanScreen();
+    });
+
+    it("a send failure alert", async () => {
+      api.publicSubmit.mockRejectedValue(new PortalApiError(400, "invalid_body"));
+      const user = await open();
+      await fillAll(user);
+      await screen.findByText("We couldn't send that. Try again.");
+      expectCleanScreen();
+    });
+
+    it("thanks, with a referrer email, promises a confirmation", async () => {
+      api.publicSubmit.mockResolvedValue({ ref: "REF-1A2B3C4D" });
+      const user = await open();
+      await fillAll(user, "joe@bank.example");
+      await screen.findByText("A confirmation email is on its way.");
+      expectCleanScreen();
+    });
   });
 });
 

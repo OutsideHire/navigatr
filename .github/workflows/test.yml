@@ -29,6 +29,15 @@ jobs:
       - name: Production build
         run: pnpm --filter app build
 
+      # The public referral form imports field rules from supabase/functions/_shared.
+      # This fails if server-only code (the Turnstile siteverify call) or the names
+      # of server secrets ever reach the browser bundle.
+      - name: Client bundle has no server-only code
+        run: node tools/check-client-bundle.mjs apps/app/dist
+
+      - name: Client bundle checker's own tests
+        run: node --test tools/check-client-bundle.test.mjs
+
       # Covers apps/app/src plus supabase/functions/_shared, which
       # vitest.config.ts includes. There is deliberately no separate `deno test`
       # job: those tests import vitest and would fail under Deno.

@@ -27,6 +27,7 @@ import {
   SlidersHorizontal,
   Users,
 } from "lucide-react";
+import { ShareReferralFormButton } from "../components/ShareReferralForm";
 
 import { cn } from "@/lib/utils";
 import {
@@ -347,7 +348,10 @@ export function PartnersPage() {
         {/* Header */}
         <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex flex-col gap-1">
-            <h1 className="text-heading-lg text-text-default">Partners</h1>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h1 className="text-heading-lg text-text-default">Partners</h1>
+              <ShareReferralFormButton />
+            </div>
             <p className="text-body-md text-text-muted">
               {scopePhrase("partners", scope.scopeLevel, scopeName)} ·{" "}
               {scoped.length} {scoped.length === 1 ? "partner" : "partners"}

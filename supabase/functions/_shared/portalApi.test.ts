@@ -10,6 +10,7 @@ import {
   type PortalEnv,
   type PortalRpcResult,
 } from "./portalApi";
+import { signFormToken } from "./portalPublicForm";
 
 const ENV: PortalEnv = {
   appBaseUrl: "https://app.getnavigatr.io/",
@@ -55,6 +56,13 @@ describe("helpers", () => {
   it("takes the first x-forwarded-for entry as the client IP", () => {
     expect(clientIp(new Headers({ "x-forwarded-for": " 203.0.113.5 , 10.0.0.1" }))).toBe("203.0.113.5");
     expect(clientIp(new Headers())).toBeNull();
+  });
+
+  it("prefers cf-connecting-ip, then x-real-ip, then x-forwarded-for, trimmed and capped at 64", () => {
+    expect(clientIp(new Headers({ "cf-connecting-ip": " 198.51.100.7 ", "x-real-ip": "1.1.1.1", "x-forwarded-for": "6.6.6.6" }))).toBe("198.51.100.7");
+    expect(clientIp(new Headers({ "x-real-ip": " 192.0.2.9 ", "x-forwarded-for": "6.6.6.6" }))).toBe("192.0.2.9");
+    expect(clientIp(new Headers({ "cf-connecting-ip": "  ", "x-forwarded-for": "6.6.6.6" }))).toBe("6.6.6.6");
+    expect(clientIp(new Headers({ "cf-connecting-ip": "a".repeat(100) }))).toHaveLength(64);
   });
 
   it("reads the session only from x-portal-session", () => {
@@ -582,5 +590,56 @@ describe("length caps (checked before any rpc)", () => {
     const args = rpc.mock.calls[0][1];
     expect(String(args.p_ip)).toHaveLength(64);
     expect(String(args.p_user_agent)).toHaveLength(512);
+  });
+});
+
+describe("public form routes", () => {
+  const PUBLIC_ENV: PortalEnv = { ...ENV, publicFormSigningSecret: "s" };
+
+  it("serves the public form with no session header", async () => {
+    const { deps, rpc } = setup(
+      () => ok([{ org_name: "Acme ISO", rep_name: null, consent_text: "I may share this.", consent_version: 1 }]),
+      PUBLIC_ENV,
+    );
+    const res = await handlePortalRequest(post("public_form", { slug: " ACME ", token: " tok123 " }), deps);
+    expect(res.status).toBe(200);
+    expect(rpc).toHaveBeenCalledWith("portal_public_form", { p_slug: "acme", p_token: "tok123" });
+    expect(rpc).not.toHaveBeenCalledWith("portal_session_lookup", expect.anything());
+  });
+
+  it("answers not_available for an oversized token without a database call", async () => {
+    const { deps, rpc } = setup(() => ok([]), PUBLIC_ENV);
+    const res = await handlePortalRequest(post("public_form", { slug: "acme", token: "t".repeat(129) }), deps);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not_available" });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("routes public_submit and answers form_expired for a missing form token, before any rpc", async () => {
+    const { deps, rpc } = setup(() => ok(0), PUBLIC_ENV);
+    const res = await handlePortalRequest(
+      post("public_submit", { slug: "acme", token: "tok123", formToken: "" }, { "x-forwarded-for": "203.0.113.5" }),
+      deps,
+    );
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "form_expired" });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("sends the counts rpc the IP from cf-connecting-ip, not a forged x-forwarded-for", async () => {
+    const NOW = Date.parse("2026-10-18T12:00:00Z");
+    const { deps, rpc } = setup(() => ok([{ ip_count: 0, link_count: 0 }]), PUBLIC_ENV);
+    deps.now = () => new Date(NOW);
+    const formToken = await signFormToken("s", "acme", "tok123", NOW - 10_000);
+    const res = await handlePortalRequest(
+      post(
+        "public_submit",
+        { slug: "acme", token: "tok123", formToken, companyName: "Co", contactName: "A", email: "a@b.example", phone: "5550100100", notes: "n", consent: true, consentVersion: 1, website: "" },
+        { "cf-connecting-ip": "198.51.100.7", "x-forwarded-for": "6.6.6.6, 203.0.113.5" },
+      ),
+      deps,
+    );
+    expect(rpc).toHaveBeenNthCalledWith(1, "portal_public_counts", { p_slug: "acme", p_token: "tok123", p_ip: "198.51.100.7" });
+    expect(res.status).toBe(404);
   });
 });

@@ -25,6 +25,11 @@ import type {
 } from "../../../../../../supabase/functions/_shared/portalReferralApi";
 import type { PortalWindow } from "../../../../../../supabase/functions/_shared/portalSubmission";
 import type { PortalProfile, PortalProfileInput } from "../../../../../../supabase/functions/_shared/portalProfile";
+import type {
+  PortalPublicForm,
+  PortalPublicSubmitInput,
+  PortalPublicSubmitted,
+} from "../../../../../../supabase/functions/_shared/portalPublicForm";
 
 export type {
   PortalDashboard,
@@ -37,6 +42,9 @@ export type {
   PortalWindow,
   PortalProfile,
   PortalProfileInput,
+  PortalPublicForm,
+  PortalPublicSubmitInput,
+  PortalPublicSubmitted,
 };
 
 const SUPABASE_URL: string = import.meta.env.VITE_SUPABASE_URL || "http://localhost:54321";
@@ -133,7 +141,9 @@ type PortalAction =
   | "transcribe"
   | "export_referrals"
   | "get_profile"
-  | "update_profile";
+  | "update_profile"
+  | "public_form"
+  | "public_submit";
 
 async function portalRequest<T>(
   action: PortalAction,
@@ -284,6 +294,18 @@ export const portalApi = {
   updateProfile(slug: string, sessionToken: string, input: PortalProfileInput): Promise<PortalProfile> {
     return portalRequest<{ profile: PortalProfile }>("update_profile", { slug, ...input }, sessionToken).then(
       (r) => r.profile,
+    );
+  },
+
+  /** Phase 2B-1 public referral form: no session. Null when the link is not available (404). */
+  publicForm(slug: string, token: string): Promise<PortalPublicForm | null> {
+    return portalRequest<{ form: PortalPublicForm }>("public_form", { slug, token }).then((r) => r.form, nullOn(404));
+  },
+
+  /** Throws PortalApiError: 429 captcha_required or rate_limited, 409 form_expired or consent_changed, 400 invalid_body (field), 404 or 503 not_available. */
+  publicSubmit(slug: string, token: string, input: PortalPublicSubmitInput): Promise<PortalPublicSubmitted> {
+    return portalRequest<{ submission: PortalPublicSubmitted }>("public_submit", { slug, token, ...input }).then(
+      (r) => r.submission,
     );
   },
 };

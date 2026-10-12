@@ -5,6 +5,8 @@
  *
  * Branding loads first, with no session (spec 5.4). An unknown or disabled slug
  * renders a generic page with no tenant detail.
+ *
+ * The public referral form (Phase 2B-1) lives at refer/:token and needs no session.
  */
 import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -21,6 +23,7 @@ import { PortalDashboardPage } from "./PortalDashboardPage";
 import { PortalSubmitPage } from "./PortalSubmitPage";
 import { PortalReferralPage } from "./PortalReferralPage";
 import { PortalProfilePage } from "./PortalProfilePage";
+import { PortalPublicFormPage } from "./PortalPublicFormPage";
 
 export function PortalRoot() {
   const { slug: rawSlug = "" } = useParams<{ slug: string }>();
@@ -52,6 +55,7 @@ export function PortalRoot() {
         <Routes>
           <Route index element={<PortalSignInPage slug={slug} brand={data} />} />
           <Route path="invite" element={<PortalInvitePage slug={slug} brand={data} />} />
+          <Route path="refer/:token" element={<PortalPublicFormPage slug={slug} brand={data} />} />
           <Route element={<PortalSignedInLayout slug={slug} brand={data} />}>
             <Route path="home" element={<PortalDashboardPage />} />
             <Route path="new" element={<PortalSubmitPage />} />

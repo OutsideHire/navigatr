@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fetchPortalEmailBrand, portalCodeEmail, portalEmailBrand, portalFromAddress, portalInviteEmail, portalUrl } from "./portalEmail";
+import { fetchPortalEmailBrand, portalCodeEmail, portalEmailBrand, portalFromAddress, portalInviteEmail, portalPublicConfirmationEmail, portalUrl } from "./portalEmail";
 import { renderEmail } from "./emailTemplate";
 
 describe("portalFromAddress", () => {
@@ -108,5 +108,32 @@ describe("fetchPortalEmailBrand", () => {
     await expect(fetchPortalEmailBrand(async () => ({ data: null, error: { message: "boom" } }), "acme", "Acme ISO")).resolves.toEqual(none);
     await expect(fetchPortalEmailBrand(async () => { throw new Error("down"); }, "acme", "Acme ISO")).resolves.toEqual(none);
     await expect(fetchPortalEmailBrand(async () => ({ data: [], error: null }), "acme", "Acme ISO")).resolves.toEqual(none);
+  });
+});
+
+describe("portalPublicConfirmationEmail", () => {
+  it("names the ISO and the reference, and has no button", () => {
+    const email = portalPublicConfirmationEmail({ orgName: "Acme ISO", ref: "REF-1A2B3C4D" });
+    expect(email.subject).toBe("Acme ISO received your referral");
+    expect(email.ctaLabel).toBeUndefined();
+    expect(email.ctaUrl).toBeUndefined();
+    const { html, text } = renderEmail({ ...email, brand: portalEmailBrand("Acme ISO", null) });
+    expect(text).toContain("REF-1A2B3C4D");
+    expect(text).toContain("Acme ISO");
+    expect(html).not.toContain("Button not working?");
+    expect(`${email.subject} ${text}`).not.toMatch(/\b(submitted|accepted|working|won|lost|declined|withdrawn)\b/);
+    expect(text.replace("Powered by navigatr", "")).not.toMatch(/navigatr/i);
+  });
+  it("escapes an org name with markup characters in the html", () => {
+    const orgName = `Ben & Jerry's <b>"ISO"</b>`;
+    const email = portalPublicConfirmationEmail({ orgName, ref: "REF-1A2B3C4D" });
+    const { html, text } = renderEmail({ ...email, brand: portalEmailBrand(orgName, null) });
+    expect(html).not.toContain("<b>");
+    expect(html).not.toContain(`"ISO"`);
+    expect(html).toContain("Ben &amp; Jerry");
+    expect(html).toContain("&lt;b&gt;");
+    expect(html).toMatch(/&quot;ISO&quot;|&#34;ISO&#34;|&#x22;ISO&#x22;/);
+    // Plain text keeps the name as typed.
+    expect(text).toContain(orgName);
   });
 });
