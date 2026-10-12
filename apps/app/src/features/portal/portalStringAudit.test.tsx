@@ -2,6 +2,11 @@
  * String audit (spec 7, PRD section 19 acceptance): nothing a partner can see,
  * from the API or on screen, carries an internal status name, a deal stage, a
  * decline reason code, a referral source, or internal free text.
+ *
+ * The API block feeds handlePortalRequest hostile rpc rows (internal fields,
+ * another partner's name, rep-typed text) and audits the JSON. The rendered
+ * block audits the UI copy of each page given clean, already-mapped data; it
+ * does not re-test the API mapping.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
@@ -62,6 +67,10 @@ const FORBIDDEN_KEYS = ["status", "stage", "source", "decline_reason", "declineR
 const FORBIDDEN_WORDS =
   /\b(submitted|accepted|working|won|lost|declined|withdrawn|contacted|qualified|proposal|duplicate|outside_footprint|outside_icp|insufficient_contact|existing_customer|withdrawn_by_partner|rep_entered|portal_signed_in)\b/;
 const SECRET = "INTERNAL-SECRET";
+// The injected name of a different partner: no response may ever carry it.
+const OTHER_PARTNER = "Someone Else CPA";
+// Text a rep typed on a rep-logged referral: never shown to the partner (spec 6).
+const REP_SECRET = "REP-TYPED-SECRET call the owner after 5";
 
 function walk(value: unknown, strings: string[], keys: string[]): void {
   if (typeof value === "string") strings.push(value);
@@ -81,6 +90,7 @@ function auditJson(body: unknown) {
   expect(strings.filter((s) => FORBIDDEN_VALUES.has(s))).toEqual([]);
   expect(keys.filter((k) => FORBIDDEN_KEYS.includes(k))).toEqual([]);
   expect(JSON.stringify(body)).not.toContain(SECRET);
+  expect(JSON.stringify(body)).not.toContain(OTHER_PARTNER);
 }
 
 describe("portal_api responses", () => {
@@ -89,10 +99,11 @@ describe("portal_api responses", () => {
     decline_note: `${SECRET} decline note`,
     stage: "proposal",
     deal_notes: `${SECRET} deal note`,
-    other_partner: "Someone Else CPA",
+    other_partner: OTHER_PARTNER,
   };
 
-  function deps(status: string): PortalApiDeps {
+  function deps(status: string, source = "portal_signed_in"): PortalApiDeps {
+    const repTyped = source === "rep_entered";
     const rpc = vi.fn(async (name: string): Promise<PortalRpcResult> => {
       switch (name) {
         case "portal_session_lookup":
@@ -120,15 +131,15 @@ describe("portal_api responses", () => {
               id: "3f9a21c0-1111-4222-8333-444455556666",
               ref: "REF-3F9A21C0",
               company_name: "Fresh Bakery",
-              contact_name: "Ann",
-              contact_email: "ann@fresh.example",
+              contact_name: repTyped ? `${REP_SECRET} contact` : "Ann",
+              contact_email: repTyped ? "rep-secret@internal.example" : "ann@fresh.example",
               contact_phone: "5550100100",
-              address: "5 Oak St",
+              address: repTyped ? `${REP_SECRET} address` : "5 Oak St",
               industry: "restaurant",
               urgency: "this_week",
-              notes: "Wants a demo",
+              notes: repTyped ? REP_SECRET : "Wants a demo",
               status,
-              source: "portal_signed_in",
+              source,
               submitted_at: "2026-10-01T12:00:00Z",
               rep_name: "Rita Rep",
               rep_email: "rita@acme.example",
@@ -158,14 +169,14 @@ describe("portal_api responses", () => {
     };
   }
 
-  async function call(action: string, body: Record<string, unknown>, status: string) {
+  async function call(action: string, body: Record<string, unknown>, status: string, source?: string) {
     const res = await handlePortalRequest(
       new Request(`https://proj.supabase.co/functions/v1/portal_api/${action}`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-portal-session": "tok" },
         body: JSON.stringify({ slug: "acme", ...body }),
       }),
-      deps(status),
+      deps(status, source),
     );
     expect(res.status).toBe(200);
     return res.json();
@@ -175,8 +186,22 @@ describe("portal_api responses", () => {
     auditJson(await call("get_referral", { referralId: "3f9a21c0-1111-4222-8333-444455556666" }, status));
   });
 
+  it.each(INTERNAL_STATUSES)("never passes rep-typed text through for a rep-logged referral that is %s", async (status) => {
+    const body = await call("get_referral", { referralId: "3f9a21c0-1111-4222-8333-444455556666" }, status, "rep_entered");
+    auditJson(body);
+    expect(JSON.stringify(body)).not.toContain("REP-TYPED-SECRET");
+    expect(JSON.stringify(body)).not.toContain("rep-secret@internal.example");
+    expect(body.referral).toMatchObject({ companyName: "Fresh Bakery", contactName: null, notes: null, canWithdraw: false });
+  });
+
   it("leaks nothing internal in the list or the dashboard", async () => {
-    auditJson(await call("list_referrals", {}, "submitted"));
+    const list = await call("list_referrals", {}, "submitted");
+    auditJson(list);
+    // Every fixture row comes back, each with a partner-facing label.
+    expect(list.referrals).toHaveLength(INTERNAL_STATUSES.length);
+    for (const r of list.referrals as { label: string }[]) {
+      expect(PORTAL_LABELS as readonly string[]).toContain(r.label);
+    }
     const dash = await call("dashboard", {}, "submitted");
     auditJson(dash);
     expect(JSON.stringify(dash)).not.toContain("123456");
@@ -226,7 +251,7 @@ function expectCleanScreen() {
   expect(text).not.toMatch(/navigatr/i);
 }
 
-describe("rendered portal pages", () => {
+describe("rendered portal pages: UI copy audit", () => {
   const HISTORY = PORTAL_LABELS.map((label, i) => ({ label, at: `2026-10-0${i + 1}T12:00:00Z` }));
 
   beforeEach(() => {
