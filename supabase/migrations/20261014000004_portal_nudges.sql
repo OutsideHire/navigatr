@@ -57,8 +57,8 @@ begin
         join organizations o on o.id = r.org_id
        where r.status = 'submitted' and r.source = 'portal_signed_in' and r.direction = 'inbound'
          and r.purged_at is null and not o.is_disabled
-         -- "Today" in any time zone lies inside the last two days.
-         and r.submitted_at > v_now - interval '2 days' and r.submitted_at <= v_now
+         -- Seven local days in any time zone lie inside the last eight days.
+         and r.submitted_at > v_now - interval '8 days' and r.submitted_at <= v_now
     ),
     pairs as (
       select c.*, rcp.user_id
@@ -75,8 +75,10 @@ begin
     due as (
       select z.*
         from zoned z
-       where (z.submitted_at at time zone z.tz)::date = (v_now at time zone z.tz)::date
-         and (z.submitted_at at time zone z.tz)::time < make_time(z.eod / 60, z.eod % 60, 0)
+       where (z.submitted_at at time zone z.tz)::date >= (v_now at time zone z.tz)::date - 6
+         -- Received before today's end of day: anything that arrived after
+         -- yesterday's end of day rides in today's digest.
+         and z.submitted_at < ((v_now at time zone z.tz)::date + make_time(z.eod / 60, z.eod % 60, 0)) at time zone z.tz
          and (v_now at time zone z.tz)::time >= make_time(z.eod / 60, z.eod % 60, 0)
          -- An assigned referral nudges its assignee once; queue items are gated by the log.
          and (z.user_id is distinct from z.assigned_user_id or z.nudged_at is null)
@@ -86,7 +88,9 @@ begin
            d.user_id,
            (v_now at time zone d.tz)::date as local_day,
            array_agg(d.id order by d.submitted_at, d.id) as referral_ids,
-           jsonb_agg(d.company_name order by d.submitted_at, d.id) as company_names
+           -- The email lists at most 20 names (oldest first); count stays the true total.
+           to_jsonb((array_agg(d.company_name order by d.submitted_at, d.id))[1:20]) as company_names,
+           count(*)::integer as total_count
       from due d
      group by d.org_id, d.user_id, d.tz
   loop
@@ -95,20 +99,22 @@ begin
     values (rec.org_id, 'internal_nudge', rec.user_id,
             jsonb_build_object('appUrlPath', '/partners',
                                'companyNames', rec.company_names,
-                               'count', jsonb_array_length(rec.company_names)),
+                               'count', rec.total_count),
             'internal_nudge:' || rec.user_id::text || ':' || rec.local_day::text)
     on conflict (dedupe_key) do nothing
     returning id into v_id;
+    -- Only a digest that was really queued consumes its referrals. If today's
+    -- digest already exists they stay un-nudged and ride the next day's digest.
     if v_id is not null then
       v_count := v_count + 1;
+
+      insert into referral_nudges (referral_id, user_id, nudged_at)
+      select unnest(rec.referral_ids), rec.user_id, v_now
+      on conflict (referral_id, user_id) do nothing;
+
+      update referrals set nudged_at = v_now
+       where id = any(rec.referral_ids) and nudged_at is null;
     end if;
-
-    insert into referral_nudges (referral_id, user_id, nudged_at)
-    select unnest(rec.referral_ids), rec.user_id, v_now
-    on conflict (referral_id, user_id) do nothing;
-
-    update referrals set nudged_at = v_now
-     where id = any(rec.referral_ids) and nudged_at is null;
   end loop;
 
   return v_count;

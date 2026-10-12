@@ -55,6 +55,7 @@ insert into referrals (id, partner_id, direction, source, status, company_name, 
   ('a048f000-0000-0000-0000-000000000005', 'a048a000-0000-0000-0000-000000000001', 'inbound', 'portal_signed_in', 'accepted',  'Handled Co',   'a0480000-0000-0000-0000-000000000003', '2026-10-14 15:00+00', null),
   ('a048f000-0000-0000-0000-000000000006', 'a048a000-0000-0000-0000-000000000001', 'inbound', 'rep_entered',      'submitted', 'Logged Co',    'a0480000-0000-0000-0000-000000000003', '2026-10-14 15:00+00', null),
   ('a048f000-0000-0000-0000-00000000000c', 'a048a000-0000-0000-0000-000000000001', 'inbound', 'portal_signed_in', 'submitted', 'Nudged Co',    'a0480000-0000-0000-0000-000000000003', '2026-10-14 16:00+00', '2026-10-14 20:00+00'),
+  ('a048f000-0000-0000-0000-00000000000d', 'a048a000-0000-0000-0000-000000000001', 'inbound', 'portal_signed_in', 'submitted', 'Ancient Co',   'a0480000-0000-0000-0000-000000000003', '2026-10-06 15:00+00', null),
   -- repCHI and repBad
   ('a048f000-0000-0000-0000-000000000007', 'a048a000-0000-0000-0000-000000000001', 'inbound', 'portal_signed_in', 'submitted', 'Chicago Co',   'a0480000-0000-0000-0000-000000000004', '2026-10-14 15:00+00', null),
   ('a048f000-0000-0000-0000-000000000008', 'a048a000-0000-0000-0000-000000000001', 'inbound', 'portal_signed_in', 'submitted', 'Fallback Co',  'a0480000-0000-0000-0000-000000000005', '2026-10-14 15:00+00', null),
@@ -97,8 +98,8 @@ do $$ declare n int; begin
   n := public.enqueue_portal_nudges('2026-10-14 22:30+00');
   if n <> 4 then raise exception 'T1 should queue 4 digests, got %', n; end if;
 
-  if _t_digest('a0480000-0000-0000-0000-000000000003') <> '{"appUrlPath":"/partners","companyNames":["Morning Co","Midday Co"],"count":2}'::jsonb then
-    raise exception 'repNY digest wrong (Evening Co came after 18:00, Yesterday Co was yesterday): %', _t_digest('a0480000-0000-0000-0000-000000000003');
+  if _t_digest('a0480000-0000-0000-0000-000000000003') <> '{"appUrlPath":"/partners","companyNames":["Yesterday Co","Morning Co","Midday Co"],"count":3}'::jsonb then
+    raise exception 'repNY digest wrong (Evening Co came after 18:00, Ancient Co is 8 days old): %', _t_digest('a0480000-0000-0000-0000-000000000003');
   end if;
   if _t_digest('a0480000-0000-0000-0000-000000000004') <> '{"appUrlPath":"/partners","companyNames":["Chicago Co"],"count":1}'::jsonb then
     raise exception 'repCHI digest wrong: %', _t_digest('a0480000-0000-0000-0000-000000000004');
@@ -117,8 +118,8 @@ do $$ declare n int; begin
     raise exception 'digest dedupe key should be per user per local day';
   end if;
 
-  if (select count(*) from referrals where nudged_at = '2026-10-14 22:30+00') <> 6 then
-    raise exception 'the six nudged referrals should be stamped with the run time';
+  if (select count(*) from referrals where nudged_at = '2026-10-14 22:30+00') <> 7 then
+    raise exception 'the seven nudged referrals should be stamped with the run time';
   end if;
   if (select nudged_at from referrals where id = 'a048f000-0000-0000-0000-000000000003') is not null then
     raise exception 'Evening Co was not nudged';
@@ -148,9 +149,18 @@ do $$ declare n int; begin
   end if;
 end $$;
 
--- T3: the next evening. Evening Co is yesterday's now; nothing is due.
+-- T3: the next evening. Evening Co came after yesterday's end of day, so it
+-- rides in today's digest. Ancient Co (8 days old) never does.
 do $$ begin
-  if public.enqueue_portal_nudges('2026-10-15 22:30+00') <> 0 then raise exception 'T3 should queue nothing'; end if;
+  if public.enqueue_portal_nudges('2026-10-15 22:30+00') <> 1 then raise exception 'T3 should queue only repNY''s carried digest'; end if;
+  if (select payload from portal_email_outbox where dedupe_key = 'internal_nudge:a0480000-0000-0000-0000-000000000003:2026-10-15')
+     <> '{"appUrlPath":"/partners","companyNames":["Evening Co"],"count":1}'::jsonb then
+    raise exception 'repNY T3 digest should carry Evening Co only';
+  end if;
+  if exists (select 1 from referral_nudges where referral_id = 'a048f000-0000-0000-0000-00000000000d') then
+    raise exception 'a referral older than seven local days is never nudged';
+  end if;
+  if public.enqueue_portal_nudges('2026-10-15 22:30+00') <> 0 then raise exception 'already nudged referrals are not repeated'; end if;
 end $$;
 
 -- A referral reassigned after its nudge is not nudged again to the new assignee.
@@ -159,6 +169,41 @@ do $$ begin
    where id = 'a048f000-0000-0000-0000-000000000001';
   if public.enqueue_portal_nudges('2026-10-15 22:30+00') <> 0 then
     raise exception 'a nudged referral is never nudged a second time';
+  end if;
+end $$;
+
+-- F1: today's digest already exists, a newly due referral is NOT consumed.
+do $$ begin
+  insert into referrals (id, partner_id, direction, source, status, company_name, assigned_user_id, submitted_at)
+  values ('a048f000-0000-0000-0000-00000000000e', 'a048a000-0000-0000-0000-000000000001', 'inbound', 'portal_signed_in', 'submitted', 'Late Co', 'a0480000-0000-0000-0000-000000000003', '2026-10-15 10:00+00');
+  if public.enqueue_portal_nudges('2026-10-15 22:40+00') <> 0 then raise exception 'digest for the day already exists'; end if;
+  if exists (select 1 from referral_nudges where referral_id = 'a048f000-0000-0000-0000-00000000000e')
+     or (select nudged_at from referrals where id = 'a048f000-0000-0000-0000-00000000000e') is not null then
+    raise exception 'a referral whose digest hit the dedupe key must stay un-nudged';
+  end if;
+  -- It rides the next day.
+  if public.enqueue_portal_nudges('2026-10-16 22:30+00') <> 1 then raise exception 'Late Co should ride the next day''s digest'; end if;
+  if (select payload from portal_email_outbox where dedupe_key = 'internal_nudge:a0480000-0000-0000-0000-000000000003:2026-10-16')
+     <> '{"appUrlPath":"/partners","companyNames":["Late Co"],"count":1}'::jsonb then
+    raise exception 'next day digest should carry Late Co';
+  end if;
+end $$;
+
+-- F3: 21 waiting items: names capped at 20 (oldest first), count is the true total.
+do $$ begin
+  insert into referrals (id, partner_id, direction, source, status, company_name, assigned_user_id, submitted_at)
+  select format('a048f100-0000-0000-0000-%s', lpad(i::text, 12, '0'))::uuid,
+         'a048a000-0000-0000-0000-000000000001', 'inbound', 'portal_signed_in', 'submitted',
+         'Bulk ' || lpad(i::text, 2, '0'), null, '2026-10-17 10:00+00'::timestamptz + (i || ' minutes')::interval
+    from generate_series(1, 21) i;
+  if public.enqueue_portal_nudges('2026-10-17 22:30+00') <> 1 then raise exception 'only admNY is due'; end if;
+  if (select jsonb_array_length(payload->'companyNames') from portal_email_outbox
+       where dedupe_key = 'internal_nudge:a0480000-0000-0000-0000-000000000001:2026-10-17') <> 20
+     or (select (payload->>'count')::int from portal_email_outbox
+       where dedupe_key = 'internal_nudge:a0480000-0000-0000-0000-000000000001:2026-10-17') <> 21
+     or (select payload->'companyNames'->>0 from portal_email_outbox
+       where dedupe_key = 'internal_nudge:a0480000-0000-0000-0000-000000000001:2026-10-17') <> 'Bulk 01' then
+    raise exception 'digest should list 20 names, oldest first, with count 21';
   end if;
 end $$;
 
