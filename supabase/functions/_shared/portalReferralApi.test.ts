@@ -1,0 +1,530 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { handlePortalRequest, type PortalApiDeps, type PortalEnv, type PortalRpcResult } from "./portalApi";
+import { PORTAL_MAX_AUDIO_BASE64_CHARS, PORTAL_MAX_AUDIO_BYTES } from "./transcribe";
+
+const ENV: PortalEnv = {
+  appBaseUrl: "https://app.getnavigatr.io",
+  fromAddress: "navigatr <invites@send.getnavigatr.io>",
+  appEnv: "production",
+  emailAllowlist: "",
+};
+const NOW = new Date("2026-10-12T15:00:00Z");
+const URL_BASE = "https://proj.supabase.co/functions/v1/portal_api";
+const RID = "3f9a21c0-1111-4222-8333-444455556666";
+
+const LOOKUP = [
+  {
+    portal_user_id: "u-1",
+    org_id: "o-1",
+    partner_id: "p-1",
+    partner_name: "Jane",
+    user_email: "jane@example.com",
+    org_name: "Acme ISO",
+    org_slug: "acme",
+  },
+];
+
+const ok = (data: unknown): PortalRpcResult => ({ data, error: null });
+const fail = (message: string): PortalRpcResult => ({ data: null, error: { message } });
+
+type Handler = (args: Record<string, unknown>) => PortalRpcResult;
+
+function setup(handlers: Record<string, Handler> = {}, extra: Partial<PortalApiDeps> = {}) {
+  const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
+    if (name === "portal_session_lookup") return (handlers.portal_session_lookup ?? (() => ok(LOOKUP)))(args);
+    const handler = handlers[name];
+    if (!handler) throw new Error(`unexpected rpc ${name}`);
+    return handler(args);
+  });
+  const deps: PortalApiDeps = { rpc, sendEmail: vi.fn(async () => {}), env: ENV, now: () => NOW, ...extra };
+  return { deps, rpc };
+}
+
+function post(action: string, body: Record<string, unknown>, headers: Record<string, string> = { "x-portal-session": "tok" }) {
+  return new Request(`${URL_BASE}/${action}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.9", ...headers },
+    body: JSON.stringify({ slug: "acme", ...body }),
+  });
+}
+
+async function call(action: string, body: Record<string, unknown>, deps: PortalApiDeps) {
+  const res = await handlePortalRequest(post(action, body), deps);
+  return { status: res.status, json: (await res.json()) as Record<string, unknown> };
+}
+
+beforeEach(() => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("session gate", () => {
+  it("401s without a session header and never touches the database", async () => {
+    const { deps, rpc } = setup();
+    const res = await handlePortalRequest(post("list_referrals", {}, {}), deps);
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "unauthorized" });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("ignores a Supabase JWT: identity only comes from x-portal-session", async () => {
+    const { deps, rpc } = setup();
+    const res = await handlePortalRequest(post("dashboard", {}, { authorization: "Bearer eyJhbGciOiJIUzI1NiJ9.e30.sig" }), deps);
+    expect(res.status).toBe(401);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("401s a dead session and runs no data query", async () => {
+    const { deps, rpc } = setup({ portal_session_lookup: () => ok([]) });
+    const { status } = await call("dashboard", {}, deps);
+    expect(status).toBe(401);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("portal_session_lookup", { p_slug: "acme", p_token: "tok" });
+  });
+
+  it("answers 500, not 401, when the session lookup itself fails", async () => {
+    const { deps } = setup({ portal_session_lookup: () => fail("connection reset") });
+    const { status, json } = await call("dashboard", {}, deps);
+    expect(status).toBe(500);
+    expect(json).toEqual({ error: "server_error" });
+  });
+
+  it("takes org, partner and portal user only from the session, never from the body", async () => {
+    const { deps, rpc } = setup({
+      portal_list_referrals: () => ok([]),
+    });
+    await call("list_referrals", { p_org: "evil-org", orgId: "evil-org", partnerId: "evil-partner", p_partner: "evil" }, deps);
+    expect(rpc).toHaveBeenCalledWith("portal_list_referrals", { p_org: "o-1", p_partner: "p-1", p_since: null });
+  });
+});
+
+describe("form", () => {
+  it("returns only the consent wording and version", async () => {
+    const { deps, rpc } = setup({
+      portal_form_context: () => ok([{ consent_text: "I may share this.", consent_version: 4, org_id: "o-1" }]),
+    });
+    const { status, json } = await call("form", {}, deps);
+    expect(rpc).toHaveBeenCalledWith("portal_form_context", { p_org: "o-1", p_partner: "p-1" });
+    expect(status).toBe(200);
+    expect(json).toEqual({ form: { consentText: "I may share this.", consentVersion: 4 } });
+  });
+});
+
+describe("dup_check", () => {
+  it("passes trimmed fields and answers yes or no only", async () => {
+    const { deps, rpc } = setup({ portal_dup_check: () => ok(true) });
+    const { json } = await call("dup_check", { companyName: " Corner Cafe ", phone: " 555 010 0001 ", address: "", email: "x@y.co" }, deps);
+    expect(rpc).toHaveBeenCalledWith("portal_dup_check", {
+      p_org: "o-1",
+      p_partner: "p-1",
+      p_portal_user: "u-1",
+      p_name: "Corner Cafe",
+      p_phone: "555 010 0001",
+      p_address: null,
+      p_ip: "203.0.113.9",
+    });
+    expect(json).toEqual({ probableDuplicate: true });
+  });
+
+  it("answers no without a query when there is no company name", async () => {
+    const { deps, rpc } = setup();
+    const { json } = await call("dup_check", { companyName: "  ", phone: "5550100001" }, deps);
+    expect(json).toEqual({ probableDuplicate: false });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("429s when the check is rate limited", async () => {
+    const { deps } = setup({ portal_dup_check: () => fail("rate_limited") });
+    const { status, json } = await call("dup_check", { companyName: "Co" }, deps);
+    expect(status).toBe(429);
+    expect(json).toEqual({ error: "rate_limited" });
+  });
+
+  it("400s an over-long field", async () => {
+    const { deps } = setup();
+    const { status } = await call("dup_check", { companyName: "x".repeat(161) }, deps);
+    expect(status).toBe(400);
+  });
+});
+
+describe("submit_referral", () => {
+  const VALID = {
+    companyName: " Fresh Bakery ",
+    contactName: "Ann",
+    email: "ANN@fresh.example",
+    phone: "",
+    address: "5 Oak St",
+    industry: "restaurant",
+    urgency: "this_week",
+    notes: "Wants a demo",
+    consent: true,
+    consentVersion: 3,
+  };
+
+  it("sends validated fields with the session scope and returns only id and ref", async () => {
+    const { deps, rpc } = setup({
+      portal_submit_referral: () => ok([{ id: RID, ref: "REF-3F9A21C0", duplicate_of_deal_id: "d-9" }]),
+    });
+    const { status, json } = await call("submit_referral", VALID, deps);
+    expect(rpc).toHaveBeenCalledWith("portal_submit_referral", {
+      p_org: "o-1",
+      p_partner: "p-1",
+      p_portal_user: "u-1",
+      p_company: "Fresh Bakery",
+      p_contact_name: "Ann",
+      p_contact_email: "ann@fresh.example",
+      p_contact_phone: null,
+      p_address: "5 Oak St",
+      p_industry: "restaurant",
+      p_urgency: "this_week",
+      p_notes: "Wants a demo",
+      p_consent: true,
+      p_consent_version: 3,
+      p_ip: "203.0.113.9",
+    });
+    expect(status).toBe(200);
+    expect(json).toEqual({ referral: { id: RID, ref: "REF-3F9A21C0" } });
+  });
+
+  it("400s an invalid field before any data query", async () => {
+    const { deps, rpc } = setup();
+    const { status, json } = await call("submit_referral", { ...VALID, email: "", phone: "" }, deps);
+    expect(status).toBe(400);
+    expect(json).toEqual({ error: "invalid_body", field: "emailOrPhone" });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["invalid_input:notes", 400, { error: "invalid_body", field: "notes" }],
+    ["consent_required", 400, { error: "invalid_body", field: "consent" }],
+    ["consent_changed", 409, { error: "consent_changed" }],
+    ["rate_limited", 429, { error: "rate_limited" }],
+    ["not_authorized", 500, { error: "server_error" }],
+  ])("maps the database error %s", async (message, status, body) => {
+    const { deps } = setup({ portal_submit_referral: () => fail(message) });
+    const res = await call("submit_referral", VALID, deps);
+    expect(res.status).toBe(status);
+    expect(res.json).toEqual(body);
+  });
+});
+
+describe("list_referrals", () => {
+  const ROW = {
+    ref: "REF-AAAA0001",
+    company_name: "Fresh Bakery",
+    submitted_at: "2026-10-01T12:00:00Z",
+    last_activity_at: "2026-10-02T12:00:00Z",
+    decline_reason: "outside_icp",
+    notes: "internal",
+    stage: "proposal",
+  };
+
+  it("maps every internal status to its partner label and allowlists the fields", async () => {
+    const statuses = ["submitted", "accepted", "working", "won", "lost", "declined", "withdrawn"];
+    const { deps } = setup({
+      portal_list_referrals: () => ok(statuses.map((status, i) => ({ ...ROW, id: `r-${i}`, status }))),
+    });
+    const { json } = await call("list_referrals", {}, deps);
+    const rows = json.referrals as Array<Record<string, unknown>>;
+    expect(rows.map((r) => r.label)).toEqual([
+      "Received",
+      "Accepted",
+      "In Progress",
+      "Closed Won",
+      "Not Moving Forward",
+      "Not Moving Forward",
+      "Withdrawn",
+    ]);
+    expect(rows[0]).toEqual({
+      id: "r-0",
+      ref: "REF-AAAA0001",
+      companyName: "Fresh Bakery",
+      label: "Received",
+      submittedAt: "2026-10-01T12:00:00Z",
+      lastActivityAt: "2026-10-02T12:00:00Z",
+    });
+  });
+
+  it("drops a row whose status has no partner label", async () => {
+    const { deps } = setup({ portal_list_referrals: () => ok([{ ...ROW, id: "r-x", status: "mystery" }]) });
+    const { json } = await call("list_referrals", {}, deps);
+    expect(json).toEqual({ referrals: [] });
+  });
+
+  it("turns the window into a start time from the injected clock", async () => {
+    const { deps, rpc } = setup({ portal_list_referrals: () => ok([]) });
+    await call("list_referrals", { window: "30d" }, deps);
+    expect(rpc).toHaveBeenCalledWith("portal_list_referrals", { p_org: "o-1", p_partner: "p-1", p_since: "2026-09-12T15:00:00.000Z" });
+  });
+
+  it("400s an unknown window", async () => {
+    const { deps } = setup();
+    const { status, json } = await call("list_referrals", { window: "7d" }, deps);
+    expect(status).toBe(400);
+    expect(json).toEqual({ error: "invalid_body", field: "window" });
+  });
+});
+
+describe("dashboard", () => {
+  const STATS = { submitted: "5", active: "2", closed_won: "1", not_moving_forward: "1", won_value_cents: "500000" };
+
+  it("computes conversion and hides the value when the ISO has not allowed it", async () => {
+    const { deps } = setup({ portal_dashboard_stats: () => ok([{ ...STATS, value_visible: false }]) });
+    const { json } = await call("dashboard", { window: "all" }, deps);
+    expect(json).toEqual({
+      dashboard: { submitted: 5, active: 2, closedWon: 1, conversionRate: 0.5, valueVisible: false },
+    });
+    expect(JSON.stringify(json)).not.toContain("500000");
+  });
+
+  it("shows the closed-won value when the ISO allows it", async () => {
+    const { deps } = setup({ portal_dashboard_stats: () => ok([{ ...STATS, value_visible: true }]) });
+    const { json } = await call("dashboard", {}, deps);
+    expect(json).toEqual({
+      dashboard: { submitted: 5, active: 2, closedWon: 1, conversionRate: 0.5, valueVisible: true, totalValueCents: 500000 },
+    });
+  });
+
+  it("reports no conversion rate when nothing has closed", async () => {
+    const { deps } = setup({
+      portal_dashboard_stats: () =>
+        ok([{ submitted: 2, active: 2, closed_won: 0, not_moving_forward: 0, won_value_cents: 0, value_visible: false }]),
+    });
+    const { json } = await call("dashboard", {}, deps);
+    expect((json.dashboard as Record<string, unknown>).conversionRate).toBeNull();
+  });
+});
+
+describe("get_referral", () => {
+  const DETAIL = {
+    id: RID,
+    ref: "REF-3F9A21C0",
+    company_name: "Fresh Bakery",
+    contact_name: "Ann",
+    contact_email: "ann@fresh.example",
+    contact_phone: "5550100100",
+    address: "5 Oak St",
+    industry: "restaurant",
+    urgency: "this_week",
+    notes: "Wants a demo",
+    status: "working",
+    source: "portal_signed_in",
+    submitted_at: "2026-10-01T12:00:00Z",
+    rep_name: "Rita Rep",
+    rep_email: "rita@acme.example",
+    can_withdraw: false,
+    decline_reason: "outside_icp",
+    decline_note: "internal decline note",
+    stage: "proposal",
+  };
+  const HISTORY = [
+    { status: "submitted", created_at: "2026-10-01T12:00:00Z" },
+    { status: "accepted", created_at: "2026-10-02T12:00:00Z" },
+    { status: "working", created_at: "2026-10-03T12:00:00Z" },
+    { status: "working", created_at: "2026-10-04T12:00:00Z" },
+  ];
+
+  it("returns the allowlisted detail with labelled, collapsed history", async () => {
+    const { deps, rpc } = setup({
+      portal_get_referral: () => ok([DETAIL]),
+      portal_referral_history: () => ok(HISTORY),
+    });
+    const { status, json } = await call("get_referral", { referralId: RID }, deps);
+    expect(rpc).toHaveBeenCalledWith("portal_get_referral", {
+      p_org: "o-1",
+      p_partner: "p-1",
+      p_portal_user: "u-1",
+      p_referral: RID,
+      p_ip: "203.0.113.9",
+    });
+    expect(rpc).toHaveBeenCalledWith("portal_referral_history", { p_org: "o-1", p_partner: "p-1", p_referral: RID });
+    expect(status).toBe(200);
+    expect(json).toEqual({
+      referral: {
+        id: RID,
+        ref: "REF-3F9A21C0",
+        companyName: "Fresh Bakery",
+        contactName: "Ann",
+        contactEmail: "ann@fresh.example",
+        contactPhone: "5550100100",
+        address: "5 Oak St",
+        industry: "restaurant",
+        urgency: "this_week",
+        notes: "Wants a demo",
+        label: "In Progress",
+        submittedAt: "2026-10-01T12:00:00Z",
+        canWithdraw: false,
+        rep: { name: "Rita Rep", email: "rita@acme.example" },
+        history: [
+          { label: "Received", at: "2026-10-01T12:00:00Z" },
+          { label: "Accepted", at: "2026-10-02T12:00:00Z" },
+          { label: "In Progress", at: "2026-10-03T12:00:00Z" },
+        ],
+      },
+    });
+    const text = JSON.stringify(json);
+    for (const leak of ["working", "portal_signed_in", "outside_icp", "internal decline note", "proposal"]) {
+      expect(text).not.toContain(leak);
+    }
+  });
+
+  it("never returns text for a rep-entered referral, even if the row carries it", async () => {
+    const { deps } = setup({
+      portal_get_referral: () => ok([{ ...DETAIL, source: "rep_entered", can_withdraw: true }]),
+      portal_referral_history: () => ok([]),
+    });
+    const { json } = await call("get_referral", { referralId: RID }, deps);
+    const detail = json.referral as Record<string, unknown>;
+    for (const key of ["contactName", "contactEmail", "contactPhone", "address", "industry", "urgency", "notes"]) {
+      expect(detail[key]).toBeNull();
+    }
+    expect(detail.canWithdraw).toBe(false);
+    expect(detail.companyName).toBe("Fresh Bakery");
+  });
+
+  it("returns no rep when nobody is assigned yet", async () => {
+    const { deps } = setup({
+      portal_get_referral: () => ok([{ ...DETAIL, rep_name: null, rep_email: null }]),
+      portal_referral_history: () => ok([]),
+    });
+    const { json } = await call("get_referral", { referralId: RID }, deps);
+    expect((json.referral as Record<string, unknown>).rep).toBeNull();
+  });
+
+  it("404s a missing, foreign, or malformed id the same way", async () => {
+    const { deps, rpc } = setup({ portal_get_referral: () => ok([]) });
+    expect((await call("get_referral", { referralId: RID }, deps)).json).toEqual({ error: "not_found" });
+    const bad = await call("get_referral", { referralId: "../../etc" }, deps);
+    expect(bad.status).toBe(404);
+    expect(rpc).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("withdraw_referral", () => {
+  it("withdraws through the session scope", async () => {
+    const { deps, rpc } = setup({ portal_withdraw_referral: () => ok(null) });
+    const { status, json } = await call("withdraw_referral", { referralId: RID }, deps);
+    expect(rpc).toHaveBeenCalledWith("portal_withdraw_referral", {
+      p_org: "o-1",
+      p_partner: "p-1",
+      p_portal_user: "u-1",
+      p_referral: RID,
+      p_ip: "203.0.113.9",
+    });
+    expect(status).toBe(200);
+    expect(json).toEqual({ ok: true });
+  });
+
+  it.each([
+    ["referral_not_found", 404, { error: "not_found" }],
+    ["not_withdrawable", 409, { error: "not_withdrawable" }],
+    ["boom", 500, { error: "server_error" }],
+  ])("maps %s", async (message, status, body) => {
+    const { deps } = setup({ portal_withdraw_referral: () => fail(message) });
+    const res = await call("withdraw_referral", { referralId: RID }, deps);
+    expect(res.status).toBe(status);
+    expect(res.json).toEqual(body);
+  });
+});
+
+describe("transcribe", () => {
+  const AUDIO = btoa("audio-bytes");
+
+  it("claims a slot, then returns the trimmed text", async () => {
+    const transcribe = vi.fn(async () => "  Met the owner  ");
+    const { deps, rpc } = setup({ portal_claim_transcribe: () => ok(true) }, { transcribe });
+    const { status, json } = await call("transcribe", { audio: AUDIO, mime: "audio/webm" }, deps);
+    expect(rpc).toHaveBeenCalledWith("portal_claim_transcribe", {
+      p_org: "o-1",
+      p_partner: "p-1",
+      p_portal_user: "u-1",
+      p_ip: "203.0.113.9",
+    });
+    expect(transcribe).toHaveBeenCalledWith(expect.any(Uint8Array), "audio/webm");
+    expect(status).toBe(200);
+    expect(json).toEqual({ text: "Met the owner" });
+  });
+
+  it("429s when the hourly budget is used, without calling the vendor", async () => {
+    const transcribe = vi.fn(async () => "x");
+    const { deps } = setup({ portal_claim_transcribe: () => ok(false) }, { transcribe });
+    const { status, json } = await call("transcribe", { audio: AUDIO }, deps);
+    expect(status).toBe(429);
+    expect(json).toEqual({ error: "rate_limited" });
+    expect(transcribe).not.toHaveBeenCalled();
+  });
+
+  it("413s oversized audio before decoding or claiming", async () => {
+    const transcribe = vi.fn(async () => "x");
+    const { deps, rpc } = setup({}, { transcribe });
+    const { status, json } = await call("transcribe", { audio: "A".repeat(PORTAL_MAX_AUDIO_BASE64_CHARS + 4) }, deps);
+    expect(status).toBe(413);
+    expect(json).toEqual({ error: "audio_too_large" });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("caps portal audio at 2 MB decoded, well under the rep limit", async () => {
+    const transcribe = vi.fn(async () => "x");
+    const { deps, rpc } = setup({ portal_claim_transcribe: () => ok(true) }, { transcribe });
+    // About 3 MB of audio: fine for a rep, too long for a partner.
+    const big = await call("transcribe", { audio: "A".repeat(4 * 1024 * 1024) }, deps);
+    expect(big.status).toBe(413);
+    expect(big.json).toEqual({ error: "audio_too_large" });
+    // One byte over 2 MB decoded, still inside the base64 character cap.
+    const over = btoa("a".repeat(PORTAL_MAX_AUDIO_BYTES + 1));
+    expect(over.length).toBeLessThanOrEqual(PORTAL_MAX_AUDIO_BASE64_CHARS);
+    expect((await call("transcribe", { audio: over }, deps)).status).toBe(413);
+    expect(rpc).not.toHaveBeenCalledWith("portal_claim_transcribe", expect.anything());
+    expect(transcribe).not.toHaveBeenCalled();
+    // Exactly 2 MB goes through.
+    const exact = await call("transcribe", { audio: btoa("a".repeat(PORTAL_MAX_AUDIO_BYTES)) }, deps);
+    expect(exact.status).toBe(200);
+    expect(transcribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("400s missing or invalid audio", async () => {
+    const { deps } = setup({}, { transcribe: vi.fn(async () => "x") });
+    expect((await call("transcribe", {}, deps)).status).toBe(400);
+    expect((await call("transcribe", { audio: "***" }, deps)).status).toBe(400);
+  });
+
+  it("502s a vendor failure without passing the vendor's detail to the partner", async () => {
+    const transcribe = vi.fn(async () => {
+      throw new Error("upload http 500 key=secret");
+    });
+    const { deps } = setup({ portal_claim_transcribe: () => ok(true) }, { transcribe });
+    const { status, json } = await call("transcribe", { audio: AUDIO }, deps);
+    expect(status).toBe(502);
+    expect(json).toEqual({ error: "transcription_failed" });
+  });
+
+  it("500s when no transcriber is wired", async () => {
+    const { deps } = setup();
+    const { status } = await call("transcribe", { audio: AUDIO }, deps);
+    expect(status).toBe(500);
+  });
+});
+
+describe("1A rules on the referral actions", () => {
+  it("rejects an oversized session token or slug before any rpc", async () => {
+    const { deps, rpc } = setup();
+    const long = await handlePortalRequest(post("dashboard", {}, { "x-portal-session": "t".repeat(129) }), deps);
+    expect(long.status).toBe(401);
+    const slug = await handlePortalRequest(post("dashboard", { slug: "s".repeat(65) }), deps);
+    expect(slug.status).toBe(401);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("answers a generic 500 when an rpc throws, without its detail", async () => {
+    const { deps } = setup({
+      portal_dashboard_stats: () => {
+        throw new Error("secret connection string");
+      },
+    });
+    const res = await handlePortalRequest(post("dashboard", {}), deps);
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "server_error" });
+  });
+});

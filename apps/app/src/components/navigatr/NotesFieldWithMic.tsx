@@ -49,6 +49,8 @@ export interface NotesFieldWithMicProps {
   rows?: number;
   id?: string;
   className?: string;
+  /** Override the transcription-error copy (the partner portal words it differently). */
+  errorMessage?: string;
 }
 
 export function NotesFieldWithMic({
@@ -62,6 +64,7 @@ export function NotesFieldWithMic({
   rows = 4,
   id,
   className,
+  errorMessage = "Couldn't transcribe that. Tap the mic to try again, or type your note.",
 }: NotesFieldWithMicProps) {
   const manual = onMicClick !== undefined;
   const [hintSeen, setHintSeen] = React.useState<boolean>(() => {
@@ -213,7 +216,7 @@ export function NotesFieldWithMic({
 
       {micState === "error" && (
         <p className="mt-1 text-caption text-status-danger" role="alert">
-          Couldn't transcribe that. Tap the mic to try again, or type your note.
+          {errorMessage}
         </p>
       )}
     </div>

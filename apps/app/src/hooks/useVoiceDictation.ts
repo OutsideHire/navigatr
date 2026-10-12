@@ -28,7 +28,7 @@ export function appendDictated(existing: string, addition: string): string {
   return /\s$/.test(existing) ? existing + add : existing + " " + add;
 }
 
-async function blobToBase64(blob: Blob): Promise<string> {
+export async function blobToBase64(blob: Blob): Promise<string> {
   const bytes = new Uint8Array(await blob.arrayBuffer());
   let binary = "";
   const CHUNK = 0x8000; // avoid arg-count blowups on String.fromCharCode

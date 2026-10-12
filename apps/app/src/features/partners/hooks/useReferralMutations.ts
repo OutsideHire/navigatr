@@ -14,6 +14,9 @@ export type AcceptResult =
   | { result: "accepted"; dealId: string }
   | { result: "duplicate"; dealId: string | null };
 
+/** A referral id, or, for a flagged probable duplicate, the id plus the rep's written reason (FR-PORT-47). */
+export type AcceptInput = string | { referralId: string; overrideReason: string };
+
 export interface LogReferralInput {
   partnerId: string;
   companyName: string;
@@ -69,8 +72,14 @@ export function useAcceptReferral() {
     void queryClient.invalidateQueries({ queryKey: ["tasks", userId ?? "anon"] });
   };
   return useMutation({
-    mutationFn: async (referralId: string): Promise<AcceptResult> => {
-      const { data, error } = await supabase.rpc("accept_referral", { p_referral_id: referralId });
+    mutationFn: async (input: AcceptInput): Promise<AcceptResult> => {
+      const { data, error } =
+        typeof input === "string"
+          ? await supabase.rpc("accept_referral", { p_referral_id: input })
+          : await supabase.rpc("accept_referral_override", {
+              p_referral_id: input.referralId,
+              p_override_reason: input.overrideReason.trim(),
+            });
       if (error) throw new Error(referralErrorMessage(error, "Couldn't accept the referral"));
       const raw = data as { result: "accepted" | "duplicate"; deal_id: string | null };
       return raw.result === "accepted"

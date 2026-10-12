@@ -55,6 +55,7 @@ const ERROR_COPY: Array<[token: string, copy: string]> = [
   ["assignee_invalid", "That teammate can't take this referral."],
   ["company_required", "Add the business name."],
   ["invalid_direction", "That link could not be removed."],
+  ["override_reason_required", "Add a short reason to accept a possible duplicate."],
   ["not_authorized", "You don't have access to do that."],
 ];
 

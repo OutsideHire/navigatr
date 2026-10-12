@@ -12,7 +12,17 @@ const api = vi.hoisted(() => ({
   acceptInvite: vi.fn(),
   me: vi.fn(),
   signOut: vi.fn(),
+  form: vi.fn(),
+  dupCheck: vi.fn(),
+  submitReferral: vi.fn(),
+  listReferrals: vi.fn(),
+  dashboard: vi.fn(),
+  getReferral: vi.fn(),
+  withdrawReferral: vi.fn(),
+  transcribe: vi.fn(),
 }));
+
+const EMPTY_DASHBOARD = { submitted: 0, active: 0, closedWon: 0, conversionRate: null, valueVisible: false };
 
 vi.mock("../lib/portalApi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/portalApi")>();
@@ -70,15 +80,28 @@ function memoryStorage(): Storage {
   };
 }
 
+// sessionStorage gets the same per-test in-memory shim as localStorage.
+const origSessionStorage = (() => {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return undefined;
+  }
+})();
+
 beforeEach(() => {
   Object.defineProperty(window, "localStorage", { value: memoryStorage(), writable: true, configurable: true });
+  Object.defineProperty(window, "sessionStorage", { value: memoryStorage(), writable: true, configurable: true });
   Object.values(api).forEach((fn) => fn.mockReset());
   api.brand.mockResolvedValue(BRAND);
+  api.dashboard.mockResolvedValue(EMPTY_DASHBOARD);
+  api.listReferrals.mockResolvedValue([]);
   clearPortalSession("acme");
 });
 
 afterEach(() => {
   Object.defineProperty(window, "localStorage", { value: origLocalStorage, writable: true, configurable: true });
+  Object.defineProperty(window, "sessionStorage", { value: origSessionStorage, writable: true, configurable: true });
 });
 
 describe("PortalInvitePage", () => {
@@ -196,5 +219,49 @@ describe("PortalInvitePage", () => {
     await user.click(await screen.findByRole("checkbox", { name: "I agree to these terms" }));
     await user.click(screen.getByRole("button", { name: "Accept and continue" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("This invite can't be used anymore.");
+  });
+  it("keeps the invite when the terms screen is reloaded", async () => {
+    api.peekInvite.mockResolvedValue(INVITE);
+    const first = renderAt("/p/acme/invite?token=tok-reload");
+    expect(await screen.findByRole("heading", { name: "Welcome, Jane" })).toBeInTheDocument();
+    expect(window.sessionStorage.getItem("navigatr-portal-invite:acme")).toBe("tok-reload");
+    first.unmount();
+
+    // A reload lands on the cleaned address, with no token in it.
+    renderAt("/p/acme/invite");
+    expect(await screen.findByRole("heading", { name: "Welcome, Jane" })).toBeInTheDocument();
+    expect(api.peekInvite).toHaveBeenLastCalledWith("acme", "tok-reload");
+  });
+
+  it("forgets the pending invite once it is accepted", async () => {
+    const user = userEvent.setup();
+    api.peekInvite.mockResolvedValue(INVITE);
+    api.acceptInvite.mockResolvedValue({ sessionToken: "s".repeat(64), expiresAt: "2026-11-08T00:00:00Z" });
+    api.me.mockResolvedValue({ partnerName: "Jane", email: "jane@example.com", orgName: "Acme ISO" });
+    renderAt("/p/acme/invite?token=tok");
+    await user.click(await screen.findByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(screen.getByRole("button", { name: "Accept and continue" }));
+    expect(await screen.findByText("Signed in as Jane at Acme ISO")).toBeInTheDocument();
+    expect(window.sessionStorage.getItem("navigatr-portal-invite:acme")).toBeNull();
+  });
+
+  it("forgets a stored invite once the server says it is invalid", async () => {
+    api.peekInvite.mockResolvedValue(null);
+    window.sessionStorage.setItem("navigatr-portal-invite:acme", "tok-dead");
+    renderAt("/p/acme/invite");
+    expect(
+      await screen.findByRole("heading", { name: "This invite link has expired or was already used" }),
+    ).toBeInTheDocument();
+    expect(api.peekInvite).toHaveBeenCalledWith("acme", "tok-dead");
+    expect(window.sessionStorage.getItem("navigatr-portal-invite:acme")).toBeNull();
+  });
+
+  it("never uses another portal's pending invite", async () => {
+    window.sessionStorage.setItem("navigatr-portal-invite:other", "tok-other");
+    renderAt("/p/acme/invite");
+    expect(
+      await screen.findByRole("heading", { name: "This invite link has expired or was already used" }),
+    ).toBeInTheDocument();
+    expect(api.peekInvite).not.toHaveBeenCalled();
   });
 });

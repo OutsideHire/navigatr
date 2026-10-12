@@ -59,6 +59,26 @@ describe("useAcceptReferral", () => {
     const { result } = renderHook(() => useAcceptReferral(), { wrapper });
     await expect(result.current.mutateAsync("r-1")).rejects.toThrow("This referral was already handled.");
   });
+
+  it("accepts a flagged referral with a written reason through accept_referral_override", async () => {
+    rpcMock.mockResolvedValueOnce({ data: { result: "accepted", deal_id: "d-2" }, error: null });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useAcceptReferral(), { wrapper });
+    await expect(
+      result.current.mutateAsync({ referralId: "r-1", overrideReason: "  Different location " }),
+    ).resolves.toEqual({ result: "accepted", dealId: "d-2" });
+    expect(rpcMock).toHaveBeenCalledWith("accept_referral_override", {
+      p_referral_id: "r-1",
+      p_override_reason: "Different location",
+    });
+  });
+
+  it("explains a missing override reason", async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: "override_reason_required" } });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useAcceptReferral(), { wrapper });
+    await expect(result.current.mutateAsync("r-1")).rejects.toThrow("Add a short reason to accept a possible duplicate.");
+  });
 });
 
 describe("useDeclineReferral", () => {

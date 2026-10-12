@@ -12,7 +12,17 @@ const api = vi.hoisted(() => ({
   acceptInvite: vi.fn(),
   me: vi.fn(),
   signOut: vi.fn(),
+  form: vi.fn(),
+  dupCheck: vi.fn(),
+  submitReferral: vi.fn(),
+  listReferrals: vi.fn(),
+  dashboard: vi.fn(),
+  getReferral: vi.fn(),
+  withdrawReferral: vi.fn(),
+  transcribe: vi.fn(),
 }));
+
+const EMPTY_DASHBOARD = { submitted: 0, active: 0, closedWon: 0, conversionRate: null, valueVisible: false };
 
 vi.mock("../lib/portalApi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/portalApi")>();
@@ -22,6 +32,7 @@ vi.mock("../lib/portalApi", async (importOriginal) => {
 import { PortalRoot } from "./PortalRoot";
 import { PortalApiError } from "../lib/portalApi";
 import { clearPortalSession, readPortalSession, writePortalSession } from "../lib/portalSession";
+import { readPortalDraft, writePortalDraft, EMPTY_DRAFT } from "../lib/portalDraft";
 
 const BRAND = { orgName: "Acme ISO", productName: "navigatr", primaryColor: null, logoUrl: null, darkLogoUrl: null };
 const ME = { partnerName: "Jane", email: "jane@example.com", orgName: "Acme ISO" };
@@ -65,6 +76,8 @@ function memoryStorage(): Storage {
 beforeEach(() => {
   Object.defineProperty(window, "localStorage", { value: memoryStorage(), writable: true, configurable: true });
   Object.values(api).forEach((fn) => fn.mockReset());
+  api.dashboard.mockResolvedValue(EMPTY_DASHBOARD);
+  api.listReferrals.mockResolvedValue([]);
   clearPortalSession("acme");
 });
 
@@ -163,6 +176,33 @@ describe("PortalRoot", () => {
     expect(api.signOut).toHaveBeenCalledWith("live");
     expect(await screen.findByRole("heading", { name: "Sign in to Acme ISO" })).toBeInTheDocument();
     expect(readPortalSession("acme")).toBeNull();
+  });
+
+  it("clears an unsent referral draft on an explicit Sign out", async () => {
+    const user = userEvent.setup();
+    api.brand.mockResolvedValue(BRAND);
+    api.me.mockResolvedValue(ME);
+    api.signOut.mockResolvedValue(undefined);
+    writePortalSession("acme", "live");
+    writePortalDraft("acme", { ...EMPTY_DRAFT, companyName: "Fresh Bakery", notes: "Owner is Sam." });
+
+    renderAt("/p/acme/home");
+    await user.click(await screen.findByRole("button", { name: "Sign out" }));
+    expect(await screen.findByRole("heading", { name: "Sign in to Acme ISO" })).toBeInTheDocument();
+    expect(readPortalDraft("acme")).toEqual(EMPTY_DRAFT);
+    expect(window.localStorage.getItem("navigatr-portal-draft:acme")).toBeNull();
+  });
+
+  it("keeps the draft when the session simply expires, so nothing typed is lost", async () => {
+    api.brand.mockResolvedValue(BRAND);
+    api.me.mockResolvedValue(null);
+    writePortalSession("acme", "stale");
+    writePortalDraft("acme", { ...EMPTY_DRAFT, companyName: "Fresh Bakery" });
+
+    renderAt("/p/acme/home");
+    expect(await screen.findByRole("heading", { name: "Sign in to Acme ISO" })).toBeInTheDocument();
+    expect(readPortalSession("acme")).toBeNull();
+    expect(readPortalDraft("acme").companyName).toBe("Fresh Bakery");
   });
 
   it("forgets the session on this device even when the server sign-out fails", async () => {
