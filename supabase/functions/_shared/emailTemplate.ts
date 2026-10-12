@@ -15,7 +15,7 @@
 export interface EmailBrand {
   /** The ISO's name: the header text when there is no logo, and the logo's alt text. */
   name: string;
-  /** Public http(s) URL of the ISO's logo (org_branding.logo_url). */
+  /** Public https URL of the ISO's logo (org_branding.logo_url); anything else falls back to the name. */
   logoUrl: string | null;
   /** #rrggbb button and link color (org_branding.primary_color). */
   primaryColor: string | null;
@@ -86,7 +86,7 @@ export function readableTextOn(hex: string): "#FFFFFF" | "#0B1220" {
 
 function brandHeader(brand: EmailBrand): string {
   const logo = typeof brand.logoUrl === "string" ? brand.logoUrl.trim() : "";
-  if (/^https?:\/\/\S+$/i.test(logo)) {
+  if (/^https:\/\/\S+$/i.test(logo)) {
     return `<img src="${escUrl(logo)}" height="32" alt="${esc(brand.name)}" style="display:block;border:0;height:32px;width:auto;max-width:200px;">`;
   }
   return `<span style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#0B1220;letter-spacing:-0.01em;">${esc(brand.name)}</span>`;

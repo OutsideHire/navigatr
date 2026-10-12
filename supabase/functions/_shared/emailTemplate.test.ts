@@ -87,6 +87,30 @@ describe("renderEmail with a tenant brand", () => {
     }
   });
 
+  it("rejects a plain http logo and falls back to the ISO name", () => {
+    const { html } = renderEmail({ ...base, brand: { name: "Acme ISO", logoUrl: "http://cdn.example/acme.png", primaryColor: null } });
+    expect(html).not.toContain("<img src=\"http://cdn.example/acme.png\"");
+    expect(html).not.toContain("http://cdn.example");
+    expect(html).toContain("Acme ISO</span>");
+  });
+
+  it("escapes a quote in the logo URL so it cannot add an attribute", () => {
+    const { html } = renderEmail({
+      ...base,
+      brand: { name: "Acme ISO", logoUrl: 'https://cdn.example/a.png"onerror="x', primaryColor: null },
+    });
+    expect(html).toContain('src="https://cdn.example/a.png&quot;onerror=&quot;x"');
+    expect(html).not.toContain('onerror="');
+  });
+
+  it("escapes a double quote in the brand name used as the logo alt", () => {
+    const { html } = renderEmail({
+      ...base,
+      brand: { name: 'Acme "Best" ISO', logoUrl: "https://cdn.example/acme.png", primaryColor: null },
+    });
+    expect(html).toContain('alt="Acme &quot;Best&quot; ISO"');
+  });
+
   it("uses the ISO color for the button and the footer link, with readable button text", () => {
     const dark = renderEmail({ ...base, brand: { name: "Acme ISO", logoUrl: null, primaryColor: "#0A7C45" } }).html;
     expect(dark).toContain("background:#0A7C45;");
