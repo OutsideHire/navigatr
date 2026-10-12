@@ -56,6 +56,8 @@ const ERROR_COPY: Array<[token: string, copy: string]> = [
   ["company_required", "Add the business name."],
   ["invalid_direction", "That link could not be removed."],
   ["override_reason_required", "Add a short reason to accept a possible duplicate."],
+  ["update_required", "Write the update first."],
+  ["update_too_long", "Keep the update under 1,000 characters."],
   ["not_authorized", "You don't have access to do that."],
 ];
 

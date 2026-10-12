@@ -49,6 +49,7 @@ const DETAIL = {
   canWithdraw: true,
   rep: { name: "Rita Rep", email: "rita@acme.example" },
   history: [{ label: "Received", at: "2026-10-01T12:00:00Z" }],
+  updates: [] as Array<{ body: string; publishedAt: string; authorName: string | null }>,
 };
 const ROW = {
   id: "r-1",
@@ -242,5 +243,29 @@ describe("PortalReferralPage", () => {
     renderAt("/p/acme/r/nope");
     expect(await screen.findByRole("link", { name: /Back to your referrals/ })).toHaveAttribute("href", "/p/acme/home");
     expect(screen.queryByText("Fresh Bakery")).toBeNull();
+  });
+
+  it("shows the ISO's published updates, newest first", async () => {
+    api.getReferral.mockResolvedValue({
+      ...DETAIL,
+      label: "In Progress",
+      canWithdraw: false,
+      updates: [
+        { body: "Demo booked for Tuesday.\nBring the statements.", publishedAt: "2026-10-05T12:00:00Z", authorName: "Rita Rep" },
+        { body: "Called the owner.", publishedAt: "2026-10-03T12:00:00Z", authorName: null },
+      ],
+    });
+    renderAt("/p/acme/r/r-1");
+    const section = (await screen.findByRole("heading", { name: "Updates from Acme ISO" })).parentElement as HTMLElement;
+    expect(within(section).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "Demo booked for Tuesday.\nBring the statements.Rita Rep · Oct 5, 2026",
+      "Called the owner.Acme ISO · Oct 3, 2026",
+    ]);
+  });
+
+  it("has no updates section when nothing was published", async () => {
+    renderAt("/p/acme/r/r-1");
+    await screen.findByRole("heading", { name: "Fresh Bakery" });
+    expect(screen.queryByRole("heading", { name: /Updates from/ })).toBeNull();
   });
 });

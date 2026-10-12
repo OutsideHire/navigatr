@@ -2,8 +2,8 @@
  * One referral as the partner sees it (spec 5.6, FR-PORT-72): what they sent,
  * the current label, the label history with dates, and who at the ISO has it
  * (name and business email). While it is still Received the partner can
- * withdraw it (FR-PORT-42). Published updates arrive in Phase 1C. Refreshes
- * every 30 seconds.
+ * withdraw it (FR-PORT-42). Updates the ISO published on it (spec 5.7) show
+ * newest first. Refreshes every 30 seconds.
  */
 import * as React from "react";
 import { Link, useParams } from "react-router-dom";
@@ -87,6 +87,8 @@ export function PortalReferralPage() {
   }
 
   const r = q.data;
+  // Defensive: a response from before Phase 1C has no updates key.
+  const updates = r.updates ?? [];
 
   const withdraw = async () => {
     setBusy(true);
@@ -131,6 +133,24 @@ export function PortalReferralPage() {
           {r.ref} · Sent {formatPortalDate(r.submittedAt)}
         </p>
       </Card>
+
+      {updates.length > 0 && (
+        <Card padding="lg">
+          <section className="flex flex-col gap-2">
+            <h2 className="text-body-strong text-text-default">Updates from {brand.orgName}</h2>
+            <ol className="flex flex-col gap-3">
+              {updates.map((u, i) => (
+                <li key={`${u.publishedAt}-${i}`} className="flex flex-col gap-1">
+                  <p className="whitespace-pre-wrap break-words text-body-md text-text-default">{u.body}</p>
+                  <p className="text-caption text-text-muted">
+                    {u.authorName ?? brand.orgName} · <time dateTime={u.publishedAt}>{formatPortalDate(u.publishedAt)}</time>
+                  </p>
+                </li>
+              ))}
+            </ol>
+          </section>
+        </Card>
+      )}
 
       <Card padding="lg">
         <section className="flex flex-col gap-2">

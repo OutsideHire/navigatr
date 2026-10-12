@@ -169,4 +169,41 @@ describe("handlePortalInvite", () => {
     await handlePortalInvite(post({ partnerId: PARTNER, actor: "evil", p_actor: "evil" }), deps);
     expect(rpc).toHaveBeenCalledWith("portal_create_invite", { p_partner_id: PARTNER, p_actor: "user-1" });
   });
+
+  it("brands the invite with the ISO's logo and color", async () => {
+    const rpc = vi.fn(async (name: string, _args: Record<string, unknown>) =>
+      name === "portal_brand"
+        ? ok([{ org_name: "Acme ISO", product_name: "Acme", primary_color: "#0A7C45", logo_url: "https://cdn.example/acme.png", dark_logo_url: null }])
+        : ok([ROW]),
+    );
+    const sendEmail = vi.fn(async (_msg: PortalEmailMessage) => {});
+    const res = await handlePortalInvite(post({ partnerId: PARTNER }), {
+      getUserId: async () => "user-1",
+      rpc,
+      sendEmail,
+      env: ENV,
+    });
+    expect(res.status).toBe(200);
+    expect(rpc).toHaveBeenCalledWith("portal_brand", { p_slug: "acme" });
+    const msg = sendEmail.mock.calls[0][0];
+    expect(msg.html).toContain('src="https://cdn.example/acme.png"');
+    expect(msg.html).toContain("Powered by navigatr");
+    expect(msg.text).toContain("Powered by navigatr");
+  });
+
+  it("still sends the invite, name-only, when the brand lookup fails", async () => {
+    const rpc = vi.fn(async (name: string, _args: Record<string, unknown>) =>
+      name === "portal_brand" ? fail("boom") : ok([ROW]),
+    );
+    const sendEmail = vi.fn(async (_msg: PortalEmailMessage) => {});
+    const res = await handlePortalInvite(post({ partnerId: PARTNER }), { getUserId: async () => "user-1", rpc, sendEmail, env: ENV });
+    expect(res.status).toBe(200);
+    expect(sendEmail.mock.calls[0][0].html).toContain("Acme ISO</span>");
+  });
+
+  it("does not look up the brand when the allowlist drops the invite", async () => {
+    const { deps, rpc } = setup({ env: { ...ENV, appEnv: "staging", emailAllowlist: "" } });
+    await handlePortalInvite(post({ partnerId: PARTNER }), deps);
+    expect(rpc).not.toHaveBeenCalledWith("portal_brand", expect.anything());
+  });
 });

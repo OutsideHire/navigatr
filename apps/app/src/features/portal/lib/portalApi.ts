@@ -19,10 +19,18 @@ import type {
   PortalForm,
   PortalReferralDetail,
   PortalReferralSummary,
+  PortalReferralUpdate,
 } from "../../../../../../supabase/functions/_shared/portalReferralApi";
 import type { PortalWindow } from "../../../../../../supabase/functions/_shared/portalSubmission";
 
-export type { PortalDashboard, PortalForm, PortalReferralDetail, PortalReferralSummary, PortalWindow };
+export type {
+  PortalDashboard,
+  PortalForm,
+  PortalReferralDetail,
+  PortalReferralSummary,
+  PortalReferralUpdate,
+  PortalWindow,
+};
 
 const SUPABASE_URL: string = import.meta.env.VITE_SUPABASE_URL || "http://localhost:54321";
 const ANON_KEY: string = import.meta.env.VITE_SUPABASE_ANON_KEY || "test-anon-key-placeholder";

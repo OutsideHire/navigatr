@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { portalCodeEmail, portalFromAddress, portalInviteEmail, portalUrl } from "./portalEmail";
+import { describe, it, expect, vi } from "vitest";
+import { fetchPortalEmailBrand, portalCodeEmail, portalEmailBrand, portalFromAddress, portalInviteEmail, portalUrl } from "./portalEmail";
 import { renderEmail } from "./emailTemplate";
 
 describe("portalFromAddress", () => {
@@ -73,5 +73,40 @@ describe("portalCodeEmail", () => {
     const { html, text } = renderEmail(e);
     expect(html).toContain("042917");
     expect(text).toContain("Code: 042917");
+  });
+});
+
+describe("portalEmailBrand", () => {
+  it("takes the logo and color from a branding row", () => {
+    expect(portalEmailBrand("Acme ISO", { logo_url: "https://cdn.example/a.png", primary_color: "#0A7C45" })).toEqual({
+      name: "Acme ISO",
+      logoUrl: "https://cdn.example/a.png",
+      primaryColor: "#0A7C45",
+    });
+  });
+
+  it("is name-only for a missing row or empty fields", () => {
+    const none = { name: "Acme ISO", logoUrl: null, primaryColor: null };
+    expect(portalEmailBrand("Acme ISO", null)).toEqual(none);
+    expect(portalEmailBrand("Acme ISO", { logo_url: "", primary_color: 7 })).toEqual(none);
+  });
+});
+
+describe("fetchPortalEmailBrand", () => {
+  it("reads portal_brand for the slug", async () => {
+    const rpc = vi.fn(async () => ({ data: [{ logo_url: "https://cdn.example/a.png", primary_color: "#0A7C45" }], error: null }));
+    await expect(fetchPortalEmailBrand(rpc, "acme", "Acme ISO")).resolves.toEqual({
+      name: "Acme ISO",
+      logoUrl: "https://cdn.example/a.png",
+      primaryColor: "#0A7C45",
+    });
+    expect(rpc).toHaveBeenCalledWith("portal_brand", { p_slug: "acme" });
+  });
+
+  it("falls back to the name when the lookup errors, throws, or finds nothing", async () => {
+    const none = { name: "Acme ISO", logoUrl: null, primaryColor: null };
+    await expect(fetchPortalEmailBrand(async () => ({ data: null, error: { message: "boom" } }), "acme", "Acme ISO")).resolves.toEqual(none);
+    await expect(fetchPortalEmailBrand(async () => { throw new Error("down"); }, "acme", "Acme ISO")).resolves.toEqual(none);
+    await expect(fetchPortalEmailBrand(async () => ({ data: [], error: null }), "acme", "Acme ISO")).resolves.toEqual(none);
   });
 });

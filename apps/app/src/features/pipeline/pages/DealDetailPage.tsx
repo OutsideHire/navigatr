@@ -25,6 +25,7 @@ import * as React from "react";
 import { ADDRESS_UNAVAILABLE } from "@/features/path/hooks/useMerchants";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useDealReferral } from "@/features/partners/hooks/useDealReferral";
+import { ReferralUpdatesPanel } from "@/features/partners/components/ReferralUpdatesPanel";
 import { toast } from "sonner";
 import * as Tabs from "@radix-ui/react-tabs";
 import {
@@ -554,6 +555,12 @@ function SourceCard({ deal }: { deal: Deal }) {
             "Referred by a partner"
           )}
         </p>
+      )}
+      {referral && (
+        <ReferralUpdatesPanel
+          referralId={referral.referralId}
+          partnerLabel={referral.partnerVisible && referral.partnerName ? referral.partnerName : "the partner"}
+        />
       )}
       {showSourceNote && (
         <div className="mt-4 border-t border-border-subtle pt-4">

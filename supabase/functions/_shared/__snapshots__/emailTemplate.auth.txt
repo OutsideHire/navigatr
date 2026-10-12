@@ -1,0 +1,8 @@
+Sign in to navigatr
+
+Tap the button below to sign in.
+This link expires in 60 minutes.
+
+Sign in to navigatr: https://app.getnavigatr.io/auth/v1/verify?token=abc&type=magiclink
+
+If this wasn't you, you can ignore this email.

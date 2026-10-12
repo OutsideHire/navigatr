@@ -441,6 +441,14 @@ verify_jwt = false
 [functions.notify_no_deals]
 verify_jwt = false
 
+# Same reasoning as the cron functions above. portal_notify drains the partner
+# portal email outbox and queues the same-day nudge: pg_cron invokes it every 2
+# minutes with CRON_SECRET (a raw string, not a JWT), so verify_jwt=true would
+# 401 the scheduler at the gateway. requireCronCaller in the function is the
+# real gate.
+[functions.portal_notify]
+verify_jwt = false
+
 # --- verify_jwt = false for a reason other than cron ---------------------------
 #
 # calendar_oauth: its /callback route is a provider redirect (GET, no session,
