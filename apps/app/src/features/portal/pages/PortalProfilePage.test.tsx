@@ -118,6 +118,26 @@ describe("PortalProfilePage", () => {
     await waitFor(() => expect(api.me).toHaveBeenCalledTimes(2));
   });
 
+  it("drops the Saved. note as soon as a field is edited again", async () => {
+    const user = userEvent.setup();
+    api.updateProfile.mockResolvedValue({ name: "Jane", phone: "5550100100", email: "jane@example.com", weeklyDigest: true });
+    renderAt("/p/acme/profile");
+    await user.click(await screen.findByRole("button", { name: "Save changes" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Saved.");
+    await user.type(screen.getByLabelText("Your name"), " S");
+    expect(screen.queryByText("Saved.")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Saved.");
+    await user.type(screen.getByLabelText("Phone (optional)"), "1");
+    expect(screen.queryByText("Saved.")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Saved.");
+    await user.click(screen.getByRole("checkbox", { name: "Weekly email about my referrals" }));
+    expect(screen.queryByText("Saved.")).toBeNull();
+  });
+
   it("checks the fields before sending anything", async () => {
     const user = userEvent.setup();
     renderAt("/p/acme/profile");

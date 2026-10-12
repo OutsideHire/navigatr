@@ -121,6 +121,8 @@ export function usePurgePortalUser() {
     },
     onSuccess: (_result, partnerId) => {
       void queryClient.invalidateQueries({ queryKey: PARTNER_PORTAL_USER_QUERY_KEY(partnerId) });
+      // The erase blanks the partner's own profile edits (usePartnerProfileChanges).
+      void queryClient.invalidateQueries({ queryKey: ["partners", "profile-changes", partnerId] });
     },
   });
 }

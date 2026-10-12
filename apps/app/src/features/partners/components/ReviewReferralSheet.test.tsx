@@ -276,6 +276,25 @@ describe("ReviewReferralSheet: chain advisory and reassign", () => {
     expect(screen.getByRole("button", { name: "Accept" })).toBeEnabled();
   });
 
+  it("never doubles the period when the brand ends in one", () => {
+    render(<ReviewReferralSheet referral={{ ...referral, icpFlags: ["chain:Ace Hardware Inc."] }} open onOpenChange={vi.fn()} />);
+    expect(screen.getByText("Looks like a chain: Ace Hardware Inc. Check before accepting.")).toBeInTheDocument();
+    expect(screen.queryByText(/\.\. Check/)).toBeNull();
+  });
+
+  it("names the teammate generically when the picked one has no name", async () => {
+    profileState.data = { role: "admin", role_level: "administrator" };
+    assigneesState.data = [...(assigneesState.data ?? []), { id: "user-9", name: "" }];
+    seesState.data = false;
+    reassignMutate.mockResolvedValueOnce(true);
+    renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Reassign" }));
+    await userEvent.selectOptions(screen.getByLabelText("Pick a teammate…"), "user-9");
+    expect(screen.getByText("That teammate can't see Jane's partner record. They will still see this referral.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Reassign referral" }));
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("Reassigned to that teammate"));
+  });
+
   it("offers no Reassign to a rep", () => {
     renderSheet();
     expect(screen.queryByRole("button", { name: "Reassign" })).toBeNull();

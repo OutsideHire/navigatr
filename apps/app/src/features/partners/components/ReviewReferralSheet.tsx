@@ -113,7 +113,7 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
   if (!referral) return null;
 
   const currentOwner = (assignees.data ?? []).find((a) => a.id === referral.assignedUserId)?.name ?? null;
-  const pickedName = (assignees.data ?? []).find((a) => a.id === assigneeId)?.name ?? "";
+  const pickedName = (assignees.data ?? []).find((a) => a.id === assigneeId)?.name?.trim() || null;
   const flags = icpFlagLabels(referral.icpFlags);
 
   const run = async (fn: () => Promise<void>) => {
@@ -155,7 +155,7 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
   const onReassign = () => run(async () => {
     if (!assigneeId) return;
     await reassign.mutateAsync({ referralId: referral.id, userId: assigneeId });
-    toast.success(`Reassigned to ${pickedName}`);
+    toast.success(`Reassigned to ${pickedName ?? "that teammate"}`);
     onOpenChange(false);
   });
 
@@ -341,7 +341,7 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
               </label>
               {assigneeId && seesPartner.data === false && (
                 <p className="rounded-radius-sm bg-status-warning-bg p-3 text-body-sm text-status-warning">
-                  {pickedName} can't see {referral.partnerName}'s partner record. They will still see this referral.
+                  {pickedName ?? "That teammate"} can't see {referral.partnerName}'s partner record. They will still see this referral.
                 </p>
               )}
               {assigneeId && seesPartner.isError && (

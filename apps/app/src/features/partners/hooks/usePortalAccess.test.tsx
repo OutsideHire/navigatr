@@ -149,13 +149,15 @@ describe("useSetPortalAccess", () => {
 });
 
 describe("usePurgePortalUser", () => {
-  it("calls portal_purge_user and refreshes the partner's portal status", async () => {
+  it("calls portal_purge_user and refreshes the partner's portal status and edit history", async () => {
     rpcMock.mockResolvedValueOnce({ data: null, error: null });
     const { wrapper, spy } = setup();
     const { result } = renderHook(() => usePurgePortalUser(), { wrapper });
     await result.current.mutateAsync("p-1");
     expect(rpcMock).toHaveBeenCalledWith("portal_purge_user", { p_partner_id: "p-1" });
     await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ["portal", "user", "p-1"] }));
+    // The erase blanks the partner's own edits too, so that list refreshes.
+    await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ["partners", "profile-changes", "p-1"] }));
   });
 
   it("surfaces the server's refusal", async () => {

@@ -132,7 +132,10 @@ function ProfileForm({ initial }: { initial: PortalProfile }) {
               autoComplete="name"
               maxLength={PORTAL_PROFILE_LIMITS.name}
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                setSaved(false);
+              }}
             />
           </FormField>
 
@@ -148,7 +151,10 @@ function ProfileForm({ initial }: { initial: PortalProfile }) {
               autoComplete="tel"
               maxLength={PORTAL_PROFILE_LIMITS.phone}
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => {
+                setPhone(e.target.value);
+                setSaved(false);
+              }}
             />
           </FormField>
 
@@ -162,7 +168,10 @@ function ProfileForm({ initial }: { initial: PortalProfile }) {
             <Checkbox
               id="portal-profile-digest"
               checked={digest}
-              onCheckedChange={setDigest}
+              onCheckedChange={(next) => {
+                setDigest(next);
+                setSaved(false);
+              }}
               label="Weekly email about my referrals"
               helper="A short summary once a week. You can turn it off any time."
             />

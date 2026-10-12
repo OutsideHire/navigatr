@@ -88,7 +88,8 @@ export function icpFlagLabels(flags: readonly string[] | null | undefined): stri
   const out: string[] = [];
   for (const flag of flags ?? []) {
     if (!flag.startsWith("chain:")) continue;
-    const brand = flag.slice("chain:".length).trim();
+    // The sheet adds ". Check before accepting.", so drop a trailing period here.
+    const brand = flag.slice("chain:".length).trim().replace(/\.+$/, "").trim();
     if (brand) out.push(`Looks like a chain: ${brand}`);
   }
   return out;

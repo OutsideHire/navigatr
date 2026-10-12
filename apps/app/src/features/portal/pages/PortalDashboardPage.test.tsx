@@ -254,6 +254,16 @@ describe("PortalDashboardPage", () => {
     expect(screen.getByRole("link", { name: /Fresh Bakery/ })).toBeInTheDocument();
   });
 
+  it("clears the export error when the period changes", async () => {
+    const user = userEvent.setup();
+    api.exportReferrals.mockRejectedValue(new PortalApiError(0, "network_error"));
+    renderHome();
+    await user.click(await screen.findByRole("button", { name: "Download CSV" }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "30 days" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("returns to sign-in when the session is gone during the export", async () => {
     const user = userEvent.setup();
     api.exportReferrals.mockRejectedValue(new PortalApiError(401, "unauthorized"));

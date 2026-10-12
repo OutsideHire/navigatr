@@ -77,6 +77,7 @@ describe("icpFlagLabels", () => {
       "Looks like a chain: Subway",
       "Looks like a chain: Starbucks",
     ]);
+    expect(icpFlagLabels(["chain:Ace Hardware Inc.", "chain:..."])).toEqual(["Looks like a chain: Ace Hardware Inc"]);
     expect(icpFlagLabels(null)).toEqual([]);
     expect(icpFlagLabels(undefined)).toEqual([]);
   });

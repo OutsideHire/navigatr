@@ -181,7 +181,11 @@ export function PortalDashboardPage() {
             key={w.value}
             type="button"
             aria-pressed={period === w.value}
-            onClick={() => setPeriod(w.value)}
+            onClick={() => {
+              setPeriod(w.value);
+              // An export error was about the previous period.
+              setExportError(null);
+            }}
             className={cn(
               "min-h-11 rounded-radius-sm px-1 text-caption font-medium",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary",

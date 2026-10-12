@@ -39,7 +39,7 @@ describe("PortalEraseData", () => {
     expect(screen.queryByRole("button", { name: "Erase portal data" })).toBeNull();
   });
 
-  it("erases only after Confirm, and says what happens", async () => {
+  it("erases only after Erase is confirmed, and says what happens", async () => {
     purge.mockResolvedValueOnce(undefined);
     render(<PortalEraseData partnerId="p-1" partnerName="Jane" />);
     await userEvent.click(screen.getByRole("button", { name: "Erase portal data" }));
