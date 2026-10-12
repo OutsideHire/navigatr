@@ -254,4 +254,63 @@ do $$ declare v_update uuid; p jsonb; begin
   end if;
 end $$;
 
+-- 10. One failing enqueue never skips the other, and never blocks the write.
+-- Break the internal enqueue: the partner still gets "received".
+create or replace function public._portal_enqueue_new_referral(p_referral referrals)
+returns void language plpgsql as $$ begin raise exception 'forced internal failure'; end $$;
+do $$ begin
+  insert into referrals (id, partner_id, direction, source, status, company_name, assigned_user_id) values
+    ('a047f000-0000-0000-0000-0000000000c1', 'a047a000-0000-0000-0000-000000000001', 'inbound', 'portal_signed_in', 'submitted', 'Split One Co',
+     'a0470000-0000-0000-0000-000000000004');
+  if _t_rows('a047f000-0000-0000-0000-0000000000c1', 'partner_received') <> 1 then
+    raise exception 'a failing internal enqueue must not skip the partner email';
+  end if;
+  if _t_rows('a047f000-0000-0000-0000-0000000000c1', 'internal_new_referral') <> 0 then
+    raise exception 'the forced internal failure should have queued nothing';
+  end if;
+end $$;
+
+-- Break the partner enqueue too: the referral still saves, and with the
+-- internal enqueue restored it still queues the new-referral email.
+create or replace function public._portal_enqueue_partner(p_referral referrals, p_kind text, p_dedupe text, p_update_body text)
+returns void language plpgsql as $$ begin raise exception 'forced partner failure'; end $$;
+create or replace function public._portal_enqueue_new_referral(p_referral referrals)
+returns void language sql security definer set search_path = public, extensions as $$
+  insert into portal_email_outbox (org_id, kind, referral_id, recipient_user_id, payload, dedupe_key)
+  select p_referral.org_id, 'internal_new_referral', p_referral.id, rcp.user_id,
+         jsonb_build_object('appUrlPath', '/partners',
+                            'companyNames', jsonb_build_array(p_referral.company_name),
+                            'count', 1),
+         'internal_new_referral:' || p_referral.id::text || ':' || rcp.user_id::text
+    from public._portal_review_recipients(p_referral.org_id, p_referral.assigned_user_id) rcp
+  on conflict (dedupe_key) do nothing
+$$;
+do $$ begin
+  insert into referrals (id, partner_id, direction, source, status, company_name, assigned_user_id) values
+    ('a047f000-0000-0000-0000-0000000000c2', 'a047a000-0000-0000-0000-000000000001', 'inbound', 'portal_signed_in', 'submitted', 'Split Two Co',
+     'a0470000-0000-0000-0000-000000000004');
+  if _t_rows('a047f000-0000-0000-0000-0000000000c2', 'internal_new_referral') <> 1 then
+    raise exception 'a failing partner enqueue must not skip the new-referral email';
+  end if;
+  if _t_rows('a047f000-0000-0000-0000-0000000000c2', 'partner_received') <> 0 then
+    raise exception 'the forced partner failure should have queued nothing';
+  end if;
+  -- Status and update triggers swallow the failure too.
+  update referrals set status = 'accepted' where id = 'a047f000-0000-0000-0000-0000000000c2';
+  insert into referral_updates (org_id, referral_id, author_user_id, body) values
+    ('00000000-0000-0000-0000-000000001047', 'a047f000-0000-0000-0000-0000000000c2', 'a0470000-0000-0000-0000-000000000004', 'Still saves');
+end $$;
+
+-- The swallowed failures are reported as warnings, never silently dropped.
+do $$ begin
+  if position('raise warning' in pg_get_functiondef('public.referrals_enqueue_insert_email()'::regprocedure)) = 0
+     or position('raise warning' in pg_get_functiondef('public.referrals_enqueue_status_email()'::regprocedure)) = 0
+     or position('raise warning' in pg_get_functiondef('public.referral_updates_enqueue_email()'::regprocedure)) = 0 then
+    raise exception 'enqueue triggers must raise a warning when they skip an email';
+  end if;
+  if position('when others then null' in pg_get_functiondef('public.referrals_enqueue_insert_email()'::regprocedure)) > 0 then
+    raise exception 'enqueue triggers must not swallow errors silently';
+  end if;
+end $$;
+
 rollback;

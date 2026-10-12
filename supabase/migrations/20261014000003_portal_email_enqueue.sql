@@ -113,15 +113,21 @@ $$;
 create or replace function public.referrals_enqueue_insert_email()
 returns trigger language plpgsql security definer set search_path = public, extensions as $$
 begin
-  begin
-    if new.source = 'portal_signed_in' and new.direction = 'inbound' then
+  if new.source = 'portal_signed_in' and new.direction = 'inbound' then
+    -- Each enqueue in its own block: one failing never skips the other, and
+    -- neither ever blocks the live RPC transaction. The warning names the
+    -- trigger and the error only (no address, no payload).
+    begin
       perform public._portal_enqueue_partner(new, 'partner_received', 'partner_received:' || new.id::text, null);
+    exception when others then
+      raise warning '% skipped: % %', TG_NAME, SQLSTATE, SQLERRM;
+    end;
+    begin
       perform public._portal_enqueue_new_referral(new);
-    end if;
-  exception when others then
-    -- Never block the live RPC transaction: enqueue nothing instead.
-    null;
-  end;
+    exception when others then
+      raise warning '% skipped: % %', TG_NAME, SQLSTATE, SQLERRM;
+    end;
+  end if;
   return new;
 end $$;
 
@@ -149,7 +155,7 @@ begin
       new, v_kind, v_kind || ':' || new.id::text || ':' || new.status::text, null);
   end if;
   exception when others then
-    null;
+    raise warning '% skipped: % %', TG_NAME, SQLSTATE, SQLERRM;
   end;
   return new;
 end $$;
@@ -166,7 +172,7 @@ begin
         r, 'partner_update', 'partner_update:' || r.id::text || ':' || new.id::text, new.body);
     end if;
   exception when others then
-    null;
+    raise warning '% skipped: % %', TG_NAME, SQLSTATE, SQLERRM;
   end;
   return new;
 end $$;
