@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { summarizeCronHealth, cronHealthNeedsAttention, POLL_STALE_MINUTES } from "./cronHealth";
+import { summarizeCronHealth, cronHealthNeedsAttention, POLL_STALE_MINUTES, PARTNER_EMAIL_STALE_MINUTES } from "./cronHealth";
 
 const NOW = new Date("2026-08-25T12:00:00.000Z");
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
@@ -58,5 +58,39 @@ describe("cronHealthNeedsAttention", () => {
     expect(cronHealthNeedsAttention([{ job: "a", status: "ok", detail: "" }, { job: "b", status: "idle", detail: "" }])).toBe(false);
     expect(cronHealthNeedsAttention([{ job: "a", status: "stale", detail: "" }])).toBe(true);
     expect(cronHealthNeedsAttention([{ job: "a", status: "attention", detail: "" }])).toBe(true);
+  });
+});
+
+describe("summarizeCronHealth: partner emails", () => {
+  const row = (facts: Parameters<typeof summarizeCronHealth>[0]) =>
+    summarizeCronHealth(facts, NOW).find((r) => r.job === "Partner emails (2 min)")!;
+
+  it("idle when nothing has been sent or queued", () => {
+    expect(row({}).status).toBe("idle");
+    expect(row({ portal_email: { pending: 0, oldest_pending_at: null, failed_7d: 0, sent_7d: 0 } })).toEqual({
+      job: "Partner emails (2 min)",
+      status: "idle",
+      detail: "No partner emails yet",
+    });
+  });
+
+  it("ok while emails go out", () => {
+    expect(row({ portal_email: { pending: 1, oldest_pending_at: minsAgo(3), failed_7d: 0, sent_7d: 4 } })).toEqual({
+      job: "Partner emails (2 min)",
+      status: "ok",
+      detail: "4 sent this week",
+    });
+  });
+
+  it("stale when an email has waited longer than the window", () => {
+    const r = row({ portal_email: { pending: 2, oldest_pending_at: minsAgo(PARTNER_EMAIL_STALE_MINUTES + 5), failed_7d: 0, sent_7d: 0 } });
+    expect(r.status).toBe("stale");
+    expect(r.detail).toBe("Emails waiting to send");
+  });
+
+  it("attention when an email could not be delivered this week", () => {
+    const r = row({ portal_email: { pending: 0, oldest_pending_at: null, failed_7d: 2, sent_7d: 9 } });
+    expect(r.status).toBe("attention");
+    expect(r.detail).toBe("2 not delivered this week");
   });
 });

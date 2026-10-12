@@ -11,6 +11,8 @@ export interface CronHealthFacts {
   persistence?: { latest_date: string | null; rows: number } | null;
   coverage?: { latest_date: string | null; rows: number } | null;
   email_capture?: { connections: number; freshest_poll_at: string | null; unhealthy: number } | null;
+  /** Partner portal email outbox (Phase 1C): drained every 2 minutes by portal_notify. */
+  portal_email?: { pending: number; oldest_pending_at: string | null; failed_7d: number; sent_7d: number } | null;
 }
 
 export type CronHealthStatus = "ok" | "stale" | "attention" | "idle";
@@ -24,6 +26,9 @@ export interface CronHealthRow {
 /** The Sent-mail poll runs every 2 min; allow slack for a few missed cycles
  *  before calling it stalled. */
 export const POLL_STALE_MINUTES = 15;
+
+/** portal_notify runs every 2 min; an email still waiting after this many minutes means it is not running. */
+export const PARTNER_EMAIL_STALE_MINUTES = 15;
 
 function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -67,6 +72,23 @@ export function summarizeCronHealth(facts: CronHealthFacts, now: Date = new Date
       stalled
         ? { job: "Email capture poll (2 min)", status: "stale", detail: "Poll not running" }
         : { job: "Email capture poll (2 min)", status: "ok", detail: `Polling; ${ec.connections} connected` },
+    );
+  }
+
+  const pe = facts.portal_email;
+  const partnerJob = "Partner emails (2 min)";
+  if (!pe || (pe.pending === 0 && pe.failed_7d === 0 && pe.sent_7d === 0)) {
+    rows.push({ job: partnerJob, status: "idle", detail: "No partner emails yet" });
+  } else if (pe.failed_7d > 0) {
+    rows.push({ job: partnerJob, status: "attention", detail: `${pe.failed_7d} not delivered this week` });
+  } else {
+    const oldest = pe.oldest_pending_at ? new Date(pe.oldest_pending_at).getTime() : NaN;
+    const stuck =
+      pe.pending > 0 && (Number.isNaN(oldest) || now.getTime() - oldest > PARTNER_EMAIL_STALE_MINUTES * 60 * 1000);
+    rows.push(
+      stuck
+        ? { job: partnerJob, status: "stale", detail: "Emails waiting to send" }
+        : { job: partnerJob, status: "ok", detail: `${pe.sent_7d} sent this week` },
     );
   }
   return rows;
