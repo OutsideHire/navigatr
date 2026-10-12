@@ -155,3 +155,41 @@ describe("brandAccent and readableTextOn", () => {
     expect(readableTextOn("#FFFFFF")).toBe("#0B1220");
   });
 });
+
+describe("renderEmail without a button", () => {
+  const noButton = {
+    preheader: "Your reference is REF-1A2B3C4D.",
+    heading: "Thanks for the referral",
+    bodyLines: ["Acme ISO received the details sent through their referral form."],
+    footnote: "If you didn't expect this email, you can ignore it.",
+    brand: { name: "Acme ISO", logoUrl: null, primaryColor: "#0f766e" },
+  };
+
+  it("drops the button, the fallback link and the text link line", () => {
+    const out = renderEmail(noButton);
+    expect(out.html).not.toContain("Button not working?");
+    expect(out.html).not.toContain("<a href=");
+    expect(out.html).toContain("Thanks for the referral");
+    expect(out.html).toContain("If you didn't expect this email, you can ignore it.");
+    expect(out.html).toContain(POWERED_BY);
+    expect(out.text).toBe(
+      [
+        "Thanks for the referral",
+        "",
+        "Acme ISO received the details sent through their referral form.",
+        "",
+        "If you didn't expect this email, you can ignore it.",
+        "",
+        POWERED_BY,
+      ].join("\n"),
+    );
+  });
+
+  it("needs both a label and a url to show a button", () => {
+    expect(renderEmail({ ...noButton, ctaLabel: "Open" }).html).not.toContain("Button not working?");
+    expect(renderEmail({ ...noButton, ctaUrl: "https://x.example" }).html).not.toContain("Button not working?");
+    expect(renderEmail({ ...noButton, ctaLabel: "Open", ctaUrl: "https://x.example" }).html).toContain(
+      "Button not working?",
+    );
+  });
+});
