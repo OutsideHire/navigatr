@@ -88,7 +88,7 @@ begin
            pr.email,
            (r.status = 'submitted' and r.source = 'portal_signed_in')
       from referrals r
-      left join profiles pr on pr.id = r.assigned_user_id and pr.deactivated_at is null
+      left join profiles pr on pr.id = r.assigned_user_id and pr.org_id = r.org_id and pr.deactivated_at is null
      where r.id = p_referral;
 end $$;
 
@@ -160,18 +160,27 @@ begin
   perform public._portal_audit_referral(p_org, p_portal_user, 'withdraw', r.id, p_ip);
 end $$;
 
--- Speech-to-text budget (brief D6): 30 per portal user per hour. Returns false
--- instead of raising so nothing is recorded for a refused request.
+-- Speech-to-text budget (brief D6): 30 per portal user per hour, and 300 per
+-- org per 24 hours so a set of partner logins cannot run up the bill. Returns
+-- false instead of raising so nothing is recorded for a refused request. The
+-- org lock is taken first and alone serializes the org count; the user lock
+-- keeps the per-user count exact too. Every caller takes them in that order.
 create or replace function public.portal_claim_transcribe(
   p_org uuid, p_partner uuid, p_portal_user uuid, p_ip text
 ) returns boolean
 language plpgsql security definer set search_path = public, extensions as $$
 begin
   perform public._portal_assert_scope(p_org, p_partner, p_portal_user);
+  perform pg_advisory_xact_lock(hashtextextended('portal_transcribe_org:' || p_org::text, 0));
   perform pg_advisory_xact_lock(hashtextextended('portal_transcribe:' || p_portal_user::text, 0));
   if (select count(*) from portal_audit_log a
        where a.portal_user_id = p_portal_user and a.action = 'transcribe'
          and a.created_at > now() - interval '1 hour') >= 30 then
+    return false;
+  end if;
+  if (select count(*) from portal_audit_log a
+       where a.org_id = p_org and a.action = 'transcribe'
+         and a.created_at > now() - interval '24 hours') >= 300 then
     return false;
   end if;
   perform public._portal_audit_referral(p_org, p_portal_user, 'transcribe', null, p_ip);

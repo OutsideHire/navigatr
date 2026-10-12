@@ -85,6 +85,10 @@ do $$ declare f text; begin
                   where table_schema = 'public' and table_name = 'referrals' and column_name = 'urgency') then
     raise exception 'referrals.urgency should exist';
   end if;
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'referrals' and column_name = 'consent_text_snapshot') then
+    raise exception 'referrals.consent_text_snapshot should exist';
+  end if;
   foreach f in array array[
     'public.portal_form_context(uuid, uuid)',
     'public.portal_dup_check(uuid, uuid, uuid, text, text, text, text)',
@@ -98,7 +102,8 @@ do $$ declare f text; begin
     'public._portal_assert_scope(uuid, uuid, uuid)',
     'public._portal_audit_referral(uuid, uuid, portal_audit_action, uuid, text)',
     'public._portal_referral_ref(uuid)',
-    'public._portal_find_duplicates(uuid, uuid, text, text, text, uuid)'
+    'public._portal_find_duplicates(uuid, uuid, text, text, text, uuid)',
+    'public._portal_consent_text(text)'
   ] loop
     if has_function_privilege('authenticated', f, 'EXECUTE') or has_function_privilege('anon', f, 'EXECUTE')
        or has_function_privilege('service_role', f, 'EXECUTE') then
@@ -197,6 +202,9 @@ begin
     raise exception 'submitter should be the portal user only';
   end if;
   if v.consent_text_version is distinct from '3' then raise exception 'consent version should be stored from the org'; end if;
+  if v.consent_text_snapshot is distinct from 'I may share these details.' then
+    raise exception 'the accepted consent wording should be stored with the submission (NFR-PORT-07), got %', v.consent_text_snapshot;
+  end if;
   if v.partner_company_snapshot is distinct from 'Jane & Co' then raise exception 'partner company should be snapshotted'; end if;
   if v.duplicate_of_deal_id is distinct from 'a042d000-0000-0000-0000-000000000001' or v.duplicate_of_referral_id is not null then
     raise exception 'first submission should flag only the visible deal: % %', v.duplicate_of_referral_id, v.duplicate_of_deal_id;
@@ -266,6 +274,20 @@ do $$ declare r record; v referrals; begin
   select * into v from referrals where id = r.id;
   if v.duplicate_of_referral_id is not null or v.duplicate_of_deal_id is not null or v.contact_phone is not null then
     raise exception 'an email-only, unrelated submission should not be flagged';
+  end if;
+end $$;
+
+-- An org with no consent text snapshots the default line the form showed, and
+-- the snapshot matches what portal_form_context served.
+do $$ declare r record; v referrals; begin
+  select * into r from public.portal_submit_referral(
+    '00000000-0000-0000-0000-000000001142', 'a042a000-0000-0000-0000-000000000006', 'a042b000-0000-0000-0000-000000000006',
+    'Snapshot Co', 'Gil', null, '555-040-0001', null, null, null, '', true, 0, null);
+  select * into v from referrals where id = r.id;
+  if v.consent_text_snapshot is distinct from 'I have permission to share this business''s contact details.'
+     or v.consent_text_snapshot is distinct from (select f.consent_text from public.portal_form_context(
+          '00000000-0000-0000-0000-000000001142', 'a042a000-0000-0000-0000-000000000006') f) then
+    raise exception 'default consent wording should be snapshotted, got %', v.consent_text_snapshot;
   end if;
 end $$;
 

@@ -248,4 +248,46 @@ do $$ declare n int; begin
   if n <> 30 then raise exception 'a refused claim must not be recorded, got %', n; end if;
 end $$;
 
+-- 8. Transcribe claim: 300 per org per 24 hours, across all its portal users.
+do $$ declare n int; begin
+  -- U1 already has 30 in the last hour. Fill org A to 300 with U2 (outside U2's hour).
+  insert into portal_audit_log (org_id, portal_user_id, action, created_at)
+  select '00000000-0000-0000-0000-000000001043', 'a043b000-0000-0000-0000-000000000002', 'transcribe', now() - interval '2 hours'
+    from generate_series(1, 270);
+  if public.portal_claim_transcribe('00000000-0000-0000-0000-000000001043', 'a043a000-0000-0000-0000-000000000002',
+                                    'a043b000-0000-0000-0000-000000000002', null) then
+    raise exception 'the 301st transcription for the org in a day must be refused';
+  end if;
+  select count(*) into n from portal_audit_log where action = 'transcribe' and org_id = '00000000-0000-0000-0000-000000001043';
+  if n <> 300 then raise exception 'a refused org claim must not be recorded, got %', n; end if;
+  -- Another org is unaffected.
+  if not public.portal_claim_transcribe('00000000-0000-0000-0000-000000001143', 'a043a000-0000-0000-0000-000000000003',
+                                        'a043b000-0000-0000-0000-000000000003', null) then
+    raise exception 'org B must not share org A''s daily cap';
+  end if;
+  -- One claim ages out of the 24 hours: the next one goes through.
+  update portal_audit_log set created_at = now() - interval '25 hours'
+   where id = (select id from portal_audit_log where action = 'transcribe'
+                 and portal_user_id = 'a043b000-0000-0000-0000-000000000002' limit 1);
+  if not public.portal_claim_transcribe('00000000-0000-0000-0000-000000001043', 'a043a000-0000-0000-0000-000000000002',
+                                        'a043b000-0000-0000-0000-000000000002', null) then
+    raise exception 'a claim under both caps should be allowed';
+  end if;
+end $$;
+
+-- 9. Rep contact never crosses orgs: an assignee whose profile is in another org shows no rep.
+do $$ declare r record; begin
+  insert into referrals (id, org_id, partner_id, direction, source, status, company_name, contact_name, contact_phone,
+                         notes, assigned_user_id, submitted_by_portal_user_id, submitted_at)
+  values ('a043f000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000001043', 'a043a000-0000-0000-0000-000000000001',
+          'inbound', 'portal_signed_in', 'submitted', 'Cross Org Assignee Co', 'Cy', '5550100800', '',
+          'a0430000-0000-0000-0000-000000000003', 'a043b000-0000-0000-0000-000000000001', now());
+  select * into r from public.portal_get_referral('00000000-0000-0000-0000-000000001043', 'a043a000-0000-0000-0000-000000000001',
+    'a043b000-0000-0000-0000-000000000001', 'a043f000-0000-0000-0000-000000000008', null);
+  if r.company_name is distinct from 'Cross Org Assignee Co' then raise exception 'the referral itself should still be returned'; end if;
+  if r.rep_name is not null or r.rep_email is not null then
+    raise exception 'a rep from another org must never be shown: % %', r.rep_name, r.rep_email;
+  end if;
+end $$;
+
 rollback;

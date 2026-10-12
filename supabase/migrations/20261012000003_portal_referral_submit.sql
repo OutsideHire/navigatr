@@ -10,9 +10,13 @@
 -- portal user that portal_session_lookup returned; portal_api never takes them
 -- from a request.
 
--- 1. Urgency (spec 4.1 has no column for it) ------------------------------------
+-- 1. Urgency (spec 4.1 has no column for it) and the consent wording -----------
 alter table referrals add column if not exists urgency text
   check (urgency is null or urgency in ('this_week','this_month','no_rush'));
+
+-- NFR-PORT-07: the accepted consent text is stored with the submission, next to
+-- consent_text_version. Set server-side from the org, never from the client.
+alter table referrals add column if not exists consent_text_snapshot text;
 
 create index if not exists referrals_portal_user_submitted_idx
   on referrals (submitted_by_portal_user_id, submitted_at)
@@ -146,12 +150,19 @@ language sql stable security definer set search_path = public, extensions as $$
       limit 1)
 $$;
 
+-- The consent line the form shows: the org's wording, or the default line when
+-- the org has none. One place, so the form and the stored snapshot agree.
+create or replace function public._portal_consent_text(p_text text)
+returns text language sql immutable security definer set search_path = public, extensions as $$
+  select coalesce(nullif(btrim(p_text), ''),
+                  'I have permission to share this business''s contact details.')
+$$;
+
 -- 4. Form context ----------------------------------------------------------------
 create or replace function public.portal_form_context(p_org uuid, p_partner uuid)
 returns table (consent_text text, consent_version integer)
 language sql stable security definer set search_path = public, extensions as $$
-  select coalesce(nullif(btrim(o.consent_text), ''),
-                  'I have permission to share this business''s contact details.'),
+  select public._portal_consent_text(o.consent_text),
          o.consent_version
     from organizations o
     join partners p on p.org_id = o.id and p.id = p_partner
@@ -287,12 +298,13 @@ begin
     org_id, partner_id, direction, source, status, company_name, contact_name,
     contact_email, contact_phone, address, industry, urgency, notes,
     partner_company_snapshot, assigned_user_id, submitted_by_portal_user_id,
-    duplicate_of_referral_id, duplicate_of_deal_id, consent_text_version
+    duplicate_of_referral_id, duplicate_of_deal_id, consent_text_version, consent_text_snapshot
   ) values (
     p_org, p_partner, 'inbound', 'portal_signed_in', 'submitted', v_company, v_contact,
     v_email, v_phone, v_address, v_industry, v_urgency, v_notes,
     v_partner.company, public.referral_route_assignee(p_partner), p_portal_user,
-    v_dup_ref, v_dup_deal, v_org.consent_version::text
+    v_dup_ref, v_dup_deal, v_org.consent_version::text,
+    public._portal_consent_text(v_org.consent_text)
   ) returning referrals.id into v_id;
   perform set_config('navigatr.referral_actor', '', true);
   perform set_config('navigatr.referral_actor_id', '', true);
@@ -307,6 +319,7 @@ revoke execute on function public._portal_assert_scope(uuid, uuid, uuid)        
 revoke execute on function public._portal_audit_referral(uuid, uuid, portal_audit_action, uuid, text) from public, anon, authenticated, service_role;
 revoke execute on function public._portal_referral_ref(uuid)                                        from public, anon, authenticated, service_role;
 revoke execute on function public._portal_find_duplicates(uuid, uuid, text, text, text, uuid)       from public, anon, authenticated, service_role;
+revoke execute on function public._portal_consent_text(text)                                        from public, anon, authenticated, service_role;
 
 revoke execute on function public.portal_form_context(uuid, uuid)                                   from public, anon, authenticated;
 revoke execute on function public.portal_dup_check(uuid, uuid, uuid, text, text, text, text)        from public, anon, authenticated;
