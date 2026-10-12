@@ -15,7 +15,8 @@
 // that passes because nothing was built is worse than none.
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export const FORBIDDEN = ["siteverify", "PUBLIC_FORM_SIGNING_SECRET", "TURNSTILE_SECRET_KEY"];
 
@@ -44,7 +45,7 @@ export function checkBundle(dir) {
   return failures;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const dir = process.argv[2] ?? "apps/app/dist";
   if (!existsSync(dir) || !statSync(dir).isDirectory()) {
     console.error(`${dir} does not exist. Run \`pnpm --filter app build\` first.`);
