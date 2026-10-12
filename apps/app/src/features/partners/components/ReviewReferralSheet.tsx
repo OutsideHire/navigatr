@@ -8,7 +8,8 @@
  * Phase 1B: a referral sent through the partner portal says so, and one the
  * portal flagged as a probable duplicate arrives with Decline (duplicate)
  * preselected. Accepting it anyway needs a short written reason, which lands in
- * the referral's history (FR-PORT-47). Merge stays available.
+ * the referral's history (FR-PORT-47). Merge stays available. The urgency the
+ * partner picked shows with the details.
  */
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -20,6 +21,7 @@ import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import type { QueueReferral } from "../hooks/useReferralQueue";
 import { useAcceptReferral, useDeclineReferral, useMergeReferral } from "../hooks/useReferralMutations";
 import { DECLINE_REASON_OPTIONS, type DeclineReason } from "../lib/referrals";
+import { urgencyLabel } from "../../../../../../supabase/functions/_shared/portalSubmission";
 
 type Mode = "main" | "decline" | "merge" | "override";
 
@@ -127,6 +129,7 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
     ["Phone", referral.contactPhone],
     ["Email", referral.contactEmail],
     ["Address", referral.address],
+    ["Urgency", urgencyLabel(referral.urgency ?? null)],
   ];
 
   return (
@@ -203,7 +206,12 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
               <p className="text-body-sm text-text-muted">
                 Say why you are accepting a possible duplicate. The reason is saved in the referral's history.
               </p>
-              <NotesFieldWithMic value={overrideReason} onChange={setOverrideReason} placeholder="Why accept it anyway?" />
+              <NotesFieldWithMic
+                value={overrideReason}
+                onChange={setOverrideReason}
+                placeholder="Why accept it anyway?"
+                maxLength={500}
+              />
               <div className="flex gap-2">
                 <Button variant="secondary" className="flex-1" onClick={() => setMode("main")}>Back</Button>
                 <Button

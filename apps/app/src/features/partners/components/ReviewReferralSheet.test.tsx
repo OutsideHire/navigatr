@@ -190,6 +190,26 @@ describe("ReviewReferralSheet", () => {
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 
+  it("caps the written override reason at 500 characters", async () => {
+    render(<ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(screen.getByPlaceholderText("Why accept it anyway?")).toHaveAttribute("maxLength", "500");
+  });
+
+  it("shows the urgency the partner picked", () => {
+    render(<ReviewReferralSheet referral={{ ...flagged, urgency: "this_week" }} open onOpenChange={vi.fn()} />);
+    expect(screen.getByText("Urgency")).toBeInTheDocument();
+    expect(screen.getByText("This week")).toBeInTheDocument();
+  });
+
+  it("shows no urgency row when the partner left it blank or it is unknown", () => {
+    const { rerender } = render(<ReviewReferralSheet referral={{ ...flagged, urgency: null }} open onOpenChange={vi.fn()} />);
+    expect(screen.queryByText("Urgency")).toBeNull();
+    rerender(<ReviewReferralSheet referral={{ ...flagged, urgency: "someday" }} open onOpenChange={vi.fn()} />);
+    expect(screen.queryByText("Urgency")).toBeNull();
+    expect(screen.queryByText("someday")).toBeNull();
+  });
+
   it("still lets the rep merge a flagged referral", async () => {
     merge.mockResolvedValueOnce(undefined);
     render(<ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} />);

@@ -46,7 +46,7 @@ describe("useReferralQueue", () => {
       companyName: "Fresh Bakery", contactName: "Ann", contactEmail: null, contactPhone: "+15550001",
       address: "5 Oak St", placeId: null, notes: "Wants a demo",
       submittedAt: "2026-10-07T12:00:00Z", assignedUserId: "user-1",
-      source: "rep_entered", duplicateOfReferralId: null, duplicateOfDealId: null,
+      source: "rep_entered", duplicateOfReferralId: null, duplicateOfDealId: null, urgency: null,
     }]);
   });
 
@@ -57,6 +57,7 @@ describe("useReferralQueue", () => {
         contact_email: null, contact_phone: "5550100001", address: null, place_id: null,
         notes: "", submitted_at: "2026-10-12T12:00:00Z", assigned_user_id: "user-1",
         source: "portal_signed_in", duplicate_of_referral_id: "r-1", duplicate_of_deal_id: "d-1",
+        urgency: "this_month",
         partner: { name: "Jane", company: "Jane & Co" },
       }],
       error: null,
@@ -64,8 +65,9 @@ describe("useReferralQueue", () => {
     const { result } = renderHook(() => useReferralQueue(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(selectMock.mock.calls[0][0]).toContain("source, duplicate_of_referral_id, duplicate_of_deal_id");
+    expect(selectMock.mock.calls[0][0]).toContain("urgency");
     expect(result.current.data?.[0]).toMatchObject({
-      source: "portal_signed_in", duplicateOfReferralId: "r-1", duplicateOfDealId: "d-1",
+      source: "portal_signed_in", duplicateOfReferralId: "r-1", duplicateOfDealId: "d-1", urgency: "this_month",
     });
   });
 
