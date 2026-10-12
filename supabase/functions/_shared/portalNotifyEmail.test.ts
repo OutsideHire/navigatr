@@ -270,6 +270,15 @@ describe("internal_reinstate_available", () => {
     expect(e.bodyLines).toContain("and 2 more");
   });
 
+  it("counts from the payload count, not from the names it carries", () => {
+    const e = buildPortalNotifyEmail("internal_reinstate_available", { appUrlPath: PATH, companyNames: ["Dup One"], count: 5 }, CTX)!;
+    expect(e).not.toBeNull();
+    expect(e.subject).toBe("5 declined duplicates can be reinstated");
+    expect(e.heading).toBe("Declined duplicates can come back");
+    expect(e.bodyLines).toContain("- Dup One");
+    expect(e.bodyLines).toContain("and 4 more");
+  });
+
   it("is an internal kind, and a malformed payload is dropped", () => {
     expect(INTERNAL_NOTIFY_KINDS).toContain("internal_reinstate_available");
     expect(

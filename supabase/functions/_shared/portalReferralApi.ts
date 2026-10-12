@@ -464,9 +464,10 @@ async function exportReferrals(scope: ReferralScope, body: Body, deps: ReferralD
   return ok({ export: result });
 }
 
-/** The four profile fields, nothing else from the row. */
+/** The four profile fields, nothing else from the row. A blank stored name is
+ * still a profile (the partner can fix it on the page), not a server error. */
 function profileFrom(row: Record<string, unknown> | undefined): PortalProfile | null {
-  if (!row || !str(row.name)) return null;
+  if (!row) return null;
   return {
     name: str(row.name),
     phone: strOrNull(row.phone),
@@ -496,8 +497,12 @@ async function updateProfile(scope: ReferralScope, body: Body, ip: string | null
   });
   if (error) {
     if (error.message.includes("rate_limited")) return err(429, "rate_limited");
-    const field = /invalid_input:([A-Za-z]+)/.exec(error.message)?.[1];
-    if (field) return err(400, "invalid_body", { field });
+    const match = /invalid_input:([A-Za-z]+)/.exec(error.message);
+    if (match) {
+      // Echo only a field the profile form has; anything else stays generic.
+      const field = match[1];
+      return field === "name" || field === "phone" ? err(400, "invalid_body", { field }) : err(400, "invalid_body");
+    }
     return serverError("update_profile", error.message);
   }
   const profile = profileFrom(rows<Record<string, unknown>>(data)[0]);

@@ -728,6 +728,27 @@ describe("get_profile and update_profile", () => {
     expect(res.json).toEqual({ error: "rate_limited" });
   });
 
+  it("echoes only a profile field from a server field error", async () => {
+    for (const message of ["invalid_input:notes", "invalid_input:contactName", "invalid_input:weeklyDigest"]) {
+      const { deps } = setup({ portal_update_profile: () => fail(message) });
+      const res = await call("update_profile", { name: "Jane", phone: null, weeklyDigest: true }, deps);
+      expect(res.status).toBe(400);
+      expect(res.json).toEqual({ error: "invalid_body" });
+    }
+    const name = setup({ portal_update_profile: () => fail("invalid_input:name") });
+    expect((await call("update_profile", { name: "Jane", phone: null, weeklyDigest: true }, name.deps)).json).toEqual({
+      error: "invalid_body",
+      field: "name",
+    });
+  });
+
+  it("returns a profile whose stored name is blank instead of failing", async () => {
+    const { deps } = setup({ portal_get_profile: () => ok([{ ...ROW, name: "" }]) });
+    const res = await call("get_profile", {}, deps);
+    expect(res.status).toBe(200);
+    expect(res.json).toEqual({ profile: { name: "", phone: "5550100100", email: "jane@example.com", weeklyDigest: true } });
+  });
+
   it("answers 500 when no profile row comes back", async () => {
     const { deps } = setup({ portal_get_profile: () => ok([]) });
     const res = await call("get_profile", {}, deps);
