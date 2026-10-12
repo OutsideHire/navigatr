@@ -172,9 +172,11 @@ export function portalAction(url: string): string {
 }
 
 /**
- * The client as seen by the platform edge. cf-connecting-ip and x-real-ip are set by the
- * proxy and are not client-forgeable on the supported path; the first x-forwarded-for entry
- * is the last resort and is client-controlled, so no limit may rest on it alone (R6).
+ * The client IP, best effort. The header order (cf-connecting-ip, then x-real-ip, then the
+ * first x-forwarded-for entry) is a guess: which of these Supabase's edge sets, and whether
+ * it overwrites a client-sent value, is unverified (an operator step checks it on staging).
+ * Treat every one of them as possibly client-controlled, so no limit may rest on this alone
+ * (R6): portal_public_submit also enforces per-link and per-org limits keyed on no header.
  */
 export function clientIp(headers: HeaderReader): string | null {
   for (const name of ["cf-connecting-ip", "x-real-ip"]) {

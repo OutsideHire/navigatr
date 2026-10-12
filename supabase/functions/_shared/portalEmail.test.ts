@@ -124,4 +124,16 @@ describe("portalPublicConfirmationEmail", () => {
     expect(`${email.subject} ${text}`).not.toMatch(/\b(submitted|accepted|working|won|lost|declined|withdrawn)\b/);
     expect(text.replace("Powered by navigatr", "")).not.toMatch(/navigatr/i);
   });
+  it("escapes an org name with markup characters in the html", () => {
+    const orgName = `Ben & Jerry's <b>"ISO"</b>`;
+    const email = portalPublicConfirmationEmail({ orgName, ref: "REF-1A2B3C4D" });
+    const { html, text } = renderEmail({ ...email, brand: portalEmailBrand(orgName, null) });
+    expect(html).not.toContain("<b>");
+    expect(html).not.toContain(`"ISO"`);
+    expect(html).toContain("Ben &amp; Jerry");
+    expect(html).toContain("&lt;b&gt;");
+    expect(html).toMatch(/&quot;ISO&quot;|&#34;ISO&#34;|&#x22;ISO&#x22;/);
+    // Plain text keeps the name as typed.
+    expect(text).toContain(orgName);
+  });
 });
