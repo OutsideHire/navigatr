@@ -1,0 +1,9 @@
+Your sign-in code
+
+Enter this code to sign in to the Acme ISO referral portal. It expires in 15 minutes.
+
+Code: 042917
+
+Open the sign-in page: https://app.getnavigatr.io/p/acme
+
+If you didn't ask for this code, you can ignore this email.

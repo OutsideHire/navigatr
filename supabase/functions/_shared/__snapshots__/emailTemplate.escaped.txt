@@ -1,0 +1,9 @@
+Hi <b>"Team"</b> & co
+
+Line with <script>alert(1)</script>
+- A list line
+
+
+Open & go: https://app.getnavigatr.io/x?a=1&b="2"<3>
+
+Footnote with 'quotes' & <angles>
