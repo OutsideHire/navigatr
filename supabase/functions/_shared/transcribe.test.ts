@@ -3,6 +3,8 @@ import {
   MAX_AUDIO_BASE64_CHARS,
   MAX_AUDIO_BYTES,
   MOCK_TRANSCRIPT,
+  PORTAL_MAX_AUDIO_BASE64_CHARS,
+  PORTAL_MAX_AUDIO_BYTES,
   base64ToBytes,
   transcribeWithAssemblyAI,
   type AssemblyAIDeps,
@@ -35,6 +37,11 @@ describe("base64ToBytes", () => {
     expect(MAX_AUDIO_BYTES).toBe(10 * 1024 * 1024);
     expect(MAX_AUDIO_BASE64_CHARS).toBe(Math.ceil(MAX_AUDIO_BYTES / 3) * 4);
     expect(MOCK_TRANSCRIPT).toBe("This is a mock transcription for local development.");
+  });
+  it("caps portal audio at 2 MB decoded, while the rep cap stays at 10 MB", () => {
+    expect(PORTAL_MAX_AUDIO_BYTES).toBe(2 * 1024 * 1024);
+    expect(PORTAL_MAX_AUDIO_BASE64_CHARS).toBe(Math.ceil(PORTAL_MAX_AUDIO_BYTES / 3) * 4);
+    expect(PORTAL_MAX_AUDIO_BYTES).toBeLessThan(MAX_AUDIO_BYTES);
   });
 });
 

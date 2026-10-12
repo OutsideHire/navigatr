@@ -52,7 +52,10 @@ const deps: PortalApiDeps = {
   transcribe: (audio) =>
     TRANSCRIBE_MOCK
       ? Promise.resolve(MOCK_TRANSCRIPT)
-      : transcribeWithAssemblyAI(audio, { fetch, apiKey: ASSEMBLYAI_API_KEY }),
+      : transcribeWithAssemblyAI(audio, {
+        fetch: (input, init) => fetch(input, init),
+        apiKey: ASSEMBLYAI_API_KEY,
+      }),
   env: {
     appBaseUrl: APP_BASE_URL,
     fromAddress: FROM_ADDRESS,

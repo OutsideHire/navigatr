@@ -70,7 +70,10 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const text = await transcribeWithAssemblyAI(bytes, { fetch, apiKey: ASSEMBLYAI_API_KEY });
+    const text = await transcribeWithAssemblyAI(bytes, {
+      fetch: (input, init) => fetch(input, init),
+      apiKey: ASSEMBLYAI_API_KEY,
+    });
     return json({ text });
   } catch (e) {
     return json({ error: "transcription_failed", detail: String((e as Error)?.message ?? e) }, 502);

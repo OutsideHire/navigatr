@@ -15,6 +15,12 @@ const AAI_BASE = "https://api.assemblyai.com/v2";
 export const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 export const MAX_AUDIO_BASE64_CHARS = Math.ceil(MAX_AUDIO_BYTES / 3) * 4;
 
+// Partners dictate a short note, not a meeting. The portal path caps decoded
+// audio at 2 MB (about 2 minutes of webm/opus) to bound vendor cost; the rep
+// function keeps the 10 MB cap above.
+export const PORTAL_MAX_AUDIO_BYTES = 2 * 1024 * 1024;
+export const PORTAL_MAX_AUDIO_BASE64_CHARS = Math.ceil(PORTAL_MAX_AUDIO_BYTES / 3) * 4;
+
 export const MOCK_TRANSCRIPT = "This is a mock transcription for local development.";
 
 const DEFAULT_POLL_INTERVAL_MS = 1500;

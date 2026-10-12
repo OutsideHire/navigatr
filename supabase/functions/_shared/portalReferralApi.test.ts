@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { handlePortalRequest, type PortalApiDeps, type PortalEnv, type PortalRpcResult } from "./portalApi";
-import { MAX_AUDIO_BASE64_CHARS } from "./transcribe";
+import { PORTAL_MAX_AUDIO_BASE64_CHARS, PORTAL_MAX_AUDIO_BYTES } from "./transcribe";
 
 const ENV: PortalEnv = {
   appBaseUrl: "https://app.getnavigatr.io",
@@ -459,10 +459,29 @@ describe("transcribe", () => {
   it("413s oversized audio before decoding or claiming", async () => {
     const transcribe = vi.fn(async () => "x");
     const { deps, rpc } = setup({}, { transcribe });
-    const { status, json } = await call("transcribe", { audio: "A".repeat(MAX_AUDIO_BASE64_CHARS + 4) }, deps);
+    const { status, json } = await call("transcribe", { audio: "A".repeat(PORTAL_MAX_AUDIO_BASE64_CHARS + 4) }, deps);
     expect(status).toBe(413);
     expect(json).toEqual({ error: "audio_too_large" });
     expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("caps portal audio at 2 MB decoded, well under the rep limit", async () => {
+    const transcribe = vi.fn(async () => "x");
+    const { deps, rpc } = setup({ portal_claim_transcribe: () => ok(true) }, { transcribe });
+    // About 3 MB of audio: fine for a rep, too long for a partner.
+    const big = await call("transcribe", { audio: "A".repeat(4 * 1024 * 1024) }, deps);
+    expect(big.status).toBe(413);
+    expect(big.json).toEqual({ error: "audio_too_large" });
+    // One byte over 2 MB decoded, still inside the base64 character cap.
+    const over = btoa("a".repeat(PORTAL_MAX_AUDIO_BYTES + 1));
+    expect(over.length).toBeLessThanOrEqual(PORTAL_MAX_AUDIO_BASE64_CHARS);
+    expect((await call("transcribe", { audio: over }, deps)).status).toBe(413);
+    expect(rpc).not.toHaveBeenCalledWith("portal_claim_transcribe", expect.anything());
+    expect(transcribe).not.toHaveBeenCalled();
+    // Exactly 2 MB goes through.
+    const exact = await call("transcribe", { audio: btoa("a".repeat(PORTAL_MAX_AUDIO_BYTES)) }, deps);
+    expect(exact.status).toBe(200);
+    expect(transcribe).toHaveBeenCalledTimes(1);
   });
 
   it("400s missing or invalid audio", async () => {

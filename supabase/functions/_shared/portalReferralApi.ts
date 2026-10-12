@@ -15,7 +15,7 @@
  */
 import { collapseHistory, portalLabel, type PortalHistoryEntry, type PortalLabel } from "./portalLabels.ts";
 import { PORTAL_FIELD_LIMITS, isPortalWindow, validateSubmission, windowSince } from "./portalSubmission.ts";
-import { MAX_AUDIO_BASE64_CHARS, MAX_AUDIO_BYTES, base64ToBytes } from "./transcribe.ts";
+import { PORTAL_MAX_AUDIO_BASE64_CHARS, PORTAL_MAX_AUDIO_BYTES, base64ToBytes } from "./transcribe.ts";
 
 export const REFERRAL_ACTIONS = [
   "form",
@@ -349,7 +349,7 @@ async function transcribe(scope: ReferralScope, body: Body, ip: string | null, d
   const audio = str(body.audio);
   const mime = str(body.mime).slice(0, 100);
   if (!audio) return err(400, "invalid_body");
-  if (audio.length > MAX_AUDIO_BASE64_CHARS) return err(413, "audio_too_large");
+  if (audio.length > PORTAL_MAX_AUDIO_BASE64_CHARS) return err(413, "audio_too_large");
   let bytes: Uint8Array<ArrayBuffer>;
   try {
     bytes = base64ToBytes(audio);
@@ -357,7 +357,7 @@ async function transcribe(scope: ReferralScope, body: Body, ip: string | null, d
     return err(400, "invalid_body");
   }
   if (bytes.length === 0) return err(400, "invalid_body");
-  if (bytes.length > MAX_AUDIO_BYTES) return err(413, "audio_too_large");
+  if (bytes.length > PORTAL_MAX_AUDIO_BYTES) return err(413, "audio_too_large");
 
   const claim = await deps.rpc("portal_claim_transcribe", {
     ...scopeArgs(scope),
