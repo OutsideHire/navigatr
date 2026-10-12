@@ -171,12 +171,18 @@ export function portalAction(url: string): string {
   }
 }
 
-/** First x-forwarded-for entry (the client as seen by the edge), or null. */
+/**
+ * The client as seen by the platform edge. cf-connecting-ip and x-real-ip are set by the
+ * proxy and are not client-forgeable on the supported path; the first x-forwarded-for entry
+ * is the last resort and is client-controlled, so no limit may rest on it alone (R6).
+ */
 export function clientIp(headers: HeaderReader): string | null {
-  const raw = headers.get("x-forwarded-for");
-  if (!raw) return null;
-  const first = raw.split(",")[0]?.trim() ?? "";
-  return first || null;
+  for (const name of ["cf-connecting-ip", "x-real-ip"]) {
+    const v = headers.get(name)?.trim() ?? "";
+    if (v) return v.slice(0, 64);
+  }
+  const first = headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "";
+  return first ? first.slice(0, 64) : null;
 }
 
 export function sessionTokenFrom(headers: HeaderReader): string {

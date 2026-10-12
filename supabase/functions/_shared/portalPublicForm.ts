@@ -42,6 +42,10 @@ export const PUBLIC_FORM_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const PUBLIC_SOFT_LIMIT_PER_HOUR = 5;
 /** Per IP per hour, even with Turnstile. portal_public_submit enforces it again in SQL. */
 export const PUBLIC_HARD_LIMIT_PER_HOUR = 30;
+/** Per form link per hour: past this EVERYONE on the link must pass Turnstile (R6; not keyed on a client header). */
+export const PUBLIC_LINK_SOFT_LIMIT_PER_HOUR = 10;
+/** Turnstile siteverify timeout. */
+export const TURNSTILE_TIMEOUT_MS = 5_000;
 /** The honeypot: a field people never see and bots fill. */
 export const PUBLIC_HONEYPOT_FIELD = "website";
 
@@ -233,8 +237,11 @@ export async function verifyTurnstile(
   secret: string | null | undefined,
   captchaToken: string,
   ip: string | null,
+  timeoutMs: number = TURNSTILE_TIMEOUT_MS,
 ): Promise<boolean> {
   if (!fetchFn || !secret || !captchaToken) return false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const form = new URLSearchParams({ secret, response: captchaToken });
     if (ip) form.set("remoteip", ip);
@@ -242,12 +249,15 @@ export async function verifyTurnstile(
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: form.toString(),
+      signal: controller.signal,
     });
     if (!res.ok) return false;
     const body = (await res.json()) as { success?: unknown };
     return body.success === true;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -378,22 +388,31 @@ async function publicSubmit(
     formToken.length > PUBLIC_FORM_LIMITS.formToken ? "invalid" : await checkFormToken(secret, slug, token, formToken, nowMs);
   if (stamp === "invalid") return err(409, "form_expired");
   // A bot learns nothing: identical to success, nothing written, nothing sent.
-  if (stamp === "too_fast" || str(body[PUBLIC_HONEYPOT_FIELD]).trim() !== "") return submitted(fakeRef());
+  const trap = body[PUBLIC_HONEYPOT_FIELD];
+  const trapped = !(trap === undefined || trap === null || (typeof trap === "string" && trap.trim() === ""));
+  if (stamp === "too_fast" || trapped) return submitted(fakeRef());
 
   const check = validatePublicSubmission(body);
   if (!check.ok) return err(400, "invalid_body", { field: check.field });
   const s = check.value;
 
-  // R3: with no resolvable client IP the limits cannot count, so treat the caller as over the
-  // per-IP soft limit: a valid Turnstile token is required, never a bypass.
-  let recent = PUBLIC_SOFT_LIMIT_PER_HOUR;
-  if (ip && ip.trim() !== "") {
-    const rate = await deps.rpc("portal_public_rate", { p_ip: ip, p_window_minutes: 60 });
-    if (rate.error) return serverError("public_rate", rate.error.message);
-    recent = num(rate.data);
-  }
-  if (recent >= PUBLIC_HARD_LIMIT_PER_HOUR) return err(429, "rate_limited");
-  if (recent >= PUBLIC_SOFT_LIMIT_PER_HOUR) {
+  // R3: with no resolvable client IP the per-IP count cannot work, so the caller counts as over
+  // the soft limit. R6: the per-link count is keyed on the link, not on any header, and a
+  // malformed count fails closed to the soft limit too.
+  let ipCount = PUBLIC_SOFT_LIMIT_PER_HOUR;
+  let linkCount = PUBLIC_LINK_SOFT_LIMIT_PER_HOUR;
+  const hasIp = ip !== null && ip.trim() !== "";
+  const counts = await deps.rpc("portal_public_counts", { p_slug: slug, p_token: token, p_ip: hasIp ? ip : null });
+  if (counts.error) return serverError("public_counts", counts.error.message);
+  const countRow = one<{ ip_count?: unknown; link_count?: unknown }>(counts.data);
+  const nonNegative = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);
+  const parsedIp = countRow ? nonNegative(countRow.ip_count) : null;
+  const parsedLink = countRow ? nonNegative(countRow.link_count) : null;
+  if (parsedIp !== null && hasIp) ipCount = parsedIp;
+  if (parsedLink !== null) linkCount = parsedLink;
+  if (parsedIp === null) ipCount = Math.max(ipCount, PUBLIC_SOFT_LIMIT_PER_HOUR);
+  if (ipCount >= PUBLIC_HARD_LIMIT_PER_HOUR) return err(429, "rate_limited");
+  if (ipCount >= PUBLIC_SOFT_LIMIT_PER_HOUR || linkCount >= PUBLIC_LINK_SOFT_LIMIT_PER_HOUR) {
     const captchaToken = str(body.captchaToken).trim();
     const passed =
       captchaToken !== "" &&

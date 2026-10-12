@@ -80,7 +80,8 @@ end $$;
 do $$ begin
   if not has_function_privilege('service_role', 'public.portal_public_form(text, text)', 'EXECUTE')
      or not has_function_privilege('service_role', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text)', 'EXECUTE')
-     or not has_function_privilege('service_role', 'public.portal_public_rate(text, integer)', 'EXECUTE') then
+     or not has_function_privilege('service_role', 'public.portal_public_rate(text, integer)', 'EXECUTE')
+     or not has_function_privilege('service_role', 'public.portal_public_counts(text, text, text)', 'EXECUTE') then
     raise exception 'service_role should execute the public form functions';
   end if;
   if has_function_privilege('authenticated', 'public.portal_public_form(text, text)', 'EXECUTE')
@@ -88,7 +89,9 @@ do $$ begin
      or has_function_privilege('authenticated', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text)', 'EXECUTE')
      or has_function_privilege('anon', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text)', 'EXECUTE')
      or has_function_privilege('authenticated', 'public.portal_public_rate(text, integer)', 'EXECUTE')
-     or has_function_privilege('anon', 'public.portal_public_rate(text, integer)', 'EXECUTE') then
+     or has_function_privilege('anon', 'public.portal_public_rate(text, integer)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.portal_public_counts(text, text, text)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.portal_public_counts(text, text, text)', 'EXECUTE') then
     raise exception 'the public form functions are service role only';
   end if;
   if has_function_privilege('service_role', 'public._portal_public_link(text, text)', 'EXECUTE')
@@ -255,6 +258,60 @@ do $$ begin
                                                        '555 010 0111', 'Fine.', null, null, 2, '203.0.113.31')) <> 1 then
     raise exception 'another IP is not limited';
   end if;
+end $$;
+
+-- 6b. Server-keyed limits (R6): per link soft count, 50 per link and 200 per org per hour.
+do $$ declare c record; begin
+  insert into organizations (id, name, slug, invite_code, portal_enabled, consent_text, consent_version) values
+    ('00000000-0000-0000-0000-000000001358', 'Public Org D', 'pf-pub-d', 'pf-pub-d-a1', true, null, 0);
+  update organizations set public_form_enabled = true where id = '00000000-0000-0000-0000-000000001358';
+  insert into referral_form_links (id, org_id, link_type, user_id, token, retired_at) values
+    ('a058c000-0000-0000-0000-0000000000d1', '00000000-0000-0000-0000-000000001358', 'tenant', null, 'orgDTenantToken00001', null),
+    ('a058c000-0000-0000-0000-0000000000d2', '00000000-0000-0000-0000-000000001358', 'tenant', null, 'orgDRetiredToken0001', now());
+
+  select * into c from public.portal_public_counts('pf-pub-d', 'orgDTenantToken00001', '198.51.100.77');
+  if c.ip_count <> 0 or c.link_count <> 0 then raise exception 'fresh counts are zero'; end if;
+  select * into c from public.portal_public_counts('pf-pub-d', 'nopeNopeNopeNope0001', '198.51.100.77');
+  if c.link_count <> 0 then raise exception 'a dead link counts zero, got %', c.link_count; end if;
+
+  -- 12 recent on the link (different IPs), one old: link_count is 12 and the IP count is separate.
+  insert into referral_form_submissions
+    (org_id, form_link_id, link_type, company_name, contact_name, contact_email, contact_phone, notes,
+     consent_version, consent_text_snapshot, submitter_ip, submitted_at)
+  select '00000000-0000-0000-0000-000000001358', 'a058c000-0000-0000-0000-0000000000d1', 'tenant', 'Link Co ' || g, 'L',
+         'l@x.example', '5550100100', 'n', 0, 'c', '192.0.2.' || (100 + g), now() - interval '5 minutes'
+    from generate_series(1, 12) g;
+  insert into referral_form_submissions
+    (org_id, form_link_id, link_type, company_name, contact_name, contact_email, contact_phone, notes,
+     consent_version, consent_text_snapshot, submitter_ip, submitted_at) values
+    ('00000000-0000-0000-0000-000000001358', 'a058c000-0000-0000-0000-0000000000d1', 'tenant', 'Old Co', 'L',
+     'l@x.example', '5550100100', 'n', 0, 'c', '192.0.2.99', now() - interval '3 hours');
+  select * into c from public.portal_public_counts('pf-pub-d', 'orgDTenantToken00001', '192.0.2.101');
+  if c.link_count <> 12 or c.ip_count <> 1 then raise exception 'link 12 / ip 1, got % / %', c.link_count, c.ip_count; end if;
+  select * into c from public.portal_public_counts('pf-pub-d', 'orgDTenantToken00001', null);
+  if c.link_count <> 12 or c.ip_count <> 0 then raise exception 'a null IP counts zero but the link still counts'; end if;
+
+  -- Link hard cap: top up to 50, the 51st is refused whatever the IP; the org is not full.
+  insert into referral_form_submissions
+    (org_id, form_link_id, link_type, company_name, contact_name, contact_email, contact_phone, notes,
+     consent_version, consent_text_snapshot, submitter_ip, submitted_at)
+  select '00000000-0000-0000-0000-000000001358', 'a058c000-0000-0000-0000-0000000000d1', 'tenant', 'Link Co x' || g, 'L',
+         'l@x.example', '5550100100', 'n', 0, 'c', '192.0.3.' || g, now() - interval '5 minutes'
+    from generate_series(1, 38) g;
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub-d','orgDTenantToken00001','Over','Ann','a@b.example','5550100100','Notes.',null,null,0,'198.51.100.200')$q$, 'rate_limited');
+
+  -- Org hard cap: 150 on a retired link brings the org to 200; a fresh link with no recent rows is still refused.
+  delete from referral_form_submissions where form_link_id = 'a058c000-0000-0000-0000-0000000000d1' and submitted_at > now() - interval '1 hour';
+  insert into referral_form_submissions
+    (org_id, form_link_id, link_type, company_name, contact_name, contact_email, contact_phone, notes,
+     consent_version, consent_text_snapshot, submitter_ip, submitted_at)
+  select '00000000-0000-0000-0000-000000001358', 'a058c000-0000-0000-0000-0000000000d2', 'tenant', 'Org Co ' || g, 'L',
+         'l@x.example', '5550100100', 'n', 0, 'c', '192.0.4.' || (g % 250), now() - interval '5 minutes'
+    from generate_series(1, 199) g;
+  if (select count(*) from public.portal_public_submit('pf-pub-d','orgDTenantToken00001','Org 200','Ann','a@b.example','5550100100','Notes.',null,null,0,'198.51.100.201')) <> 1 then
+    raise exception 'the 200th in the org is allowed';
+  end if;
+  perform _t_raises($q$select * from public.portal_public_submit('pf-pub-d','orgDTenantToken00001','Org 201','Ann','a@b.example','5550100100','Notes.',null,null,0,'198.51.100.202')$q$, 'rate_limited');
 end $$;
 
 -- 7. Who can read a submission (role switches from here on).

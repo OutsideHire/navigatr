@@ -117,6 +117,17 @@ returns integer language sql stable security definer set search_path = public, e
   end
 $$;
 
+-- 4b. Counts for the edge: this IP and this link, last hour (R6) --------------------------
+-- link_count is 0 for a dead link, so nothing is revealed beyond portal_public_form.
+create or replace function public.portal_public_counts(p_slug text, p_token text, p_ip text)
+returns table (ip_count integer, link_count integer)
+language sql stable security definer set search_path = public, extensions as $$
+  select public.portal_public_rate(p_ip, 60),
+         coalesce((select count(*)::integer from referral_form_submissions s
+                    where s.form_link_id = public._portal_public_link(p_slug, p_token)
+                      and s.submitted_at > now() - interval '1 hour'), 0)
+$$;
+
 -- 5. Store a submission (FR-PORT-25, 26, 29, 31) ------------------------------------------
 -- Zero rows when the link is not available. Field rules mirror
 -- _shared/portalPublicForm.ts. The hard limit of 30 per IP per hour is checked
@@ -181,6 +192,19 @@ begin
     raise exception 'invalid_input:referrerEmail' using errcode = '22023';
   end if;
 
+  -- R6 server-keyed hard caps that do not trust any client header: 50 per link and
+  -- 200 per org per hour, serialized (link, org, then IP: always this order).
+  perform pg_advisory_xact_lock(hashtextextended('portal_public_link:' || v_link.id::text, 0));
+  if (select count(*) from referral_form_submissions s
+       where s.form_link_id = v_link.id and s.submitted_at > now() - interval '1 hour') >= 50 then
+    raise exception 'rate_limited' using errcode = 'P0001';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended('portal_public_org:' || v_org.id::text, 0));
+  if (select count(*) from referral_form_submissions s
+       where s.org_id = v_org.id and s.submitted_at > now() - interval '1 hour') >= 200 then
+    raise exception 'rate_limited' using errcode = 'P0001';
+  end if;
+
   if v_ip is not null then
     perform pg_advisory_xact_lock(hashtextextended('portal_public_ip:' || v_ip, 0));
     if (select count(*) from referral_form_submissions s
@@ -217,4 +241,6 @@ revoke execute on function public.portal_public_rate(text, integer) from public,
 revoke execute on function public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text) from public, anon, authenticated;
 grant  execute on function public.portal_public_form(text, text) to service_role;
 grant  execute on function public.portal_public_rate(text, integer) to service_role;
+revoke execute on function public.portal_public_counts(text, text, text) from public, anon, authenticated;
+grant  execute on function public.portal_public_counts(text, text, text) to service_role;
 grant  execute on function public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text) to service_role;

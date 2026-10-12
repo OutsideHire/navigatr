@@ -151,6 +151,22 @@ describe("fakeRef", () => {
   });
 });
 
+describe("verifyTurnstile timeout", () => {
+  it("returns false when the check hangs past the timeout", async () => {
+    const hang = (_u: string, init: RequestInit) =>
+      new Promise<Response>((_res, rej) => {
+        init.signal?.addEventListener("abort", () => rej(new Error("aborted")));
+      });
+    expect(await verifyTurnstile(hang, "sek", "tt", null, 20)).toBe(false);
+  });
+
+  it("passes an abort signal to fetch by default", async () => {
+    const fetchFn = vi.fn(async (_u: string, _i: RequestInit) => new Response(JSON.stringify({ success: true })));
+    expect(await verifyTurnstile(fetchFn, "sek", "tt", null)).toBe(true);
+    expect(fetchFn.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
 describe("verifyTurnstile", () => {
   const ok = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -278,9 +294,13 @@ describe("handlePublicFormAction", () => {
     return { deps, rpc, sendEmail, background, fetchFn };
   }
 
-  const routes = (recent: number, submit: { data: unknown; error: { message: string } | null } = { data: [SUBMIT_ROW], error: null }): Rpc =>
+  const routes = (
+    recent: number,
+    submit: { data: unknown; error: { message: string } | null } = { data: [SUBMIT_ROW], error: null },
+    linkCount = 0,
+  ): Rpc =>
     (name) => {
-      if (name === "portal_public_rate") return { data: recent, error: null };
+      if (name === "portal_public_counts") return { data: [{ ip_count: recent, link_count: linkCount }], error: null };
       if (name === "portal_public_submit") return submit;
       return { data: null, error: { message: `unexpected ${name}` } };
     };
@@ -362,7 +382,7 @@ describe("handlePublicFormAction", () => {
       const { deps, rpc, sendEmail, background } = setup(routes(0));
       const res = await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", deps);
       expect(res).toEqual({ status: 200, body: { submission: { ref: "REF-1A2B3C4D" } } });
-      expect(rpc).toHaveBeenNthCalledWith(1, "portal_public_rate", { p_ip: "203.0.113.5", p_window_minutes: 60 });
+      expect(rpc).toHaveBeenNthCalledWith(1, "portal_public_counts", { p_slug: "acme", p_token: "tok123", p_ip: "203.0.113.5" });
       expect(rpc).toHaveBeenNthCalledWith(2, "portal_public_submit", {
         p_slug: "acme",
         p_token: "tok123",
@@ -492,6 +512,50 @@ describe("handlePublicFormAction", () => {
       expect(
         await handlePublicFormAction("public_submit", "acme", "tok123", await body({ captchaToken: "tt-bad" }), "  ", failed.deps),
       ).toEqual({ status: 429, body: { error: "captcha_required" } });
+    });
+
+    it("asks for the check once the link has 10 an hour, for everyone on it", async () => {
+      const { deps, rpc, fetchFn } = setup(routes(0, undefined, 10));
+      expect(await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", deps)).toEqual({
+        status: 429,
+        body: { error: "captcha_required" },
+      });
+      expect(rpc).not.toHaveBeenCalledWith("portal_public_submit", expect.anything());
+      const below = setup(routes(0, undefined, 9));
+      expect((await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", below.deps)).status).toBe(200);
+      const passed = setup(routes(0, undefined, 10));
+      expect(
+        (await handlePublicFormAction("public_submit", "acme", "tok123", await body({ captchaToken: "tt-ok" }), "203.0.113.5", passed.deps)).status,
+      ).toBe(200);
+      expect(fetchFn).not.toHaveBeenCalled();
+    });
+
+    it("fails closed on a malformed count result", async () => {
+      for (const data of [null, "x", [], [{ ip_count: "abc", link_count: 0 }], [{ ip_count: 0 }], [{ ip_count: -1, link_count: 0 }], 3]) {
+        const { deps, rpc } = setup((name) =>
+          name === "portal_public_counts" ? { data, error: null } : { data: [SUBMIT_ROW], error: null },
+        );
+        expect(await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", deps)).toEqual({
+          status: 429,
+          body: { error: "captcha_required" },
+        });
+        expect(rpc).not.toHaveBeenCalledWith("portal_public_submit", expect.anything());
+      }
+    });
+
+    it("treats any present non-empty honeypot value as a bot, including non-strings", async () => {
+      for (const v of ["x", 1, true, ["a"], { a: 1 }, 0, false]) {
+        const { deps, rpc, sendEmail } = setup(routes(0));
+        const res = await handlePublicFormAction("public_submit", "acme", "tok123", await body({ [PUBLIC_HONEYPOT_FIELD]: v }), "203.0.113.5", deps);
+        expect(res.status).toBe(200);
+        expect(rpc).not.toHaveBeenCalled();
+        expect(sendEmail).not.toHaveBeenCalled();
+      }
+      for (const v of [undefined, null, ""]) {
+        const { deps, rpc } = setup(routes(0));
+        await handlePublicFormAction("public_submit", "acme", "tok123", await body({ [PUBLIC_HONEYPOT_FIELD]: v }), "203.0.113.5", deps);
+        expect(rpc).toHaveBeenCalledWith("portal_public_submit", expect.anything());
+      }
     });
 
     it("fails the check closed when the Turnstile secret is unset", async () => {
