@@ -15,6 +15,7 @@
 import { shouldSend } from "./emailGuard.ts";
 import { renderEmail } from "./emailTemplate.ts";
 import { portalCodeEmail, portalEmailBrand, portalFromAddress, portalUrl } from "./portalEmail.ts";
+import { PUBLIC_FORM_ACTIONS, handlePublicFormAction, isPublicFormAction, type PublicFormAction } from "./portalPublicForm.ts";
 import { REFERRAL_ACTIONS, handleReferralAction, isReferralAction, type ReferralAction } from "./portalReferralApi.ts";
 
 export const PORTAL_CORS_HEADERS: Record<string, string> = {
@@ -41,6 +42,10 @@ export interface PortalEnv {
   fromAddress: string;
   appEnv: string | null | undefined;
   emailAllowlist: string;
+  /** Phase 2B-1: PUBLIC_FORM_SIGNING_SECRET. Unset means the public form answers not_available. */
+  publicFormSigningSecret?: string | null;
+  /** Phase 2B-1: TURNSTILE_SECRET_KEY. Unset means the Turnstile check always fails. */
+  turnstileSecretKey?: string | null;
 }
 
 export interface PortalApiDeps {
@@ -56,6 +61,8 @@ export interface PortalApiDeps {
    * account exists. When absent the promise is detached with a swallowed rejection.
    */
   background?(p: Promise<unknown>): void;
+  /** Outbound HTTP for the Turnstile check (Phase 2B-1). Absent means the check always fails. */
+  fetch?(input: string, init: RequestInit): Promise<Response>;
   env: PortalEnv;
 }
 
@@ -72,7 +79,8 @@ export type PortalAction =
   | "accept_invite"
   | "me"
   | "sign_out"
-  | ReferralAction;
+  | ReferralAction
+  | PublicFormAction;
 
 const ACTIONS: ReadonlySet<string> = new Set<PortalAction>([
   "brand",
@@ -83,6 +91,7 @@ const ACTIONS: ReadonlySet<string> = new Set<PortalAction>([
   "me",
   "sign_out",
   ...REFERRAL_ACTIONS,
+  ...PUBLIC_FORM_ACTIONS,
 ]);
 
 interface BrandRow {
@@ -243,6 +252,13 @@ export async function handlePortalRequest(req: Request, deps: PortalApiDeps): Pr
         return await signOut(token, deps);
       }
       default: {
+        if (isPublicFormAction(action)) {
+          // The public form has no session (FR-PORT-24): x-portal-session is never read.
+          const token = str(body.token).trim();
+          if (slugTooLong || tooLong(token, PORTAL_LIMITS.token)) return jsonResponse({ error: "not_available" }, 404);
+          const result = await handlePublicFormAction(action, slug, token, body, ip, deps);
+          return jsonResponse(result.body, result.status);
+        }
         if (isReferralAction(action)) {
           const token = sessionTokenFrom(req.headers);
           if (slugTooLong || tooLong(token, PORTAL_LIMITS.token)) return jsonResponse({ error: "unauthorized" }, 401);

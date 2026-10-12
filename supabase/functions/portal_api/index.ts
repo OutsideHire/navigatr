@@ -10,6 +10,7 @@
 //   form | dup_check | submit_referral | list_referrals | dashboard | get_referral
 //   withdraw_referral | transcribe   (Phase 1B, session required)
 //   export_referrals | get_profile | update_profile   (Phase 2A, session required)
+//   public_form | public_submit   (Phase 2B-1, no session: the public referral form)
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Resend } from "resend";
@@ -28,6 +29,12 @@ const APP_BASE_URL = Deno.env.get("APP_BASE_URL") ?? "https://app.getnavigatr.io
 // Same secret and mock flag as the rep-facing transcribe function.
 const ASSEMBLYAI_API_KEY = Deno.env.get("ASSEMBLYAI_API_KEY") ?? "";
 const TRANSCRIBE_MOCK = Deno.env.get("TRANSCRIBE_MOCK") === "1";
+
+// Phase 2B-1 public referral form. Both fail closed when unset: without the
+// signing secret the form answers not_available; without the Turnstile secret
+// a connection over the soft limit can never pass the check.
+const PUBLIC_FORM_SIGNING_SECRET = Deno.env.get("PUBLIC_FORM_SIGNING_SECRET") ?? "";
+const TURNSTILE_SECRET_KEY = Deno.env.get("TURNSTILE_SECRET_KEY") ?? "";
 
 const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 const resend = new Resend(RESEND_API_KEY);
@@ -57,11 +64,14 @@ const deps: PortalApiDeps = {
         fetch: (input, init) => fetch(input, init),
         apiKey: ASSEMBLYAI_API_KEY,
       }),
+  fetch: (input, init) => fetch(input, init),
   env: {
     appBaseUrl: APP_BASE_URL,
     fromAddress: FROM_ADDRESS,
     appEnv: APP_ENV,
     emailAllowlist: EMAIL_ALLOWLIST,
+    publicFormSigningSecret: PUBLIC_FORM_SIGNING_SECRET,
+    turnstileSecretKey: TURNSTILE_SECRET_KEY,
   },
 };
 

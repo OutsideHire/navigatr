@@ -1,16 +1,19 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   PUBLIC_FORM_FIELDS,
   PUBLIC_FORM_LIMITS,
   PUBLIC_FORM_MAX_AGE_MS,
   PUBLIC_FORM_MIN_AGE_MS,
+  PUBLIC_HONEYPOT_FIELD,
   TURNSTILE_VERIFY_URL,
   checkFormToken,
   fakeRef,
+  handlePublicFormAction,
   isPublicFormField,
   signFormToken,
   validatePublicSubmission,
   verifyTurnstile,
+  type PublicFormDeps,
 } from "./portalPublicForm";
 
 const GOOD = {
@@ -229,5 +232,327 @@ describe("validatePublicSubmission control characters (R4)", () => {
 
   it.each(CONTROLS.filter(([n]) => !["TAB", "LF", "CR"].includes(n)))("rejects %s inside notes", (_n, ch) => {
     expect(validatePublicSubmission({ ...GOOD, notes: `a${ch}b` })).toEqual({ ok: false, field: "notes" });
+  });
+});
+
+describe("handlePublicFormAction", () => {
+  const SECRET = "test-signing-secret";
+  const NOW = Date.parse("2026-10-18T12:00:00Z");
+  const FORM_ROW = {
+    org_name: "Acme ISO",
+    rep_name: "Rita Rep",
+    consent_text: "I may share this.",
+    consent_version: 2,
+    org_id: "secret-org",
+    user_id: "secret-user",
+  };
+  const SUBMIT_ROW = {
+    id: "1a2b3c4d-0000-0000-0000-000000000000",
+    ref: "REF-1A2B3C4D",
+    org_name: "Acme ISO",
+    logo_url: null,
+    primary_color: "#0f766e",
+  };
+  type Rpc = (name: string, args: Record<string, unknown>) => { data: unknown; error: { message: string } | null };
+
+  function setup(rpcImpl: Rpc, env: Partial<PublicFormDeps["env"]> = {}, fetchOk = true) {
+    const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => rpcImpl(name, args));
+    const sendEmail = vi.fn(async (_m: { from: string; to: string; subject: string; html: string; text: string }) => {});
+    const background = vi.fn();
+    const fetchFn = vi.fn(async (_u: string, _i: RequestInit) => new Response(JSON.stringify({ success: fetchOk })));
+    const deps: PublicFormDeps = {
+      rpc,
+      sendEmail,
+      background,
+      fetch: fetchFn,
+      now: () => new Date(NOW),
+      env: {
+        fromAddress: "navigatr <invites@send.getnavigatr.io>",
+        appEnv: "production",
+        emailAllowlist: "",
+        publicFormSigningSecret: SECRET,
+        turnstileSecretKey: "turnstile-secret",
+        ...env,
+      },
+    };
+    return { deps, rpc, sendEmail, background, fetchFn };
+  }
+
+  const routes = (recent: number, submit: { data: unknown; error: { message: string } | null } = { data: [SUBMIT_ROW], error: null }): Rpc =>
+    (name) => {
+      if (name === "portal_public_rate") return { data: recent, error: null };
+      if (name === "portal_public_submit") return submit;
+      return { data: null, error: { message: `unexpected ${name}` } };
+    };
+
+  async function body(overrides: Record<string, unknown> = {}, ageMs = 10_000) {
+    return {
+      companyName: "Fresh Bakery",
+      contactName: "Ann Owner",
+      email: "ann@bakery.example",
+      phone: "(555) 010-0100",
+      notes: "Needs a new terminal.",
+      referredBy: "Joe at the bank",
+      referrerEmail: "joe@bank.example",
+      consent: true,
+      consentVersion: 2,
+      formToken: await signFormToken(SECRET, "acme", "tok123", NOW - ageMs),
+      [PUBLIC_HONEYPOT_FIELD]: "",
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe("public_form", () => {
+    it("answers only the allowlisted fields with a form token signed now", async () => {
+      const { deps, rpc } = setup(() => ({ data: [FORM_ROW], error: null }));
+      const res = await handlePublicFormAction("public_form", "acme", "tok123", {}, null, deps);
+      expect(rpc).toHaveBeenCalledWith("portal_public_form", { p_slug: "acme", p_token: "tok123" });
+      expect(res.status).toBe(200);
+      const form = (res.body as { form: Record<string, unknown> }).form;
+      expect(Object.keys(form).sort()).toEqual(["consentText", "consentVersion", "formToken", "orgName", "repName"]);
+      expect(form).toMatchObject({ orgName: "Acme ISO", repName: "Rita Rep", consentText: "I may share this.", consentVersion: 2 });
+      expect(String(form.formToken).startsWith(`${NOW}.`)).toBe(true);
+      expect(await checkFormToken(SECRET, "acme", "tok123", String(form.formToken), NOW + 5_000)).toBe("ok");
+    });
+
+    it("passes a missing rep name as null", async () => {
+      const { deps } = setup(() => ({ data: [{ ...FORM_ROW, rep_name: null }], error: null }));
+      const res = await handlePublicFormAction("public_form", "acme", "tok123", {}, null, deps);
+      expect((res.body as { form: { repName: unknown } }).form.repName).toBeNull();
+    });
+
+    it("answers one generic not_available for every unavailable link", async () => {
+      const { deps } = setup(() => ({ data: [], error: null }));
+      const res = await handlePublicFormAction("public_form", "acme", "tok123", {}, null, deps);
+      expect(res).toEqual({ status: 404, body: { error: "not_available" } });
+    });
+
+    it("fails closed without a signing secret, before any database call", async () => {
+      const { deps, rpc } = setup(() => ({ data: [FORM_ROW], error: null }), { publicFormSigningSecret: "" });
+      expect(await handlePublicFormAction("public_form", "acme", "tok123", {}, null, deps)).toEqual({
+        status: 503,
+        body: { error: "not_available" },
+      });
+      expect(rpc).not.toHaveBeenCalled();
+    });
+
+    it("answers not_available for a blank slug or token without a database call", async () => {
+      const { deps, rpc } = setup(() => ({ data: [FORM_ROW], error: null }));
+      expect((await handlePublicFormAction("public_form", "", "tok123", {}, null, deps)).status).toBe(404);
+      expect((await handlePublicFormAction("public_form", "acme", "", {}, null, deps)).status).toBe(404);
+      expect(rpc).not.toHaveBeenCalled();
+    });
+
+    it("500s on a database error", async () => {
+      const { deps } = setup(() => ({ data: null, error: { message: "boom" } }));
+      expect((await handlePublicFormAction("public_form", "acme", "tok123", {}, null, deps)).status).toBe(500);
+    });
+  });
+
+  describe("public_submit", () => {
+    it("stores the referral, emails only the ISO name and reference to the referrer, and answers the reference", async () => {
+      const { deps, rpc, sendEmail, background } = setup(routes(0));
+      const res = await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", deps);
+      expect(res).toEqual({ status: 200, body: { submission: { ref: "REF-1A2B3C4D" } } });
+      expect(rpc).toHaveBeenNthCalledWith(1, "portal_public_rate", { p_ip: "203.0.113.5", p_window_minutes: 60 });
+      expect(rpc).toHaveBeenNthCalledWith(2, "portal_public_submit", {
+        p_slug: "acme",
+        p_token: "tok123",
+        p_company: "Fresh Bakery",
+        p_contact_name: "Ann Owner",
+        p_contact_email: "ann@bakery.example",
+        p_contact_phone: "(555) 010-0100",
+        p_notes: "Needs a new terminal.",
+        p_referred_by: "Joe at the bank",
+        p_referrer_email: "joe@bank.example",
+        p_consent_version: 2,
+        p_ip: "203.0.113.5",
+      });
+      expect(sendEmail).toHaveBeenCalledTimes(1);
+      expect(background).toHaveBeenCalledTimes(1);
+      const msg = sendEmail.mock.calls[0][0];
+      expect(msg.to).toBe("joe@bank.example");
+      expect(msg.from).toBe('"Acme ISO" <invites@send.getnavigatr.io>');
+      expect(msg.subject).toBe("Acme ISO received your referral");
+      expect(msg.text).toContain("REF-1A2B3C4D");
+      // The brand accent only paints a button, and this email has none, so the color is not asserted here.
+      for (const typed of ["Fresh Bakery", "Ann Owner", "ann@bakery.example", "Needs a new terminal.", "Joe at the bank", "555"]) {
+        expect(msg.text).not.toContain(typed);
+        expect(msg.html).not.toContain(typed);
+      }
+    });
+
+    it("sends no confirmation without a referrer email, and never to the business contact", async () => {
+      const { deps, rpc, sendEmail } = setup(routes(0));
+      const res = await handlePublicFormAction("public_submit", "acme", "tok123", await body({ referrerEmail: "" }), "203.0.113.5", deps);
+      expect(res).toEqual({ status: 200, body: { submission: { ref: "REF-1A2B3C4D" } } });
+      expect(rpc).toHaveBeenCalledWith("portal_public_submit", expect.objectContaining({ p_referrer_email: null }));
+      expect(sendEmail).not.toHaveBeenCalled();
+    });
+
+    it("points at a malformed referrer email", async () => {
+      const { deps, rpc } = setup(routes(0));
+      expect(
+        await handlePublicFormAction("public_submit", "acme", "tok123", await body({ referrerEmail: "joe@" }), "203.0.113.5", deps),
+      ).toEqual({ status: 400, body: { error: "invalid_body", field: "referrerEmail" } });
+      expect(rpc).not.toHaveBeenCalled();
+    });
+
+    it("answers a too-fast post or a filled honeypot exactly like success, writing and sending nothing", async () => {
+      for (const b of [await body({}, 1_000), await body({ [PUBLIC_HONEYPOT_FIELD]: "http://spam.example" })]) {
+        const { deps, rpc, sendEmail } = setup(routes(0));
+        const res = await handlePublicFormAction("public_submit", "acme", "tok123", b, "203.0.113.5", deps);
+        expect(res.status).toBe(200);
+        expect(Object.keys(res.body as object)).toEqual(["submission"]);
+        expect(Object.keys((res.body as { submission: object }).submission)).toEqual(["ref"]);
+        expect((res.body as { submission: { ref: string } }).submission.ref).toMatch(/^REF-[0-9A-F]{8}$/);
+        expect(rpc).not.toHaveBeenCalled();
+        expect(sendEmail).not.toHaveBeenCalled();
+      }
+    });
+
+    it("asks for a reload when the form token is missing, forged or a day old", async () => {
+      for (const b of [
+        await body({ formToken: "" }),
+        await body({ formToken: `${NOW - 10_000}.${"0".repeat(64)}` }),
+        await body({}, 25 * 60 * 60 * 1000),
+      ]) {
+        const { deps, rpc } = setup(routes(0));
+        expect(await handlePublicFormAction("public_submit", "acme", "tok123", b, "203.0.113.5", deps)).toEqual({
+          status: 409,
+          body: { error: "form_expired" },
+        });
+        expect(rpc).not.toHaveBeenCalled();
+      }
+    });
+
+    it("points at the first bad field before any database call", async () => {
+      const { deps, rpc } = setup(routes(0));
+      expect(await handlePublicFormAction("public_submit", "acme", "tok123", await body({ phone: "12" }), "203.0.113.5", deps)).toEqual({
+        status: 400,
+        body: { error: "invalid_body", field: "phone" },
+      });
+      expect(await handlePublicFormAction("public_submit", "acme", "tok123", await body({ consent: false }), "203.0.113.5", deps)).toEqual({
+        status: 400,
+        body: { error: "invalid_body", field: "consent" },
+      });
+      expect(rpc).not.toHaveBeenCalled();
+    });
+
+    it("asks for the check past 5 in an hour, and stores nothing without it", async () => {
+      const { deps, rpc, fetchFn } = setup(routes(5));
+      expect(await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", deps)).toEqual({
+        status: 429,
+        body: { error: "captcha_required" },
+      });
+      expect(rpc).toHaveBeenCalledTimes(1);
+      expect(fetchFn).not.toHaveBeenCalled();
+    });
+
+    it("lets a passed check through and refuses a failed one", async () => {
+      const passed = setup(routes(7));
+      const res = await handlePublicFormAction(
+        "public_submit", "acme", "tok123", await body({ captchaToken: "tt-ok" }), "203.0.113.5", passed.deps,
+      );
+      expect(res.status).toBe(200);
+      expect(passed.fetchFn).toHaveBeenCalledTimes(1);
+      expect(passed.rpc).toHaveBeenCalledWith("portal_public_submit", expect.anything());
+
+      const failed = setup(routes(7), {}, false);
+      expect(
+        await handlePublicFormAction("public_submit", "acme", "tok123", await body({ captchaToken: "tt-bad" }), "203.0.113.5", failed.deps),
+      ).toEqual({ status: 429, body: { error: "captcha_required" } });
+      expect(failed.rpc).not.toHaveBeenCalledWith("portal_public_submit", expect.anything());
+    });
+
+    it("treats an unresolvable client IP as over the per-IP limit (R3)", async () => {
+      const none = setup(routes(0));
+      expect(await handlePublicFormAction("public_submit", "acme", "tok123", await body(), null, none.deps)).toEqual({
+        status: 429,
+        body: { error: "captcha_required" },
+      });
+      expect(none.rpc).not.toHaveBeenCalledWith("portal_public_submit", expect.anything());
+      expect(none.fetchFn).not.toHaveBeenCalled();
+
+      const passed = setup(routes(0));
+      const res = await handlePublicFormAction("public_submit", "acme", "tok123", await body({ captchaToken: "tt-ok" }), null, passed.deps);
+      expect(res.status).toBe(200);
+      expect(passed.fetchFn).toHaveBeenCalledTimes(1);
+      expect(passed.rpc).toHaveBeenCalledWith("portal_public_submit", expect.objectContaining({ p_ip: null }));
+
+      const failed = setup(routes(0), {}, false);
+      expect(
+        await handlePublicFormAction("public_submit", "acme", "tok123", await body({ captchaToken: "tt-bad" }), "  ", failed.deps),
+      ).toEqual({ status: 429, body: { error: "captcha_required" } });
+    });
+
+    it("fails the check closed when the Turnstile secret is unset", async () => {
+      const { deps, fetchFn } = setup(routes(5), { turnstileSecretKey: "" });
+      expect(
+        await handlePublicFormAction("public_submit", "acme", "tok123", await body({ captchaToken: "tt-ok" }), "203.0.113.5", deps),
+      ).toEqual({ status: 429, body: { error: "captcha_required" } });
+      expect(fetchFn).not.toHaveBeenCalled();
+    });
+
+    it("refuses past 30 in an hour, even with a check", async () => {
+      const { deps, fetchFn } = setup(routes(30));
+      expect(
+        await handlePublicFormAction("public_submit", "acme", "tok123", await body({ captchaToken: "tt-ok" }), "203.0.113.5", deps),
+      ).toEqual({ status: 429, body: { error: "rate_limited" } });
+      expect(fetchFn).not.toHaveBeenCalled();
+    });
+
+    it("maps database refusals", async () => {
+      const cases: Array<[string, unknown]> = [
+        ["rate_limited", { status: 429, body: { error: "rate_limited" } }],
+        ["consent_changed", { status: 409, body: { error: "consent_changed" } }],
+        ["invalid_input:phone", { status: 400, body: { error: "invalid_body", field: "phone" } }],
+        ["invalid_input:referrerEmail", { status: 400, body: { error: "invalid_body", field: "referrerEmail" } }],
+        ["invalid_input:address", { status: 500, body: { error: "server_error" } }],
+        ["boom", { status: 500, body: { error: "server_error" } }],
+      ];
+      for (const [message, expected] of cases) {
+        const { deps } = setup(routes(0, { data: null, error: { message } }));
+        expect(await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", deps)).toEqual(expected);
+      }
+    });
+
+    it("answers not_available when the link died after the form loaded, sending nothing", async () => {
+      const { deps, sendEmail } = setup(routes(0, { data: [], error: null }));
+      expect(await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", deps)).toEqual({
+        status: 404,
+        body: { error: "not_available" },
+      });
+      expect(sendEmail).not.toHaveBeenCalled();
+    });
+
+    it("500s when the rate count fails", async () => {
+      const { deps } = setup(() => ({ data: null, error: { message: "boom" } }));
+      expect((await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", deps)).status).toBe(500);
+    });
+
+    it("keeps the reference when the allowlist drops the email or the send fails", async () => {
+      const staging = setup(routes(0), { appEnv: "staging", emailAllowlist: "someone@else.example" });
+      expect((await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", staging.deps)).status).toBe(200);
+      expect(staging.sendEmail).not.toHaveBeenCalled();
+
+      const failing = setup(routes(0));
+      failing.sendEmail.mockRejectedValueOnce(new Error("resend down"));
+      expect((await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", failing.deps)).status).toBe(200);
+
+      const throwing = setup(routes(0));
+      throwing.sendEmail.mockImplementationOnce(() => {
+        throw new Error("sync throw");
+      });
+      expect((await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", throwing.deps)).status).toBe(200);
+    });
   });
 });

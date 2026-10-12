@@ -16,6 +16,10 @@
  * (globalThis.crypto) exists in both Deno and Node.
  */
 import { timingSafeEquals } from "./cronAuth.ts";
+import { shouldSend } from "./emailGuard.ts";
+import { renderEmail } from "./emailTemplate.ts";
+import { portalEmailBrand, portalFromAddress, portalPublicConfirmationEmail } from "./portalEmail.ts";
+import type { ActionResult } from "./portalReferralApi.ts";
 import { PORTAL_FIELD_LIMITS } from "./portalSubmission.ts";
 
 export const PUBLIC_FORM_LIMITS = {
@@ -244,5 +248,204 @@ export async function verifyTurnstile(
     return body.success === true;
   } catch {
     return false;
+  }
+}
+
+// --- portal_api actions (no session) ------------------------------------------------
+
+export const PUBLIC_FORM_ACTIONS = ["public_form", "public_submit"] as const;
+export type PublicFormAction = (typeof PUBLIC_FORM_ACTIONS)[number];
+
+export function isPublicFormAction(action: string): action is PublicFormAction {
+  return (PUBLIC_FORM_ACTIONS as readonly string[]).includes(action);
+}
+
+export interface PublicFormEnv {
+  fromAddress: string;
+  appEnv: string | null | undefined;
+  emailAllowlist: string;
+  /** PUBLIC_FORM_SIGNING_SECRET. Unset: the form answers not_available (fail closed). */
+  publicFormSigningSecret?: string | null;
+  /** TURNSTILE_SECRET_KEY. Unset: nobody over the soft limit can pass the check (fail closed). */
+  turnstileSecretKey?: string | null;
+}
+
+export interface PublicFormDeps {
+  rpc(name: string, args: Record<string, unknown>): Promise<{ data: unknown; error: { message: string } | null }>;
+  sendEmail(msg: { from: string; to: string; subject: string; html: string; text: string }): Promise<void>;
+  background?(p: Promise<unknown>): void;
+  fetch?: FetchLike;
+  now?(): Date;
+  env: PublicFormEnv;
+}
+
+interface FormRow {
+  org_name: unknown;
+  rep_name: unknown;
+  consent_text: unknown;
+  consent_version: unknown;
+}
+
+interface SubmitRow {
+  ref: unknown;
+  org_name: unknown;
+  logo_url?: unknown;
+  primary_color?: unknown;
+}
+
+function ok(body: unknown): ActionResult {
+  return { status: 200, body };
+}
+
+function err(status: number, error: string, extra: Record<string, unknown> = {}): ActionResult {
+  return { status, body: { error, ...extra } };
+}
+
+function serverError(where: string, message: string): ActionResult {
+  console.error(`[portal_api] ${where} failed:`, message);
+  return err(500, "server_error");
+}
+
+function one<T>(data: unknown): T | null {
+  if (Array.isArray(data)) return data.length > 0 ? (data[0] as T) : null;
+  return data !== null && typeof data === "object" ? (data as T) : null;
+}
+
+function str(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function strOrNull(value: unknown): string | null {
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+function num(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** The only success shape, real or fake. */
+function submitted(ref: string): ActionResult {
+  return ok({ submission: { ref } });
+}
+
+export async function handlePublicFormAction(
+  action: PublicFormAction,
+  slug: string,
+  token: string,
+  body: Record<string, unknown>,
+  ip: string | null,
+  deps: PublicFormDeps,
+): Promise<ActionResult> {
+  const secret = deps.env.publicFormSigningSecret ?? "";
+  if (!secret) {
+    console.error("[portal_api] PUBLIC_FORM_SIGNING_SECRET is not set; the public form is unavailable");
+    return err(503, "not_available");
+  }
+  if (!slug || !token) return err(404, "not_available");
+  return action === "public_form"
+    ? publicForm(secret, slug, token, deps)
+    : publicSubmit(secret, slug, token, body, ip, deps);
+}
+
+async function publicForm(secret: string, slug: string, token: string, deps: PublicFormDeps): Promise<ActionResult> {
+  const { data, error } = await deps.rpc("portal_public_form", { p_slug: slug, p_token: token });
+  if (error) return serverError("public_form", error.message);
+  const row = one<FormRow>(data);
+  if (!row) return err(404, "not_available");
+  const nowMs = (deps.now ? deps.now() : new Date()).getTime();
+  const form: PortalPublicForm = {
+    orgName: str(row.org_name),
+    repName: strOrNull(row.rep_name),
+    consentText: str(row.consent_text),
+    consentVersion: num(row.consent_version),
+    formToken: await signFormToken(secret, slug, token, nowMs),
+  };
+  return ok({ form });
+}
+
+async function publicSubmit(
+  secret: string,
+  slug: string,
+  token: string,
+  body: Record<string, unknown>,
+  ip: string | null,
+  deps: PublicFormDeps,
+): Promise<ActionResult> {
+  const nowMs = (deps.now ? deps.now() : new Date()).getTime();
+  const formToken = str(body.formToken);
+  const stamp =
+    formToken.length > PUBLIC_FORM_LIMITS.formToken ? "invalid" : await checkFormToken(secret, slug, token, formToken, nowMs);
+  if (stamp === "invalid") return err(409, "form_expired");
+  // A bot learns nothing: identical to success, nothing written, nothing sent.
+  if (stamp === "too_fast" || str(body[PUBLIC_HONEYPOT_FIELD]).trim() !== "") return submitted(fakeRef());
+
+  const check = validatePublicSubmission(body);
+  if (!check.ok) return err(400, "invalid_body", { field: check.field });
+  const s = check.value;
+
+  // R3: with no resolvable client IP the limits cannot count, so treat the caller as over the
+  // per-IP soft limit: a valid Turnstile token is required, never a bypass.
+  let recent = PUBLIC_SOFT_LIMIT_PER_HOUR;
+  if (ip && ip.trim() !== "") {
+    const rate = await deps.rpc("portal_public_rate", { p_ip: ip, p_window_minutes: 60 });
+    if (rate.error) return serverError("public_rate", rate.error.message);
+    recent = num(rate.data);
+  }
+  if (recent >= PUBLIC_HARD_LIMIT_PER_HOUR) return err(429, "rate_limited");
+  if (recent >= PUBLIC_SOFT_LIMIT_PER_HOUR) {
+    const captchaToken = str(body.captchaToken).trim();
+    const passed =
+      captchaToken !== "" &&
+      captchaToken.length <= PUBLIC_FORM_LIMITS.captchaToken &&
+      (await verifyTurnstile(deps.fetch, deps.env.turnstileSecretKey, captchaToken, ip));
+    if (!passed) return err(429, "captcha_required");
+  }
+
+  const { data, error } = await deps.rpc("portal_public_submit", {
+    p_slug: slug,
+    p_token: token,
+    p_company: s.companyName,
+    p_contact_name: s.contactName,
+    p_contact_email: s.email,
+    p_contact_phone: s.phone,
+    p_notes: s.notes,
+    p_referred_by: s.referredBy,
+    p_referrer_email: s.referrerEmail,
+    p_consent_version: s.consentVersion,
+    p_ip: ip,
+  });
+  if (error) {
+    const message = error.message;
+    if (message.includes("rate_limited")) return err(429, "rate_limited");
+    if (message.includes("consent_changed")) return err(409, "consent_changed");
+    const field = /invalid_input:([A-Za-z]+)/.exec(message)?.[1];
+    if (field && isPublicFormField(field)) return err(400, "invalid_body", { field });
+    return serverError("public_submit", message);
+  }
+  const row = one<SubmitRow>(data);
+  if (!row || !str(row.ref)) return err(404, "not_available");
+  // FR-PORT-33 (controller ruling): only to the sender's own optional email, never the business contact.
+  if (s.referrerEmail) sendConfirmation(s.referrerEmail, str(row.org_name), str(row.ref), row, deps);
+  return submitted(str(row.ref));
+}
+
+/** FR-PORT-33. Never fails the submit, and never delays the response. */
+function sendConfirmation(to: string, orgName: string, ref: string, brandRow: SubmitRow, deps: PublicFormDeps): void {
+  try {
+    if (!shouldSend(deps.env.appEnv, deps.env.emailAllowlist, to)) {
+      console.log(`[portal_api][emailGuard] dropped a public form confirmation in APP_ENV=${deps.env.appEnv ?? "(unset)"}`);
+      return;
+    }
+    const built = portalPublicConfirmationEmail({ orgName, ref });
+    const { html, text } = renderEmail({ ...built, brand: portalEmailBrand(orgName, brandRow) });
+    const sending = deps
+      .sendEmail({ from: portalFromAddress(deps.env.fromAddress, orgName), to, subject: built.subject, html, text })
+      .catch((e: unknown) => {
+        console.error("[portal_api] public form confirmation failed:", e instanceof Error ? e.message : String(e));
+      });
+    if (deps.background) deps.background(sending);
+  } catch (e) {
+    console.error("[portal_api] public form confirmation failed:", e instanceof Error ? e.message : String(e));
   }
 }

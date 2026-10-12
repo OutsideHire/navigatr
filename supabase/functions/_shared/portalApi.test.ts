@@ -584,3 +584,37 @@ describe("length caps (checked before any rpc)", () => {
     expect(String(args.p_user_agent)).toHaveLength(512);
   });
 });
+
+describe("public form routes", () => {
+  const PUBLIC_ENV: PortalEnv = { ...ENV, publicFormSigningSecret: "s" };
+
+  it("serves the public form with no session header", async () => {
+    const { deps, rpc } = setup(
+      () => ok([{ org_name: "Acme ISO", rep_name: null, consent_text: "I may share this.", consent_version: 1 }]),
+      PUBLIC_ENV,
+    );
+    const res = await handlePortalRequest(post("public_form", { slug: " ACME ", token: " tok123 " }), deps);
+    expect(res.status).toBe(200);
+    expect(rpc).toHaveBeenCalledWith("portal_public_form", { p_slug: "acme", p_token: "tok123" });
+    expect(rpc).not.toHaveBeenCalledWith("portal_session_lookup", expect.anything());
+  });
+
+  it("answers not_available for an oversized token without a database call", async () => {
+    const { deps, rpc } = setup(() => ok([]), PUBLIC_ENV);
+    const res = await handlePortalRequest(post("public_form", { slug: "acme", token: "t".repeat(129) }), deps);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not_available" });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("routes public_submit and passes the client IP", async () => {
+    const { deps, rpc } = setup(() => ok(0), PUBLIC_ENV);
+    const res = await handlePortalRequest(
+      post("public_submit", { slug: "acme", token: "tok123", formToken: "" }, { "x-forwarded-for": "203.0.113.5" }),
+      deps,
+    );
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "form_expired" });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+});
