@@ -60,7 +60,9 @@ describe("useMyReferralLink", () => {
   it("does nothing while signed out, and surfaces an error", async () => {
     auth.user = null;
     const { wrapper } = setup();
-    renderHook(() => useMyReferralLink(), { wrapper });
+    const signedOut = renderHook(() => useMyReferralLink(), { wrapper });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(signedOut.result.current.fetchStatus).toBe("idle");
     expect(rpcMock).not.toHaveBeenCalled();
 
     auth.user = { id: "user-1" };
@@ -73,7 +75,9 @@ describe("useMyReferralLink", () => {
 describe("useTenantReferralLink", () => {
   it("asks only when enabled (administrators with the sheet open)", async () => {
     const { wrapper } = setup();
-    renderHook(() => useTenantReferralLink(false), { wrapper });
+    const off = renderHook(() => useTenantReferralLink(false), { wrapper });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(off.result.current.fetchStatus).toBe("idle");
     expect(rpcMock).not.toHaveBeenCalled();
 
     rpcMock.mockResolvedValueOnce({ data: [{ link_token: "ten", org_slug: "acme", public_form_enabled: true }], error: null });

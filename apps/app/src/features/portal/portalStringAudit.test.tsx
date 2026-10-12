@@ -56,6 +56,11 @@ vi.mock("./lib/portalApi", async (importOriginal) => {
   return { ...actual, portalApi: api };
 });
 
+const turnstile = vi.hoisted(() => ({ siteKey: "1x00000000000000000000AA", render: vi.fn() }));
+vi.mock("./lib/turnstile", () => ({
+  turnstileSiteKey: () => turnstile.siteKey,
+  loadTurnstile: () => Promise.resolve({ render: turnstile.render, remove: vi.fn() }),
+}));
 vi.mock("./lib/publicFormTiming", () => ({ waitForFormAge: () => Promise.resolve() }));
 
 import { PortalRoot } from "./pages/PortalRoot";
@@ -452,6 +457,41 @@ describe("public referral form: responses", () => {
     }
   });
 
+  it("every refusal body is clean too", async () => {
+    const stale = await submitBody({ formToken: "garbage" });
+    const cases: Array<[string, () => Promise<{ status: number; json: Record<string, unknown> }>, number, string]> = [
+      ["captcha_required", async () => {
+        const d = publicDeps().deps;
+        const rpc = d.rpc;
+        d.rpc = async (name, args) => (name === "portal_public_counts" ? { data: [{ ip_count: 5, link_count: 0 }], error: null } : rpc(name, args));
+        return post(d, "public_submit", await submitBody());
+      }, 429, "captcha_required"],
+      ["rate_limited", async () => {
+        const d = publicDeps().deps;
+        const rpc = d.rpc;
+        d.rpc = async (name, args) => (name === "portal_public_counts" ? { data: [{ ip_count: 30, link_count: 0 }], error: null } : rpc(name, args));
+        return post(d, "public_submit", await submitBody());
+      }, 429, "rate_limited"],
+      ["form_expired", () => post(publicDeps().deps, "public_submit", stale), 409, "form_expired"],
+      ["consent_changed", async () => {
+        const d = publicDeps().deps;
+        const rpc = d.rpc;
+        d.rpc = async (name, args) => (name === "portal_public_submit" ? { data: null, error: { message: `consent_changed ${SECRET}` } } : rpc(name, args));
+        return post(d, "public_submit", await submitBody());
+      }, 409, "consent_changed"],
+      ["invalid_body", async () => post(publicDeps().deps, "public_submit", await submitBody({ email: "nope" })), 400, "invalid_body"],
+    ];
+    for (const [name, run, status, error] of cases) {
+      const r = await run();
+      expect(r.status, name).toBe(status);
+      expect(r.json.error, name).toBe(error);
+      auditJson(r.json);
+      expect(JSON.stringify(r.json)).not.toMatch(/navigatr/i);
+    }
+    const bad = await (cases[4][1]());
+    expect(bad.json.field).toBe("email");
+  });
+
   it("the confirmation email carries no submitter text and no internal word", async () => {
     const { deps, sendEmail } = publicDeps();
     await post(deps, "public_submit", await submitBody());
@@ -464,6 +504,16 @@ describe("public referral form: responses", () => {
       expect(part).not.toContain(SECRET);
       expect(part).not.toContain("Fresh Bakery");
       expect(part).not.toContain("Joe");
+    }
+    const visibleHtml = msg.html
+      .replace(/<style[\s\S]*?<\/style>/g, "")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/https?:\/\/\S+/g, "")
+      .replace(/Button not working\?/g, "")
+      .replace(POWERED_BY, "");
+    expect(visibleHtml.match(FORBIDDEN_WORDS)).toBeNull();
+    for (const typed of ["Fresh Bakery", "Ann Owner", "Ann", "Joe", "Needs", "typed by the submitter"]) {
+      expect(msg.html).not.toContain(typed);
     }
     expect(msg.html).not.toContain(SECRET);
     expect(msg.html.replace(POWERED_BY, "")).not.toMatch(/navigatr/i);
@@ -647,6 +697,120 @@ describe("rendered portal pages: UI copy audit", () => {
     renderAt("/p/acme/refer/old");
     await screen.findByRole("heading", { name: "This form isn't available" });
     expectCleanScreen();
+  });
+
+  describe("public form: every page state", () => {
+    const FORM = { orgName: "Acme ISO", repName: "Rita Rep", consentText: "I may share this.", consentVersion: 2, formToken: "1.ab" };
+
+    beforeEach(() => {
+      turnstile.siteKey = "1x00000000000000000000AA";
+      turnstile.render.mockReset();
+      api.publicForm.mockResolvedValue(FORM);
+    });
+
+    async function open() {
+      const user = userEvent.setup();
+      renderAt("/p/acme/refer/tok123");
+      await screen.findByRole("heading", { name: "Refer a business to Acme ISO" });
+      return user;
+    }
+    async function fillAll(user: ReturnType<typeof userEvent.setup>, referrerEmail = "") {
+      await user.type(screen.getByLabelText("Business name"), "Fresh Bakery");
+      await user.type(screen.getByLabelText("Contact name"), "Ann");
+      await user.type(screen.getByLabelText("Email"), "ann@bakery.example");
+      await user.type(screen.getByLabelText("Phone"), "5550100100");
+      await user.type(screen.getByLabelText("Notes"), "Needs a terminal.");
+      if (referrerEmail) await user.type(screen.getByLabelText("Your email (optional)"), referrerEmail);
+      await user.click(screen.getByRole("checkbox", { name: "I may share this." }));
+      await user.click(screen.getByRole("button", { name: "Send referral" }));
+    }
+
+    it("a field error from client validation", async () => {
+      const user = await open();
+      await user.click(screen.getByRole("button", { name: "Send referral" }));
+      await screen.findByText("Add the business name.");
+      expectCleanScreen();
+    });
+
+    it("the server naming a field", async () => {
+      api.publicSubmit.mockRejectedValue(new PortalApiError(400, "invalid_body", "email"));
+      const user = await open();
+      await fillAll(user);
+      await screen.findByText("Add a valid email address.");
+      expectCleanScreen();
+    });
+
+    it("the check prompt, then the failed check notice", async () => {
+      api.publicSubmit.mockRejectedValue(new PortalApiError(429, "captcha_required"));
+      turnstile.render.mockImplementation((_el: HTMLElement, opts: { callback: (t: string) => void }) => {
+        queueMicrotask(() => opts.callback("captcha-bad"));
+        return "w1";
+      });
+      const user = await open();
+      await fillAll(user);
+      await screen.findByText("That check didn't go through. Try it again.");
+      expectCleanScreen();
+    });
+
+    it("the check prompt while the check is shown", async () => {
+      api.publicSubmit.mockRejectedValue(new PortalApiError(429, "captcha_required"));
+      turnstile.render.mockImplementation(() => "w1");
+      const user = await open();
+      await fillAll(user);
+      await screen.findByText("One more step. Complete the check below and we'll send it.");
+      expectCleanScreen();
+    });
+
+    it("the check could not load", async () => {
+      api.publicSubmit.mockRejectedValue(new PortalApiError(429, "captcha_required"));
+      turnstile.render.mockImplementation(() => {
+        throw new Error("boom");
+      });
+      const user = await open();
+      await fillAll(user);
+      await screen.findByText("The check couldn't load. Try again later.");
+      expectCleanScreen();
+    });
+
+    it("the rate limit notice", async () => {
+      api.publicSubmit.mockRejectedValue(new PortalApiError(429, "rate_limited"));
+      const user = await open();
+      await fillAll(user);
+      await screen.findByText("Too many referrals from this connection right now. Try again later.");
+      expectCleanScreen();
+    });
+
+    it("the page expired and the wording changed notices", async () => {
+      api.publicSubmit.mockRejectedValueOnce(new PortalApiError(409, "form_expired"));
+      const user = await open();
+      await fillAll(user);
+      await screen.findByText("This page was open for a while. Check your details and send it again.");
+      expectCleanScreen();
+    });
+
+    it("a load error with the retry button", async () => {
+      api.publicForm.mockReset();
+      api.publicForm.mockRejectedValue(new PortalApiError(0, "network_error"));
+      renderAt("/p/acme/refer/tok123");
+      await screen.findByRole("button", { name: "Try again" });
+      expectCleanScreen();
+    });
+
+    it("a send failure alert", async () => {
+      api.publicSubmit.mockRejectedValue(new PortalApiError(400, "invalid_body"));
+      const user = await open();
+      await fillAll(user);
+      await screen.findByText("We couldn't send that. Try again.");
+      expectCleanScreen();
+    });
+
+    it("thanks, with a referrer email, promises a confirmation", async () => {
+      api.publicSubmit.mockResolvedValue({ ref: "REF-1A2B3C4D" });
+      const user = await open();
+      await fillAll(user, "joe@bank.example");
+      await screen.findByText("A confirmation email is on its way.");
+      expectCleanScreen();
+    });
   });
 });
 
