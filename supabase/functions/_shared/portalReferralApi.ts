@@ -16,6 +16,7 @@
 import { collapseHistory, portalLabel, type PortalHistoryEntry, type PortalLabel } from "./portalLabels.ts";
 import { PORTAL_FIELD_LIMITS, isPortalWindow, validateSubmission, windowSince } from "./portalSubmission.ts";
 import { PORTAL_MAX_AUDIO_BASE64_CHARS, PORTAL_MAX_AUDIO_BYTES, base64ToBytes } from "./transcribe.ts";
+import { validateProfile, type PortalProfile } from "./portalProfile.ts";
 
 export const REFERRAL_ACTIONS = [
   "form",
@@ -26,6 +27,9 @@ export const REFERRAL_ACTIONS = [
   "withdraw_referral",
   "dashboard",
   "transcribe",
+  "export_referrals",
+  "get_profile",
+  "update_profile",
 ] as const;
 export type ReferralAction = (typeof REFERRAL_ACTIONS)[number];
 
@@ -64,6 +68,21 @@ export interface PortalReferralSummary {
   lastActivityAt: string;
 }
 
+/** One CSV row (FR-PORT-75). Partner labels only; value only when the ISO shows it. */
+export interface PortalExportRow {
+  ref: string;
+  companyName: string;
+  label: PortalLabel;
+  submittedAt: string;
+  lastActivityAt: string;
+  closedWonValueCents: number | null;
+}
+
+export interface PortalExport {
+  valueVisible: boolean;
+  rows: PortalExportRow[];
+}
+
 export interface PortalDashboard {
   submitted: number;
   active: number;
@@ -100,6 +119,8 @@ export interface PortalReferralDetail {
   label: PortalLabel;
   submittedAt: string;
   canWithdraw: boolean;
+  /** The ISO's retention period passed and the contact details were erased (FR-PORT-92). */
+  detailsRemoved: boolean;
   rep: PortalRepContact | null;
   history: PortalHistoryEntry[];
   /** Newest first. */
@@ -176,6 +197,12 @@ export async function handleReferralAction(
       return withdraw(scope, body, ip, deps);
     case "transcribe":
       return transcribe(scope, body, ip, deps);
+    case "export_referrals":
+      return exportReferrals(scope, body, deps);
+    case "get_profile":
+      return getProfile(scope, deps);
+    case "update_profile":
+      return updateProfile(scope, body, ip, deps);
     default:
       return err(404, "not_found");
   }
@@ -328,25 +355,29 @@ async function getReferral(scope: ReferralScope, body: Body, ip: string | null, 
     }
   }
 
-  // Defense in depth: SQL already blanks these for a rep-logged referral; never
-  // pass rep-written text through even if a row carried it (spec 6).
+  // Defense in depth: SQL already blanks these for a rep-logged referral and
+  // for a purged one; never pass rep-written text or erased details through
+  // even if a row carried them (spec 6, FR-PORT-92).
   const typed = row.source === "portal_signed_in";
+  const removed = row.details_removed === true;
+  const personal = typed && !removed;
   const repName = strOrNull(row.rep_name);
   const repEmail = strOrNull(row.rep_email);
   const out: PortalReferralDetail = {
     id: str(row.id),
     ref: str(row.ref),
     companyName: str(row.company_name),
-    contactName: typed ? strOrNull(row.contact_name) : null,
-    contactEmail: typed ? strOrNull(row.contact_email) : null,
-    contactPhone: typed ? strOrNull(row.contact_phone) : null,
-    address: typed ? strOrNull(row.address) : null,
+    contactName: personal ? strOrNull(row.contact_name) : null,
+    contactEmail: personal ? strOrNull(row.contact_email) : null,
+    contactPhone: personal ? strOrNull(row.contact_phone) : null,
+    address: personal ? strOrNull(row.address) : null,
     industry: typed ? strOrNull(row.industry) : null,
     urgency: typed ? strOrNull(row.urgency) : null,
-    notes: typed ? strOrNull(row.notes) : null,
+    notes: personal ? strOrNull(row.notes) : null,
     label,
     submittedAt: str(row.submitted_at),
-    canWithdraw: typed && row.can_withdraw === true,
+    canWithdraw: personal && row.can_withdraw === true,
+    detailsRemoved: removed,
     rep: repName || repEmail ? { name: repName ?? "", email: repEmail } : null,
     history,
     updates,
@@ -402,4 +433,74 @@ async function transcribe(scope: ReferralScope, body: Body, ip: string | null, d
     console.error("[portal_api] transcribe failed:", e instanceof Error ? e.message : String(e));
     return err(502, "transcription_failed");
   }
+}
+
+async function exportReferrals(scope: ReferralScope, body: Body, deps: ReferralDeps): Promise<ActionResult> {
+  const period = windowArg(body, deps);
+  if (!period.ok) return err(400, "invalid_body", { field: "window" });
+  const { data, error } = await deps.rpc("portal_export_referrals", { ...scopeArgs(scope), p_since: period.since });
+  if (error) return serverError("export_referrals", error.message);
+  const raw = rows<Record<string, unknown>>(data);
+  // FR-PORT-70/71: the value leaves the server only when the ISO allows it.
+  const valueVisible = raw.length > 0 && raw.every((r) => r.value_visible === true);
+  const out: PortalExportRow[] = [];
+  for (const r of raw) {
+    const label = portalLabel(r.status);
+    if (!label) continue;
+    const cents = r.won_value_cents === null || r.won_value_cents === undefined ? null : Number(r.won_value_cents);
+    out.push({
+      ref: str(r.ref),
+      companyName: str(r.company_name),
+      label,
+      submittedAt: str(r.submitted_at),
+      lastActivityAt: str(r.last_activity_at),
+      closedWonValueCents:
+        valueVisible && label === "Closed Won" && cents !== null && Number.isSafeInteger(cents) && cents >= 0
+          ? cents
+          : null,
+    });
+  }
+  const result: PortalExport = { valueVisible: valueVisible && out.length > 0, rows: out };
+  return ok({ export: result });
+}
+
+/** The four profile fields, nothing else from the row. */
+function profileFrom(row: Record<string, unknown> | undefined): PortalProfile | null {
+  if (!row || !str(row.name)) return null;
+  return {
+    name: str(row.name),
+    phone: strOrNull(row.phone),
+    email: str(row.email),
+    weeklyDigest: row.weekly_digest !== false,
+  };
+}
+
+async function getProfile(scope: ReferralScope, deps: ReferralDeps): Promise<ActionResult> {
+  const { data, error } = await deps.rpc("portal_get_profile", { ...scopeArgs(scope), p_portal_user: scope.portalUserId });
+  if (error) return serverError("get_profile", error.message);
+  const profile = profileFrom(rows<Record<string, unknown>>(data)[0]);
+  if (!profile) return serverError("get_profile", "no profile row");
+  return ok({ profile });
+}
+
+async function updateProfile(scope: ReferralScope, body: Body, ip: string | null, deps: ReferralDeps): Promise<ActionResult> {
+  const check = validateProfile(body);
+  if (!check.ok) return err(400, "invalid_body", { field: check.field });
+  const { data, error } = await deps.rpc("portal_update_profile", {
+    ...scopeArgs(scope),
+    p_portal_user: scope.portalUserId,
+    p_name: check.value.name,
+    p_phone: check.value.phone,
+    p_weekly_digest: check.value.weeklyDigest,
+    p_ip: ip,
+  });
+  if (error) {
+    if (error.message.includes("rate_limited")) return err(429, "rate_limited");
+    const field = /invalid_input:([A-Za-z]+)/.exec(error.message)?.[1];
+    if (field) return err(400, "invalid_body", { field });
+    return serverError("update_profile", error.message);
+  }
+  const profile = profileFrom(rows<Record<string, unknown>>(data)[0]);
+  if (!profile) return serverError("update_profile", "no profile row");
+  return ok({ profile });
 }
