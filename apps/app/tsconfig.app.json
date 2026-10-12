@@ -52,6 +52,8 @@
     "../../supabase/functions/_shared/emailTemplate.ts",
     "../../supabase/functions/_shared/emailGuard.ts",
     "../../supabase/functions/_shared/portalApi.ts",
-    "../../supabase/functions/_shared/portalInvite.ts"
+    "../../supabase/functions/_shared/portalInvite.ts",
+    "../../supabase/functions/_shared/portalLabels.ts",
+    "../../supabase/functions/_shared/portalSubmission.ts"
   ]
 }
