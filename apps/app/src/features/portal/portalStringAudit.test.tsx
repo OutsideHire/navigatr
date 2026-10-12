@@ -25,6 +25,7 @@ import {
   buildPortalNotifyEmail,
 } from "../../../../../supabase/functions/_shared/portalNotifyEmail";
 import { POWERED_BY, renderEmail } from "../../../../../supabase/functions/_shared/emailTemplate";
+import { PUBLIC_HONEYPOT_FIELD, signFormToken } from "../../../../../supabase/functions/_shared/portalPublicForm";
 import { buildReferralsCsv } from "./lib/portalCsv";
 
 const api = vi.hoisted(() => ({
@@ -46,12 +47,16 @@ const api = vi.hoisted(() => ({
   exportReferrals: vi.fn(),
   getProfile: vi.fn(),
   updateProfile: vi.fn(),
+  publicForm: vi.fn(),
+  publicSubmit: vi.fn(),
 }));
 
 vi.mock("./lib/portalApi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./lib/portalApi")>();
   return { ...actual, portalApi: api };
 });
+
+vi.mock("./lib/publicFormTiming", () => ({ waitForFormAge: () => Promise.resolve() }));
 
 import { PortalRoot } from "./pages/PortalRoot";
 import { PortalApiError } from "./lib/portalApi";
@@ -72,6 +77,7 @@ const FORBIDDEN_VALUES = new Set([
   "withdrawn_by_partner",
   "rep_entered",
   "portal_signed_in",
+  "portal_public",
 ]);
 const FORBIDDEN_KEYS = [
   "status", "stage", "source", "decline_reason", "declineReason", "decline_note", "declineNote", "icp_flags", "icpFlags",
@@ -79,7 +85,7 @@ const FORBIDDEN_KEYS = [
 // Erased personal details a purged row might still carry: never passed through.
 const PURGED_SECRET = "PURGED-PERSONAL";
 const FORBIDDEN_WORDS =
-  /\b(submitted|accepted|working|won|lost|declined|withdrawn|contacted|qualified|proposal|duplicate|outside_footprint|outside_icp|insufficient_contact|existing_customer|withdrawn_by_partner|rep_entered|portal_signed_in)\b/;
+  /\b(submitted|accepted|working|won|lost|declined|withdrawn|contacted|qualified|proposal|duplicate|outside_footprint|outside_icp|insufficient_contact|existing_customer|withdrawn_by_partner|rep_entered|portal_signed_in|portal_public)\b/;
 const SECRET = "INTERNAL-SECRET";
 // The injected name of a different partner: no response may ever carry it.
 const OTHER_PARTNER = "Someone Else CPA";
@@ -329,6 +335,142 @@ function expectCleanScreen() {
   expect(text).not.toMatch(/navigatr/i);
 }
 
+describe("public referral form: responses", () => {
+  const NOW = Date.parse("2026-10-18T12:00:00Z");
+  const SIGNING = "audit-signing-secret";
+  const REP_EMAIL = "rita@acme.example";
+
+  function publicDeps() {
+    const rpc = vi.fn(async (name: string): Promise<PortalRpcResult> => {
+      switch (name) {
+        case "portal_public_form":
+          return {
+            data: [
+              {
+                org_name: "Acme ISO",
+                rep_name: "Rita Rep",
+                consent_text: "I may share this.",
+                consent_version: 2,
+                org_id: SECRET,
+                user_id: SECRET,
+                token: SECRET,
+                email: REP_EMAIL,
+                status: "submitted",
+              },
+            ],
+            error: null,
+          };
+        case "portal_public_counts":
+          return { data: [{ ip_count: 0, link_count: 0 }], error: null };
+        case "portal_public_submit":
+          return {
+            data: [
+              {
+                id: "1a2b3c4d-0000-0000-0000-000000000000",
+                ref: "REF-1A2B3C4D",
+                org_name: "Acme ISO",
+                logo_url: null,
+                primary_color: null,
+                assigned_user_id: SECRET,
+                source: "portal_public",
+              },
+            ],
+            error: null,
+          };
+        default:
+          return { data: null, error: { message: `unexpected ${name}` } };
+      }
+    });
+    const sendEmail = vi.fn(async (_msg: { from: string; to: string; subject: string; html: string; text: string }) => {});
+    const deps: PortalApiDeps = {
+      rpc,
+      sendEmail,
+      now: () => new Date(NOW),
+      env: {
+        appBaseUrl: "https://app.getnavigatr.io",
+        fromAddress: "navigatr <invites@send.getnavigatr.io>",
+        appEnv: "production",
+        emailAllowlist: "",
+        publicFormSigningSecret: SIGNING,
+      },
+    };
+    return { deps, sendEmail };
+  }
+
+  async function post(deps: PortalApiDeps, action: string, body: Record<string, unknown>) {
+    const res = await handlePortalRequest(
+      new Request(`https://proj.supabase.co/functions/v1/portal_api/${action}`, {
+        method: "POST",
+        // A resolvable client IP: with none the server counts the caller as over the soft limit.
+        headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.7" },
+        body: JSON.stringify(body),
+      }),
+      deps,
+    );
+    return { status: res.status, json: (await res.json()) as Record<string, unknown> };
+  }
+
+  async function submitBody(overrides: Record<string, unknown> = {}) {
+    return {
+      slug: "acme",
+      token: "tok123",
+      companyName: "Fresh Bakery",
+      contactName: "Ann Owner",
+      email: "ann@bakery.example",
+      phone: "5550100100",
+      notes: `${SECRET} typed by the submitter`,
+      referredBy: "Joe",
+      referrerEmail: "joe@bank.example",
+      consent: true,
+      consentVersion: 2,
+      formToken: await signFormToken(SIGNING, "acme", "tok123", NOW - 10_000),
+      [PUBLIC_HONEYPOT_FIELD]: "",
+      ...overrides,
+    };
+  }
+
+  it("the form carries only the five public fields", async () => {
+    const { status, json } = await post(publicDeps().deps, "public_form", { slug: "acme", token: "tok123" });
+    expect(status).toBe(200);
+    auditJson(json);
+    const form = json.form as Record<string, unknown>;
+    expect(Object.keys(form).sort()).toEqual(["consentText", "consentVersion", "formToken", "orgName", "repName"]);
+    expect(JSON.stringify(json)).not.toContain(REP_EMAIL);
+    expect(JSON.stringify(json)).not.toMatch(/navigatr/i);
+  });
+
+  it("a real submission and a bot's look exactly alike", async () => {
+    const real = await post(publicDeps().deps, "public_submit", await submitBody());
+    const bot = await post(publicDeps().deps, "public_submit", await submitBody({ [PUBLIC_HONEYPOT_FIELD]: "spam" }));
+    for (const r of [real, bot]) {
+      expect(r.status).toBe(200);
+      auditJson(r.json);
+      expect(Object.keys(r.json)).toEqual(["submission"]);
+      expect(Object.keys(r.json.submission as object)).toEqual(["ref"]);
+      expect((r.json.submission as { ref: string }).ref).toMatch(/^REF-[0-9A-F]{8}$/);
+      expect(JSON.stringify(r.json)).not.toMatch(/navigatr/i);
+    }
+  });
+
+  it("the confirmation email carries no submitter text and no internal word", async () => {
+    const { deps, sendEmail } = publicDeps();
+    await post(deps, "public_submit", await submitBody());
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    const msg = sendEmail.mock.calls[0][0];
+    expect(msg.to).toBe("joe@bank.example");
+    expect(`${msg.subject} ${msg.text} ${msg.html}`).not.toContain("ann@bakery.example");
+    for (const part of [msg.subject, msg.text]) {
+      expect(part.match(FORBIDDEN_WORDS)).toBeNull();
+      expect(part).not.toContain(SECRET);
+      expect(part).not.toContain("Fresh Bakery");
+      expect(part).not.toContain("Joe");
+    }
+    expect(msg.html).not.toContain(SECRET);
+    expect(msg.html.replace(POWERED_BY, "")).not.toMatch(/navigatr/i);
+    expect(msg.text.replace(POWERED_BY, "")).not.toMatch(/navigatr/i);
+  });
+});
+
 describe("rendered portal pages: UI copy audit", () => {
   const HISTORY = PORTAL_LABELS.map((label, i) => ({ label, at: `2026-10-0${i + 1}T12:00:00Z` }));
 
@@ -472,6 +614,38 @@ describe("rendered portal pages: UI copy audit", () => {
     });
     renderAt("/p/acme/r/r-1");
     await screen.findByText("Contact details for this referral were removed for privacy.");
+    expectCleanScreen();
+  });
+
+  it("public form and its confirmation", async () => {
+    const user = userEvent.setup();
+    api.publicForm.mockResolvedValue({
+      orgName: "Acme ISO",
+      repName: "Rita Rep",
+      consentText: "I may share this.",
+      consentVersion: 2,
+      formToken: "1.ab",
+    });
+    api.publicSubmit.mockResolvedValue({ ref: "REF-1A2B3C4D" });
+    renderAt("/p/acme/refer/tok123");
+    await screen.findByRole("heading", { name: "Refer a business to Acme ISO" });
+    expectCleanScreen();
+
+    await user.type(screen.getByLabelText("Business name"), "Fresh Bakery");
+    await user.type(screen.getByLabelText("Contact name"), "Ann");
+    await user.type(screen.getByLabelText("Email"), "ann@bakery.example");
+    await user.type(screen.getByLabelText("Phone"), "5550100100");
+    await user.type(screen.getByLabelText("Notes"), "Needs a terminal.");
+    await user.click(screen.getByRole("checkbox", { name: "I may share this." }));
+    await user.click(screen.getByRole("button", { name: "Send referral" }));
+    await screen.findByRole("heading", { name: "Thanks for the referral" });
+    expectCleanScreen();
+  });
+
+  it("public form unavailable", async () => {
+    api.publicForm.mockResolvedValue(null);
+    renderAt("/p/acme/refer/old");
+    await screen.findByRole("heading", { name: "This form isn't available" });
     expectCleanScreen();
   });
 });
