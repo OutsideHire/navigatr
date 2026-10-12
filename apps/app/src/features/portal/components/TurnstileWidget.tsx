@@ -26,8 +26,12 @@ export function TurnstileWidget({
     let cancelled = false;
     let api: TurnstileApi | null = null;
     let widgetId: string | null = null;
-    loadTurnstile().then(
-      (loaded) => {
+    if (!siteKey) {
+      handlers.current.onError();
+      return;
+    }
+    loadTurnstile()
+      .then((loaded) => {
         if (cancelled || !ref.current) return;
         api = loaded;
         widgetId = loaded.render(ref.current, {
@@ -36,11 +40,10 @@ export function TurnstileWidget({
           callback: (token) => handlers.current.onToken(token),
           "error-callback": () => handlers.current.onError(),
         });
-      },
-      () => {
+      })
+      .catch(() => {
         if (!cancelled) handlers.current.onError();
-      },
-    );
+      });
     return () => {
       cancelled = true;
       if (api && widgetId !== null) api.remove(widgetId);

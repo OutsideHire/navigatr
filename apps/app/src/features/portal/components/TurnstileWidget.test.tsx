@@ -56,4 +56,21 @@ describe("TurnstileWidget", () => {
     await Promise.resolve();
     expect(fake.render).not.toHaveBeenCalled();
   });
+
+  it("reports an error, and loads nothing, when there is no site key", async () => {
+    const onError = vi.fn();
+    render(<TurnstileWidget siteKey="" onToken={vi.fn()} onError={onError} />);
+    await waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
+    expect(fake.load).not.toHaveBeenCalled();
+    expect(fake.render).not.toHaveBeenCalled();
+  });
+
+  it("reports an error when the check itself throws while rendering", async () => {
+    fake.render.mockImplementation(() => {
+      throw new Error("boom");
+    });
+    const onError = vi.fn();
+    render(<TurnstileWidget siteKey="k" onToken={vi.fn()} onError={onError} />);
+    await waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
+  });
 });

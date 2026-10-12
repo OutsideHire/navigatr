@@ -51,6 +51,7 @@ describe("loadTurnstile", () => {
     const p = loadTurnstile();
     scripts()[0].dispatchEvent(new Event("load"));
     await expect(p).rejects.toThrow("turnstile_missing");
+    expect(scripts()).toHaveLength(0);
   });
 });
 

@@ -50,6 +50,7 @@ export function loadTurnstile(doc: Document = document): Promise<TurnstileApi> {
         return;
       }
       loading = null;
+      script.remove();
       reject(new Error("turnstile_missing"));
     };
     script.onerror = () => {
