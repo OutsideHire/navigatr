@@ -241,3 +241,40 @@ describe("internal emails", () => {
     for (const kind of INTERNAL_NOTIFY_KINDS) expect(buildPortalNotifyEmail(kind, P, CTX)).toBeNull();
   });
 });
+
+describe("internal_reinstate_available", () => {
+  const PATH = "/partners/3f9a21c0-1111-4222-8333-444455556666";
+
+  it("tells the reviewer one declined duplicate can come back, and links to the partner", () => {
+    const e = buildPortalNotifyEmail("internal_reinstate_available", { appUrlPath: PATH, companyNames: ["Dup One"], count: 1 }, CTX)!;
+    expect(e).not.toBeNull();
+    expect(e.audience).toBe("internal");
+    expect(e.orgName).toBeNull();
+    expect(e.replyTo).toBeNull();
+    expect(e.subject).toBe("You can reinstate Dup One");
+    expect(e.heading).toBe("A declined duplicate can come back");
+    expect(e.bodyLines[0]).toBe(
+      "Dup One was declined as a duplicate of an earlier referral. That earlier referral is now closed, so Dup One can be reinstated.",
+    );
+    expect(e.ctaLabel).toBe("Open partner");
+    expect(e.ctaUrl).toBe(`${BASE}${PATH}`);
+  });
+
+  it("lists several, at most 10, with a remainder line", () => {
+    const names = Array.from({ length: 12 }, (_, i) => `Co ${i + 1}`);
+    const e = buildPortalNotifyEmail("internal_reinstate_available", { appUrlPath: PATH, companyNames: names, count: 12 }, CTX)!;
+    expect(e.subject).toBe("12 declined duplicates can be reinstated");
+    expect(e.heading).toBe("Declined duplicates can come back");
+    expect(e.bodyLines).toContain("- Co 10");
+    expect(e.bodyLines).not.toContain("- Co 11");
+    expect(e.bodyLines).toContain("and 2 more");
+  });
+
+  it("is an internal kind, and a malformed payload is dropped", () => {
+    expect(INTERNAL_NOTIFY_KINDS).toContain("internal_reinstate_available");
+    expect(
+      buildPortalNotifyEmail("internal_reinstate_available", { appUrlPath: "https://evil.example/x", companyNames: ["A"], count: 1 }, CTX),
+    ).toBeNull();
+    expect(buildPortalNotifyEmail("internal_reinstate_available", { appUrlPath: PATH, companyNames: [], count: 1 }, CTX)).toBeNull();
+  });
+});

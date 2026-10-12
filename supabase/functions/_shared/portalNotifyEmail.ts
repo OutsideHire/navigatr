@@ -27,7 +27,7 @@ export const PARTNER_NOTIFY_KINDS = [
 ] as const;
 export type PartnerNotifyKind = (typeof PARTNER_NOTIFY_KINDS)[number];
 
-export const INTERNAL_NOTIFY_KINDS = ["internal_new_referral", "internal_nudge"] as const;
+export const INTERNAL_NOTIFY_KINDS = ["internal_new_referral", "internal_nudge", "internal_reinstate_available"] as const;
 export type InternalNotifyKind = (typeof INTERNAL_NOTIFY_KINDS)[number];
 
 export type PortalNotifyKind = PartnerNotifyKind | InternalNotifyKind;
@@ -246,6 +246,38 @@ function buildInternal(kind: InternalNotifyKind, p: InternalNotifyPayload, ctx: 
       heading: "New partner referral for you",
       bodyLines: [`A partner sent ${name} through your referral portal.`, "Review it to accept, merge or decline."],
       ctaLabel: "Review referral",
+      ctaUrl: url,
+      footnote: "You're getting this because partner referrals are routed to you.",
+      audience: "internal",
+      orgName: null,
+      replyTo: null,
+    };
+  }
+  if (kind === "internal_reinstate_available") {
+    const count = p.count;
+    const first = p.companyNames[0];
+    const listed = p.companyNames.slice(0, 10).map((c) => `- ${c}`);
+    const rest = count > listed.length ? [`and ${count - listed.length} more`] : [];
+    return {
+      subject: count === 1 ? `You can reinstate ${first}` : `${count} declined duplicates can be reinstated`,
+      preheader:
+        count === 1
+          ? `The earlier referral for ${first} is closed.`
+          : "The earlier referrals for these businesses are closed.",
+      heading: count === 1 ? "A declined duplicate can come back" : "Declined duplicates can come back",
+      bodyLines:
+        count === 1
+          ? [
+              `${first} was declined as a duplicate of an earlier referral. That earlier referral is now closed, so ${first} can be reinstated.`,
+              "Open the partner to reinstate it, or leave it declined.",
+            ]
+          : [
+              "These were declined as duplicates of an earlier referral that is now closed, so they can be reinstated:",
+              ...listed,
+              ...rest,
+              "Open the partner to reinstate them, or leave them declined.",
+            ],
+      ctaLabel: "Open partner",
       ctaUrl: url,
       footnote: "You're getting this because partner referrals are routed to you.",
       audience: "internal",
