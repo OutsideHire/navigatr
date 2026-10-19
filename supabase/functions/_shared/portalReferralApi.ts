@@ -16,6 +16,7 @@
 import { collapseHistory, portalLabel, type PortalHistoryEntry, type PortalLabel } from "./portalLabels.ts";
 import { PORTAL_FIELD_LIMITS, isPortalWindow, validateSubmission, windowSince } from "./portalSubmission.ts";
 import { PORTAL_MAX_AUDIO_BASE64_CHARS, PORTAL_MAX_AUDIO_BYTES, base64ToBytes } from "./transcribe.ts";
+import { getSentReferral, listSentReferrals, postNote } from "./portalSentApi.ts";
 import { validateProfile, type PortalProfile } from "./portalProfile.ts";
 
 export const REFERRAL_ACTIONS = [
@@ -30,6 +31,9 @@ export const REFERRAL_ACTIONS = [
   "export_referrals",
   "get_profile",
   "update_profile",
+  "list_sent_referrals",
+  "get_sent_referral",
+  "post_note",
 ] as const;
 export type ReferralAction = (typeof REFERRAL_ACTIONS)[number];
 
@@ -198,11 +202,20 @@ export async function handleReferralAction(
     case "transcribe":
       return transcribe(scope, body, ip, deps);
     case "export_referrals":
-      return exportReferrals(scope, body, deps);
+      return exportReferrals(scope, body, ip, deps);
     case "get_profile":
       return getProfile(scope, deps);
     case "update_profile":
       return updateProfile(scope, body, ip, deps);
+    case "list_sent_referrals": {
+      const period = windowArg(body, deps);
+      if (!period.ok) return err(400, "invalid_body", { field: "window" });
+      return listSentReferrals(scope, period.since, deps);
+    }
+    case "get_sent_referral":
+      return getSentReferral(scope, body, ip, deps);
+    case "post_note":
+      return postNote(scope, body, ip, deps);
     default:
       return err(404, "not_found");
   }
@@ -435,11 +448,14 @@ async function transcribe(scope: ReferralScope, body: Body, ip: string | null, d
   }
 }
 
-async function exportReferrals(scope: ReferralScope, body: Body, deps: ReferralDeps): Promise<ActionResult> {
+async function exportReferrals(scope: ReferralScope, body: Body, ip: string | null, deps: ReferralDeps): Promise<ActionResult> {
   const period = windowArg(body, deps);
   if (!period.ok) return err(400, "invalid_body", { field: "window" });
   const { data, error } = await deps.rpc("portal_export_referrals", { ...scopeArgs(scope), p_since: period.since });
   if (error) return serverError("export_referrals", error.message);
+  // NFR-PORT-06: no file leaves without its audit row.
+  const audit = await deps.rpc("portal_record_export", { ...scopeArgs(scope), p_portal_user: scope.portalUserId, p_ip: ip });
+  if (audit.error) return serverError("export audit", audit.error.message);
   const raw = rows<Record<string, unknown>>(data);
   // FR-PORT-70/71: the value leaves the server only when the ISO allows it.
   const valueVisible = raw.length > 0 && raw.every((r) => r.value_visible === true);
