@@ -10,6 +10,8 @@ vi.mock("@/stores/auth", () => ({
 }));
 
 import { DEALS_QUERY_KEY } from "@/features/pipeline/hooks/useDeals";
+import { DEAL_NOTES_KEY } from "@/features/pipeline/hooks/useDealNotes";
+import { PARTNERS_QUERY_KEY } from "./usePartners";
 import {
   useAcceptFormSubmission,
   useAttributeFormSubmission,
@@ -58,6 +60,15 @@ describe("form submission mutations", () => {
     expect(rpcMock).toHaveBeenLastCalledWith("decline_form_submission", { p_submission_id: "s-1", p_reason: "duplicate", p_note: null });
   });
 
+  it("decline refreshes the referral queues and the partners list", async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    const { wrapper, spy } = setup();
+    const { result } = renderHook(() => useDeclineFormSubmission(), { wrapper });
+    await result.current.mutateAsync({ submissionId: "s-1", reason: "duplicate" });
+    await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ["referrals"] }));
+    expect(spy).toHaveBeenCalledWith({ queryKey: PARTNERS_QUERY_KEY("user-1") });
+  });
+
   it("merges into a deal and refreshes deals", async () => {
     rpcMock.mockResolvedValueOnce({ data: null, error: null });
     const { wrapper, spy } = setup();
@@ -65,14 +76,25 @@ describe("form submission mutations", () => {
     await result.current.mutateAsync({ submissionId: "s-1", dealId: "d-1" });
     expect(rpcMock).toHaveBeenCalledWith("merge_form_submission", { p_submission_id: "s-1", p_deal_id: "d-1" });
     await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: DEALS_QUERY_KEY("user-1") }));
+    expect(spy).toHaveBeenCalledWith({ queryKey: DEAL_NOTES_KEY("d-1") });
+    expect(spy).toHaveBeenCalledWith({ queryKey: PARTNERS_QUERY_KEY("user-1") });
   });
 
-  it("reassigns to a teammate", async () => {
+  it("reassigns to a teammate and refreshes the queues and the partners list", async () => {
     rpcMock.mockResolvedValueOnce({ data: null, error: null });
-    const { wrapper } = setup();
+    const { wrapper, spy } = setup();
     const { result } = renderHook(() => useReassignFormSubmission(), { wrapper });
     await result.current.mutateAsync({ submissionId: "s-1", userId: "u-2" });
     expect(rpcMock).toHaveBeenCalledWith("reassign_form_submission", { p_submission_id: "s-1", p_user_id: "u-2" });
+    await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ["referrals"] }));
+    expect(spy).toHaveBeenCalledWith({ queryKey: PARTNERS_QUERY_KEY("user-1") });
+  });
+
+  it("falls back to the action's own copy for an unknown error", async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: "something odd" } });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useReassignFormSubmission(), { wrapper });
+    await expect(result.current.mutateAsync({ submissionId: "s-1", userId: "u-2" })).rejects.toThrow("Couldn't reassign the referral");
   });
 
   it("turns a server token into copy", async () => {

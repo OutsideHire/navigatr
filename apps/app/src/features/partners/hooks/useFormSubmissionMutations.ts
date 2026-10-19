@@ -3,12 +3,15 @@
  * With a partner, useAttributeFormSubmission turns the submission into a
  * referral and the review sheet finishes with the referral mutations in
  * useReferralMutations. With no partner, accept, decline and merge act on the
- * submission itself. Each refreshes every referrals query (both queues).
+ * submission itself. Each refreshes every referrals query (both queues) and the
+ * partners list (its referral counts); merge also refreshes the deal's notes.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
 import { DEALS_QUERY_KEY } from "@/features/pipeline/hooks/useDeals";
+import { DEAL_NOTES_KEY } from "@/features/pipeline/hooks/useDealNotes";
+import { PARTNERS_QUERY_KEY } from "./usePartners";
 import { referralErrorMessage, type DeclineReason } from "../lib/referrals";
 
 function useRefresh(opts: { deals?: boolean; tasks?: boolean } = {}) {
@@ -16,6 +19,7 @@ function useRefresh(opts: { deals?: boolean; tasks?: boolean } = {}) {
   const userId = useAuth((s) => s.user?.id);
   return () => {
     void queryClient.invalidateQueries({ queryKey: ["referrals"] });
+    void queryClient.invalidateQueries({ queryKey: PARTNERS_QUERY_KEY(userId) });
     if (opts.deals) void queryClient.invalidateQueries({ queryKey: DEALS_QUERY_KEY(userId) });
     if (opts.tasks) void queryClient.invalidateQueries({ queryKey: ["tasks", userId ?? "anon"] });
   };
@@ -65,6 +69,7 @@ export function useDeclineFormSubmission() {
 }
 
 export function useMergeFormSubmission() {
+  const queryClient = useQueryClient();
   const refresh = useRefresh({ deals: true });
   return useMutation({
     mutationFn: async (input: { submissionId: string; dealId: string }): Promise<void> => {
@@ -74,7 +79,11 @@ export function useMergeFormSubmission() {
       });
       if (error) throw new Error(referralErrorMessage(error, "Couldn't merge the referral"));
     },
-    onSuccess: refresh,
+    onSuccess: (_data, input) => {
+      refresh();
+      // The merge writes a deal note with what the sender typed.
+      void queryClient.invalidateQueries({ queryKey: DEAL_NOTES_KEY(input.dealId) });
+    },
   });
 }
 

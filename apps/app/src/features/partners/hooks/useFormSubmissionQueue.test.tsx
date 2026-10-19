@@ -56,6 +56,10 @@ describe("useFormSubmissionQueue", () => {
     expect(isMock.mock.calls).toEqual([["triaged_at", null], ["purged_at", null]]);
     expect(orderMock).toHaveBeenCalledWith("submitted_at", { ascending: true });
     expect(selectMock.mock.calls[0][0]).not.toContain("submitter_ip");
+    expect(selectMock).toHaveBeenCalledWith(
+      "id, link_type, assigned_user_id, company_name, contact_name, contact_email, contact_phone, " +
+        "notes, referred_by_text, referrer_email, submitted_at",
+    );
     expect(result.current.data).toEqual([{
       id: "s-1", linkType: "user", assignedUserId: "user-1", companyName: "Fresh Bakery",
       contactName: "Ann", contactEmail: "ann@fresh.example", contactPhone: "5550001111",
