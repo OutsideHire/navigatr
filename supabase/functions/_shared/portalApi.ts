@@ -79,6 +79,7 @@ export type PortalAction =
   | "accept_invite"
   | "me"
   | "sign_out"
+  | "unsubscribe_digest"
   | ReferralAction
   | PublicFormAction;
 
@@ -90,6 +91,7 @@ const ACTIONS: ReadonlySet<string> = new Set<PortalAction>([
   "accept_invite",
   "me",
   "sign_out",
+  "unsubscribe_digest",
   ...REFERRAL_ACTIONS,
   ...PUBLIC_FORM_ACTIONS,
 ]);
@@ -207,6 +209,17 @@ export async function handlePortalRequest(req: Request, deps: PortalApiDeps): Pr
   const action = portalAction(req.url);
   if (!ACTIONS.has(action)) return jsonResponse({ error: "not_found" }, 404);
   if (req.method !== "POST") return jsonResponse({ error: "method_not_allowed" }, 405);
+
+  // FR-PORT-84: no session, and the one-click POST from a mail provider is
+  // form-encoded, so this action reads its own input before the JSON parse.
+  if (action === "unsubscribe_digest") {
+    try {
+      return await unsubscribeDigest(req, deps);
+    } catch (e) {
+      console.error("[portal_api] unsubscribe_digest threw:", e instanceof Error ? e.message : String(e));
+      return jsonResponse({ error: "server_error" }, 500);
+    }
+  }
 
   let body: Record<string, unknown>;
   try {
@@ -437,6 +450,54 @@ async function signOut(token: string, deps: PortalApiDeps): Promise<Response> {
     if (error) console.error("[portal_api] sign out failed:", error.message);
   }
   return jsonResponse({ ok: true });
+}
+
+/**
+ * Weekly summary opt-out (FR-PORT-84). The List-Unsubscribe one-click target
+ * carries slug and t in the query string; the portal page posts JSON
+ * { slug, token }. The answer never says whether the token matched anyone.
+ * Only POST reaches here (a GET, e.g. a link scanner, is a 405 and changes nothing).
+ * A request with no resolvable client IP shares one "unknown" rate-limit bucket in
+ * SQL (which skips the per-IP limit for a null IP), so stripping headers is no bypass.
+ */
+async function unsubscribeDigest(req: Request, deps: PortalApiDeps): Promise<Response> {
+  const done = () => jsonResponse({ ok: true });
+  let slug = "";
+  let token = "";
+  try {
+    const url = new URL(req.url);
+    slug = (url.searchParams.get("slug") ?? "").trim().toLowerCase();
+    token = (url.searchParams.get("t") ?? "").trim();
+  } catch {
+    // Fall through to the body.
+  }
+  if (!slug || !token) {
+    slug = "";
+    token = "";
+    if ((req.headers.get("content-type") ?? "").includes("application/json")) {
+      try {
+        const parsed: unknown = await req.json();
+        if (parsed !== null && typeof parsed === "object") {
+          const obj = parsed as Record<string, unknown>;
+          slug = str(obj.slug).trim().toLowerCase();
+          token = str(obj.token).trim();
+        }
+      } catch {
+        return done();
+      }
+    }
+  }
+  if (!slug || !token || tooLong(slug, PORTAL_LIMITS.slug) || tooLong(token, PORTAL_LIMITS.token)) return done();
+  const { error } = await deps.rpc("portal_unsubscribe_digest", {
+    p_slug: slug,
+    p_token: token,
+    p_ip: truncate(clientIp(req.headers), PORTAL_LIMITS.ip) ?? "unknown",
+  });
+  if (error) {
+    console.error("[portal_api] unsubscribe failed:", error.message);
+    return jsonResponse({ error: "server_error" }, 500);
+  }
+  return done();
 }
 
 /**
