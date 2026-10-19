@@ -85,6 +85,8 @@ export function usePartnerNoteCounts(partnerId: string | undefined) {
         .select("deal_id, notes:referral_partner_notes(id)")
         .eq("partner_id", partnerId as string)
         .eq("direction", "outbound")
+        // Newest first, so the cap keeps the referrals a rep is working now.
+        .order("submitted_at", { ascending: false })
         .limit(500);
       if (error) throw error;
       const counts: Record<string, number> = {};

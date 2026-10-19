@@ -8,7 +8,8 @@ import { useDealPartnerNotes } from "../hooks/useReferralPartnerNotes";
 
 function shortDate(iso: string): string {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  // With the year: a note can sit on a deal long after it was written.
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 export function PartnerNoteBacksPanel({ dealId }: { dealId: string }) {

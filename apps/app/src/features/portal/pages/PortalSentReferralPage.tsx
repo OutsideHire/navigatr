@@ -28,6 +28,13 @@ const RATE_LIMITED = "You've added a lot of notes in the last hour. Try again la
 const GONE = "This referral is no longer available.";
 const TOO_LONG = "Keep your note under 1,000 characters.";
 const FAILED = "We couldn't add your note. Try again.";
+const NO_CONTACT = "No contact details were shared.";
+
+/** A mailto link for one address: everything but the @ is percent-encoded, so a
+ *  stored address can never add headers (?cc=, &body=) or a fragment. */
+function mailtoHref(email: string): string {
+  return `mailto:${encodeURIComponent(email).replace(/%40/g, "@")}`;
+}
 
 export function PortalSentReferralPage() {
   const { referralId = "" } = useParams<{ referralId: string }>();
@@ -109,7 +116,11 @@ export function PortalSentReferralPage() {
         return;
       }
       if (err instanceof PortalApiError && err.code === "rate_limited") setNotice(RATE_LIMITED);
-      else if (err instanceof PortalApiError && err.status === 404) setNotice(GONE);
+      else if (err instanceof PortalApiError && err.status === 404) {
+        // Removed or no longer shared: reload so the page says so instead of a stale composer.
+        setNotice(GONE);
+        void queryClient.invalidateQueries({ queryKey: key });
+      }
       else if (isPortalTransientError(err)) setNotice(portalReachMessage(brand.orgName));
       else setNotice(FAILED);
     } finally {
@@ -119,7 +130,7 @@ export function PortalSentReferralPage() {
 
   const contact: Array<[string, string | null, string | null]> = [
     ["Contact", r.contactName, null],
-    ["Email", r.contactEmail, r.contactEmail ? `mailto:${r.contactEmail}` : null],
+    ["Email", r.contactEmail, r.contactEmail ? mailtoHref(r.contactEmail) : null],
     ["Phone", r.contactPhone, r.contactPhone ? `tel:${r.contactPhone.replace(/[^\d+]/g, "")}` : null],
   ];
   const shown = contact.filter(([, v]) => v);
@@ -144,7 +155,7 @@ export function PortalSentReferralPage() {
           {r.repNote && <p className="whitespace-pre-wrap break-words text-body-md text-text-default">{r.repNote}</p>}
           {r.rep?.email && (
             <a
-              href={`mailto:${r.rep.email}`}
+              href={mailtoHref(r.rep.email)}
               className="inline-flex min-h-11 items-center gap-2 break-all text-body-md text-brand-primary"
             >
               <Mail className="h-4 w-4 shrink-0" aria-hidden />
@@ -160,6 +171,7 @@ export function PortalSentReferralPage() {
           {r.detailsRemoved && (
             <p className="text-body-md text-text-muted">Contact details for this referral were removed for privacy.</p>
           )}
+          {!r.detailsRemoved && shown.length === 0 && <p className="text-body-md text-text-muted">{NO_CONTACT}</p>}
           {shown.length > 0 && (
             <dl className="grid grid-cols-[auto,1fr] items-center gap-x-3 gap-y-1">
               {shown.map(([k, v, href]) => (
@@ -187,7 +199,11 @@ export function PortalSentReferralPage() {
           <h2 className="text-body-strong text-text-default">Your notes</h2>
           {r.canPostNote && (
             <div className="flex flex-col gap-2">
-              <FormField label={`Add a note for ${brand.orgName}`} htmlFor="portal-sent-note">
+              <FormField
+                label={`Add a note for ${brand.orgName}`}
+                htmlFor="portal-sent-note"
+                error={tooLong ? TOO_LONG : undefined}
+              >
                 <Textarea
                   id="portal-sent-note"
                   value={draft}
@@ -197,7 +213,6 @@ export function PortalSentReferralPage() {
                 />
               </FormField>
               <p className="text-caption text-text-muted">{sender} gets an email when you add one.</p>
-              {tooLong && <p className="text-body-sm text-status-danger">{TOO_LONG}</p>}
               {notice && (
                 <p role="alert" className="text-body-sm text-status-danger">
                   {notice}

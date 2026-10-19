@@ -195,6 +195,74 @@ describe("PortalSentReferralPage", () => {
     expect(screen.getByRole("button", { name: "Send note" })).toBeEnabled();
   });
 
+  it("marks the box invalid and announces a note over the limit", async () => {
+    const user = userEvent.setup();
+    renderAt();
+    const box = await screen.findByLabelText("Add a note for Acme ISO");
+    expect(box).not.toHaveAttribute("aria-invalid");
+    await user.click(box);
+    await user.paste("a".repeat(1001));
+    const message = screen.getByRole("alert");
+    expect(message).toHaveTextContent("Keep your note under 1,000 characters.");
+    expect(box).toHaveAttribute("aria-invalid", "true");
+    expect(box.getAttribute("aria-describedby")).toBe(message.id);
+  });
+
+  it("keeps Send disabled for a note that is only spaces and line breaks", async () => {
+    const user = userEvent.setup();
+    renderAt();
+    const box = await screen.findByLabelText("Add a note for Acme ISO");
+    await user.type(box, "   {enter}  {enter}");
+    expect(screen.getByRole("button", { name: "Send note" })).toBeDisabled();
+    expect(api.postNote).not.toHaveBeenCalled();
+  });
+
+  it("returns to sign-in when the session ends while a note is posting", async () => {
+    const user = userEvent.setup();
+    api.postNote.mockRejectedValue(new PortalApiError(401, "unauthorized"));
+    renderAt();
+    const box = await screen.findByLabelText("Add a note for Acme ISO");
+    await user.type(box, "Hello");
+    await user.click(screen.getByRole("button", { name: "Send note" }));
+    expect(await screen.findByRole("heading", { name: "Sign in to Acme ISO" })).toBeInTheDocument();
+    expect(readPortalSession("acme")).toBeNull();
+  });
+
+  it("reloads the referral when it disappeared while a note was posting", async () => {
+    const user = userEvent.setup();
+    api.postNote.mockRejectedValue(new PortalApiError(404, "not_found"));
+    renderAt();
+    const box = await screen.findByLabelText("Add a note for Acme ISO");
+    api.getSentReferral.mockResolvedValue(null);
+    await user.type(box, "Hello");
+    await user.click(screen.getByRole("button", { name: "Send note" }));
+    expect(await screen.findByRole("heading", { name: "We couldn't find that referral" })).toBeInTheDocument();
+  });
+
+  it("says when no contact details were shared", async () => {
+    api.getSentReferral.mockResolvedValue({ ...DETAIL, contactName: null, contactEmail: null, contactPhone: null });
+    renderAt();
+    const contact = (await screen.findByRole("heading", { name: "Business contact" })).closest("section")!;
+    expect(within(contact).getByText("No contact details were shared.")).toBeInTheDocument();
+    expect(within(contact).queryByText("Contact details for this referral were removed for privacy.")).toBeNull();
+  });
+
+  it("encodes email addresses in mailto links", async () => {
+    api.getSentReferral.mockResolvedValue({
+      ...DETAIL,
+      contactEmail: "gil@gold.example?cc=x@evil.example&body=hi",
+      rep: { name: "Rita Rep", email: "rita@acme.example#x" },
+    });
+    renderAt();
+    const contact = (await screen.findByRole("heading", { name: "Business contact" })).closest("section")!;
+    expect(within(contact).getByRole("link", { name: "gil@gold.example?cc=x@evil.example&body=hi" })).toHaveAttribute(
+      "href",
+      "mailto:gil@gold.example%3Fcc%3Dx@evil.example%26body%3Dhi",
+    );
+    const from = screen.getByRole("heading", { name: "Sent by Rita Rep" }).closest("section")!;
+    expect(within(from).getByRole("link", { name: /rita@acme.example#x/ })).toHaveAttribute("href", "mailto:rita@acme.example%23x");
+  });
+
   it("disables the composer while a note is posting", async () => {
     const user = userEvent.setup();
     let release!: (v: unknown) => void;

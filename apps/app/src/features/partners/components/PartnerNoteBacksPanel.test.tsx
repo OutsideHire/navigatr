@@ -23,7 +23,7 @@ describe("PartnerNoteBacksPanel", () => {
     render(<PartnerNoteBacksPanel dealId="d-1" />);
     const jane = screen.getByRole("region", { name: "Notes from Jane CPA" });
     expect(within(jane).getByText("Demo booked.")).toBeInTheDocument();
-    expect(within(jane).getByText("Oct 21")).toBeInTheDocument();
+    expect(within(jane).getByText("Oct 21, 2026")).toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "Notes from the partner" })).getByText("Not a fit.")).toBeInTheDocument();
   });
 });

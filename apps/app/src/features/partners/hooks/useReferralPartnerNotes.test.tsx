@@ -14,7 +14,11 @@ vi.mock("@/lib/supabase", () => ({
       const chain = {
         select: (...a: unknown[]) => { calls.push(["select", ...a]); return chain; },
         eq: (...a: unknown[]) => { calls.push(["eq", ...a]); return chain; },
-        order: (...a: unknown[]) => { calls.push(["order", ...a]); return endMock(); },
+        // Awaitable (the deal read ends here) and chainable (the count read adds a limit).
+        order: (...a: unknown[]) => {
+          calls.push(["order", ...a]);
+          return { ...chain, then: (ok: (v: unknown) => unknown, ko: (e: unknown) => unknown) => endMock().then(ok, ko) };
+        },
         limit: (...a: unknown[]) => { calls.push(["limit", ...a]); return endMock(); },
       };
       return chain;
@@ -95,6 +99,7 @@ describe("usePartnerNoteCounts", () => {
       ["select", "deal_id, notes:referral_partner_notes(id)"],
       ["eq", "partner_id", "p-1"],
       ["eq", "direction", "outbound"],
+      ["order", "submitted_at", { ascending: false }],
       ["limit", 500],
     ]);
   });
