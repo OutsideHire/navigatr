@@ -3,10 +3,15 @@ import { renderEmail } from "./emailTemplate";
 import {
   INTERNAL_NOTIFY_KINDS,
   KIND_LABEL,
+  DIGEST_SENT_LABEL,
+  PARTNER_DIGEST_KIND,
   PARTNER_NOTIFY_KINDS,
+  PARTNER_SENT_KIND,
   buildPortalNotifyEmail,
+  parseDigestPayload,
   parseInternalPayload,
   parsePartnerPayload,
+  parseSentPayload,
   type PortalNotifyEmail,
 } from "./portalNotifyEmail";
 
@@ -326,5 +331,160 @@ describe("internal_reinstate_available", () => {
       buildPortalNotifyEmail("internal_reinstate_available", { appUrlPath: "https://evil.example/x", companyNames: ["A"], count: 1 }, CTX),
     ).toBeNull();
     expect(buildPortalNotifyEmail("internal_reinstate_available", { appUrlPath: PATH, companyNames: [], count: 1 }, CTX)).toBeNull();
+  });
+});
+
+const API = "https://proj.supabase.co/functions/v1/portal_api";
+const TOKEN = "AbCdEfGhIjKlMnOpQrStUv";
+const SENT = {
+  slug: "acme",
+  orgName: "Acme ISO",
+  partnerName: "Jane",
+  companyName: "Fresh Bakery",
+  ref: "REF-3F9A21C0",
+  repName: "Rita Rep",
+  repEmail: "rita@acme.example",
+  note: "Ask for Ann after 3pm.\nShe runs the books.",
+};
+const DIGEST = {
+  slug: "acme",
+  orgName: "Acme ISO",
+  partnerName: "Jane",
+  weekLabel: "Dec 31",
+  counts: { submitted: 2, accepted: 1, inProgress: 0, closedWon: 1, notMovingForward: 1, sentToYou: 1 },
+  valueCents: 500000,
+  items: [
+    { companyName: "Gamma Co", label: "Not Moving Forward" },
+    { companyName: "Delta Co", label: "Sent to you" },
+  ],
+  unsubscribeToken: TOKEN,
+};
+
+describe("partner_referral_sent", () => {
+  it("names the ISO and the business, links to the sent referral, replies to the rep", () => {
+    const e = buildPortalNotifyEmail(PARTNER_SENT_KIND, SENT, { ...CTX, portalApiUrl: API })!;
+    expect(e.subject).toBe("Acme ISO sent you a referral: Fresh Bakery");
+    expect(e.heading).toBe("Acme ISO sent you a referral");
+    expect(e.ctaUrl).toBe(`${BASE}/p/acme/s/${RID}`);
+    expect(e.replyTo).toBe("rita@acme.example");
+    expect(e.audience).toBe("partner");
+    expect(e.orgName).toBe("Acme ISO");
+    expect(e.bodyLines).toEqual([
+      "Hi Jane,",
+      "Rita Rep at Acme ISO sent you Fresh Bakery. Open it to see the contact details.",
+      "Rita Rep added a note:",
+      "Ask for Ann after 3pm.",
+      "She runs the books.",
+      "Reply to this email to reach Rita Rep.",
+    ]);
+    expect(e.headers).toBeUndefined();
+    expect(e.footerLink).toBeUndefined();
+  });
+
+  it("says nothing about a note when there is none, and falls back without a rep", () => {
+    const e = buildPortalNotifyEmail(PARTNER_SENT_KIND, { ...SENT, note: null, repName: null, repEmail: null }, CTX)!;
+    expect(e.bodyLines).toEqual([
+      "Hi Jane,",
+      "Acme ISO sent you Fresh Bakery. Open it to see the contact details.",
+      "Someone at Acme ISO can tell you more.",
+    ]);
+    expect(e.replyTo).toBeNull();
+  });
+
+  it("links to the portal home without a referral id", () => {
+    expect(buildPortalNotifyEmail(PARTNER_SENT_KIND, SENT, { appBaseUrl: BASE, referralId: null })!.ctaUrl).toBe(`${BASE}/p/acme/home`);
+  });
+
+  it("drops a payload with an extra or missing key", () => {
+    expect(parseSentPayload({ ...SENT, status: "accepted" })).toBeNull();
+    const { note: _note, ...missing } = SENT;
+    expect(parseSentPayload(missing)).toBeNull();
+    expect(parseSentPayload({ ...SENT, companyName: " " })).toBeNull();
+  });
+});
+
+describe("partner_digest", () => {
+  const ctx = { ...CTX, referralId: null, portalApiUrl: API };
+
+  it("lists only what happened, with the value and the unsubscribe link and headers", () => {
+    const e = buildPortalNotifyEmail(PARTNER_DIGEST_KIND, DIGEST, ctx)!;
+    expect(e.subject).toBe("Your weekly referral summary from Acme ISO");
+    expect(e.bodyLines).toEqual([
+      "Hi Jane,",
+      "Here's what happened with your referrals the week of Dec 31.",
+      "New referrals you sent: 2",
+      "Accepted: 1",
+      "Closed Won: 1 ($5,000)",
+      "Not Moving Forward: 1",
+      "Acme ISO sent you: 1",
+      "Recent activity:",
+      "- Gamma Co: Not Moving Forward",
+      `- Delta Co: ${DIGEST_SENT_LABEL}`,
+    ]);
+    expect(e.ctaUrl).toBe(`${BASE}/p/acme/home`);
+    expect(e.footerLink).toEqual({ label: "Unsubscribe from the weekly summary", url: `${BASE}/p/acme/unsubscribe?t=${TOKEN}` });
+    expect(e.headers).toEqual({
+      "List-Unsubscribe": `<${API}/unsubscribe_digest?slug=acme&t=${TOKEN}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    });
+    expect(e.replyTo).toBeNull();
+    expect(e.audience).toBe("partner");
+  });
+
+  it("states Closed Won without an amount when the ISO hides values", () => {
+    const e = buildPortalNotifyEmail(PARTNER_DIGEST_KIND, { ...DIGEST, valueCents: null }, ctx)!;
+    expect(e.bodyLines).toContain("Closed Won: 1");
+    expect(renderEmail(e).text).not.toContain("$");
+  });
+
+  it("is not built without the portal_api URL, for a quiet week, or for a bad token", () => {
+    expect(buildPortalNotifyEmail(PARTNER_DIGEST_KIND, DIGEST, { ...ctx, portalApiUrl: undefined })).toBeNull();
+    const zero = { submitted: 0, accepted: 0, inProgress: 0, closedWon: 0, notMovingForward: 0, sentToYou: 0 };
+    expect(buildPortalNotifyEmail(PARTNER_DIGEST_KIND, { ...DIGEST, counts: zero, items: [] }, ctx)).toBeNull();
+    expect(parseDigestPayload({ ...DIGEST, unsubscribeToken: "short" })).toBeNull();
+    expect(parseDigestPayload({ ...DIGEST, unsubscribeToken: null })).toBeNull();
+  });
+
+  it("drops an item with an internal status, too many items, odd counts, or an extra key", () => {
+    expect(parseDigestPayload({ ...DIGEST, items: [{ companyName: "X", label: "won" }] })).toBeNull();
+    expect(parseDigestPayload({ ...DIGEST, items: Array.from({ length: 11 }, () => ({ companyName: "X", label: "Accepted" })) })).toBeNull();
+    expect(parseDigestPayload({ ...DIGEST, counts: { ...DIGEST.counts, submitted: -1 } })).toBeNull();
+    expect(parseDigestPayload({ ...DIGEST, counts: { ...DIGEST.counts, stage: 1 } })).toBeNull();
+    expect(parseDigestPayload({ ...DIGEST, status: "won" })).toBeNull();
+  });
+});
+
+describe("internal_partner_note", () => {
+  it("tells the rep a partner wrote back and links to the deal", () => {
+    expect(INTERNAL_NOTIFY_KINDS).toContain("internal_partner_note");
+    const e = buildPortalNotifyEmail(
+      "internal_partner_note",
+      { appUrlPath: "/pipeline/3f9a21c0-1111-4222-8333-444455556666", companyNames: ["Fresh Bakery"], count: 1 },
+      CTX,
+    )!;
+    expect(e.subject).toBe("New partner note: Fresh Bakery");
+    expect(e.ctaUrl).toBe(`${BASE}/pipeline/3f9a21c0-1111-4222-8333-444455556666`);
+    expect(e.audience).toBe("internal");
+    expect(e.headers).toBeUndefined();
+  });
+});
+
+describe("only the weekly summary can be unsubscribed from (FR-PORT-84)", () => {
+  it("no other kind carries headers or a footer link", () => {
+    for (const kind of PARTNER_NOTIFY_KINDS) {
+      const label = kind === "partner_update" ? "Accepted" : KIND_LABEL[kind];
+      const e = buildPortalNotifyEmail(kind, withLabel(label, { updateBody: "Hi" }), { ...CTX, portalApiUrl: API })!;
+      expect(e.headers).toBeUndefined();
+      expect(e.footerLink).toBeUndefined();
+      expect(renderEmail(e).text).not.toMatch(/unsubscribe/i);
+    }
+    const sent = buildPortalNotifyEmail(PARTNER_SENT_KIND, SENT, { ...CTX, portalApiUrl: API })!;
+    expect(sent.headers).toBeUndefined();
+    expect(renderEmail(sent).text).not.toMatch(/unsubscribe/i);
+    for (const kind of INTERNAL_NOTIFY_KINDS) {
+      const e = buildPortalNotifyEmail(kind, { appUrlPath: "/partners", companyNames: ["A"], count: 1 }, CTX)!;
+      expect(e.headers).toBeUndefined();
+      expect(e.footerLink).toBeUndefined();
+    }
   });
 });

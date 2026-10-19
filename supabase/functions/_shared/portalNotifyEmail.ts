@@ -11,6 +11,10 @@
  * and never carry an internal status, stage, reason or note. Internal emails go
  * to reps and link into the app.
  *
+ * Two Phase 2B-3 partner kinds (referral sent to you, weekly summary) carry
+ * their own payloads; only the weekly summary has an unsubscribe link and
+ * headers (FR-PORT-84).
+ *
  * Pure TS, no Deno globals, .ts imports: vitest covers it.
  */
 import type { EmailOptions } from "./emailTemplate.ts";
@@ -32,10 +36,54 @@ export const INTERNAL_NOTIFY_KINDS = [
   "internal_nudge",
   "internal_reinstate_available",
   "internal_new_submission",
+  "internal_partner_note",
 ] as const;
 export type InternalNotifyKind = (typeof INTERNAL_NOTIFY_KINDS)[number];
 
 export type PortalNotifyKind = PartnerNotifyKind | InternalNotifyKind;
+
+/** Phase 2B-3 partner kinds. Kept out of PARTNER_NOTIFY_KINDS: their payloads have no status label. */
+export const PARTNER_SENT_KIND = "partner_referral_sent";
+export const PARTNER_DIGEST_KIND = "partner_digest";
+/** The digest item label for a referral the ISO sent to the partner. */
+export const DIGEST_SENT_LABEL = "Sent to you";
+
+export interface PartnerSentPayload {
+  slug: string;
+  orgName: string;
+  partnerName: string;
+  companyName: string;
+  ref: string;
+  repName: string | null;
+  repEmail: string | null;
+  /** Only a note the rep wrote for the partner (partner_note_visible); null otherwise. */
+  note: string | null;
+}
+
+export interface PartnerDigestCounts {
+  submitted: number;
+  accepted: number;
+  inProgress: number;
+  closedWon: number;
+  notMovingForward: number;
+  sentToYou: number;
+}
+
+export interface PartnerDigestItem {
+  companyName: string;
+  label: PortalLabel | typeof DIGEST_SENT_LABEL;
+}
+
+export interface PartnerDigestPayload {
+  slug: string;
+  orgName: string;
+  partnerName: string;
+  weekLabel: string;
+  counts: PartnerDigestCounts;
+  valueCents: number | null;
+  items: PartnerDigestItem[];
+  unsubscribeToken: string;
+}
 
 /** The label each status email must carry. An update carries whatever the referral shows now. */
 export const KIND_LABEL: Readonly<Record<Exclude<PartnerNotifyKind, "partner_update">, PortalLabel>> = Object.freeze({
@@ -72,12 +120,16 @@ export interface PortalNotifyEmail extends EmailOptions {
   orgName: string | null;
   /** The assigned rep's business email on partner emails (spec 5.8); otherwise null. */
   replyTo: string | null;
+  /** Extra mail headers; only the weekly summary sets them (List-Unsubscribe, FR-PORT-84). */
+  headers?: Record<string, string>;
 }
 
 export interface NotifyContext {
   appBaseUrl: string;
   /** The outbox row's referral id; the partner link falls back to the portal home without one. */
   referralId: string | null;
+  /** The portal_api function URL, for the digest's one-click unsubscribe header. Without it no digest builds. */
+  portalApiUrl?: string;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -146,6 +198,75 @@ export function parseInternalPayload(raw: unknown): InternalNotifyPayload | null
   if (names.length === 0) return null;
   const count = typeof raw.count === "number" && Number.isSafeInteger(raw.count) ? raw.count : 0;
   return { appUrlPath: path, companyNames: names, count: Math.max(count, names.length) };
+}
+
+const SENT_KEYS = ["slug", "orgName", "partnerName", "companyName", "ref", "repName", "repEmail", "note"];
+const DIGEST_KEYS = ["slug", "orgName", "partnerName", "weekLabel", "counts", "valueCents", "items", "unsubscribeToken"];
+const COUNT_KEYS = ["submitted", "accepted", "inProgress", "closedWon", "notMovingForward", "sentToYou"] as const;
+const DIGEST_ITEM_KEYS = ["companyName", "label"];
+const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
+
+export function parseSentPayload(raw: unknown): PartnerSentPayload | null {
+  if (!isRecord(raw) || !hasExactKeys(raw, SENT_KEYS)) return null;
+  const slug = line(raw.slug);
+  const orgName = line(raw.orgName);
+  const partnerName = line(raw.partnerName);
+  const companyName = line(raw.companyName);
+  const ref = line(raw.ref);
+  if (!slug || !orgName || !partnerName || !companyName || !ref) return null;
+  const repEmail = text(raw.repEmail);
+  return {
+    slug,
+    orgName,
+    partnerName,
+    companyName,
+    ref,
+    repName: line(raw.repName),
+    repEmail: repEmail && EMAIL_RE.test(repEmail) ? repEmail : null,
+    note: text(raw.note),
+  };
+}
+
+export function parseDigestPayload(raw: unknown): PartnerDigestPayload | null {
+  if (!isRecord(raw) || !hasExactKeys(raw, DIGEST_KEYS)) return null;
+  const slug = line(raw.slug);
+  const orgName = line(raw.orgName);
+  const partnerName = line(raw.partnerName);
+  const weekLabel = line(raw.weekLabel);
+  if (!slug || !orgName || !partnerName || !weekLabel) return null;
+  const token = raw.unsubscribeToken;
+  if (typeof token !== "string" || !TOKEN_RE.test(token)) return null;
+
+  const rawCounts = raw.counts;
+  if (!isRecord(rawCounts) || !hasExactKeys(rawCounts, [...COUNT_KEYS])) return null;
+  const counts: Record<string, number> = {};
+  for (const key of COUNT_KEYS) {
+    const v = rawCounts[key];
+    if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) return null;
+    counts[key] = v;
+  }
+
+  if (!Array.isArray(raw.items) || raw.items.length > 10) return null;
+  const items: PartnerDigestItem[] = [];
+  for (const item of raw.items) {
+    if (!isRecord(item) || !hasExactKeys(item, DIGEST_ITEM_KEYS)) return null;
+    const companyName = line(item.companyName);
+    const label = item.label;
+    if (!companyName || !(isLabel(label) || label === DIGEST_SENT_LABEL)) return null;
+    items.push({ companyName, label: label as PartnerDigestItem["label"] });
+  }
+
+  const value = raw.valueCents;
+  return {
+    slug,
+    orgName,
+    partnerName,
+    weekLabel,
+    counts: counts as unknown as PartnerDigestCounts,
+    valueCents: typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null,
+    items,
+    unsubscribeToken: token,
+  };
 }
 
 function money(cents: number): string {
@@ -241,6 +362,86 @@ function buildPartner(kind: PartnerNotifyKind, p: PartnerNotifyPayload, ctx: Not
   }
 }
 
+function noteLines(body: string): string[] {
+  return body
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l !== "");
+}
+
+function buildSent(p: PartnerSentPayload, ctx: NotifyContext): PortalNotifyEmail {
+  const suffix = ctx.referralId && UUID_RE.test(ctx.referralId) ? `/s/${ctx.referralId}` : "/home";
+  const sender = p.repName ? `${p.repName} at ${p.orgName}` : p.orgName;
+  const reach =
+    p.repName && p.repEmail
+      ? `Reply to this email to reach ${p.repName}.`
+      : p.repEmail
+        ? "Reply to this email to reach them."
+        : `Someone at ${p.orgName} can tell you more.`;
+  return {
+    subject: `${p.orgName} sent you a referral: ${p.companyName}`,
+    preheader: `${sender} sent you ${p.companyName}.`,
+    heading: `${p.orgName} sent you a referral`,
+    bodyLines: [
+      `Hi ${p.partnerName},`,
+      `${sender} sent you ${p.companyName}. Open it to see the contact details.`,
+      ...(p.note ? [`${p.repName ?? p.orgName} added a note:`, ...noteLines(p.note)] : []),
+      reach,
+    ],
+    ctaLabel: "View referral",
+    ctaUrl: portalUrl(ctx.appBaseUrl, p.slug, suffix),
+    footnote: `You're getting this because ${p.orgName} sent you a referral. Reference ${p.ref}.`,
+    audience: "partner",
+    orgName: p.orgName,
+    replyTo: p.repEmail,
+  };
+}
+
+function buildDigest(p: PartnerDigestPayload, ctx: NotifyContext): PortalNotifyEmail | null {
+  const api = typeof ctx.portalApiUrl === "string" ? ctx.portalApiUrl.trim().replace(/\/+$/, "") : "";
+  if (!/^https?:\/\/\S+$/.test(api)) return null;
+  const c = p.counts;
+  if (c.submitted + c.accepted + c.inProgress + c.closedWon + c.notMovingForward + c.sentToYou === 0) return null;
+
+  const token = encodeURIComponent(p.unsubscribeToken);
+  const oneClick = `${api}/unsubscribe_digest?slug=${encodeURIComponent(p.slug)}&t=${token}`;
+  const lines = [
+    c.submitted > 0 ? `New referrals you sent: ${c.submitted}` : null,
+    c.accepted > 0 ? `Accepted: ${c.accepted}` : null,
+    c.inProgress > 0 ? `In Progress: ${c.inProgress}` : null,
+    c.closedWon > 0 ? `Closed Won: ${c.closedWon}${p.valueCents !== null ? ` (${money(p.valueCents)})` : ""}` : null,
+    c.notMovingForward > 0 ? `Not Moving Forward: ${c.notMovingForward}` : null,
+    c.sentToYou > 0 ? `${p.orgName} sent you: ${c.sentToYou}` : null,
+  ].filter((l): l is string => l !== null);
+  const items = p.items.map((i) => `- ${i.companyName}: ${i.label}`);
+
+  return {
+    subject: `Your weekly referral summary from ${p.orgName}`,
+    preheader: `Your referrals with ${p.orgName}, the week of ${p.weekLabel}.`,
+    heading: `Your week with ${p.orgName}`,
+    bodyLines: [
+      `Hi ${p.partnerName},`,
+      `Here's what happened with your referrals the week of ${p.weekLabel}.`,
+      ...lines,
+      ...(items.length > 0 ? ["Recent activity:", ...items] : []),
+    ],
+    ctaLabel: "Open your referrals",
+    ctaUrl: portalUrl(ctx.appBaseUrl, p.slug, "/home"),
+    footnote: `You're getting this weekly summary because you send referrals to ${p.orgName}. You can turn it off in your profile.`,
+    footerLink: {
+      label: "Unsubscribe from the weekly summary",
+      url: portalUrl(ctx.appBaseUrl, p.slug, `/unsubscribe?t=${token}`),
+    },
+    headers: {
+      "List-Unsubscribe": `<${oneClick}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    },
+    audience: "partner",
+    orgName: p.orgName,
+    replyTo: null,
+  };
+}
+
 function buildInternal(kind: InternalNotifyKind, p: InternalNotifyPayload, ctx: NotifyContext): PortalNotifyEmail {
   const url = `${ctx.appBaseUrl.replace(/\/+$/, "")}${p.appUrlPath}`;
   if (kind === "internal_new_referral") {
@@ -271,6 +472,21 @@ function buildInternal(kind: InternalNotifyKind, p: InternalNotifyPayload, ctx: 
       ctaLabel: "Review referral",
       ctaUrl: url,
       footnote: "You're getting this because referral form submissions are routed to you.",
+      audience: "internal",
+      orgName: null,
+      replyTo: null,
+    };
+  }
+  if (kind === "internal_partner_note") {
+    const name = p.companyNames[0];
+    return {
+      subject: `New partner note: ${name}`,
+      preheader: `A partner wrote back about ${name}.`,
+      heading: "A partner wrote back",
+      bodyLines: [`The partner you sent ${name} to left a note on it.`, "Open it to read the note."],
+      ctaLabel: "Read the note",
+      ctaUrl: url,
+      footnote: "You're getting this because you sent this referral to a partner.",
       audience: "internal",
       orgName: null,
       replyTo: null,
@@ -329,6 +545,14 @@ function buildInternal(kind: InternalNotifyKind, p: InternalNotifyPayload, ctx: 
 
 /** The email for one outbox row, or null when the row must be dropped unsent. */
 export function buildPortalNotifyEmail(kind: string, payload: unknown, ctx: NotifyContext): PortalNotifyEmail | null {
+  if (kind === PARTNER_SENT_KIND) {
+    const p = parseSentPayload(payload);
+    return p ? buildSent(p, ctx) : null;
+  }
+  if (kind === PARTNER_DIGEST_KIND) {
+    const p = parseDigestPayload(payload);
+    return p ? buildDigest(p, ctx) : null;
+  }
   if ((PARTNER_NOTIFY_KINDS as readonly string[]).includes(kind)) {
     const p = parsePartnerPayload(payload);
     return p ? buildPartner(kind as PartnerNotifyKind, p, ctx) : null;
