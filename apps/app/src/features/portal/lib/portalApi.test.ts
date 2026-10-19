@@ -245,3 +245,62 @@ describe("Phase 2A actions", () => {
     ).rejects.toMatchObject({ status: 400, code: "invalid_body", field: "phone" });
   });
 });
+
+describe("Phase 2B-1 public form", () => {
+  const INPUT = {
+    companyName: "Fresh Bakery",
+    contactName: "Ann Owner",
+    email: "ann@bakery.example",
+    phone: "5550100100",
+    notes: "Needs a terminal.",
+    referredBy: "",
+    referrerEmail: "",
+    consent: true,
+    consentVersion: 2,
+    formToken: "1.ab",
+    website: "",
+  };
+
+  it("loads the public form without a session and returns null when it is not available", async () => {
+    const form = { orgName: "Acme ISO", repName: "Rita Rep", consentText: "I may share this.", consentVersion: 2, formToken: "1.ab" };
+    fetchMock.mockResolvedValueOnce(respond(200, { form }));
+    await expect(portalApi.publicForm("acme", "tok123")).resolves.toEqual(form);
+    expect(lastCall().url).toBe(`${PORTAL_API_URL}/public_form`);
+    expect(lastCall().body).toEqual({ slug: "acme", token: "tok123" });
+    expect(lastCall().headers["x-portal-session"]).toBeUndefined();
+
+    fetchMock.mockResolvedValueOnce(respond(404, { error: "not_available" }));
+    await expect(portalApi.publicForm("acme", "old")).resolves.toBeNull();
+    fetchMock.mockResolvedValueOnce(respond(503, { error: "not_available" }));
+    await expect(portalApi.publicForm("acme", "tok123")).rejects.toMatchObject({ status: 503 });
+  });
+
+  it("sends a public referral and surfaces the refusal codes", async () => {
+    fetchMock.mockResolvedValueOnce(respond(200, { submission: { ref: "REF-1A2B3C4D" } }));
+    await expect(portalApi.publicSubmit("acme", "tok123", INPUT)).resolves.toEqual({ ref: "REF-1A2B3C4D" });
+    expect(lastCall().url).toBe(`${PORTAL_API_URL}/public_submit`);
+    expect(lastCall().body).toEqual({ slug: "acme", token: "tok123", ...INPUT });
+    expect(lastCall().headers["x-portal-session"]).toBeUndefined();
+
+    fetchMock.mockResolvedValueOnce(respond(400, { error: "invalid_body", field: "phone" }));
+    await expect(portalApi.publicSubmit("acme", "tok123", INPUT)).rejects.toMatchObject({ status: 400, code: "invalid_body", field: "phone" });
+  });
+
+  it.each([
+    [429, "captcha_required"],
+    [429, "rate_limited"],
+    [409, "form_expired"],
+    [409, "consent_changed"],
+    [404, "not_available"],
+    [503, "not_available"],
+  ])("throws PortalApiError %i %s on submit, without a field", async (status, code) => {
+    fetchMock.mockResolvedValueOnce(respond(status, { error: code }));
+    await expect(portalApi.publicSubmit("acme", "tok123", INPUT)).rejects.toMatchObject({ status, code, field: null });
+  });
+
+  it("sends the captcha token when given", async () => {
+    fetchMock.mockResolvedValueOnce(respond(200, { submission: { ref: "REF-1" } }));
+    await portalApi.publicSubmit("acme", "tok123", { ...INPUT, captchaToken: "cf-1" });
+    expect(lastCall().body).toMatchObject({ captchaToken: "cf-1" });
+  });
+});

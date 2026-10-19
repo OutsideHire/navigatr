@@ -6,6 +6,8 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string;
   readonly VITE_SUPABASE_ANON_KEY?: string;
   readonly VITE_INTERCOM_APP_ID?: string;
+  /** Cloudflare Turnstile site key for the public referral form (public value). */
+  readonly VITE_TURNSTILE_SITE_KEY?: string;
   readonly VITE_PATH_ADD_NEARBY?: string;
 }
 
