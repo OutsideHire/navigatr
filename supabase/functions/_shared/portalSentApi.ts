@@ -98,10 +98,14 @@ function strOrNull(value: unknown): string | null {
   return typeof value === "string" && value !== "" ? value : null;
 }
 
+/** Exactly space, tab, CR, LF: the same set btrim(..., E' \t\r\n') strips in SQL. */
+function trimNote(value: string): string {
+  return value.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "");
+}
+
 /** The trimmed note, or null when it is empty or longer than PORTAL_NOTE_MAX characters (code points, like char_length). */
 export function validateNoteBody(value: unknown): string | null {
-  // Exactly space, tab, CR, LF: the same set btrim(..., E' \t\r\n') strips in SQL.
-  const body = typeof value === "string" ? value.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "") : "";
+  const body = typeof value === "string" ? trimNote(value) : "";
   const length = Array.from(body).length;
   return length >= 1 && length <= PORTAL_NOTE_MAX ? body : null;
 }
@@ -110,7 +114,9 @@ function notesFrom(data: unknown): PortalPartnerNote[] {
   const out: PortalPartnerNote[] = [];
   for (const n of rows(data)) {
     const id = str(n.id);
-    const body = str(n.body).trim();
+    // Same trim as SQL and validateNoteBody: a note of only unicode whitespace
+    // (a non-breaking space) is a real stored note and must come back.
+    const body = trimNote(str(n.body));
     const createdAt = str(n.created_at);
     if (!id || !body || !createdAt) continue;
     out.push({ id, body, createdAt });

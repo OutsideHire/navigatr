@@ -190,6 +190,31 @@ describe("post_note", () => {
     expect(json).toEqual({ note: { id: "n-3", body: "Signed today.", createdAt: "2026-10-22T15:00:00Z" } });
   });
 
+  it("posts and returns a note that is only a non-breaking space (SQL keeps it, so the response must too)", async () => {
+    const { deps } = setup({
+      portal_post_partner_note: (args) => ok([{ id: "n-4", body: args.p_body, created_at: "2026-10-22T15:00:00Z" }]),
+    });
+    const { status, json } = await call("post_note", { referralId: RID, body: "\u00a0" }, deps);
+    expect(status).toBe(200);
+    expect(json).toEqual({ note: { id: "n-4", body: "\u00a0", createdAt: "2026-10-22T15:00:00Z" } });
+  });
+
+  it("lists a note that is only unicode whitespace, and trims only space, tab, CR and LF", async () => {
+    const { deps } = setup({
+      portal_get_sent_referral: () => ok([DETAIL_ROW]),
+      portal_partner_notes: () => ok([
+        { id: "n-1", body: "\u2003", created_at: "2026-10-22T15:00:00Z" },
+        { id: "n-2", body: " \u00a0hi\t", created_at: "2026-10-22T14:00:00Z" },
+        { id: "n-3", body: " \t\r\n", created_at: "2026-10-22T13:00:00Z" },
+      ]),
+    });
+    const res = await call("get_sent_referral", { referralId: RID }, deps);
+    expect((res.json.referral as { notes: unknown[] }).notes).toEqual([
+      { id: "n-1", body: "\u2003", createdAt: "2026-10-22T15:00:00Z" },
+      { id: "n-2", body: "\u00a0hi", createdAt: "2026-10-22T14:00:00Z" },
+    ]);
+  });
+
   it("validates before calling the database", async () => {
     const { deps, rpc } = setup();
     expect((await call("post_note", { referralId: RID, body: " " }, deps)).json).toEqual({ error: "invalid_body", field: "body" });
