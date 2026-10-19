@@ -58,11 +58,11 @@ vi.mock("@/components/navigatr", async (orig) => {
   const actual = await orig<typeof import("@/components/navigatr")>();
   return {
     ...actual,
-    Select: ({ value, onValueChange, options, placeholder }: {
+    Select: ({ value, onValueChange, options, placeholder, disabled }: {
       value?: string; onValueChange?: (v: string) => void;
-      options: Array<{ value: string; label: string }>; placeholder?: string;
+      options: Array<{ value: string; label: string }>; placeholder?: string; disabled?: boolean;
     }) => (
-      <select aria-label={placeholder} value={value ?? ""} onChange={(e) => onValueChange?.(e.target.value)}>
+      <select aria-label={placeholder} value={value ?? ""} disabled={disabled} onChange={(e) => onValueChange?.(e.target.value)}>
         <option value="">--</option>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
@@ -301,5 +301,54 @@ describe("ReviewFormSubmissionSheet", () => {
     await waitFor(() => expect(toastError).toHaveBeenCalled());
     expect(screen.getByRole("textbox", { name: "Partner name" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "No partner" })).toBeDisabled();
+  });
+
+  it("stacks the who-sent-this buttons on a phone and puts them in a row from sm up", () => {
+    renderSheet();
+    const row = screen.getByRole("button", { name: "A partner" }).parentElement as HTMLElement;
+    expect(row).toHaveClass("grid-cols-1");
+    expect(row).toHaveClass("sm:grid-cols-3");
+    expect(row).not.toHaveClass("grid-cols-3");
+    // In the sm row each third is about 130px, so the label gets the smaller padding.
+    expect(screen.getByRole("button", { name: "New partner" })).toHaveClass("sm:px-3");
+  });
+
+  it("locks the partner picker once the submission became a referral", async () => {
+    acceptReferral.mockResolvedValueOnce({ result: "duplicate", dealId: "d-1" });
+    renderSheet();
+    await pickExistingPartner();
+    expect(screen.getByRole("combobox", { name: "Pick a partner…" })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await screen.findByRole("button", { name: "Merge into deal" });
+    expect(screen.getByRole("combobox", { name: "Pick a partner…" })).toBeDisabled();
+  });
+
+  it("disables the partner picker while an action is running", async () => {
+    let resolveAttr: (v: string) => void = () => {};
+    attribute.mockReset();
+    attribute.mockReturnValueOnce(new Promise<string>((r) => { resolveAttr = r; }));
+    renderSheet();
+    await pickExistingPartner();
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(screen.getByRole("combobox", { name: "Pick a partner…" })).toBeDisabled();
+    resolveAttr("r-new");
+    await waitFor(() => expect(acceptReferral).toHaveBeenCalled());
+  });
+
+  it("ignores a completion from before a close and reopen of the same submission", async () => {
+    let resolveAccept: (v: string) => void = () => {};
+    acceptSubmission.mockReturnValueOnce(new Promise<string>((r) => { resolveAccept = r; }));
+    const onOpenChange = vi.fn();
+    const { rerender } = render(<ReviewFormSubmissionSheet submission={submission} open onOpenChange={onOpenChange} />);
+    await userEvent.click(screen.getByRole("button", { name: "No partner" }));
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    rerender(<ReviewFormSubmissionSheet submission={submission} open={false} onOpenChange={onOpenChange} />);
+    rerender(<ReviewFormSubmissionSheet submission={submission} open onOpenChange={onOpenChange} />);
+    resolveAccept("d-new");
+    await new Promise((r) => setTimeout(r, 10));
+    expect(toastSuccess).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "No partner" }));
+    expect(screen.getByRole("button", { name: "Accept" })).toBeEnabled();
   });
 });

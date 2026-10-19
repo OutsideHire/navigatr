@@ -71,7 +71,9 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
   } else if (submissionProp && submissionProp.id !== submission?.id) {
     setSnapshot(submissionProp);
   }
-  const sessionRef = React.useRef<string | null>(null);
+  // Bumped on every open, switch and close, so a completion from an earlier
+  // session (even of the same submission after a close and reopen) is ignored.
+  const sessionRef = React.useRef(0);
   const viewerId = useAuth((s) => s.user?.id);
   const profile = useProfile();
   const canReassign = canReassignReferrals(profile.data);
@@ -116,7 +118,7 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
     setMergeDealId("");
     setAssigneeId("");
     setBusy(false);
-    sessionRef.current = open ? submissionId ?? null : null;
+    sessionRef.current += 1;
     // Keyed on the submission id so a refetch with a new object does not reset the sheet.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, submissionId]);
@@ -319,12 +321,13 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
 
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-1 text-caption font-medium text-text-muted">Who sent this?</legend>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               {WHO_OPTIONS.map((o) => (
                 <Button
                   key={o.value}
                   type="button"
                   size="lg"
+                  className="sm:px-3"
                   variant={who === o.value ? "primary" : "secondary"}
                   aria-pressed={who === o.value}
                   disabled={locked || busy}
@@ -349,6 +352,7 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
                   onValueChange={setPartnerId}
                   placeholder="Pick a partner…"
                   options={partnerOptions}
+                  disabled={locked || busy}
                 />
                 {partners.length === 0 && (
                   <p className="text-caption text-text-subtle">No partners yet. Pick New partner to add one.</p>
