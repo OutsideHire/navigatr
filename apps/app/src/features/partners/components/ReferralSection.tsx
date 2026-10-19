@@ -34,6 +34,8 @@ interface ReferralSectionProps {
    *  (a preview panel) — this component no longer navigates. */
   onSelectDeal: (deal: Deal) => void;
   emptyText?: string;
+  /** Optional short line under a row's contact name (Partner Detail: partner note counts). */
+  rowNote?: (deal: Deal) => string | null;
 }
 
 export function ReferralSection({
@@ -45,6 +47,7 @@ export function ReferralSection({
   onRemove,
   onSelectDeal,
   emptyText,
+  rowNote,
 }: ReferralSectionProps) {
   const [picking, setPicking] = React.useState(false);
   const [pickedDealId, setPickedDealId] = React.useState<string>("");
@@ -146,6 +149,7 @@ export function ReferralSection({
                 <div className="flex min-w-0 flex-col">
                   <p className="truncate text-body-strong text-text-default">{d.companyName}</p>
                   <p className="truncate text-caption text-text-muted">{d.contactName}</p>
+                  {rowNote?.(d) && <p className="truncate text-caption text-brand-primary">{rowNote(d)}</p>}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <span className="text-body-strong tabular-nums text-text-default">{formatMoney(d.valueCents)}</span>
