@@ -97,6 +97,7 @@ end $$;
 -- the partner_deals backfill or an old "Refer a deal") is SHARED by a send
 -- instead of refused: the rep is sending it now. A non-blank note replaces the
 -- old note and is shown; a blank one leaves the old (internal) note hidden.
+-- The sharer becomes the sender (submitted_by_user_id).
 -- An already shared link is still already_linked.
 create or replace function public.send_referral_to_partner(
   p_partner_id uuid, p_deal_id uuid, p_partner_note text default ''
@@ -115,6 +116,9 @@ begin
     -- and deal visibility checks passed, so the caller may act on this link.
     update referrals r
        set shared_with_partner_at = now(),
+           -- The person sharing now is the sender: the partner email, "Sent by",
+           -- Reply-To and partner note emails all point to them.
+           submitted_by_user_id   = auth.uid(),
            notes                  = case when v_note <> '' then v_note else r.notes end,
            partner_note_visible   = (v_note <> '')
      where r.org_id = public.user_org_id()

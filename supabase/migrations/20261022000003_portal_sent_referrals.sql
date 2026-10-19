@@ -19,7 +19,9 @@
 --    withdraw_referral) set status 'withdrawn', a status the deal-stage trigger
 --    never produces (referral_status_for_stage only yields accepted, working,
 --    won, lost), so status <> 'withdrawn' hides removals and nothing else.
---    Notes on a removed link stay, internal only. Only withdrawn outbound rows
+--    Notes on a removed link stay, internal only. The sent date (sent_at, the
+--    window and the sort) is shared_with_partner_at, set on every row these
+--    reads return: a pre-release link shared today is "sent" today. Only withdrawn outbound rows
 --    are ever purged, so a purged row is never shown either.
 -- 3. portal_post_partner_note: only on that partner's shared, not removed,
 --    unpurged outbound referrals, 1..1000 characters, 20 per portal user per hour, audited, and
@@ -60,8 +62,9 @@ language sql stable security definer set search_path = public, extensions as $$
          public._portal_referral_ref(r.id),
          r.company_name,
          r.status,
-         r.submitted_at,
-         greatest(r.submitted_at, coalesce(h.last_at, r.submitted_at), coalesce(n.last_at, r.submitted_at)) as last_activity_at
+         r.shared_with_partner_at,
+         greatest(r.shared_with_partner_at, coalesce(h.last_at, r.shared_with_partner_at),
+                  coalesce(n.last_at, r.shared_with_partner_at)) as last_activity_at
     from referrals r
     join organizations o on o.id = r.org_id
     left join lateral (
@@ -74,7 +77,7 @@ language sql stable security definer set search_path = public, extensions as $$
      and r.direction = 'outbound'
      and r.shared_with_partner_at is not null and r.status <> 'withdrawn'
      and o.portal_enabled and not o.is_disabled
-     and (p_since is null or r.submitted_at >= p_since)
+     and (p_since is null or r.shared_with_partner_at >= p_since)
    order by last_activity_at desc, r.id
    limit 500
 $$;
@@ -117,7 +120,7 @@ begin
            case when r.purged_at is null then r.contact_phone end,
            case when r.partner_note_visible and r.purged_at is null then nullif(btrim(r.notes), '') end,
            r.status,
-           r.submitted_at,
+           r.shared_with_partner_at,
            pr.full_name,
            pr.email,
            (r.purged_at is not null),

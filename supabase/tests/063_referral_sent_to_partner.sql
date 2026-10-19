@@ -38,12 +38,13 @@ insert into deals (id, org_id, owner_id, company_name, address, contact_name, co
   ('a063d000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000001063', 'a0630000-0000-0000-0000-000000000002', 'Oak Books',    '17 Elm St', 'Oli', 'oli@oak.example',   '5550630007', 100000, 'contacted', 'inbound');
 
 -- Pre-release outbound links to P1 (the partner_deals backfill or an old
--- "Refer a deal"): never shared, each with an internal note.
+-- "Refer a deal"): never shared, each with an internal note, linked by boss.
+-- Rita re-sends them below, so she becomes the sender.
 insert into referrals (id, org_id, partner_id, direction, source, status, company_name, notes, deal_id, assigned_user_id, submitted_by_user_id, shared_with_partner_at) values
   ('a063f000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-000000001063', 'a063a000-0000-0000-0000-000000000001', 'outbound', 'rep_entered', 'accepted', 'Pine Diner',
-   'INTERNAL: owner is slow to pay', 'a063d000-0000-0000-0000-000000000006', 'a0630000-0000-0000-0000-000000000002', 'a0630000-0000-0000-0000-000000000002', null),
+   'INTERNAL: owner is slow to pay', 'a063d000-0000-0000-0000-000000000006', 'a0630000-0000-0000-0000-000000000002', 'a0630000-0000-0000-0000-000000000001', null),
   ('a063f000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000001063', 'a063a000-0000-0000-0000-000000000001', 'outbound', 'rep_entered', 'accepted', 'Oak Books',
-   'INTERNAL: do not mention pricing', 'a063d000-0000-0000-0000-000000000007', 'a0630000-0000-0000-0000-000000000002', 'a0630000-0000-0000-0000-000000000002', null);
+   'INTERNAL: do not mention pricing', 'a063d000-0000-0000-0000-000000000007', 'a0630000-0000-0000-0000-000000000002', 'a0630000-0000-0000-0000-000000000001', null);
 
 create or replace function _t_act(p_user uuid) returns void language plpgsql as $$
 begin
@@ -267,6 +268,18 @@ do $$ declare v_blank uuid; v_noted uuid; r referrals; o portal_email_outbox; g 
   if o.id is null then raise exception 'a noted re-send must queue the partner email'; end if;
   if o.payload->>'note' is distinct from 'Oli is expecting your call.' then
     raise exception 'the new note rides the email: %', o.payload;
+  end if;
+  -- The sharer is the sender now: the email, "Sent by" and Reply-To point to rita, not boss.
+  if (select count(*) from referrals where id in (v_blank, v_noted)
+        and submitted_by_user_id = 'a0630000-0000-0000-0000-000000000002') <> 2 then
+    raise exception 'a re-send makes the sharer the sender';
+  end if;
+  if not exists (select 1 from portal_email_outbox where referral_id = v_blank and payload->>'repName' = 'Rita Rep' and payload->>'repEmail' = 'rita@st.example')
+     or not exists (select 1 from portal_email_outbox where referral_id = v_noted and payload->>'repName' = 'Rita Rep' and payload->>'repEmail' = 'rita@st.example') then
+    raise exception 'the shared email must name the sharer';
+  end if;
+  if g.rep_name is distinct from 'Rita Rep' or g.rep_email is distinct from 'rita@st.example' then
+    raise exception 'the portal must show the sharer as the sender: %', row_to_json(g);
   end if;
   if (select count(*) from portal_email_outbox where referral_id in (v_blank, v_noted)) <> 2 then
     raise exception 'the refused re-sends must queue nothing more';

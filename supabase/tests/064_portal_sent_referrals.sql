@@ -331,4 +331,23 @@ do $$ begin
   if _t_visible_notes('a0640000-0000-0000-0000-000000000004') <> 0 then raise exception 'another org must not see them'; end if;
 end $$;
 
+-- 6. Sent referrals are dated by when they were shared: a legacy row linked
+--    40 days ago and shared today is in the 30-day list, dated today, and the
+--    detail says the same.
+do $$ declare l record; g record; begin
+  update referrals set submitted_at = now() - interval '40 days', shared_with_partner_at = now()
+   where id = 'a064e000-0000-0000-0000-000000000006';
+  select * into l from public.portal_list_sent_referrals('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001', now() - interval '30 days')
+   where id = 'a064e000-0000-0000-0000-000000000006';
+  if l.id is null then raise exception 'a link shared today must be in the 30-day list'; end if;
+  -- last_activity_at (the sort key) starts at the share, not the 40-day-old link.
+  if l.sent_at is distinct from now() or l.last_activity_at is distinct from now() then
+    raise exception 'the list must date and sort it by the share: %', row_to_json(l);
+  end if;
+  select * into g from public.portal_get_sent_referral('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
+    'a064b000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000006', null);
+  if g.id is null then raise exception 'detail missing for the newly shared row'; end if;
+  if g.sent_at is distinct from now() then raise exception 'the detail must date it by the share: %', g.sent_at; end if;
+end $$;
+
 rollback;
