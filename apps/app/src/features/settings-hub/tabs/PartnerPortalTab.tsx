@@ -154,12 +154,15 @@ function PartnerPortalForm({ initial }: { initial: PortalSettings }) {
 }
 
 /**
- * The public referral form switch (FR-PORT-28). Saves on flip. Only usable
- * while the saved portal setting is on; turning the portal off keeps the stored
- * value but closes the form (the server checks both).
+ * The public referral form switch (FR-PORT-28). Saves on flip. It can only be
+ * turned on while the saved portal setting is on; turning the portal off keeps
+ * the stored value but closes the form (the server checks both). An
+ * administrator can always turn it off, even while the portal is off.
  */
 function PublicFormCard({ settings }: { settings: PortalSettings }) {
   const setPublicForm = useSetPublicFormEnabled();
+  const portalOff = !settings.enabled;
+  const formOn = settings.publicFormEnabled;
   const toggle = async (next: boolean) => {
     try {
       await setPublicForm.mutateAsync(next);
@@ -174,13 +177,17 @@ function PublicFormCard({ settings }: { settings: PortalSettings }) {
         variant="toggle"
         id="public-form-enabled"
         checked={settings.publicFormEnabled}
-        disabled={!settings.enabled || setPublicForm.isPending}
+        disabled={(portalOff && !formOn) || setPublicForm.isPending}
         onCheckedChange={(next) => void toggle(next)}
         label="Public referral form"
         helper="Anyone with a rep's link or the company link can send you a referral without signing in. Submissions land in Referrals to review."
       />
-      {!settings.enabled && (
-        <p className="text-caption text-text-subtle">Turn on the partner portal and save to use the public form.</p>
+      {portalOff && (
+        <p className="text-caption text-text-subtle">
+          {formOn
+            ? "The portal is off, so the form is closed. You can still turn this off."
+            : "Turn on the partner portal and save to use the public form."}
+        </p>
       )}
     </Card>
   );
