@@ -391,6 +391,16 @@ describe("partner_referral_sent", () => {
     expect(e.replyTo).toBeNull();
   });
 
+  it("offers a reply without naming the rep when only their email is known", () => {
+    const e = buildPortalNotifyEmail(PARTNER_SENT_KIND, { ...SENT, note: null, repName: null }, CTX)!;
+    expect(e.bodyLines).toEqual([
+      "Hi Jane,",
+      "Acme ISO sent you Fresh Bakery. Open it to see the contact details.",
+      "Reply to this email to reach them.",
+    ]);
+    expect(e.replyTo).toBe("rita@acme.example");
+  });
+
   it("links to the portal home without a referral id", () => {
     expect(buildPortalNotifyEmail(PARTNER_SENT_KIND, SENT, { appBaseUrl: BASE, referralId: null })!.ctaUrl).toBe(`${BASE}/p/acme/home`);
   });
@@ -466,6 +476,17 @@ describe("internal_partner_note", () => {
     expect(e.ctaUrl).toBe(`${BASE}/pipeline/3f9a21c0-1111-4222-8333-444455556666`);
     expect(e.audience).toBe("internal");
     expect(e.headers).toBeUndefined();
+  });
+
+  it("is worded so it is true for the sender, the deal owner and an administrator", () => {
+    const e = buildPortalNotifyEmail(
+      "internal_partner_note",
+      { appUrlPath: "/pipeline/3f9a21c0-1111-4222-8333-444455556666", companyNames: ["Fresh Bakery"], count: 1 },
+      CTX,
+    )!;
+    expect(e.bodyLines).toEqual(["A partner left a note on Fresh Bakery, a referral your team sent them.", "Open it to read the note."]);
+    expect(e.footnote).toBe("You're getting this because a partner wrote back on a referral from your team.");
+    expect([...e.bodyLines, e.footnote].join(" ")).not.toMatch(/\byou sent\b/i);
   });
 });
 

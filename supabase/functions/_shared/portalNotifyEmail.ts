@@ -483,10 +483,11 @@ function buildInternal(kind: InternalNotifyKind, p: InternalNotifyPayload, ctx: 
       subject: `New partner note: ${name}`,
       preheader: `A partner wrote back about ${name}.`,
       heading: "A partner wrote back",
-      bodyLines: [`The partner you sent ${name} to left a note on it.`, "Open it to read the note."],
+      // Goes to the sender, else the deal owner, else administrators: worded to be true for each.
+      bodyLines: [`A partner left a note on ${name}, a referral your team sent them.`, "Open it to read the note."],
       ctaLabel: "Read the note",
       ctaUrl: url,
-      footnote: "You're getting this because you sent this referral to a partner.",
+      footnote: "You're getting this because a partner wrote back on a referral from your team.",
       audience: "internal",
       orgName: null,
       replyTo: null,

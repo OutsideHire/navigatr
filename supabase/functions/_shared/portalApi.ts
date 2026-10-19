@@ -458,7 +458,9 @@ async function signOut(token: string, deps: PortalApiDeps): Promise<Response> {
  * { slug, token }. The answer never says whether the token matched anyone.
  * Only POST reaches here (a GET, e.g. a link scanner, is a 405 and changes nothing).
  * A request with no resolvable client IP shares one "unknown" rate-limit bucket in
- * SQL (which skips the per-IP limit for a null IP), so stripping headers is no bypass.
+ * SQL (which skips the per-IP limit for a null IP), so stripping the IP headers does
+ * not escape the limit. The IP comes from request headers, so the per-IP limit on
+ * misses is a brake on guessing, not a guarantee; the 128-bit token is the defense.
  */
 async function unsubscribeDigest(req: Request, deps: PortalApiDeps): Promise<Response> {
   const done = () => jsonResponse({ ok: true });

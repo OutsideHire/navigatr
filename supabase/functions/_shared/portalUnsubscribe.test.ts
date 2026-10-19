@@ -76,12 +76,14 @@ describe("unsubscribe_digest", () => {
   });
 
   it("answers 500 only when the database fails, and never reads x-portal-session", async () => {
-    const { deps } = setup({ data: null, error: { message: "boom" } });
+    const { deps, rpc } = setup({ data: null, error: { message: "boom" } });
     const res = await handlePortalRequest(
       new Request(`${URL_BASE}?slug=acme&t=${TOKEN}`, { method: "POST", headers: { "x-portal-session": "tok" }, body: "" }),
       deps,
     );
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: "server_error" });
+    // No session lookup (portal_session_lookup) or any other call: only the unsubscribe.
+    expect(rpc.mock.calls.map((c) => c[0])).toEqual(["portal_unsubscribe_digest"]);
   });
 });

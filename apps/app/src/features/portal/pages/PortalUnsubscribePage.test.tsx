@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -68,6 +68,10 @@ describe("PortalUnsubscribePage", () => {
     renderAt(`/p/acme/unsubscribe?t=${TOKEN}`);
     expect(await screen.findByRole("heading", { name: "Stop the weekly summary?" })).toBeInTheDocument();
     expect(screen.getByText("You'll stop getting the weekly summary email from Acme ISO. Emails about your referrals still arrive.")).toBeInTheDocument();
+    // Let any effect that would fire on load run before asserting nothing was sent.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
     expect(api.unsubscribeDigest).not.toHaveBeenCalled();
   });
 
