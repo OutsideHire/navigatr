@@ -23,6 +23,11 @@ import type {
   PortalReferralSummary,
   PortalReferralUpdate,
 } from "../../../../../../supabase/functions/_shared/portalReferralApi";
+import type {
+  PortalPartnerNote,
+  PortalSentReferralDetail,
+  PortalSentReferralSummary,
+} from "../../../../../../supabase/functions/_shared/portalSentApi";
 import type { PortalWindow } from "../../../../../../supabase/functions/_shared/portalSubmission";
 import type { PortalProfile, PortalProfileInput } from "../../../../../../supabase/functions/_shared/portalProfile";
 import type {
@@ -45,6 +50,9 @@ export type {
   PortalPublicForm,
   PortalPublicSubmitInput,
   PortalPublicSubmitted,
+  PortalPartnerNote,
+  PortalSentReferralDetail,
+  PortalSentReferralSummary,
 };
 
 const SUPABASE_URL: string = import.meta.env.VITE_SUPABASE_URL || "http://localhost:54321";
@@ -143,7 +151,11 @@ type PortalAction =
   | "get_profile"
   | "update_profile"
   | "public_form"
-  | "public_submit";
+  | "public_submit"
+  | "list_sent_referrals"
+  | "get_sent_referral"
+  | "post_note"
+  | "unsubscribe_digest";
 
 async function portalRequest<T>(
   action: PortalAction,
@@ -307,5 +319,33 @@ export const portalApi = {
     return portalRequest<{ submission: PortalPublicSubmitted }>("public_submit", { slug, token, ...input }).then(
       (r) => r.submission,
     );
+  },
+
+  /** Phase 2B-3: referrals the ISO sent to this partner. */
+  listSentReferrals(slug: string, sessionToken: string, period: PortalWindow): Promise<PortalSentReferralSummary[]> {
+    return portalRequest<{ referrals: PortalSentReferralSummary[] }>(
+      "list_sent_referrals",
+      { slug, window: period },
+      sessionToken,
+    ).then((r) => r.referrals);
+  },
+
+  getSentReferral(slug: string, sessionToken: string, referralId: string): Promise<PortalSentReferralDetail | null> {
+    return portalRequest<{ referral: PortalSentReferralDetail }>("get_sent_referral", { slug, referralId }, sessionToken).then(
+      (r) => r.referral,
+      nullOn(404),
+    );
+  },
+
+  /** Throws PortalApiError: 404 not_found, 400 invalid_body (field body), 429 rate_limited. */
+  postNote(slug: string, sessionToken: string, referralId: string, body: string): Promise<PortalPartnerNote> {
+    return portalRequest<{ note: PortalPartnerNote }>("post_note", { slug, referralId, body }, sessionToken).then(
+      (r) => r.note,
+    );
+  },
+
+  /** The weekly summary opt-out (no session). Resolves the same whatever the token. */
+  async unsubscribeDigest(slug: string, token: string): Promise<void> {
+    await portalRequest<{ ok: boolean }>("unsubscribe_digest", { slug, token });
   },
 };

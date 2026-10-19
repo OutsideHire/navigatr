@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -21,6 +21,7 @@ const api = vi.hoisted(() => ({
   withdrawReferral: vi.fn(),
   transcribe: vi.fn(),
   exportReferrals: vi.fn(),
+  listSentReferrals: vi.fn(),
 }));
 
 vi.mock("../lib/portalApi", async (importOriginal) => {
@@ -58,6 +59,10 @@ const ROWS = [
     submittedAt: "2026-10-02T12:00:00Z",
     lastActivityAt: "2026-10-02T12:00:00Z",
   },
+];
+
+const SENT = [
+  { id: "s-1", ref: "REF-BBBB0001", companyName: "Gold Gym", label: "Accepted", sentAt: "2026-10-03T12:00:00Z", lastActivityAt: "2026-10-04T12:00:00Z" },
 ];
 
 // Node 25 ships a broken global localStorage: install an in-memory Storage per test.
@@ -104,6 +109,7 @@ beforeEach(() => {
   api.me.mockResolvedValue(ME);
   api.dashboard.mockResolvedValue(STATS);
   api.listReferrals.mockResolvedValue(ROWS);
+  api.listSentReferrals.mockResolvedValue([]);
   writePortalSession("acme", "live");
 });
 
@@ -270,5 +276,49 @@ describe("PortalDashboardPage", () => {
     renderHome();
     await user.click(await screen.findByRole("button", { name: "Download CSV" }));
     expect(await screen.findByRole("heading", { name: "Sign in to Acme ISO" })).toBeInTheDocument();
+  });
+
+  it("shows what the ISO sent to the partner, linking to each one", async () => {
+    api.listSentReferrals.mockResolvedValue(SENT);
+    renderHome();
+    const section = await screen.findByRole("region", { name: "Sent to you" });
+    expect(within(section).getByText("Businesses Acme ISO referred to you.")).toBeInTheDocument();
+    const row = within(section).getByRole("link", { name: /Gold Gym/ });
+    expect(row).toHaveAttribute("href", "/p/acme/s/s-1");
+    expect(within(row).getByText("Accepted")).toBeInTheDocument();
+    expect(within(row).getByText("REF-BBBB0001 · Sent Oct 3, 2026")).toBeInTheDocument();
+    expect(api.listSentReferrals).toHaveBeenCalledWith("acme", "live", "all");
+  });
+
+  it("hides the section when nothing was sent", async () => {
+    renderHome();
+    await screen.findByRole("link", { name: /Fresh Bakery/ });
+    expect(screen.queryByRole("region", { name: "Sent to you" })).toBeNull();
+  });
+
+  it("hides the section when it cannot load, and keeps the main list", async () => {
+    api.listSentReferrals.mockRejectedValue(new PortalApiError(0, "network_error"));
+    renderHome();
+    await screen.findByRole("link", { name: /Fresh Bakery/ });
+    await waitFor(() => expect(api.listSentReferrals).toHaveBeenCalled());
+    expect(screen.queryByRole("region", { name: "Sent to you" })).toBeNull();
+  });
+
+  it("uses the chosen period and polls every 30 seconds", async () => {
+    const user = userEvent.setup();
+    api.listSentReferrals.mockResolvedValue(SENT);
+    const client = renderHome();
+    await screen.findByRole("region", { name: "Sent to you" });
+    await user.click(screen.getByRole("button", { name: "30 days" }));
+    expect(api.listSentReferrals).toHaveBeenLastCalledWith("acme", "live", "30d");
+    const query = client.getQueryCache().find({ queryKey: ["portal", "data", "acme", "live", "sent", "30d"], exact: true });
+    expect(query?.observers[0]?.options.refetchInterval).toBe(30_000);
+  });
+
+  it("returns to sign-in when the sent list says the session is gone", async () => {
+    api.listSentReferrals.mockRejectedValue(new PortalApiError(401, "unauthorized"));
+    renderHome();
+    expect(await screen.findByRole("heading", { name: "Sign in to Acme ISO" })).toBeInTheDocument();
+    expect(readPortalSession("acme")).toBeNull();
   });
 });
