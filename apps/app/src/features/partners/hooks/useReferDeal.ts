@@ -1,6 +1,8 @@
 /**
  * useReferDeal: record that we referred a deal TO a partner (outbound).
- * Calls the refer_deal_to_partner RPC (migration 20261007000003).
+ * Calls send_referral_to_partner (migration 20261022000002). A non-blank note
+ * is written FOR the partner: they read it in their portal and in the
+ * "sent you a referral" email. Without a note nothing is shown to them.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
@@ -21,10 +23,10 @@ export function useReferDeal() {
   return useMutation({
     mutationFn: async (input: ReferDealInput): Promise<void> => {
       if (!userId) throw new Error("Not signed in");
-      const { error } = await supabase.rpc("refer_deal_to_partner", {
+      const { error } = await supabase.rpc("send_referral_to_partner", {
         p_partner_id: input.partnerId,
         p_deal_id: input.dealId,
-        p_note: input.notes ?? "",
+        p_partner_note: input.notes ?? "",
       });
       if (error) throw new Error(referralErrorMessage(error, "Could not refer deal"));
     },

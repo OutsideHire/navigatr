@@ -1,7 +1,8 @@
 /**
  * The portal_notify drain (Partner Portal Phase 1C, spec 5.8 and 5.9, brief E4).
  *
- * Every run: queue the same-day nudges for "now" (enqueue_portal_nudges), claim
+ * Every run: queue the same-day nudges and the weekly partner summaries for
+ * "now" (enqueue_portal_nudges, enqueue_portal_digests), claim
  * one batch (20 rows, paced 600 ms apart) from portal_email_outbox (claim_portal_emails, FOR UPDATE SKIP
  * LOCKED), build each email (portalNotifyEmail.ts), and settle each row with
  * mark_portal_email:
@@ -36,6 +37,7 @@ export interface PortalNotifyMessage {
   html: string;
   text: string;
   replyTo?: string;
+  headers?: Record<string, string>;
 }
 
 export interface PortalNotifyBrand {
@@ -48,6 +50,8 @@ export interface PortalNotifyEnv {
   fromAddress: string;
   appEnv: string | null | undefined;
   emailAllowlist: string;
+  /** The portal_api function URL (`${SUPABASE_URL}/functions/v1/portal_api`): the weekly summary's one-click unsubscribe target. */
+  portalApiUrl?: string;
 }
 
 export interface PortalNotifyDeps {
@@ -63,6 +67,7 @@ export interface PortalNotifyDeps {
 
 export interface PortalNotifySummary {
   nudgesQueued: number;
+  digestsQueued: number;
   claimed: number;
   sent: number;
   dropped: number;
@@ -117,6 +122,7 @@ async function deliver(
   const built = buildPortalNotifyEmail(row.kind, row.payload, {
     appBaseUrl: deps.env.appBaseUrl,
     referralId: row.referral_id,
+    portalApiUrl: deps.env.portalApiUrl,
   });
   if (!built) {
     console.error(`[portal_notify] dropped ${row.kind} ${row.id}: payload did not build`);
@@ -148,6 +154,7 @@ async function deliver(
       html,
       text,
       ...(built.replyTo ? { replyTo: built.replyTo } : {}),
+      ...(built.headers ? { headers: built.headers } : {}),
     });
   } catch (e) {
     const message = errorText(e);
@@ -160,13 +167,18 @@ async function deliver(
 }
 
 export async function drainPortalEmails(deps: PortalNotifyDeps): Promise<PortalNotifySummary> {
-  const summary: PortalNotifySummary = { nudgesQueued: 0, claimed: 0, sent: 0, dropped: 0, failed: 0 };
+  const summary: PortalNotifySummary = { nudgesQueued: 0, digestsQueued: 0, claimed: 0, sent: 0, dropped: 0, failed: 0 };
   const now = deps.now ? deps.now() : new Date();
 
   // A failed nudge selection must not hold up emails already queued.
   const nudges = await deps.rpc("enqueue_portal_nudges", { p_now: now.toISOString() });
   if (nudges.error) console.error("[portal_notify] nudge enqueue failed:", nudges.error.message);
   else summary.nudgesQueued = typeof nudges.data === "number" ? nudges.data : 0;
+
+  // Weekly summaries (2B-3). Like the nudges, a failure here never holds up the drain.
+  const digests = await deps.rpc("enqueue_portal_digests", { p_now: now.toISOString() });
+  if (digests.error) console.error("[portal_notify] digest enqueue failed:", digests.error.message);
+  else summary.digestsQueued = typeof digests.data === "number" ? digests.data : 0;
 
   const claim = await deps.rpc("claim_portal_emails", { p_limit: PORTAL_NOTIFY_BATCH });
   if (claim.error) throw new Error(`claim failed: ${claim.error.message}`);

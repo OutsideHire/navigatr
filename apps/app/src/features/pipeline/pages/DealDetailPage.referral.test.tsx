@@ -2,7 +2,7 @@
  * Deal Detail shows who referred the deal, linking to the partner, and shows
  * nothing when the deal has no referral.
  */
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -28,6 +28,12 @@ vi.mock("@/features/partners/hooks/useReferralUpdates", () => ({
   useReferralUpdates: () => ({ data: [] }),
   usePublishReferralUpdate: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
+
+let partnerNotes: unknown[] = [];
+vi.mock("@/features/partners/hooks/useReferralPartnerNotes", () => ({
+  useDealPartnerNotes: () => ({ data: partnerNotes }),
+}));
+
 
 let portalEnabled = true;
 vi.mock("@/features/partners/hooks/usePortalAccess", () => ({
@@ -57,6 +63,7 @@ function renderDealDetail() {
 }
 
 beforeEach(() => {
+  partnerNotes = [];
   portalEnabled = true;
 });
 
@@ -109,5 +116,15 @@ describe("DealDetailPage / referred by", () => {
     await screen.findByText("Source");
     expect(screen.queryByText(/Referred by/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Share update with partner" })).not.toBeInTheDocument();
+  });
+
+  it("shows what a partner wrote back on a referral this deal was sent to them", async () => {
+    dealReferral = null;
+    partnerNotes = [
+      { referralId: "r-9", partnerId: "p-9", partnerName: "Kim CPA", notes: [{ id: "n-1", body: "Signed today.", createdAt: "2026-10-22T12:00:00Z" }] },
+    ];
+    renderDealDetail();
+    const group = await screen.findByRole("region", { name: "Notes from Kim CPA" });
+    expect(within(group).getByText("Signed today.")).toBeInTheDocument();
   });
 });

@@ -73,6 +73,7 @@ const ERROR_COPY: Array<[token: string, copy: string]> = [
   ["override_reason_required", "Add a short reason to accept a possible duplicate."],
   ["update_required", "Write the update first."],
   ["update_too_long", "Keep the update under 1,000 characters."],
+  ["note_too_long", "Keep the note under 1,000 characters."],
   ["referral_not_reinstatable", "This referral can't be reinstated now."],
   ["submission_not_found", "That referral no longer exists."],
   ["submission_handled", "This referral was already handled."],

@@ -42,6 +42,12 @@ vi.mock("../hooks/useAttributeDeal", () => ({
   useAttributeDeal: () => ({ mutateAsync: attributeMutate, isPending: false }),
   useUnattributeDeal: () => ({ mutateAsync: unattributeMutate, isPending: false }),
 }));
+let noteCounts: Record<string, number> = {};
+vi.mock("../hooks/useReferralPartnerNotes", () => ({
+  usePartnerNoteCounts: () => ({ data: noteCounts }),
+  partnerNoteCountLabel: (n: number) => (n <= 0 ? null : n === 1 ? "1 note from partner" : `${n} notes from partner`),
+}));
+
 vi.mock("../hooks/useReferDeal", () => ({
   useReferDeal: () => ({ mutateAsync: referMutate, isPending: false }),
 }));
@@ -245,6 +251,16 @@ describe("PartnerDetailPage / inbound + outbound referrals", () => {
     // REFERRALS KPI = inbound count = 1 (not 3).
     const kpi = screen.getByText("REFERRALS").parentElement!;
     expect(within(kpi).getByText("1")).toBeTruthy();
+  });
+
+  it("shows how many notes the partner left on a deal referred to them", () => {
+    noteCounts = { "d-out": 2 };
+    const deals = [deal("d-in", 10_000_00), deal("d-out", 20_000_00)];
+    renderPage({ partners: [partner({ id: "p1", attributedDealIds: ["d-in"], outboundDealIds: ["d-out"] })], deals, partnerId: "p1" });
+    const outbound = screen.getByRole("heading", { name: /Referred to them/i });
+    const card = (outbound.closest("div[class*='rounded']") ?? outbound.parentElement!.parentElement!) as HTMLElement;
+    expect(within(card).getByText("2 notes from partner")).toBeInTheDocument();
+    noteCounts = {};
   });
 });
 

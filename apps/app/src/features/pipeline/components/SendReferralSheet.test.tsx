@@ -103,4 +103,21 @@ describe("SendReferralSheet", () => {
     expect(screen.getByRole("button", { name: /Send referral/i })).toBeDisabled();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   });
+
+  it("tells the rep the partner will read the note, by name, and sends it", async () => {
+    const user = userEvent.setup();
+    renderSheet();
+    expect(screen.getByLabelText("Note for the partner (they will see this)")).toHaveAttribute("maxlength", "1000");
+
+    await user.click(screen.getByRole("combobox"));
+    await user.click(await screen.findByRole("option", { name: /Sarah · CPA Co/i }));
+    const note = screen.getByLabelText("Note for Sarah (they will see this)");
+    expect(note).toHaveAttribute("placeholder", "Optional. Only write what the partner should read.");
+    await user.type(note, "  Ask for Ann  ");
+    await user.click(screen.getByRole("button", { name: /Send referral/i }));
+
+    await waitFor(() =>
+      expect(mutateAsyncSpy).toHaveBeenCalledWith({ dealId: deal.id, partnerId: "p1", notes: "Ask for Ann" }),
+    );
+  });
 });

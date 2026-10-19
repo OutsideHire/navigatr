@@ -10,6 +10,8 @@
 //   form | dup_check | submit_referral | list_referrals | dashboard | get_referral
 //   withdraw_referral | transcribe   (Phase 1B, session required)
 //   export_referrals | get_profile | update_profile   (Phase 2A, session required)
+//   list_sent_referrals | get_sent_referral | post_note   (Phase 2B-3, session required)
+//   unsubscribe_digest   (Phase 2B-3, no session: the weekly summary opt-out and its one-click POST)
 //   public_form | public_submit   (Phase 2B-1, no session: the public referral form)
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";

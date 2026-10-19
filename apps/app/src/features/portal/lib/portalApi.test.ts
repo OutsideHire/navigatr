@@ -304,3 +304,37 @@ describe("Phase 2B-1 public form", () => {
     expect(lastCall().body).toMatchObject({ captchaToken: "cf-1" });
   });
 });
+
+describe("Phase 2B-3 actions", () => {
+  it("lists and reads sent referrals with the session, null for a missing one", async () => {
+    const ROW = { id: "s-1", ref: "REF-1", companyName: "Fresh Bakery", label: "Accepted", sentAt: "2026-10-20T12:00:00Z", lastActivityAt: "2026-10-20T12:00:00Z" };
+    fetchMock.mockResolvedValueOnce(respond(200, { referrals: [ROW] }));
+    await expect(portalApi.listSentReferrals("acme", "tok", "30d")).resolves.toEqual([ROW]);
+    expect(lastCall().url).toBe(`${PORTAL_API_URL}/list_sent_referrals`);
+    expect(lastCall().headers["x-portal-session"]).toBe("tok");
+    expect(lastCall().body).toEqual({ slug: "acme", window: "30d" });
+
+    fetchMock.mockResolvedValueOnce(respond(404, { error: "not_found" }));
+    await expect(portalApi.getSentReferral("acme", "tok", "s-9")).resolves.toBeNull();
+    expect(lastCall().url).toBe(`${PORTAL_API_URL}/get_sent_referral`);
+    expect(lastCall().body).toEqual({ slug: "acme", referralId: "s-9" });
+  });
+
+  it("posts a note and surfaces the refusal codes", async () => {
+    const NOTE = { id: "n-1", body: "Called Ann.", createdAt: "2026-10-22T12:00:00Z" };
+    fetchMock.mockResolvedValueOnce(respond(200, { note: NOTE }));
+    await expect(portalApi.postNote("acme", "tok", "s-1", "Called Ann.")).resolves.toEqual(NOTE);
+    expect(lastCall().url).toBe(`${PORTAL_API_URL}/post_note`);
+    expect(lastCall().body).toEqual({ slug: "acme", referralId: "s-1", body: "Called Ann." });
+    fetchMock.mockResolvedValueOnce(respond(429, { error: "rate_limited" }));
+    await expect(portalApi.postNote("acme", "tok", "s-1", "x")).rejects.toMatchObject({ status: 429, code: "rate_limited" });
+  });
+
+  it("unsubscribes without a session", async () => {
+    fetchMock.mockResolvedValueOnce(respond(200, { ok: true }));
+    await portalApi.unsubscribeDigest("acme", "AbCdEfGhIjKlMnOpQrStUv");
+    expect(lastCall().url).toBe(`${PORTAL_API_URL}/unsubscribe_digest`);
+    expect(lastCall().headers["x-portal-session"]).toBeUndefined();
+    expect(lastCall().body).toEqual({ slug: "acme", token: "AbCdEfGhIjKlMnOpQrStUv" });
+  });
+});

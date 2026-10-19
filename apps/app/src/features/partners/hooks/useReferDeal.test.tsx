@@ -1,4 +1,4 @@
-// useReferDeal records an outbound referral via the refer_deal_to_partner RPC.
+// useReferDeal records an outbound referral via the send_referral_to_partner RPC.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -28,20 +28,20 @@ beforeEach(() => {
 });
 
 describe("useReferDeal", () => {
-  it("calls refer_deal_to_partner with partner, deal and note", async () => {
+  it("calls send_referral_to_partner with partner, deal and the partner-facing note", async () => {
     rpcMock.mockResolvedValueOnce({ data: "ref-1", error: null });
     const { result } = renderHook(() => useReferDeal(), { wrapper: wrap(client()) });
     await result.current.mutateAsync({ partnerId: "p-1", dealId: "d-1", notes: "Q3 referral" });
-    expect(rpcMock).toHaveBeenCalledWith("refer_deal_to_partner", {
-      p_partner_id: "p-1", p_deal_id: "d-1", p_note: "Q3 referral",
+    expect(rpcMock).toHaveBeenCalledWith("send_referral_to_partner", {
+      p_partner_id: "p-1", p_deal_id: "d-1", p_partner_note: "Q3 referral",
     });
   });
 
-  it("sends an empty note when none is given", async () => {
+  it("sends an empty note when none is given (nothing is shown to the partner)", async () => {
     rpcMock.mockResolvedValueOnce({ data: "ref-1", error: null });
     const { result } = renderHook(() => useReferDeal(), { wrapper: wrap(client()) });
     await result.current.mutateAsync({ partnerId: "p-1", dealId: "d-1" });
-    expect(rpcMock.mock.calls[0]?.[1]).toMatchObject({ p_note: "" });
+    expect(rpcMock.mock.calls[0]?.[1]).toMatchObject({ p_partner_note: "" });
   });
 
   it("invalidates partners and referrals on success", async () => {
@@ -63,5 +63,13 @@ describe("useReferDeal", () => {
     rpcMock.mockResolvedValueOnce({ data: null, error: { message: "deal_not_visible" } });
     const { result } = renderHook(() => useReferDeal(), { wrapper: wrap(client()) });
     await expect(result.current.mutateAsync({ partnerId: "p-1", dealId: "d-1" })).rejects.toThrow("You can't see that deal.");
+  });
+
+  it("says how long a note may be", async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: "note_too_long" } });
+    const { result } = renderHook(() => useReferDeal(), { wrapper: wrap(client()) });
+    await expect(result.current.mutateAsync({ partnerId: "p-1", dealId: "d-1", notes: "x" })).rejects.toThrow(
+      "Keep the note under 1,000 characters.",
+    );
   });
 });

@@ -36,6 +36,8 @@ export interface EmailOptions {
   code?: string;
   /** Per-tenant branding (partner emails). Absent = the navigatr look, unchanged. */
   brand?: EmailBrand;
+  /** Optional link under the footnote (the weekly summary's unsubscribe link). Absent: output unchanged. */
+  footerLink?: { label: string; url: string };
 }
 
 const LOGO_URL = "https://app.getnavigatr.io/icons/icon-192x192.png";
@@ -130,6 +132,11 @@ export function renderEmail(opts: EmailOptions): { html: string; text: string } 
           <a href="${escUrl(ctaUrl)}" style="color:${accent};word-break:break-all;">${escUrl(ctaUrl)}</a>`
     : "";
 
+  const footerLinkHtml = opts.footerLink
+    ? `<br>
+          <a href="${escUrl(opts.footerLink.url)}" style="color:#8089A1;text-decoration:underline;">${esc(opts.footerLink.label)}</a>`
+    : "";
+
   const html = `<!doctype html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="color-scheme" content="light only"></head>
@@ -149,7 +156,7 @@ export function renderEmail(opts: EmailOptions): { html: string; text: string } 
       ${ctaHtml}
       <tr><td style="padding:18px 28px 24px;">
         <p style="margin:16px 0 0;border-top:1px solid #F0F2F7;padding-top:14px;font-size:11.5px;line-height:1.5;color:#8089A1;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
-          ${esc(opts.footnote)}${ctaFallback}
+          ${esc(opts.footnote)}${footerLinkHtml}${ctaFallback}
         </p>${poweredBy}
       </td></tr>
     </table>
@@ -165,6 +172,7 @@ export function renderEmail(opts: EmailOptions): { html: string; text: string } 
     ...(hasCta ? ["", `${ctaLabel}: ${ctaUrl}`] : []),
     "",
     opts.footnote,
+    ...(opts.footerLink ? [`${opts.footerLink.label}: ${opts.footerLink.url}`] : []),
     ...(brand ? ["", POWERED_BY] : []),
   ].join("\n");
 

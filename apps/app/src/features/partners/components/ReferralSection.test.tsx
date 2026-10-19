@@ -133,4 +133,10 @@ describe("ReferralSection", () => {
     fireEvent.click(row);
     expect(onSelectDeal).toHaveBeenCalledWith(dealA);
   });
+
+  it("shows a per-row line when rowNote returns one", () => {
+    renderSection({ rowNote: (d) => (d.id === dealA.id ? "2 notes from partner" : null) });
+    expect(screen.getByText("2 notes from partner")).toBeInTheDocument();
+    expect(screen.getAllByText(/notes? from partner/)).toHaveLength(1);
+  });
 });

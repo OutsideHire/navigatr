@@ -55,6 +55,7 @@ import { formatCalendarDate } from "@/lib/calendarDate";
 import { usePartner } from "../hooks/usePartner";
 import { useAttributeDeal, useUnattributeDeal } from "../hooks/useAttributeDeal";
 import { useReferDeal } from "../hooks/useReferDeal";
+import { partnerNoteCountLabel, usePartnerNoteCounts } from "../hooks/useReferralPartnerNotes";
 import { useUpdatePartner } from "../hooks/useUpdatePartner";
 import { usePartnerActivities, type PartnerTouch, type PartnerTouchType } from "../hooks/usePartnerActivities";
 import { useLogPartnerTouch } from "../hooks/useLogPartnerTouch";
@@ -632,6 +633,7 @@ export function PartnerDetailPage() {
   const attribute = useAttributeDeal();
   const referDeal = useReferDeal();
   const unattribute = useUnattributeDeal();
+  const { data: noteCounts } = usePartnerNoteCounts(partnerId);
 
   const profile = useProfile();
   const currentUserId = useAuth((s) => s.user?.id);
@@ -762,6 +764,7 @@ export function PartnerDetailPage() {
         />
         <ReferralSection
           title="Referred to them"
+          rowNote={(d) => partnerNoteCountLabel(noteCounts?.[d.id] ?? 0)}
           deals={outboundDeals}
           eligibleOptions={eligibleOptions}
           addLabel="Refer a deal"

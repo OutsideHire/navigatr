@@ -5,7 +5,7 @@
 // so this function MUST be verify_jwt=false in config.toml or the gateway 401s
 // the scheduler before it runs.
 //
-// Each run queues the same-day nudges, then drains up to 20 rows (paced) of
+// Each run queues the same-day nudges and the weekly partner summaries, then drains up to 20 rows (paced) of
 // portal_email_outbox. All logic lives in _shared/portalNotify.ts (unit-tested);
 // this file only wires the service-role client, Resend and the brand lookup.
 //
@@ -64,6 +64,8 @@ const deps: PortalNotifyDeps = {
     fromAddress: FROM_ADDRESS,
     appEnv: APP_ENV,
     emailAllowlist: EMAIL_ALLOWLIST,
+    // The weekly summary's List-Unsubscribe target (2B-3). No new secret.
+    portalApiUrl: `${SUPABASE_URL}/functions/v1/portal_api`,
   },
 };
 

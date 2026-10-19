@@ -2,7 +2,8 @@
  * Partner dashboard (spec 5.6, FR-PORT-68..70): send a referral, see how the
  * partner's referrals are doing, open any one of them. Tiles and list share one
  * time period and refresh every 30 seconds. Value appears only when the ISO
- * allows it (the server omits it otherwise).
+ * allows it (the server omits it otherwise). Referrals the ISO sent to the
+ * partner are listed separately under Sent to you (Phase 2B-3).
  */
 import * as React from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -12,6 +13,7 @@ import { Button, Card } from "@/components/navigatr";
 import { cn } from "@/lib/utils";
 import { PortalRetry, portalReachMessage } from "../components/PortalRetry";
 import { PortalLabelChip } from "../components/PortalLabelChip";
+import { PortalSentSection } from "../components/PortalSentSection";
 import {
   PORTAL_POLL_MS,
   isPortalTransientError,
@@ -198,6 +200,8 @@ export function PortalDashboardPage() {
       </div>
 
       {content}
+
+      <PortalSentSection period={period} />
     </div>
   );
 }

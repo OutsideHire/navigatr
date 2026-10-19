@@ -7,6 +7,7 @@
  * renders a generic page with no tenant detail.
  *
  * The public referral form (Phase 2B-1) lives at refer/:token and needs no session.
+ * The weekly summary opt-out lives at unsubscribe and needs no session (Phase 2B-3).
  */
 import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -22,8 +23,10 @@ import { PortalSignedInLayout } from "../components/PortalSignedInLayout";
 import { PortalDashboardPage } from "./PortalDashboardPage";
 import { PortalSubmitPage } from "./PortalSubmitPage";
 import { PortalReferralPage } from "./PortalReferralPage";
+import { PortalSentReferralPage } from "./PortalSentReferralPage";
 import { PortalProfilePage } from "./PortalProfilePage";
 import { PortalPublicFormPage } from "./PortalPublicFormPage";
+import { PortalUnsubscribePage } from "./PortalUnsubscribePage";
 
 export function PortalRoot() {
   const { slug: rawSlug = "" } = useParams<{ slug: string }>();
@@ -56,10 +59,12 @@ export function PortalRoot() {
           <Route index element={<PortalSignInPage slug={slug} brand={data} />} />
           <Route path="invite" element={<PortalInvitePage slug={slug} brand={data} />} />
           <Route path="refer/:token" element={<PortalPublicFormPage slug={slug} brand={data} />} />
+          <Route path="unsubscribe" element={<PortalUnsubscribePage slug={slug} brand={data} />} />
           <Route element={<PortalSignedInLayout slug={slug} brand={data} />}>
             <Route path="home" element={<PortalDashboardPage />} />
             <Route path="new" element={<PortalSubmitPage />} />
             <Route path="r/:referralId" element={<PortalReferralPage />} />
+            <Route path="s/:referralId" element={<PortalSentReferralPage />} />
             <Route path="profile" element={<PortalProfilePage />} />
           </Route>
           <Route path="*" element={<Navigate to={`/p/${slug}`} replace />} />

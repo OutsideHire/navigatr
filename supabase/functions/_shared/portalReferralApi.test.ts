@@ -607,7 +607,7 @@ describe("export_referrals", () => {
   ];
 
   it("returns labelled rows for the session scope and the chosen window", async () => {
-    const { deps, rpc } = setup({ portal_export_referrals: () => ok(ROWS) });
+    const { deps, rpc } = setup({ portal_export_referrals: () => ok(ROWS), portal_record_export: () => ok(null) });
     const { status, json } = await call("export_referrals", { window: "30d" }, deps);
     expect(rpc).toHaveBeenCalledWith("portal_export_referrals", {
       p_org: "o-1",
@@ -644,7 +644,7 @@ describe("export_referrals", () => {
 
   it("never sends a value when the ISO hides it, even if a row carries one", async () => {
     const hidden = ROWS.map((r) => ({ ...r, value_visible: false }));
-    const { deps } = setup({ portal_export_referrals: () => ok(hidden) });
+    const { deps } = setup({ portal_export_referrals: () => ok(hidden), portal_record_export: () => ok(null) });
     const { json } = await call("export_referrals", {}, deps);
     const out = json.export as { valueVisible: boolean; rows: Array<{ closedWonValueCents: number | null }> };
     expect(out.valueVisible).toBe(false);
@@ -653,7 +653,7 @@ describe("export_referrals", () => {
   });
 
   it("drops a row whose status has no partner label, and rejects an unknown window", async () => {
-    const { deps } = setup({ portal_export_referrals: () => ok([{ ...ROWS[0], status: "bogus" }]) });
+    const { deps } = setup({ portal_export_referrals: () => ok([{ ...ROWS[0], status: "bogus" }]), portal_record_export: () => ok(null) });
     expect((await call("export_referrals", {}, deps)).json).toEqual({ export: { valueVisible: false, rows: [] } });
     const bad = await call("export_referrals", { window: "5y" }, deps);
     expect(bad.status).toBe(400);
@@ -662,6 +662,18 @@ describe("export_referrals", () => {
 
   it("answers a generic 500 when the export fails", async () => {
     const { deps } = setup({ portal_export_referrals: () => fail("boom") });
+    const res = await call("export_referrals", {}, deps);
+    expect(res.status).toBe(500);
+    expect(res.json).toEqual({ error: "server_error" });
+  });
+  it("audits every export with the session's portal user and IP", async () => {
+    const { deps, rpc } = setup({ portal_export_referrals: () => ok(ROWS), portal_record_export: () => ok(null) });
+    await call("export_referrals", {}, deps);
+    expect(rpc).toHaveBeenCalledWith("portal_record_export", { p_org: "o-1", p_partner: "p-1", p_portal_user: "u-1", p_ip: "203.0.113.9" });
+  });
+
+  it("delivers no file when the audit cannot be written", async () => {
+    const { deps } = setup({ portal_export_referrals: () => ok(ROWS), portal_record_export: () => fail("boom") });
     const res = await call("export_referrals", {}, deps);
     expect(res.status).toBe(500);
     expect(res.json).toEqual({ error: "server_error" });

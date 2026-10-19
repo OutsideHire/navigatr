@@ -193,3 +193,27 @@ describe("renderEmail without a button", () => {
     );
   });
 });
+
+describe("renderEmail footerLink", () => {
+  const BASE_OPTS = {
+    preheader: "p",
+    heading: "h",
+    bodyLines: ["one"],
+    footnote: "You get this weekly.",
+  };
+
+  it("renders the link under the footnote, escaped, and as a text line", () => {
+    const { html, text } = renderEmail({
+      ...BASE_OPTS,
+      footerLink: { label: "Unsubscribe <now>", url: 'https://x.example/u?t=a&b="c"' },
+    });
+    expect(html).toContain('<a href="https://x.example/u?t=a&b=&quot;c&quot;"');
+    expect(html).toContain("Unsubscribe &lt;now&gt;</a>");
+    expect(text).toContain('Unsubscribe <now>: https://x.example/u?t=a&b="c"');
+    expect(text.indexOf("You get this weekly.")).toBeLessThan(text.indexOf("Unsubscribe <now>"));
+  });
+
+  it("changes nothing when absent", () => {
+    expect(renderEmail({ ...BASE_OPTS, footerLink: undefined })).toEqual(renderEmail(BASE_OPTS));
+  });
+});
