@@ -106,20 +106,22 @@ do $$ declare v_id uuid; r referrals; o portal_email_outbox; begin
 end $$;
 
 -- 3. A blank note is not a note: nothing visible, and the email says nothing.
-do $$ declare v_id uuid; begin
+do $$ declare v_id uuid; o portal_email_outbox; begin
   perform _t_act('a0630000-0000-0000-0000-000000000002');
   v_id := public.send_referral_to_partner('a063a000-0000-0000-0000-000000000001', 'a063d000-0000-0000-0000-000000000002', '   ');
   perform set_config('role', 'postgres', true);
   if (select partner_note_visible or notes <> '' from referrals where id = v_id) then
     raise exception 'a blank note must not be visible';
   end if;
-  if (select payload->'note' from portal_email_outbox where referral_id = v_id) <> 'null'::jsonb then
-    raise exception 'a blank note must not ride the email';
+  select * into o from portal_email_outbox where referral_id = v_id and kind = 'partner_referral_sent';
+  if o.id is null then raise exception 'a blank-note send must still queue the partner email'; end if;
+  if o.payload->'note' <> 'null'::jsonb then
+    raise exception 'a blank note must not ride the email: %', o.payload;
   end if;
 end $$;
 
 -- 4. The old RPC (Partner Detail before this PR, stale clients): the note stays internal.
-do $$ declare v_id uuid; begin
+do $$ declare v_id uuid; o portal_email_outbox; begin
   perform _t_act('a0630000-0000-0000-0000-000000000002');
   v_id := public.refer_deal_to_partner('a063a000-0000-0000-0000-000000000001', 'a063d000-0000-0000-0000-000000000003', 'Internal: the owner is difficult');
   perform set_config('role', 'postgres', true);
@@ -129,8 +131,10 @@ do $$ declare v_id uuid; begin
   if (select shared_with_partner_at is null from referrals where id = v_id) then
     raise exception 'refer_deal_to_partner shares the referral from this release on';
   end if;
-  if (select payload->'note' from portal_email_outbox where referral_id = v_id and kind = 'partner_referral_sent') <> 'null'::jsonb then
-    raise exception 'refer_deal_to_partner queues the email without the note';
+  select * into o from portal_email_outbox where referral_id = v_id and kind = 'partner_referral_sent';
+  if o.id is null then raise exception 'refer_deal_to_partner must queue the partner email'; end if;
+  if o.payload->'note' <> 'null'::jsonb then
+    raise exception 'refer_deal_to_partner queues the email without the note: %', o.payload;
   end if;
 end $$;
 
@@ -183,6 +187,32 @@ do $$ declare v_old uuid := 'a063e000-0000-0000-0000-000000000001'; v_gone uuid 
   perform public._portal_enqueue_referral_sent(v_gone);
   if exists (select 1 from portal_email_outbox where referral_id in (v_old, v_gone)) then
     raise exception 'an unshared or removed outbound referral is never emailed';
+  end if;
+end $$;
+
+-- 6c. Only an ACTIVE portal user of an enabled, not disabled org is emailed:
+--     suspended, revoked and a disabled org each queue nothing. The D3 referral
+--     is shared and live; its queued email is cleared so each case starts empty.
+do $$ declare v_ref uuid; st text; begin
+  select id into v_ref from referrals where deal_id = 'a063d000-0000-0000-0000-000000000003' and direction = 'outbound';
+  foreach st in array array['suspended', 'revoked'] loop
+    delete from portal_email_outbox where referral_id = v_ref;
+    update portal_users set status = st::portal_user_status where id = 'a063b000-0000-0000-0000-000000000001';
+    perform public._portal_enqueue_referral_sent(v_ref);
+    if exists (select 1 from portal_email_outbox where referral_id = v_ref) then
+      raise exception 'a % portal user must get no email', st;
+    end if;
+  end loop;
+  update portal_users set status = 'active' where id = 'a063b000-0000-0000-0000-000000000001';
+  update organizations set is_disabled = true where id = '00000000-0000-0000-0000-000000001063';
+  perform public._portal_enqueue_referral_sent(v_ref);
+  if exists (select 1 from portal_email_outbox where referral_id = v_ref) then
+    raise exception 'a disabled org must get no email';
+  end if;
+  update organizations set is_disabled = false where id = '00000000-0000-0000-0000-000000001063';
+  perform public._portal_enqueue_referral_sent(v_ref);
+  if not exists (select 1 from portal_email_outbox where referral_id = v_ref and kind = 'partner_referral_sent') then
+    raise exception 'control: an active user of an enabled org is emailed';
   end if;
 end $$;
 
