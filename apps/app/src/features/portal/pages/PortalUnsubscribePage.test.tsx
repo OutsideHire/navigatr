@@ -78,7 +78,7 @@ describe("PortalUnsubscribePage", () => {
     await user.click(await screen.findByRole("button", { name: "Unsubscribe" }));
     expect(api.unsubscribeDigest).toHaveBeenCalledWith("acme", TOKEN);
     expect(await screen.findByRole("heading", { name: "You're unsubscribed" })).toBeInTheDocument();
-    expect(screen.getByText("You won't get the weekly summary. You can turn it back on in your profile.")).toBeInTheDocument();
+    expect(screen.getByText("You will stop getting the weekly summary. You can turn it back on in your profile.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Unsubscribe" })).toBeNull();
   });
 

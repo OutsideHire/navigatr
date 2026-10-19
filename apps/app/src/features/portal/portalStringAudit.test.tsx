@@ -22,8 +22,11 @@ import { PORTAL_LABELS } from "../../../../../supabase/functions/_shared/portalL
 import {
   KIND_LABEL,
   PARTNER_NOTIFY_KINDS,
+  PARTNER_DIGEST_KIND,
+  PARTNER_SENT_KIND,
   buildPortalNotifyEmail,
 } from "../../../../../supabase/functions/_shared/portalNotifyEmail";
+import { portalCodeEmail, portalInviteEmail } from "../../../../../supabase/functions/_shared/portalEmail";
 import { POWERED_BY, renderEmail } from "../../../../../supabase/functions/_shared/emailTemplate";
 import { PUBLIC_HONEYPOT_FIELD, signFormToken } from "../../../../../supabase/functions/_shared/portalPublicForm";
 import { buildReferralsCsv } from "./lib/portalCsv";
@@ -49,6 +52,10 @@ const api = vi.hoisted(() => ({
   updateProfile: vi.fn(),
   publicForm: vi.fn(),
   publicSubmit: vi.fn(),
+  listSentReferrals: vi.fn(),
+  getSentReferral: vi.fn(),
+  postNote: vi.fn(),
+  unsubscribeDigest: vi.fn(),
 }));
 
 vi.mock("./lib/portalApi", async (importOriginal) => {
@@ -217,6 +224,56 @@ describe("portal_api responses", () => {
           };
         case "portal_record_export":
           return { data: null, error: null };
+        case "portal_list_sent_referrals":
+          return {
+            data: INTERNAL_STATUSES.map((s, i) => ({
+              id: `s-${i}`,
+              ref: `REF-1000000${i}`,
+              company_name: "Gold Gym",
+              status: s,
+              sent_at: "2026-10-01T12:00:00Z",
+              last_activity_at: "2026-10-02T12:00:00Z",
+              value_cents: 123456,
+              notes: `${SECRET} internal note`,
+              ...hostile,
+            })),
+            error: null,
+          };
+        case "portal_get_sent_referral":
+          return {
+            data: [{
+              id: "3f9a21c0-1111-4222-8333-444455556666",
+              ref: "REF-3F9A21C0",
+              company_name: "Gold Gym",
+              contact_name: "Gil",
+              contact_email: "gil@gold.example",
+              contact_phone: "5550100200",
+              rep_note: "Ask for Gil after 3pm.",
+              status,
+              sent_at: "2026-10-01T12:00:00Z",
+              rep_name: "Rita Rep",
+              rep_email: "rita@acme.example",
+              details_removed: false,
+              can_post_note: true,
+              value_cents: 123456,
+              notes: `${SECRET} internal note`,
+              submitted_by_user_id: SECRET,
+              ...hostile,
+            }],
+            error: null,
+          };
+        case "portal_partner_notes":
+          return {
+            data: [{ id: "n-1", body: "Called Gil.", created_at: "2026-10-02T12:00:00Z", portal_user_id: SECRET, org_id: SECRET }],
+            error: null,
+          };
+        case "portal_post_partner_note":
+          return {
+            data: [{ id: "n-2", body: "Demo booked.", created_at: "2026-10-03T12:00:00Z", portal_user_id: SECRET, status }],
+            error: null,
+          };
+        case "portal_unsubscribe_digest":
+          return { data: null, error: null };
         case "portal_get_profile":
           return {
             data: [{ name: "Jane", phone: "5550100100", email: "j@x.co", weekly_digest: true, ...hostile }],
@@ -296,6 +353,34 @@ describe("portal_api responses", () => {
     const body = await call("get_profile", {}, "submitted");
     auditJson(body);
     expect(Object.keys(body.profile).sort()).toEqual(["email", "name", "phone", "weeklyDigest"]);
+  });
+
+  // Defense in depth: SQL never returns a withdrawn (removed) or unshared row,
+  // but the API layer must stay clean for any status a row could carry.
+  it.each(INTERNAL_STATUSES)("sent-to-you detail leaks nothing internal for a referral that is %s", async (status) => {
+    const body = await call("get_sent_referral", { referralId: "3f9a21c0-1111-4222-8333-444455556666" }, status);
+    auditJson(body);
+    expect(JSON.stringify(body)).not.toContain("123456");
+    expect(body.referral.repNote).toBe("Ask for Gil after 3pm.");
+    expect(body.referral.notes).toEqual([{ id: "n-1", body: "Called Gil.", createdAt: "2026-10-02T12:00:00Z" }]);
+  });
+
+  it("the sent-to-you list and a posted note leak nothing internal", async () => {
+    const list = await call("list_sent_referrals", {}, "accepted");
+    auditJson(list);
+    expect(list.referrals).toHaveLength(INTERNAL_STATUSES.length);
+    for (const r of list.referrals as { label: string }[]) expect(PORTAL_LABELS as readonly string[]).toContain(r.label);
+    expect(JSON.stringify(list)).not.toContain("123456");
+    const note = await call("post_note", { referralId: "3f9a21c0-1111-4222-8333-444455556666", body: "Demo booked." }, "accepted");
+    auditJson(note);
+    expect(Object.keys(note.note).sort()).toEqual(["body", "createdAt", "id"]);
+  });
+
+  it("unsubscribe answers exactly the same for any token", async () => {
+    const a = await call("unsubscribe_digest", { token: "AbCdEfGhIjKlMnOpQrStUv" }, "accepted");
+    const b = await call("unsubscribe_digest", { token: "no-such-token-at-all-xx" }, "accepted");
+    expect(a).toEqual({ ok: true });
+    expect(b).toEqual(a);
   });
 });
 
@@ -533,6 +618,7 @@ describe("rendered portal pages: UI copy audit", () => {
     api.me.mockResolvedValue({ partnerName: "Jane", email: "jane@example.com", orgName: "Acme ISO" });
     api.form.mockResolvedValue({ consentText: "I have permission to share this business's contact details.", consentVersion: 1 });
     api.dupCheck.mockResolvedValue(true);
+    api.listSentReferrals.mockResolvedValue([]);
     writePortalSession("acme", "live");
   });
 
@@ -698,6 +784,83 @@ describe("rendered portal pages: UI copy audit", () => {
     api.publicForm.mockResolvedValue(null);
     renderAt("/p/acme/refer/old");
     await screen.findByRole("heading", { name: "This form isn't available" });
+    expectCleanScreen();
+  });
+
+  const SENT_LABELS = PORTAL_LABELS.filter((l) => l !== "Received" && l !== "Withdrawn");
+
+  it("dashboard with Sent to you in every label it can show", async () => {
+    api.listReferrals.mockResolvedValue([]);
+    api.dashboard.mockResolvedValue({ submitted: 0, active: 0, closedWon: 0, conversionRate: null, valueVisible: false });
+    api.listSentReferrals.mockResolvedValue(
+      SENT_LABELS.map((label, i) => ({
+        id: `s-${i}`,
+        ref: `REF-1000000${i}`,
+        companyName: `Sent ${i}`,
+        label,
+        sentAt: "2026-10-01T12:00:00Z",
+        lastActivityAt: "2026-10-02T12:00:00Z",
+      })),
+    );
+    renderAt("/p/acme/home");
+    await screen.findByRole("link", { name: /Sent 3/ });
+    expectCleanScreen();
+  });
+
+  it.each(SENT_LABELS)("sent referral page labelled %s, with notes and the composer", async (label) => {
+    api.getSentReferral.mockResolvedValue({
+      id: "s-1",
+      ref: "REF-BBBB0001",
+      companyName: "Gold Gym",
+      contactName: "Gil",
+      contactEmail: "gil@gold.example",
+      contactPhone: "5550100200",
+      repNote: "Ask for Gil after 3pm.",
+      label,
+      sentAt: "2026-10-01T12:00:00Z",
+      rep: label === "Not Moving Forward" ? null : { name: "Rita Rep", email: "rita@acme.example" },
+      detailsRemoved: false,
+      canPostNote: true,
+      notes: [{ id: "n-1", body: "Called Gil.", createdAt: "2026-10-02T12:00:00Z" }],
+    });
+    renderAt("/p/acme/s/s-1");
+    await screen.findByRole("heading", { name: "Gold Gym" });
+    expectCleanScreen();
+  });
+
+  it("sent referral page after a refused note, and with the details removed", async () => {
+    const user = userEvent.setup();
+    api.getSentReferral.mockResolvedValue({
+      id: "s-1",
+      ref: "REF-BBBB0001",
+      companyName: "Gold Gym",
+      contactName: null,
+      contactEmail: null,
+      contactPhone: null,
+      repNote: null,
+      label: "Accepted",
+      sentAt: "2026-10-01T12:00:00Z",
+      rep: null,
+      detailsRemoved: true,
+      canPostNote: true,
+      notes: [],
+    });
+    api.postNote.mockRejectedValue(new PortalApiError(429, "rate_limited"));
+    renderAt("/p/acme/s/s-1");
+    await user.type(await screen.findByLabelText("Add a note for Acme ISO"), "Hello");
+    await user.click(screen.getByRole("button", { name: "Send note" }));
+    await screen.findByRole("alert");
+    expectCleanScreen();
+  });
+
+  it("unsubscribe page, before and after", async () => {
+    const user = userEvent.setup();
+    api.unsubscribeDigest.mockResolvedValue(undefined);
+    renderAt("/p/acme/unsubscribe?t=AbCdEfGhIjKlMnOpQrStUv");
+    await screen.findByRole("heading", { name: "Stop the weekly summary?" });
+    expectCleanScreen();
+    await user.click(screen.getByRole("button", { name: "Unsubscribe" }));
+    await screen.findByRole("heading", { name: "You're unsubscribed" });
     expectCleanScreen();
   });
 
@@ -914,5 +1077,118 @@ describe("partner emails: copy audit", () => {
     const won = buildPortalNotifyEmail("partner_closed_won", { ...payload("Closed Won"), valueCents: null }, CTX);
     expect(won).not.toBeNull();
     expect(renderEmail(won!).text).not.toContain("$");
+  });
+});
+
+describe("Phase 2B-3 partner emails: copy audit", () => {
+  const XSS = "<script>alert(1)</script>";
+  const STAGES = ["new", "contacted", "qualified", "proposal", "negotiation"];
+  const TOKEN_RE = new RegExp(`\\b(${[...INTERNAL_STATUSES, ...STAGES].join("|")})\\b`);
+  const TEMPLATE_FALLBACK = /Button not working\?/g;
+  const REASON_RE = /\b[a-z]+(?:_[a-z]+)+\b/;
+  const CTX = {
+    appBaseUrl: "https://app.getnavigatr.io",
+    referralId: "3f9a21c0-1111-4222-8333-444455556666",
+    portalApiUrl: "https://proj.supabase.co/functions/v1/portal_api",
+  };
+  const SENT = {
+    slug: "acme",
+    orgName: "Acme ISO",
+    partnerName: `Jane ${XSS}`,
+    companyName: `Gold Gym ${XSS}`,
+    ref: "REF-3F9A21C0",
+    repName: "Rita Rep",
+    repEmail: "rita@acme.example",
+    note: `Ask for Gil after 3pm.\n${XSS}`,
+  };
+  const DIGEST = {
+    slug: "acme",
+    orgName: "Acme ISO",
+    partnerName: `Jane ${XSS}`,
+    weekLabel: "Dec 31",
+    counts: { submitted: 2, accepted: 1, inProgress: 1, closedWon: 1, notMovingForward: 1, sentToYou: 1 },
+    valueCents: 500000,
+    items: [
+      ...PORTAL_LABELS.slice(0, 5).map((label): { companyName: string; label: string } => ({ companyName: `Co ${XSS}`, label })),
+      { companyName: "Gold Gym", label: "Sent to you" },
+    ],
+    unsubscribeToken: "AbCdEfGhIjKlMnOpQrStUv",
+  };
+
+  it.each([
+    [PARTNER_SENT_KIND, SENT],
+    [PARTNER_DIGEST_KIND, DIGEST],
+  ] as const)("%s: partner words only, the ISO's name, the locked credit, escaped markup", (kind, payload) => {
+    const built = buildPortalNotifyEmail(kind, payload, CTX);
+    expect(built).not.toBeNull();
+    const e = built!;
+    const copy = [e.subject, e.preheader, e.heading, ...e.bodyLines, e.ctaLabel, e.footnote].join("\n");
+    expect(copy).toContain("Acme ISO");
+    expect(copy).not.toMatch(/navigatr/i);
+
+    const { html, text } = renderEmail({ ...e, brand: { name: "Acme ISO", logoUrl: null, primaryColor: null } });
+    const visibleHtml = html.replace(/<[^>]*>/g, " ").replace(/https?:\/\/\S+/g, "").replace(TEMPLATE_FALLBACK, "");
+    const visibleText = text.replace(/https?:\/\/\S+/g, "").replace(TEMPLATE_FALLBACK, "");
+    for (const s of [e.subject, visibleText, visibleHtml]) {
+      expect(s.match(TOKEN_RE)).toBeNull();
+      expect(s.match(FORBIDDEN_WORDS)).toBeNull();
+      expect(s.match(REASON_RE)).toBeNull();
+    }
+    expect(visibleText.split(POWERED_BY).length - 1).toBe(1);
+    expect(visibleText.replace(POWERED_BY, "")).not.toMatch(/navigatr/i);
+    expect(html).not.toContain("<script");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("drops either payload when it carries anything beyond the allowlist", () => {
+    for (const extra of [{ status: "lost" }, { stage: "proposal" }, { notes: `${SECRET} deal note` }, { other_partner: OTHER_PARTNER }]) {
+      expect(buildPortalNotifyEmail(PARTNER_SENT_KIND, { ...SENT, ...extra }, CTX)).toBeNull();
+      expect(buildPortalNotifyEmail(PARTNER_DIGEST_KIND, { ...DIGEST, ...extra }, CTX)).toBeNull();
+    }
+  });
+
+  it("only the weekly summary can be unsubscribed from; sign-in and invite emails never (FR-PORT-84)", () => {
+    const digest = buildPortalNotifyEmail(PARTNER_DIGEST_KIND, DIGEST, CTX)!;
+    expect(renderEmail(digest).text).toMatch(/Unsubscribe from the weekly summary/);
+    expect(digest.headers?.["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click");
+
+    const sent = buildPortalNotifyEmail(PARTNER_SENT_KIND, SENT, CTX)!;
+    const code = portalCodeEmail({ orgName: "Acme ISO", code: "123456", signInUrl: "https://app.getnavigatr.io/p/acme" });
+    const invite = portalInviteEmail({ orgName: "Acme ISO", partnerName: "Jane", inviteUrl: "https://app.getnavigatr.io/p/acme/invite#t" });
+    for (const e of [sent, code, invite]) {
+      const { html, text } = renderEmail(e);
+      expect(text).not.toMatch(/unsubscribe/i);
+      expect(html).not.toMatch(/unsubscribe/i);
+      expect("headers" in e && (e as { headers?: unknown }).headers).toBeFalsy();
+    }
+    for (const kind of PARTNER_NOTIFY_KINDS) {
+      const label = kind === "partner_update" ? "Accepted" : KIND_LABEL[kind];
+      const e = buildPortalNotifyEmail(kind, {
+        slug: "acme", orgName: "Acme ISO", partnerName: "Jane", companyName: "Fresh Bakery", ref: "REF-3F9A21C0",
+        label, valueCents: null, repName: "Rita Rep", repEmail: "rita@acme.example", updateBody: "Hi",
+      }, CTX)!;
+      expect(renderEmail(e).text).not.toMatch(/unsubscribe/i);
+      expect(e.headers).toBeUndefined();
+    }
+  });
+
+  it("internal_partner_note goes to the rep: no partner note text, no unsubscribe, no headers, escaped markup", () => {
+    const e = buildPortalNotifyEmail(
+      "internal_partner_note",
+      { appUrlPath: "/referrals", companyNames: [`Gold Gym ${XSS}`], count: 1 },
+      CTX,
+    );
+    expect(e).not.toBeNull();
+    expect(e!.audience).toBe("internal");
+    expect(e!.headers).toBeUndefined();
+    const { html, text } = renderEmail(e!);
+    expect(text).not.toMatch(/unsubscribe/i);
+    expect(html).not.toMatch(/unsubscribe/i);
+    expect(html).not.toContain("<script");
+    expect(html).toContain("&lt;script&gt;");
+    // The payload allowlist has no room for the note body.
+    expect(
+      buildPortalNotifyEmail("internal_partner_note", { appUrlPath: "/referrals", companyNames: ["Gold Gym"], count: 1, body: "secret note" }, CTX),
+    ).toBeNull();
   });
 });

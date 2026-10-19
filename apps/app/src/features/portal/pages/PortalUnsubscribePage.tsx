@@ -44,7 +44,7 @@ export function PortalUnsubscribePage({ slug, brand }: { slug: string; brand: Po
       <Card padding="lg" className="flex flex-col gap-2">
         <h1 className="text-heading-lg text-text-default">You&apos;re unsubscribed</h1>
         <p className="text-body-md text-text-muted">
-          You won&apos;t get the weekly summary. You can turn it back on in your profile.
+          You will stop getting the weekly summary. You can turn it back on in your profile.
         </p>
       </Card>
     );
