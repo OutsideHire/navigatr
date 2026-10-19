@@ -8,6 +8,10 @@
 --      Still ONE internal_nudge per person per local day: partner referrals and
 --      submissions are listed together, oldest first. form_submission_nudges
 --      mirrors referral_nudges so each submission nudges each reviewer once.
+--      The referral arm also covers portal_public referrals (a submission
+--      attributed to a partner but not finished). Its submission is triaged,
+--      so it is never counted twice, and a business already nudged to someone
+--      as a submission is not nudged to them again as its referral.
 
 -- 1. Outbox kind ------------------------------------------------------------------
 alter table portal_email_outbox drop constraint portal_email_outbox_kind_check;
@@ -55,10 +59,16 @@ create index if not exists referral_form_submissions_nudge_candidates_idx
   on referral_form_submissions (submitted_at)
   where triaged_at is null and purged_at is null;
 
+-- The digest looks up an attributed referral's submission by referral_id.
+create index if not exists referral_form_submissions_referral_id_idx
+  on referral_form_submissions (referral_id)
+  where referral_id is not null;
+
 -- 3. The digest, now over both sources --------------------------------------------------
--- Identical to 20261014000004 except: cand unions in submissions (item tells
--- them apart), the per-item log check reads the matching table, and the
--- queued digest marks both logs.
+-- Identical to 20261014000004 except: the referral arm also takes source
+-- portal_public, cand unions in submissions (item tells them apart), the
+-- per-item log check reads the matching table (and, for a portal_public
+-- referral, its submission's log), and the queued digest marks both logs.
 create or replace function public.enqueue_portal_nudges(p_now timestamptz)
 returns integer language plpgsql security definer set search_path = public, extensions as $$
 declare
@@ -75,7 +85,7 @@ begin
       select 'referral'::text as item, r.id, r.org_id, r.company_name, r.submitted_at, r.assigned_user_id, r.nudged_at
         from referrals r
         join organizations o on o.id = r.org_id
-       where r.status = 'submitted' and r.source = 'portal_signed_in' and r.direction = 'inbound'
+       where r.status = 'submitted' and r.source in ('portal_signed_in', 'portal_public') and r.direction = 'inbound'
          and r.purged_at is null and not o.is_disabled
          -- Seven local days in any time zone lie inside the last eight days.
          and r.submitted_at > v_now - interval '8 days' and r.submitted_at <= v_now
@@ -112,6 +122,10 @@ begin
                           where z.item = 'referral' and n.referral_id = z.id and n.user_id = z.user_id)
          and not exists (select 1 from form_submission_nudges n
                           where z.item = 'submission' and n.submission_id = z.id and n.user_id = z.user_id)
+         -- An attributed referral whose submission already reached this person.
+         and not exists (select 1 from referral_form_submissions fs
+                           join form_submission_nudges n on n.submission_id = fs.id
+                          where z.item = 'referral' and fs.referral_id = z.id and n.user_id = z.user_id)
     )
     select d.org_id,
            d.user_id,

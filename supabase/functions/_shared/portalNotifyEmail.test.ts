@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { renderEmail } from "./emailTemplate";
 import {
   INTERNAL_NOTIFY_KINDS,
   KIND_LABEL,
@@ -245,6 +246,21 @@ describe("internal emails", () => {
     expect(e.audience).toBe("internal");
     expect(e.orgName).toBeNull();
     expect(e.replyTo).toBeNull();
+  });
+
+  it("new form submission: a name with HTML and line breaks stays one line and renders escaped", () => {
+    const e = buildPortalNotifyEmail(
+      "internal_new_submission",
+      { appUrlPath: "/partners", companyNames: ["<b>Evil</b> Co\r\nBcc: x@y.z\tInc"], count: 1 },
+      CTX,
+    )!;
+    expect(e.subject).toBe("New referral from your form: <b>Evil</b> Co Bcc: x@y.z Inc");
+    expect(e.subject).not.toMatch(/[\r\n\t]/);
+    expect(e.preheader).not.toMatch(/[\r\n\t]/);
+    expect(e.bodyLines[0]).toBe("Someone sent <b>Evil</b> Co Bcc: x@y.z Inc through your referral form.");
+    const { html } = renderEmail({ ...e, brand: undefined });
+    expect(html).not.toContain("<b>Evil</b>");
+    expect(html).toContain("&lt;b&gt;Evil&lt;/b&gt; Co Bcc: x@y.z Inc");
   });
 
   it("new form submission: a bad payload is dropped", () => {
