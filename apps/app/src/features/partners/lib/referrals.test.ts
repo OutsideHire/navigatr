@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   DECLINE_REASON_OPTIONS,
+  SUBMISSION_DECLINE_REASON_OPTIONS,
+  formSubmissionSourceLabel,
   REFERRAL_STATUS_BADGE,
   REFERRAL_STATUS_LABEL,
   canReassignReferrals,
@@ -88,5 +90,28 @@ describe("referralErrorMessage (Phase 2A)", () => {
     expect(referralErrorMessage({ message: "referral_not_reinstatable" }, "fallback")).toBe(
       "This referral can't be reinstated now.",
     );
+  });
+});
+
+describe("public form submissions", () => {
+  it("labels where a submission came from", () => {
+    expect(formSubmissionSourceLabel("user", true)).toBe("From your referral form");
+    expect(formSubmissionSourceLabel("user", false)).toBe("From a rep's referral form");
+    expect(formSubmissionSourceLabel("tenant", true)).toBe("From the company form");
+    expect(formSubmissionSourceLabel("tenant", false)).toBe("From the company form");
+  });
+
+  it("never offers 'Partner withdrew it' for a form submission", () => {
+    expect(SUBMISSION_DECLINE_REASON_OPTIONS.map((o) => o.value)).toEqual([
+      "duplicate", "outside_footprint", "outside_icp", "insufficient_contact", "existing_customer",
+    ]);
+    expect(SUBMISSION_DECLINE_REASON_OPTIONS[0]).toBe(DECLINE_REASON_OPTIONS[0]);
+  });
+
+  it("maps the submission error tokens to copy", () => {
+    expect(referralErrorMessage({ message: "submission_handled" }, "x")).toBe("This referral was already handled.");
+    expect(referralErrorMessage({ message: "submission_not_found" }, "x")).toBe("That referral no longer exists.");
+    expect(referralErrorMessage({ message: "invalid_reason" }, "x")).toBe("Pick a reason.");
+    expect(referralErrorMessage({ message: "portal_disabled" }, "x")).toBe("Turn on the partner portal first.");
   });
 });
