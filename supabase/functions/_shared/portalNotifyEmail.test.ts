@@ -213,18 +213,43 @@ describe("internal emails", () => {
 
   it("nudge: one line per business, singular and plural", () => {
     const one = buildPortalNotifyEmail("internal_nudge", { appUrlPath: "/partners", companyNames: ["Fresh Bakery"], count: 1 }, CTX)!;
-    expect(one.subject).toBe("1 partner referral still waiting for review");
+    expect(one.subject).toBe("1 referral still waiting for review");
+    expect(one.heading).toBe("1 referral still waiting");
     expect(one.preheader).toBe("Still waiting for review: Fresh Bakery");
-    expect(one.bodyLines).toEqual([
-      "These came in through your referral portal and are still waiting for review:",
-      "- Fresh Bakery",
-    ]);
-    expect(one.footnote).toBe("You get this at the end of your day when partner referrals are still waiting for review.");
+    expect(one.bodyLines).toEqual(["These are still waiting for review:", "- Fresh Bakery"]);
+    expect(one.footnote).toBe("You get this at the end of your day when referrals are still waiting for review.");
     // The digest can cover up to 7 days, so it never says "today".
     expect([one.preheader, ...one.bodyLines, one.footnote].join(" ")).not.toMatch(/today/i);
     const two = buildPortalNotifyEmail("internal_nudge", { appUrlPath: "/partners", companyNames: ["A Co", "B Co"], count: 2 }, CTX)!;
-    expect(two.subject).toBe("2 partner referrals still waiting for review");
+    expect(two.subject).toBe("2 referrals still waiting for review");
     expect(two.ctaUrl).toBe(`${BASE}/partners`);
+  });
+
+  it("new form submission: names the business, links to the review queue", () => {
+    const e = buildPortalNotifyEmail(
+      "internal_new_submission",
+      { appUrlPath: "/partners", companyNames: ["Fresh Bakery"], count: 1 },
+      { appBaseUrl: BASE, referralId: null },
+    )!;
+    expect(INTERNAL_NOTIFY_KINDS).toContain("internal_new_submission");
+    expect(e.subject).toBe("New referral from your form: Fresh Bakery");
+    expect(e.preheader).toBe("Fresh Bakery is waiting in Referrals to review.");
+    expect(e.heading).toBe("New referral from your referral form");
+    expect(e.bodyLines).toEqual([
+      "Someone sent Fresh Bakery through your referral form.",
+      "Review it to say who sent it, then accept, merge or decline.",
+    ]);
+    expect(e.ctaLabel).toBe("Review referral");
+    expect(e.ctaUrl).toBe(`${BASE}/partners`);
+    expect(e.footnote).toBe("You're getting this because referral form submissions are routed to you.");
+    expect(e.audience).toBe("internal");
+    expect(e.orgName).toBeNull();
+    expect(e.replyTo).toBeNull();
+  });
+
+  it("new form submission: a bad payload is dropped", () => {
+    expect(buildPortalNotifyEmail("internal_new_submission", { appUrlPath: "https://evil.example/x", companyNames: ["A"], count: 1 }, CTX)).toBeNull();
+    expect(buildPortalNotifyEmail("internal_new_submission", { appUrlPath: "/partners", companyNames: [], count: 1 }, CTX)).toBeNull();
   });
 
   it("nudge: lists ten and counts the rest", () => {
