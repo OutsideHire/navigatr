@@ -41,6 +41,21 @@ export const DECLINE_REASON_OPTIONS: Array<{ value: DeclineReason; label: string
   { value: "withdrawn_by_partner", label: "Partner withdrew it" },
 ];
 
+/** Decline reasons for a public form submission: no partner can have withdrawn it. */
+export const SUBMISSION_DECLINE_REASON_OPTIONS = DECLINE_REASON_OPTIONS.filter(
+  (o) => o.value !== "withdrawn_by_partner",
+);
+
+/**
+ * Where a public form submission came from (queue and review sheet). A personal
+ * link says "your" only when the viewer holds it, so a manager looking at a
+ * rep's submission is not told it came through their own form.
+ */
+export function formSubmissionSourceLabel(linkType: "user" | "tenant", assignedToViewer: boolean): string {
+  if (linkType === "tenant") return "From the company form";
+  return assignedToViewer ? "From your referral form" : "From a rep's referral form";
+}
+
 export function isLiveLink(status: ReferralStatus): boolean {
   return status !== "declined" && status !== "withdrawn";
 }
@@ -59,6 +74,10 @@ const ERROR_COPY: Array<[token: string, copy: string]> = [
   ["update_required", "Write the update first."],
   ["update_too_long", "Keep the update under 1,000 characters."],
   ["referral_not_reinstatable", "This referral can't be reinstated now."],
+  ["submission_not_found", "That referral no longer exists."],
+  ["submission_handled", "This referral was already handled."],
+  ["invalid_reason", "Pick a reason."],
+  ["portal_disabled", "Turn on the partner portal first."],
   ["not_authorized", "You don't have access to do that."],
 ];
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -139,5 +139,95 @@ describe("PartnerPortalTab", () => {
     expect(await screen.findByDisplayValue(SEEDED.terms_text)).toBeInTheDocument();
     expect(screen.getByLabelText("Consent line")).toHaveValue(SEEDED.consent_text);
     expect(toast.success).toHaveBeenCalledWith("Portal settings saved");
+  });
+
+  it("keeps the public form switch disabled while the portal is off", async () => {
+    rpcMock.mockResolvedValueOnce({ data: [{ ...OFF, public_form_enabled: false }], error: null });
+    renderTab();
+    const sw = await screen.findByRole("switch", { name: "Public referral form" });
+    expect(sw).toBeDisabled();
+    expect(sw).not.toBeChecked();
+    expect(
+      screen.getByText(
+        "Anyone with a rep's link or the company link can send you a referral without signing in. Submissions land in Referrals to review.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Turn on the partner portal and save to use the public form.")).toBeInTheDocument();
+  });
+
+  it("turns the public form on the moment it is flipped", async () => {
+    const user = userEvent.setup();
+    rpcMock
+      .mockResolvedValueOnce({ data: [{ ...SEEDED, public_form_enabled: false }], error: null })
+      .mockResolvedValueOnce({ data: [{ ...SEEDED, public_form_enabled: true }], error: null });
+    renderTab();
+    await user.click(await screen.findByRole("switch", { name: "Public referral form" }));
+    expect(rpcMock).toHaveBeenLastCalledWith("set_public_form_enabled", { p_enabled: true });
+    expect(await screen.findByRole("switch", { name: "Public referral form" })).toBeChecked();
+    expect(toast.success).toHaveBeenCalledWith("Public referral form is on");
+    expect(screen.queryByText("Turn on the partner portal and save to use the public form.")).not.toBeInTheDocument();
+  });
+
+  it("explains when the portal has to be on first", async () => {
+    const user = userEvent.setup();
+    rpcMock
+      .mockResolvedValueOnce({ data: [{ ...SEEDED, public_form_enabled: false }], error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: "portal_disabled" } });
+    renderTab();
+    await user.click(await screen.findByRole("switch", { name: "Public referral form" }));
+    expect(toast.error).toHaveBeenCalledWith("Turn on the partner portal and save first.");
+    expect(screen.getByRole("switch", { name: "Public referral form" })).not.toBeChecked();
+  });
+
+  it("turns the public form off", async () => {
+    const user = userEvent.setup();
+    rpcMock
+      .mockResolvedValueOnce({ data: [{ ...SEEDED, public_form_enabled: true }], error: null })
+      .mockResolvedValueOnce({ data: [{ ...SEEDED, public_form_enabled: false }], error: null });
+    renderTab();
+    await user.click(await screen.findByRole("switch", { name: "Public referral form" }));
+    expect(rpcMock).toHaveBeenLastCalledWith("set_public_form_enabled", { p_enabled: false });
+    expect(toast.success).toHaveBeenCalledWith("Public referral form is off");
+  });
+
+  it("lets an administrator turn the form off while the portal is off", async () => {
+    const user = userEvent.setup();
+    rpcMock
+      .mockResolvedValueOnce({ data: [{ ...OFF, public_form_enabled: true }], error: null })
+      .mockResolvedValueOnce({ data: [{ ...OFF, public_form_enabled: false }], error: null });
+    renderTab();
+    const sw = await screen.findByRole("switch", { name: "Public referral form" });
+    expect(sw).toBeEnabled();
+    expect(sw).toBeChecked();
+    expect(screen.getByText("The portal is off, so the form is closed. You can still turn this off.")).toBeInTheDocument();
+    expect(screen.queryByText("Turn on the partner portal and save to use the public form.")).not.toBeInTheDocument();
+    await user.click(sw);
+    expect(rpcMock).toHaveBeenLastCalledWith("set_public_form_enabled", { p_enabled: false });
+    expect(toast.success).toHaveBeenCalledWith("Public referral form is off");
+    expect(await screen.findByRole("switch", { name: "Public referral form" })).toBeDisabled();
+    expect(screen.getByText("Turn on the partner portal and save to use the public form.")).toBeInTheDocument();
+  });
+
+  it("disables the switch while the change is saving", async () => {
+    const user = userEvent.setup();
+    let resolveSet: (v: unknown) => void = () => {};
+    rpcMock
+      .mockResolvedValueOnce({ data: [{ ...SEEDED, public_form_enabled: false }], error: null })
+      .mockReturnValueOnce(new Promise((r) => { resolveSet = r; }));
+    renderTab();
+    await user.click(await screen.findByRole("switch", { name: "Public referral form" }));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Public referral form" })).toBeDisabled());
+    resolveSet({ data: [{ ...SEEDED, public_form_enabled: true }], error: null });
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Public referral form" })).toBeEnabled());
+  });
+
+  it("shows the generic message for any other failure", async () => {
+    const user = userEvent.setup();
+    rpcMock
+      .mockResolvedValueOnce({ data: [{ ...SEEDED, public_form_enabled: false }], error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: "boom" } });
+    renderTab();
+    await user.click(await screen.findByRole("switch", { name: "Public referral form" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Couldn't change the public referral form. Try again."));
   });
 });

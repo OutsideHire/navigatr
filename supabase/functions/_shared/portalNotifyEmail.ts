@@ -27,7 +27,12 @@ export const PARTNER_NOTIFY_KINDS = [
 ] as const;
 export type PartnerNotifyKind = (typeof PARTNER_NOTIFY_KINDS)[number];
 
-export const INTERNAL_NOTIFY_KINDS = ["internal_new_referral", "internal_nudge", "internal_reinstate_available"] as const;
+export const INTERNAL_NOTIFY_KINDS = [
+  "internal_new_referral",
+  "internal_nudge",
+  "internal_reinstate_available",
+  "internal_new_submission",
+] as const;
 export type InternalNotifyKind = (typeof INTERNAL_NOTIFY_KINDS)[number];
 
 export type PortalNotifyKind = PartnerNotifyKind | InternalNotifyKind;
@@ -253,6 +258,24 @@ function buildInternal(kind: InternalNotifyKind, p: InternalNotifyPayload, ctx: 
       replyTo: null,
     };
   }
+  if (kind === "internal_new_submission") {
+    const name = p.companyNames[0];
+    return {
+      subject: `New referral from your form: ${name}`,
+      preheader: `${name} is waiting in Referrals to review.`,
+      heading: "New referral from your referral form",
+      bodyLines: [
+        `Someone sent ${name} through your referral form.`,
+        "Review it to say who sent it, then accept, merge or decline.",
+      ],
+      ctaLabel: "Review referral",
+      ctaUrl: url,
+      footnote: "You're getting this because referral form submissions are routed to you.",
+      audience: "internal",
+      orgName: null,
+      replyTo: null,
+    };
+  }
   if (kind === "internal_reinstate_available") {
     const count = p.count;
     const first = p.companyNames[0];
@@ -285,18 +308,19 @@ function buildInternal(kind: InternalNotifyKind, p: InternalNotifyPayload, ctx: 
       replyTo: null,
     };
   }
+  // One digest lists partner referrals and form submissions together (2B-2).
   const n = p.count;
-  const noun = n === 1 ? "partner referral" : "partner referrals";
+  const noun = n === 1 ? "referral" : "referrals";
   const shown = p.companyNames.slice(0, 10).map((c) => `- ${c}`);
   const more = p.count > shown.length ? [`and ${p.count - shown.length} more`] : [];
   return {
     subject: `${n} ${noun} still waiting for review`,
     preheader: `Still waiting for review: ${p.companyNames.slice(0, 3).join(", ")}`,
     heading: `${n} ${noun} still waiting`,
-    bodyLines: ["These came in through your referral portal and are still waiting for review:", ...shown, ...more],
+    bodyLines: ["These are still waiting for review:", ...shown, ...more],
     ctaLabel: "Review referrals",
     ctaUrl: url,
-    footnote: "You get this at the end of your day when partner referrals are still waiting for review.",
+    footnote: "You get this at the end of your day when referrals are still waiting for review.",
     audience: "internal",
     orgName: null,
     replyTo: null,
