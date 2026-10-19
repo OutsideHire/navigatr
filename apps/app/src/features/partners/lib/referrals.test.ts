@@ -47,6 +47,7 @@ describe("referralErrorMessage", () => {
   it("maps server tokens to plain copy", () => {
     expect(referralErrorMessage({ message: "referral_not_submitted" }, "x")).toBe("This referral was already handled.");
     expect(referralErrorMessage({ message: "already_linked" }, "x")).toBe("That deal is already linked to this partner.");
+    expect(referralErrorMessage({ message: "note_too_long" }, "x")).toBe("Keep the note under 1,000 characters.");
     expect(referralErrorMessage(new Error("deal_not_visible"), "x")).toBe("You can't see that deal.");
     expect(referralErrorMessage({ message: "partner_not_visible" }, "x")).toBe("You can't see that partner.");
     expect(referralErrorMessage({ message: "invalid_direction" }, "x")).toBe("That link could not be removed.");

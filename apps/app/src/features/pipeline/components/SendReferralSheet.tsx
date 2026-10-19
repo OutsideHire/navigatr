@@ -1,8 +1,9 @@
 /**
  * SendReferralSheet — FR-PIPE-09. Opens from the Deal Detail Quick actions
- * card ("Send as referral"). Pick a partner + optional note, then record an
- * outbound referral via useReferDeal (refer_deal_to_partner RPC). Same Radix
- * Dialog shell + navigatr primitives as StageUpdateModal.
+ * card ("Send as referral"). Pick a partner and an optional note FOR the
+ * partner (they read it in their portal and in the email), then record an
+ * outbound referral via useReferDeal (send_referral_to_partner RPC). Same
+ * Radix Dialog shell + navigatr primitives as StageUpdateModal.
  */
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -32,6 +33,7 @@ export function SendReferralSheet({ open, onOpenChange, deal }: SendReferralShee
   }, [open]);
 
   const hasPartners = partners.length > 0;
+  const partnerName = partners.find((p) => p.id === partnerId)?.name ?? "the partner";
 
   const onSend = async () => {
     if (!partnerId) return;
@@ -64,7 +66,7 @@ export function SendReferralSheet({ open, onOpenChange, deal }: SendReferralShee
           </div>
 
           {!hasPartners ? (
-            <p className="text-body-md text-text-muted">No partners yet — add one in Partners.</p>
+            <p className="text-body-md text-text-muted">No partners yet. Add one in Partners.</p>
           ) : (
             <>
               <label className="flex flex-col gap-1.5">
@@ -77,10 +79,17 @@ export function SendReferralSheet({ open, onOpenChange, deal }: SendReferralShee
                 />
               </label>
 
+              <label htmlFor="send-referral-note" className="flex flex-col gap-1.5">
+                <span className="text-caption font-medium text-text-muted">
+                  Note for {partnerName} (they will see this)
+                </span>
+              </label>
               <NotesFieldWithMic
+                id="send-referral-note"
                 value={notes}
                 onChange={setNotes}
-                placeholder="Add a note for the partner (optional)"
+                maxLength={1000}
+                placeholder="Optional. Only write what the partner should read."
               />
             </>
           )}
