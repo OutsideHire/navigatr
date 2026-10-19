@@ -108,4 +108,20 @@ do $$ begin
   end if;
 end $$;
 
+-- 4. Own org only, meaningfully: with org A on, bob (org B administrator)
+--    turning his own form off never touches org A.
+do $$ declare r record; begin
+  update organizations set public_form_enabled = true where id = '00000000-0000-0000-0000-000000001059';
+  perform _t_act('a0590000-0000-0000-0000-000000000003');
+  select * into r from public.set_public_form_enabled(false);
+  perform set_config('role', 'postgres', true);
+  if r.public_form_enabled is distinct from false then raise exception 'bob reads his own org back off'; end if;
+  if not (select public_form_enabled from organizations where id = '00000000-0000-0000-0000-000000001059') then
+    raise exception 'org A must stay on after bob switches his own form off';
+  end if;
+  if (select public_form_enabled from organizations where id = '00000000-0000-0000-0000-000000001159') then
+    raise exception 'org B stays off';
+  end if;
+end $$;
+
 rollback;

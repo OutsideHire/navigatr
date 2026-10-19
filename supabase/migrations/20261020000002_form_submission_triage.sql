@@ -36,11 +36,11 @@ declare
   s referral_form_submissions;
 begin
   select * into s from referral_form_submissions x where x.id = p_submission_id for update;
-  if not found or s.org_id is distinct from public.user_org_id() then
+  -- A submission the caller cannot triage reads as missing (same as
+  -- form_submission_advice), so a same-org caller cannot probe for ids.
+  if not found or s.org_id is distinct from public.user_org_id()
+     or not public.can_triage_referral(s.assigned_user_id) then
     raise exception 'submission_not_found' using errcode = 'P0002';
-  end if;
-  if not public.can_triage_referral(s.assigned_user_id) then
-    raise exception 'not_authorized' using errcode = '42501';
   end if;
   if s.triaged_at is not null or s.purged_at is not null then
     raise exception 'submission_handled' using errcode = '22023';
@@ -71,7 +71,7 @@ $$;
 create or replace function public._form_submission_note(p_s referral_form_submissions, p_with_contact boolean)
 returns text language sql stable security definer set search_path = public, extensions as $$
   select concat_ws(E'\n',
-    'From your referral form.',
+    'From the referral form.',
     case when p_with_contact
          then nullif('Contact: ' || concat_ws(', ', p_s.contact_name, p_s.contact_email, p_s.contact_phone), 'Contact: ')
     end,
@@ -106,7 +106,7 @@ begin
       from referrals r
      where r.org_id = s.org_id
        and r.direction = 'inbound'
-       and r.status not in ('declined','withdrawn')
+       and r.status in ('submitted','accepted','working')
        and r.purged_at is null
        and (public.can_see_partner(r.partner_id)
             or (r.assigned_user_id is not null and public.user_can_see_owner(r.assigned_user_id)))

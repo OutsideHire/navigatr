@@ -7,6 +7,9 @@
 --   boss administrator; mia manager under boss; rita and rob reps under mia.
 --   Partner P1 Jane CPA (owner rita, active portal user). Deal D1 Fresh Bakery
 --   (owner rita, phone 5550600001). Referral R1 Corner Cafe (P1, rita, phone 5550600002).
+--   Partner P3 Rob CPA (owner rob, invisible to rita). Deal D3 Rob Deal (owner rob).
+--   Referral R2 Gus Sandwiches (won, P1, rita, phone 5550600016, same as S6).
+--   Referral R3 Hal Diner (working, P3, rob, phone 5550600017, same as S7).
 -- Org B pf-tri-b: bob administrator, partner P2, deal D2.
 -- Submissions (org A): S1 Attr Co, S2 Accept Co, S3 Decline Co, S4 Fresh Bakery LLC,
 --   S6 Subway #42 (all rita, personal link); S5 Corner Cafe (company link, administrator
@@ -35,17 +38,21 @@ insert into profiles (id, org_id, role, role_level, full_name, email, role_path,
 
 insert into partners (id, org_id, created_by, owner_id, name, company, type, email) values
   ('a060a000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000001060', 'a0600000-0000-0000-0000-000000000003', 'a0600000-0000-0000-0000-000000000003', 'Jane CPA', 'Jane & Co', 'cpa', 'jane@tri.example'),
-  ('a060a000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001160', 'a0600000-0000-0000-0000-000000000005', 'a0600000-0000-0000-0000-000000000005', 'Bob CPA',  'Bob & Co',  'cpa', 'bobcpa@trib.example');
+  ('a060a000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001160', 'a0600000-0000-0000-0000-000000000005', 'a0600000-0000-0000-0000-000000000005', 'Bob CPA',  'Bob & Co',  'cpa', 'bobcpa@trib.example'),
+  ('a060a000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000001060', 'a0600000-0000-0000-0000-000000000004', 'a0600000-0000-0000-0000-000000000004', 'Rob CPA',  'Rob & Co',  'cpa', 'robcpa@tri.example');
 
 insert into portal_users (id, org_id, partner_id, email, status) values
   ('a060b000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000001060', 'a060a000-0000-0000-0000-000000000001', 'jane@tri.example', 'active');
 
 insert into deals (id, org_id, owner_id, company_name, address, contact_name, contact_email, contact_phone, value_cents, stage, lead_source) values
   ('a060d000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000001060', 'a0600000-0000-0000-0000-000000000003', 'Fresh Bakery', '1 Main St', 'Fay', 'fay@fresh.example', '+15550600001', 100000, 'contacted', 'path'),
-  ('a060d000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001160', 'a0600000-0000-0000-0000-000000000005', 'Other Co',     '2 Main St', 'Oz',  'oz@other.example',  '+15550600099', 100000, 'new',       'path');
+  ('a060d000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001160', 'a0600000-0000-0000-0000-000000000005', 'Other Co',     '2 Main St', 'Oz',  'oz@other.example',  '+15550600099', 100000, 'new',       'path'),
+  ('a060d000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000001060', 'a0600000-0000-0000-0000-000000000004', 'Rob Deal',     '3 Main St', 'Ray', 'ray@rob.example',   '+15550600077', 100000, 'new',       'path');
 
 insert into referrals (id, partner_id, direction, source, status, company_name, contact_phone, assigned_user_id) values
-  ('a060f000-0000-0000-0000-000000000001', 'a060a000-0000-0000-0000-000000000001', 'inbound', 'rep_entered', 'submitted', 'Corner Cafe', '5550600002', 'a0600000-0000-0000-0000-000000000003');
+  ('a060f000-0000-0000-0000-000000000001', 'a060a000-0000-0000-0000-000000000001', 'inbound', 'rep_entered', 'submitted', 'Corner Cafe',    '5550600002', 'a0600000-0000-0000-0000-000000000003'),
+  ('a060f000-0000-0000-0000-000000000002', 'a060a000-0000-0000-0000-000000000001', 'inbound', 'rep_entered', 'won',       'Gus Sandwiches', '5550600016', 'a0600000-0000-0000-0000-000000000003'),
+  ('a060f000-0000-0000-0000-000000000003', 'a060a000-0000-0000-0000-000000000003', 'inbound', 'rep_entered', 'working',   'Hal Diner',      '5550600017', 'a0600000-0000-0000-0000-000000000004');
 
 insert into referral_form_submissions (
   id, org_id, link_type, assigned_user_id, company_name, contact_name, contact_email, contact_phone,
@@ -146,9 +153,10 @@ do $$ declare a record; begin
      or a.dup_referral_id is not null or a.chain_brand is not null then
     raise exception 'S4 matches D1 by phone and name, got %', row_to_json(a);
   end if;
+  -- R2 shares S6's phone but is won, so it is not an open referral.
   select * into a from public.form_submission_advice('a060e000-0000-0000-0000-000000000006');
   if a.chain_brand is distinct from 'Subway' or a.dup_deal_id is not null or a.dup_referral_id is not null then
-    raise exception 'S6 is a chain only, got %', row_to_json(a);
+    raise exception 'S6 is a chain only (the won R2 is not open), got %', row_to_json(a);
   end if;
   perform _t_act('a0600000-0000-0000-0000-000000000001');
   select * into a from public.form_submission_advice('a060e000-0000-0000-0000-000000000005');
@@ -157,6 +165,11 @@ do $$ declare a record; begin
     raise exception 'S5 matches the open referral R1, got %', row_to_json(a);
   end if;
   perform _t_act('a0600000-0000-0000-0000-000000000004');
+  -- R3 is working, which is still open.
+  select * into a from public.form_submission_advice('a060e000-0000-0000-0000-000000000007');
+  if a.dup_referral_id is distinct from 'a060f000-0000-0000-0000-000000000003'::uuid then
+    raise exception 'S7 matches the working referral R3, got %', row_to_json(a);
+  end if;
   perform _t_raises('select * from public.form_submission_advice(''a060e000-0000-0000-0000-000000000004'')', 'submission_not_found');
   perform _t_act('a0600000-0000-0000-0000-000000000005');
   perform _t_raises('select * from public.form_submission_advice(''a060e000-0000-0000-0000-000000000004'')', 'submission_not_found');
@@ -165,12 +178,15 @@ end $$;
 
 -- 4. Who may attribute, and to whom.
 do $$ begin
+  -- A teammate's submission reads as missing, never as forbidden.
   perform _t_act('a0600000-0000-0000-0000-000000000004');
-  perform _t_raises('select public.attribute_form_submission(''a060e000-0000-0000-0000-000000000001'', ''a060a000-0000-0000-0000-000000000001'')', 'not_authorized');
+  perform _t_raises('select public.attribute_form_submission(''a060e000-0000-0000-0000-000000000001'', ''a060a000-0000-0000-0000-000000000001'')', 'submission_not_found');
   perform _t_act('a0600000-0000-0000-0000-000000000005');
   perform _t_raises('select public.attribute_form_submission(''a060e000-0000-0000-0000-000000000001'', ''a060a000-0000-0000-0000-000000000001'')', 'submission_not_found');
   perform _t_act('a0600000-0000-0000-0000-000000000003');
   perform _t_raises('select public.attribute_form_submission(''a060e000-0000-0000-0000-000000000001'', ''a060a000-0000-0000-0000-000000000002'')', 'partner_not_visible');
+  -- Same org, but rob's partner is outside rita's visibility.
+  perform _t_raises('select public.attribute_form_submission(''a060e000-0000-0000-0000-000000000001'', ''a060a000-0000-0000-0000-000000000003'')', 'partner_not_visible');
   perform _t_raises('select public.attribute_form_submission(''a060e000-0000-0000-0000-0000000000ff'', ''a060a000-0000-0000-0000-000000000001'')', 'submission_not_found');
   perform set_config('role', 'postgres', true);
 end $$;
@@ -252,7 +268,7 @@ do $$ declare d deals; s referral_form_submissions; n integer; v uuid := current
      and title = 'Follow up on referral from your form';
   if n <> 1 then raise exception 'one first follow-up task, got %', n; end if;
   if (select body from deal_notes where deal_id = v and created_by = 'a0600000-0000-0000-0000-000000000003')
-     is distinct from E'From your referral form.\nCall after 3\nWho referred this business: A neighbor' then
+     is distinct from E'From the referral form.\nCall after 3\nWho referred this business: A neighbor' then
     raise exception 'the deal note keeps the notes and who referred';
   end if;
   select * into s from referral_form_submissions where id = 'a060e000-0000-0000-0000-000000000002';
@@ -281,6 +297,8 @@ end $$;
 do $$ declare s referral_form_submissions; begin
   perform _t_act('a0600000-0000-0000-0000-000000000003');
   perform _t_raises('select public.merge_form_submission(''a060e000-0000-0000-0000-000000000004'', ''a060d000-0000-0000-0000-000000000002'')', 'deal_not_visible');
+  -- Same org, but rob's deal is outside rita's visibility.
+  perform _t_raises('select public.merge_form_submission(''a060e000-0000-0000-0000-000000000004'', ''a060d000-0000-0000-0000-000000000003'')', 'deal_not_visible');
   perform public.merge_form_submission('a060e000-0000-0000-0000-000000000004', 'a060d000-0000-0000-0000-000000000001');
   perform set_config('role', 'postgres', true);
   select * into s from referral_form_submissions where id = 'a060e000-0000-0000-0000-000000000004';
@@ -288,7 +306,7 @@ do $$ declare s referral_form_submissions; begin
     raise exception 'merged submission is wrong: %', row_to_json(s);
   end if;
   if (select body from deal_notes where deal_id = 'a060d000-0000-0000-0000-000000000001')
-     is distinct from E'From your referral form.\nContact: Dan, dan@fresh.example, (555) 060-0001\nSecond location' then
+     is distinct from E'From the referral form.\nContact: Dan, dan@fresh.example, (555) 060-0001\nSecond location' then
     raise exception 'the merge note keeps the contact and notes';
   end if;
   if (select lead_source from deals where id = 'a060d000-0000-0000-0000-000000000001') <> 'path' then
@@ -296,10 +314,10 @@ do $$ declare s referral_form_submissions; begin
   end if;
 end $$;
 
--- 9. The administrator queue: administrators only.
+-- 9. The administrator queue: administrators only (to anyone else it reads as missing).
 do $$ declare v uuid; begin
   perform _t_act('a0600000-0000-0000-0000-000000000002');
-  perform _t_raises('select public.accept_form_submission(''a060e000-0000-0000-0000-000000000005'')', 'not_authorized');
+  perform _t_raises('select public.accept_form_submission(''a060e000-0000-0000-0000-000000000005'')', 'submission_not_found');
   perform _t_act('a0600000-0000-0000-0000-000000000001');
   v := public.accept_form_submission('a060e000-0000-0000-0000-000000000005');
   perform set_config('role', 'postgres', true);
@@ -309,9 +327,11 @@ do $$ declare v uuid; begin
 end $$;
 
 -- 10. Reassign: managers and administrators, to someone active they can see.
+--     A teammate's submission reads as missing; on one the rep can see, the
+--     role check refuses.
 do $$ begin
   perform _t_act('a0600000-0000-0000-0000-000000000003');
-  perform _t_raises('select public.reassign_form_submission(''a060e000-0000-0000-0000-000000000007'', ''a0600000-0000-0000-0000-000000000003'')', 'not_authorized');
+  perform _t_raises('select public.reassign_form_submission(''a060e000-0000-0000-0000-000000000007'', ''a0600000-0000-0000-0000-000000000003'')', 'submission_not_found');
   perform _t_raises('select public.reassign_form_submission(''a060e000-0000-0000-0000-000000000006'', ''a0600000-0000-0000-0000-000000000004'')', 'not_authorized');
   perform _t_act('a0600000-0000-0000-0000-000000000002');
   perform _t_raises('select public.reassign_form_submission(''a060e000-0000-0000-0000-000000000007'', ''a0600000-0000-0000-0000-000000000005'')', 'assignee_invalid');
