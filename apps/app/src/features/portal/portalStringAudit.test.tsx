@@ -215,6 +215,8 @@ describe("portal_api responses", () => {
             })),
             error: null,
           };
+        case "portal_record_export":
+          return { data: null, error: null };
         case "portal_get_profile":
           return {
             data: [{ name: "Jane", phone: "5550100100", email: "j@x.co", weekly_digest: true, ...hostile }],
