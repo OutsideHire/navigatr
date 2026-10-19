@@ -93,6 +93,11 @@ end $$;
 -- 4. The send RPCs ----------------------------------------------------------------------
 -- SendReferralSheet (and, through useReferDeal, Partner Detail "Refer a deal"
 -- with no note). The note is shown to the partner only when it is not blank.
+-- A live outbound link to this partner from before this release (never shared:
+-- the partner_deals backfill or an old "Refer a deal") is SHARED by a send
+-- instead of refused: the rep is sending it now. A non-blank note replaces the
+-- old note and is shown; a blank one leaves the old (internal) note hidden.
+-- An already shared link is still already_linked.
 create or replace function public.send_referral_to_partner(
   p_partner_id uuid, p_deal_id uuid, p_partner_note text default ''
 ) returns uuid language plpgsql security definer set search_path = public as $$
@@ -103,7 +108,27 @@ begin
   if char_length(v_note) > 1000 then
     raise exception 'note_too_long' using errcode = '22023';
   end if;
-  v_id := public._link_deal_to_partner(p_partner_id, p_deal_id, 'outbound', v_note);
+  begin
+    v_id := public._link_deal_to_partner(p_partner_id, p_deal_id, 'outbound', v_note);
+  exception when unique_violation then
+    -- _link_deal_to_partner raises already_linked only after its org, partner
+    -- and deal visibility checks passed, so the caller may act on this link.
+    update referrals r
+       set shared_with_partner_at = now(),
+           notes                  = case when v_note <> '' then v_note else r.notes end,
+           partner_note_visible   = (v_note <> '')
+     where r.org_id = public.user_org_id()
+       and r.partner_id = p_partner_id and r.deal_id = p_deal_id
+       and r.direction = 'outbound'
+       and r.status not in ('declined', 'withdrawn')
+       and r.shared_with_partner_at is null
+    returning r.id into v_id;
+    if v_id is null then
+      raise exception 'already_linked' using errcode = '23505';
+    end if;
+    perform public._portal_enqueue_referral_sent(v_id);
+    return v_id;
+  end;
   update referrals
      set shared_with_partner_at = now(),
          partner_note_visible   = (v_note <> '')

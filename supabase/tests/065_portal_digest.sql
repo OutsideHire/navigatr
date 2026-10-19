@@ -188,6 +188,27 @@ do $$ declare o portal_email_outbox; begin
   if o.payload->>'weekLabel' is distinct from 'Jan 7' then raise exception 'week 2 label wrong: %', o.payload->>'weekLabel'; end if;
 end $$;
 
+-- 5b. Week 3 with values shown: a Closed Won whose deal has no value sends no
+--     amount (JSON null, never 0); the counts still say one Closed Won.
+insert into deals (id, org_id, owner_id, company_name, address, contact_name, contact_email, contact_phone, value_cents, stage, lead_source) values
+  ('a065d000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000001065', 'a0650000-0000-0000-0000-000000000002', 'Theta Co', '3 C St', 'T', 't@theta.example', '5550650003', null, 'contacted', 'partner_referral');
+insert into referrals (id, org_id, partner_id, direction, source, status, company_name, deal_id, assigned_user_id, submitted_by_user_id, submitted_at) values
+  ('a065e000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000001065', 'a065a000-0000-0000-0000-000000000001', 'inbound', 'rep_entered', 'won', 'Theta Co',
+   'a065d000-0000-0000-0000-000000000003', 'a0650000-0000-0000-0000-000000000002', 'a0650000-0000-0000-0000-000000000002', '2029-11-03 18:00Z');
+insert into referral_status_history (org_id, referral_id, from_status, to_status, actor_type, created_at) values
+  ('00000000-0000-0000-0000-000000001065', 'a065e000-0000-0000-0000-000000000010', 'working', 'won', 'user', '2030-01-16 18:00Z');
+
+do $$ declare o portal_email_outbox; begin
+  update organizations set partner_value_visibility = true where id = '00000000-0000-0000-0000-000000001065';
+  if public.enqueue_portal_digests('2030-01-21 16:30Z') is distinct from 1 then raise exception 'week 3 digest missing'; end if;
+  select * into o from portal_email_outbox where dedupe_key = 'digest:a065b000-0000-0000-0000-000000000001:2030-04';
+  if o.id is null then raise exception 'the week 3 digest row is missing'; end if;
+  if (o.payload->'counts'->>'closedWon')::int is distinct from 1 then raise exception 'week 3 counts wrong: %', o.payload->'counts'; end if;
+  if not (o.payload ? 'valueCents') or o.payload->'valueCents' is distinct from 'null'::jsonb then
+    raise exception 'a Closed Won with no value must send valueCents null, not 0: %', o.payload->'valueCents';
+  end if;
+end $$;
+
 -- 6. The claim: a live digest goes out; one whose user turned the digest off is dropped.
 do $$ declare v_pu1 uuid; v_pu2 uuid; begin
   insert into portal_email_outbox (org_id, kind, portal_user_id, payload, dedupe_key)
@@ -215,15 +236,27 @@ do $$ declare v_token text; n int; begin
   perform public.portal_unsubscribe_digest('dg-b', 'tok3tok3tok3tok3tok3tk', '203.0.113.7');
   perform public.portal_unsubscribe_digest('dg-a', 'not a token', '203.0.113.7');
   perform public.portal_unsubscribe_digest('nope', 'tok3tok3tok3tok3tok3tk', '203.0.113.7');
+  if (select notification_prefs from portal_users where id = 'a065b000-0000-0000-0000-000000000003') is distinct from '{}'::jsonb then
+    raise exception 'another org, a bad token and an unknown slug must change nothing';
+  end if;
+
+  -- One IP sends 30 misses and more: misses past the cap are refused quietly
+  -- and write no audit rows, but a matching token is still honoured.
   insert into portal_audit_log (org_id, action, ip)
   select '00000000-0000-0000-0000-000000001065', 'unsubscribe', '198.51.100.9' from generate_series(1, 30);
+  perform public.portal_unsubscribe_digest('dg-a', 'zzzzzzzzzzzzzzzzzzzzzz', '198.51.100.9');
+  perform public.portal_unsubscribe_digest('dg-a', 'not a token', '198.51.100.9');
+  select count(*) into n from portal_audit_log where action = 'unsubscribe' and ip = '198.51.100.9';
+  if n is distinct from 30 then raise exception 'misses past the cap must write no audit rows, got %', n; end if;
   perform public.portal_unsubscribe_digest('dg-a', 'tok3tok3tok3tok3tok3tk', '198.51.100.9');
-  if (select notification_prefs from portal_users where id = 'a065b000-0000-0000-0000-000000000003') is distinct from '{}'::jsonb then
-    raise exception 'another org, a bad token, an unknown slug and a limited IP must change nothing';
-  end if;
-  perform public.portal_unsubscribe_digest('dg-a', 'tok3tok3tok3tok3tok3tk', '203.0.113.7');
   if (select notification_prefs ->> 'digest' from portal_users where id = 'a065b000-0000-0000-0000-000000000003') is distinct from 'false' then
-    raise exception 'the right slug and token must work';
+    raise exception 'a matching token must be honoured even past the per-IP cap';
+  end if;
+  select count(*) into n from portal_audit_log where action = 'unsubscribe' and ip = '198.51.100.9' and portal_user_id is null;
+  if n is distinct from 30 then raise exception 'the miss flood stays capped, got %', n; end if;
+  if not exists (select 1 from portal_audit_log where action = 'unsubscribe' and ip = '198.51.100.9'
+                  and portal_user_id = 'a065b000-0000-0000-0000-000000000003') then
+    raise exception 'an honoured unsubscribe is audited with its portal user';
   end if;
 end $$;
 
@@ -312,10 +345,17 @@ select '00000000-0000-0000-0000-000000001165', pid, 'inbound', 'rep_entered', 's
        (values ('2030-10-28 03:59Z'), ('2030-10-28 04:00Z'), ('2030-11-04 04:30Z'), ('2030-11-04 05:00Z')) e(t);
 
 do $$ declare k text; begin
+  -- Start both as never evaluated, so the too-early run must leave them so.
+  update portal_users set digest_week = null
+   where id in ('a065b000-0000-0000-0000-0000000000a1', 'a065b000-0000-0000-0000-0000000000a2');
   -- 12:59Z is 07:59 EST.
   perform public.enqueue_portal_digests('2030-11-04 12:59Z');
   if exists (select 1 from portal_email_outbox o where o.dedupe_key like 'digest:%:2030-45') then
     raise exception '07:59 EST is too early';
+  end if;
+  if exists (select 1 from portal_users where id in ('a065b000-0000-0000-0000-0000000000a1', 'a065b000-0000-0000-0000-0000000000a2')
+                and digest_week is not null) then
+    raise exception 'no week is evaluated before 08:00 EST';
   end if;
   perform public.enqueue_portal_digests('2030-11-04 13:00Z');
   foreach k in array array['a065b000-0000-0000-0000-0000000000a1', 'a065b000-0000-0000-0000-0000000000a2'] loop
@@ -328,5 +368,60 @@ do $$ declare k text; begin
   end loop;
 end $$;
 
+-- 11. The send window is Monday 08:00 to Tuesday 08:00 local. Outside it (the
+--     first run after a deploy mid-week, or after an outage) the week is only
+--     recorded: no late catch-up email. Both NY partners were evaluated for
+--     2030-45 above.
+insert into referrals (org_id, partner_id, direction, source, status, company_name, assigned_user_id, submitted_by_user_id, submitted_at)
+select '00000000-0000-0000-0000-000000001165', pid, 'inbound', 'rep_entered', 'submitted', 'Window ' || t, uid, uid, t::timestamptz
+  from (values ('a065a000-0000-0000-0000-0000000000a1'::uuid, 'a0650000-0000-0000-0000-0000000000a1'::uuid),
+               ('a065a000-0000-0000-0000-0000000000a2'::uuid, 'a0650000-0000-0000-0000-0000000000a2'::uuid)) p(pid, uid),
+       (values ('2030-11-06 15:00Z'), ('2030-11-13 15:00Z'), ('2030-11-20 15:00Z')) e(t);
+
+do $$ begin
+  -- Wednesday 2030-11-13 10:00 EST: the first run of week 2030-46 is past the window.
+  if public.enqueue_portal_digests('2030-11-13 15:00Z') is distinct from 0 then
+    raise exception 'a first run on Wednesday must queue nothing';
+  end if;
+  if exists (select 1 from portal_email_outbox where dedupe_key like 'digest:%:2030-46') then
+    raise exception 'no Wednesday catch-up digest';
+  end if;
+  if (select count(*) from portal_users where id in ('a065b000-0000-0000-0000-0000000000a1', 'a065b000-0000-0000-0000-0000000000a2')
+        and digest_week = '2030-46') is distinct from 2::bigint then
+    raise exception 'a run past the window still records the week';
+  end if;
+
+  -- Tuesday 2030-11-19 07:59 EST is still inside the window (ny2, never evaluated);
+  -- ny1 is marked as already evaluated so only ny2 is in play.
+  update portal_users set digest_week = '2030-47' where id = 'a065b000-0000-0000-0000-0000000000a1';
+  update portal_users set digest_week = null      where id = 'a065b000-0000-0000-0000-0000000000a2';
+  if public.enqueue_portal_digests('2030-11-19 12:59Z') is distinct from 1 then
+    raise exception 'Tuesday 07:59 local is inside the window';
+  end if;
+  if not exists (select 1 from portal_email_outbox where dedupe_key = 'digest:a065b000-0000-0000-0000-0000000000a2:2030-47') then
+    raise exception 'the Tuesday 07:59 digest is ny2''s';
+  end if;
+
+  -- Tuesday 08:01 EST with digest_week null: past the window, nothing queued, week recorded.
+  update portal_users set digest_week = null where id = 'a065b000-0000-0000-0000-0000000000a1';
+  if public.enqueue_portal_digests('2030-11-19 13:01Z') is distinct from 0 then
+    raise exception 'Tuesday 08:01 local is past the window';
+  end if;
+  if exists (select 1 from portal_email_outbox where dedupe_key = 'digest:a065b000-0000-0000-0000-0000000000a1:2030-47') then
+    raise exception 'no digest after Tuesday 08:00';
+  end if;
+  if (select digest_week from portal_users where id = 'a065b000-0000-0000-0000-0000000000a1') is distinct from '2030-47' then
+    raise exception 'Tuesday 08:01 records the week';
+  end if;
+
+  -- Monday 2030-11-25 09:00 EST: inside the window, both get the week.
+  if public.enqueue_portal_digests('2030-11-25 14:00Z') is distinct from 2 then
+    raise exception 'Monday 09:00 local queues one digest per partner';
+  end if;
+  if (select count(*) from portal_email_outbox where dedupe_key like 'digest:%:2030-48'
+        and payload->'counts'->>'submitted' = '1') is distinct from 2::bigint then
+    raise exception 'Monday 09:00 digests must count the week''s one referral each';
+  end if;
+end $$;
 
 rollback;

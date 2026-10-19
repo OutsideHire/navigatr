@@ -33,7 +33,17 @@ insert into deals (id, org_id, owner_id, company_name, address, contact_name, co
   ('a063d000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001063', 'a0630000-0000-0000-0000-000000000002', 'Gold Gym',     '7 Elm St',  'Gil', 'gil@gold.example',  '5550630002', 250000, 'contacted', 'inbound'),
   ('a063d000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000001063', 'a0630000-0000-0000-0000-000000000002', 'Blue Cafe',    '9 Pine St', 'Bea', 'bea@blue.example',  '5550630003', 100000, 'contacted', 'inbound'),
   ('a063d000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000001063', 'a0630000-0000-0000-0000-000000000002', 'Red Shop',     '11 Ash St', 'Rod', 'rod@red.example',   '5550630004', 100000, 'contacted', 'inbound'),
-  ('a063d000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000001063', 'a0630000-0000-0000-0000-000000000002', 'Green Spa',    '13 Fir St', 'Gus', 'gus@green.example', '5550630005', 100000, 'contacted', 'inbound');
+  ('a063d000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000001063', 'a0630000-0000-0000-0000-000000000002', 'Green Spa',    '13 Fir St', 'Gus', 'gus@green.example', '5550630005', 100000, 'contacted', 'inbound'),
+  ('a063d000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-000000001063', 'a0630000-0000-0000-0000-000000000002', 'Pine Diner',   '15 Elm St', 'Pat', 'pat@pine.example',  '5550630006', 100000, 'contacted', 'inbound'),
+  ('a063d000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000001063', 'a0630000-0000-0000-0000-000000000002', 'Oak Books',    '17 Elm St', 'Oli', 'oli@oak.example',   '5550630007', 100000, 'contacted', 'inbound');
+
+-- Pre-release outbound links to P1 (the partner_deals backfill or an old
+-- "Refer a deal"): never shared, each with an internal note.
+insert into referrals (id, org_id, partner_id, direction, source, status, company_name, notes, deal_id, assigned_user_id, submitted_by_user_id, shared_with_partner_at) values
+  ('a063f000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-000000001063', 'a063a000-0000-0000-0000-000000000001', 'outbound', 'rep_entered', 'accepted', 'Pine Diner',
+   'INTERNAL: owner is slow to pay', 'a063d000-0000-0000-0000-000000000006', 'a0630000-0000-0000-0000-000000000002', 'a0630000-0000-0000-0000-000000000002', null),
+  ('a063f000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000001063', 'a063a000-0000-0000-0000-000000000001', 'outbound', 'rep_entered', 'accepted', 'Oak Books',
+   'INTERNAL: do not mention pricing', 'a063d000-0000-0000-0000-000000000007', 'a0630000-0000-0000-0000-000000000002', 'a0630000-0000-0000-0000-000000000002', null);
 
 create or replace function _t_act(p_user uuid) returns void language plpgsql as $$
 begin
@@ -213,6 +223,53 @@ do $$ declare v_ref uuid; st text; begin
   perform public._portal_enqueue_referral_sent(v_ref);
   if not exists (select 1 from portal_email_outbox where referral_id = v_ref and kind = 'partner_referral_sent') then
     raise exception 'control: an active user of an enabled org is emailed';
+  end if;
+end $$;
+
+-- 6d. Re-sending a pre-release link SHARES it instead of refusing it (a rep
+--     sending it now is sharing it). A blank re-send keeps the old internal note
+--     hidden everywhere; a re-send with a note shows only the new note. Sending
+--     an already shared link again is still already_linked.
+do $$ declare v_blank uuid; v_noted uuid; r referrals; o portal_email_outbox; g record; begin
+  perform _t_act('a0630000-0000-0000-0000-000000000002');
+  v_blank := public.send_referral_to_partner('a063a000-0000-0000-0000-000000000001', 'a063d000-0000-0000-0000-000000000006', E' \n ');
+  v_noted := public.send_referral_to_partner('a063a000-0000-0000-0000-000000000001', 'a063d000-0000-0000-0000-000000000007', ' Oli is expecting your call. ');
+  perform _t_raises($q$select public.send_referral_to_partner('a063a000-0000-0000-0000-000000000001', 'a063d000-0000-0000-0000-000000000007', 'again')$q$, 'already_linked');
+  perform _t_raises($q$select public.send_referral_to_partner('a063a000-0000-0000-0000-000000000001', 'a063d000-0000-0000-0000-000000000006', '')$q$, 'already_linked');
+  perform set_config('role', 'postgres', true);
+
+  if v_blank is distinct from 'a063f000-0000-0000-0000-000000000006'::uuid or v_noted is distinct from 'a063f000-0000-0000-0000-000000000007'::uuid then
+    raise exception 'a re-send must share the existing link, not create another: % %', v_blank, v_noted;
+  end if;
+  if (select count(*) from referrals where deal_id in ('a063d000-0000-0000-0000-000000000006', 'a063d000-0000-0000-0000-000000000007')) <> 2 then
+    raise exception 'a re-send must not create a second referral';
+  end if;
+
+  select * into r from referrals where id = v_blank;
+  if r.shared_with_partner_at is null or r.partner_note_visible or r.notes is distinct from 'INTERNAL: owner is slow to pay' then
+    raise exception 'a blank re-send shares the link and keeps the old note internal: %', row_to_json(r);
+  end if;
+  select * into o from portal_email_outbox where referral_id = v_blank and kind = 'partner_referral_sent';
+  if o.id is null then raise exception 'a blank re-send must queue the partner email'; end if;
+  if o.payload->'note' is distinct from 'null'::jsonb or position('INTERNAL' in o.payload::text) > 0 then
+    raise exception 'the old internal note must never ride the email: %', o.payload;
+  end if;
+  select * into g from public.portal_get_sent_referral('00000000-0000-0000-0000-000000001063', 'a063a000-0000-0000-0000-000000000001',
+    'a063b000-0000-0000-0000-000000000001', v_blank, null);
+  if g.id is null then raise exception 'the shared link must now be visible to the partner'; end if;
+  if g.rep_note is not null then raise exception 'the old internal note must never reach the portal: %', g.rep_note; end if;
+
+  select * into r from referrals where id = v_noted;
+  if r.shared_with_partner_at is null or not r.partner_note_visible or r.notes is distinct from 'Oli is expecting your call.' then
+    raise exception 'a re-send with a note shares it with the new note visible: %', row_to_json(r);
+  end if;
+  select * into o from portal_email_outbox where referral_id = v_noted and kind = 'partner_referral_sent';
+  if o.id is null then raise exception 'a noted re-send must queue the partner email'; end if;
+  if o.payload->>'note' is distinct from 'Oli is expecting your call.' then
+    raise exception 'the new note rides the email: %', o.payload;
+  end if;
+  if (select count(*) from portal_email_outbox where referral_id in (v_blank, v_noted)) <> 2 then
+    raise exception 'the refused re-sends must queue nothing more';
   end if;
 end $$;
 

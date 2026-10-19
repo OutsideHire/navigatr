@@ -5,10 +5,11 @@
 -- 1. Weekly summary. portal_notify calls enqueue_portal_digests(now()) every
 --    2 minutes, next to enqueue_portal_nudges. For each ACTIVE portal user
 --    whose digest preference is on (notification_prefs.digest, missing means
---    on, the Profile page toggle from 2A), once per ISO week, at or after Monday
---    08:00 in the partner OWNER's time zone (path_preferences.timezone through
---    _portal_local_tz, default America/New_York): one email about the previous
---    Monday to Monday. Inbound referrals by partner label (new, Accepted, In
+--    on, the Profile page toggle from 2A), once per ISO week, between Monday
+--    08:00 and Tuesday 08:00 in the partner OWNER's time zone
+--    (path_preferences.timezone through _portal_local_tz, default
+--    America/New_York): one email about the previous Monday to Monday. A
+--    first look at the week after that window records it and sends nothing. Inbound referrals by partner label (new, Accepted, In
 --    Progress, Closed Won, Not Moving Forward) and referrals sent to the
 --    partner (only shared ones, Ryan ruling Q1, and not removed links, Q3).
 --    Closed Won value only while the ISO shows values (FR-PORT-85).
@@ -105,7 +106,8 @@ begin
     select w.*,
            to_char(w.week_start, 'IYYY-IW') as iso_week,
            ((w.week_start - 7)::timestamp at time zone w.tz) as period_start,
-           (w.week_start::timestamp at time zone w.tz) as period_end
+           (w.week_start::timestamp at time zone w.tz) as period_end,
+           (v_now at time zone w.tz) < w.week_start + interval '1 day 8 hours' as in_window
       from weeks w
      where (v_now at time zone w.tz) >= w.week_start + time '08:00'
        and w.digest_week is distinct from to_char(w.week_start, 'IYYY-IW')
@@ -113,6 +115,11 @@ begin
   loop
     -- Evaluated for this week whether or not anything is sent.
     update portal_users set digest_week = rec.iso_week where id = rec.portal_user_id;
+
+    -- Sent only from Monday 08:00 to Tuesday 08:00 local. A first run later in
+    -- the week (just after a deploy, or after an outage) records the week and
+    -- sends nothing: a summary of last week arriving on a Thursday is noise.
+    continue when not rec.in_window;
 
     select count(distinct e.referral_id) filter (where e.kind = 'submitted')          as submitted,
            count(distinct e.referral_id) filter (where e.kind = 'accepted')           as accepted,
@@ -128,7 +135,9 @@ begin
 
     v_value := null;
     if rec.partner_value_visibility and c.closed_won > 0 then
-      select coalesce(sum(d.value_cents), 0)::bigint into v_value
+      -- No amount (null, never 0) when no won deal carries a value: the
+      -- email builder leaves the line out for null.
+      select nullif(sum(d.value_cents), 0)::bigint into v_value
         from referrals r
         join deals d on d.id = r.deal_id
        where r.id in (select e.referral_id
@@ -186,30 +195,25 @@ end $$;
 
 -- 4. Unsubscribe (no session) ---------------------------------------------------------------------
 -- Silent on every mismatch (unknown slug, disabled org, malformed or unknown
--- token, another org's token). 30 requests per IP per hour; a missing IP has
--- no bucket. Works while the portal is off: the email may still be in an inbox.
+-- token, another org's token). A matching token is ALWAYS honoured: a 128-bit
+-- token cannot be guessed, and a partner behind a busy shared IP must still be
+-- able to stop the email; it is audited with its portal user. Only MISSES count
+-- against the per-IP cap (30 per hour; a missing IP has no bucket, the edge
+-- passes 'unknown'), and past it a miss does nothing at all, so a flood of
+-- guesses writes at most 30 audit rows per IP per hour. Works while the portal
+-- is off: the email may still be in an inbox.
 create or replace function public.portal_unsubscribe_digest(p_slug text, p_token text, p_ip text)
 returns void language plpgsql security definer set search_path = public, extensions as $$
 declare
-  v_org   uuid;
-  v_ip    text := nullif(btrim(coalesce(p_ip, '')), '');
-  v_token text := btrim(coalesce(p_token, ''));
-  v_user  uuid;
+  v_org     uuid;
+  v_ip      text := nullif(btrim(coalesce(p_ip, '')), '');
+  v_token   text := btrim(coalesce(p_token, ''));
+  v_user    uuid;
 begin
   select o.id into v_org from organizations o
    where o.slug = lower(btrim(coalesce(p_slug, ''))) and not o.is_disabled;
   if v_org is null then
     return;
-  end if;
-
-  if v_ip is not null then
-    -- Count-then-insert: serialize the per-IP bucket.
-    perform pg_advisory_xact_lock(hashtextextended('portal_unsubscribe_ip:' || v_ip, 0));
-    if (select count(*) from portal_audit_log a
-         where a.action = 'unsubscribe' and a.ip = v_ip
-           and a.created_at > now() - interval '1 hour') >= 30 then
-      return;
-    end if;
   end if;
 
   if v_token ~ '^[A-Za-z0-9_-]{16,64}$' then
@@ -220,7 +224,21 @@ begin
     returning u.id into v_user;
   end if;
 
-  perform public._portal_audit(v_org, v_user, 'unsubscribe', v_ip, null);
+  if v_user is not null then
+    perform public._portal_audit(v_org, v_user, 'unsubscribe', v_ip, null);
+    return;
+  end if;
+
+  if v_ip is not null then
+    -- Count-then-insert: serialize the per-IP bucket of misses.
+    perform pg_advisory_xact_lock(hashtextextended('portal_unsubscribe_ip:' || v_ip, 0));
+    if (select count(*) from portal_audit_log a
+         where a.action = 'unsubscribe' and a.ip = v_ip and a.portal_user_id is null
+           and a.created_at > now() - interval '1 hour') >= 30 then
+      return;
+    end if;
+  end if;
+  perform public._portal_audit(v_org, null, 'unsubscribe', v_ip, null);
 end $$;
 
 -- 5. Export audit -------------------------------------------------------------------------------------

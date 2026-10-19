@@ -3,7 +3,7 @@
 --   psql "$SUPABASE_DB_URL" -f supabase/tests/064_portal_sent_referrals.sql
 -- Self-cleans via ROLLBACK.
 --
--- Org sent-read (portal on): boss administrator; rita rep and rob rep in
+-- Org sent-read (portal on): boss and ada administrators; rita rep and rob rep in
 -- separate branches. P1 Jane CPA (owner rita, ACTIVE PU1), P2 Kim CPA (owner
 -- rita, ACTIVE PU2), P3 Lee CPA (owner rita, SUSPENDED PU3). Deals D1..D3 (rita).
 -- Referrals (inserted as postgres):
@@ -26,13 +26,15 @@ insert into auth.users (id, email, aud, role, created_at, updated_at, email_conf
   ('a0640000-0000-0000-0000-000000000001', 'boss@sr.example', 'authenticated', 'authenticated', now(), now(), now()),
   ('a0640000-0000-0000-0000-000000000002', 'rita@sr.example', 'authenticated', 'authenticated', now(), now(), now()),
   ('a0640000-0000-0000-0000-000000000003', 'rob@sr.example',  'authenticated', 'authenticated', now(), now(), now()),
-  ('a0640000-0000-0000-0000-000000000004', 'bob@srb.example', 'authenticated', 'authenticated', now(), now(), now());
+  ('a0640000-0000-0000-0000-000000000004', 'bob@srb.example', 'authenticated', 'authenticated', now(), now(), now()),
+  ('a0640000-0000-0000-0000-000000000005', 'ada@sr.example',  'authenticated', 'authenticated', now(), now(), now());
 
 insert into profiles (id, org_id, role, role_level, full_name, email, role_path, manager_id) values
   ('a0640000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000001064', 'admin', 'administrator',      'Boss',     'boss@sr.example', 'srboss'::ltree,      null),
   ('a0640000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001064', 'rep',   'sales_professional', 'Rita Rep', 'rita@sr.example', 'srboss.rita'::ltree, 'a0640000-0000-0000-0000-000000000001'),
   ('a0640000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000001064', 'rep',   'sales_professional', 'Rob Rep',  'rob@sr.example',  'srboss.rob'::ltree,  'a0640000-0000-0000-0000-000000000001'),
-  ('a0640000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000001164', 'admin', 'administrator',      'Bob',      'bob@srb.example', 'srbob'::ltree,       null);
+  ('a0640000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000001164', 'admin', 'administrator',      'Bob',      'bob@srb.example', 'srbob'::ltree,       null),
+  ('a0640000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000001064', 'admin', 'administrator',      'Ada',      'ada@sr.example',  'srada'::ltree,       null);
 
 insert into partners (id, org_id, created_by, owner_id, name, company, type, email, phone) values
   ('a064a000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000001064', 'a0640000-0000-0000-0000-000000000002', 'a0640000-0000-0000-0000-000000000002', 'Jane CPA', 'Jane & Co', 'cpa', 'jane@sr.example', null),
@@ -250,6 +252,19 @@ do $$ declare p record; o portal_email_outbox; n int; begin
   if exists (select 1 from public.portal_partner_notes('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000002', 'a064e000-0000-0000-0000-000000000001')) then
     raise exception 'another partner must not read these notes';
   end if;
+  -- Portal off or the org disabled: no notes, like every other sent read.
+  update organizations set portal_enabled = false where id = '00000000-0000-0000-0000-000000001064';
+  if exists (select 1 from public.portal_partner_notes('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000001')) then
+    raise exception 'no notes while the portal is off';
+  end if;
+  update organizations set portal_enabled = true, is_disabled = true where id = '00000000-0000-0000-0000-000000001064';
+  if exists (select 1 from public.portal_partner_notes('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000001')) then
+    raise exception 'no notes while the org is disabled';
+  end if;
+  update organizations set is_disabled = false where id = '00000000-0000-0000-0000-000000001064';
+  if not exists (select 1 from public.portal_partner_notes('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000001')) then
+    raise exception 'control: notes are listed while the portal is on';
+  end if;
 
   perform _t_raises($q$select * from public.portal_post_partner_note('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
     'a064b000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000004', 'x', null)$q$, 'referral_not_found');
@@ -266,19 +281,52 @@ do $$ declare p record; o portal_email_outbox; n int; begin
   perform _t_raises($q$select * from public.portal_post_partner_note('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000003',
     'a064b000-0000-0000-0000-000000000003', 'a064e000-0000-0000-0000-000000000001', 'x', null)$q$, 'not_authorized');
 
-  -- Two posted so far; 18 more audit rows reach the limit of 20 per hour.
+  -- Sender and deal owner both gone: every active administrator (ada; boss left) is told.
+  update profiles set deactivated_at = now() where id = 'a0640000-0000-0000-0000-000000000002';
+  select * into p from public.portal_post_partner_note('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
+    'a064b000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000001', 'Contract signed.', null);
+  if p.id is null then raise exception 'third post returned no row'; end if;
+  if not exists (select 1 from portal_email_outbox where dedupe_key = 'internal_partner_note:' || p.id::text || ':a0640000-0000-0000-0000-000000000005') then
+    raise exception 'with the sender and the deal owner gone an active administrator is told';
+  end if;
+  if exists (select 1 from portal_email_outbox where dedupe_key like 'internal_partner_note:' || p.id::text || ':%'
+               and recipient_user_id is distinct from 'a0640000-0000-0000-0000-000000000005') then
+    raise exception 'only active administrators are told when the sender and owner are gone';
+  end if;
+  update profiles set deactivated_at = null where id = 'a0640000-0000-0000-0000-000000000002';
+
+  -- The email cannot be queued: the note still posts (the enqueue swallows its own error).
+  alter table portal_email_outbox add constraint t064_block_note_email check (kind <> 'internal_partner_note') not valid;
+  select * into p from public.portal_post_partner_note('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
+    'a064b000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000001', 'Posted while email is down.', null);
+  alter table portal_email_outbox drop constraint t064_block_note_email;
+  if p.id is null then raise exception 'an enqueue failure must not fail the post'; end if;
+  if not exists (select 1 from referral_partner_notes where id = p.id) then
+    raise exception 'the note must be stored when its email cannot be queued';
+  end if;
+  if exists (select 1 from portal_email_outbox where dedupe_key like 'internal_partner_note:' || p.id::text || ':%') then
+    raise exception 'control: the blocked email must not have been queued';
+  end if;
+
+  -- The limit: 20 notes per portal user in the last hour. Four posted so far;
+  -- 15 more recent audit rows make 19, and rows older than an hour do not count.
   insert into portal_audit_log (org_id, portal_user_id, action)
-  select '00000000-0000-0000-0000-000000001064', 'a064b000-0000-0000-0000-000000000001', 'note' from generate_series(1, 18);
+  select '00000000-0000-0000-0000-000000001064', 'a064b000-0000-0000-0000-000000000001', 'note' from generate_series(1, 15);
+  insert into portal_audit_log (org_id, portal_user_id, action, created_at)
+  select '00000000-0000-0000-0000-000000001064', 'a064b000-0000-0000-0000-000000000001', 'note', now() - interval '61 minutes' from generate_series(1, 10);
+  select * into p from public.portal_post_partner_note('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
+    'a064b000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000001', 'the twentieth', null);
+  if p.id is null then raise exception 'the 20th note in an hour is allowed'; end if;
   perform _t_raises($q$select * from public.portal_post_partner_note('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
     'a064b000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000001', 'one too many', null)$q$, 'rate_limited');
   select count(*) into n from referral_partner_notes where referral_id <> 'a064e000-0000-0000-0000-000000000003';
-  if n <> 2 then raise exception 'refused notes must not be stored, got %', n; end if;
+  if n <> 5 then raise exception 'refused notes must not be stored, got %', n; end if;
 end $$;
 
 -- 5. Internal reads under RLS: the deal owner sees the notes (including the one on
 --    the removed link, which stays internal); another branch and another org do not.
 do $$ begin
-  if _t_visible_notes('a0640000-0000-0000-0000-000000000002') <> 3 then raise exception 'rita should see all three notes on her deals'; end if;
+  if _t_visible_notes('a0640000-0000-0000-0000-000000000002') <> 6 then raise exception 'rita should see all six notes on her deals'; end if;
   if _t_visible_notes('a0640000-0000-0000-0000-000000000003') <> 0 then raise exception 'rob must not see them'; end if;
   if _t_visible_notes('a0640000-0000-0000-0000-000000000004') <> 0 then raise exception 'another org must not see them'; end if;
 end $$;

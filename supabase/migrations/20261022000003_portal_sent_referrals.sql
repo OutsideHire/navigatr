@@ -133,10 +133,12 @@ language sql stable security definer set search_path = public, extensions as $$
   select n.id, n.body, n.created_at
     from referral_partner_notes n
     join referrals r on r.id = n.referral_id
+    join organizations o on o.id = r.org_id
    where n.referral_id = p_referral
      and r.org_id = p_org and r.partner_id = p_partner
      and r.direction = 'outbound'
      and r.shared_with_partner_at is not null and r.status <> 'withdrawn'
+     and o.portal_enabled and not o.is_disabled
    order by n.created_at desc, n.id
    limit 100
 $$;
