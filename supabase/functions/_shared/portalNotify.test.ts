@@ -39,6 +39,24 @@ const partnerRow = (id: string, over: Record<string, unknown> = {}) => ({
   attempts: 1,
   ...over,
 });
+const digestRow = (id: string) => ({
+  id,
+  org_id: "o-1",
+  kind: "partner_digest",
+  referral_id: null,
+  payload: {
+    slug: "acme",
+    orgName: "Acme ISO",
+    partnerName: "Jane",
+    weekLabel: "Dec 31",
+    counts: { submitted: 1, accepted: 0, inProgress: 0, closedWon: 0, notMovingForward: 0, sentToYou: 0 },
+    valueCents: null,
+    items: [{ companyName: "Fresh Bakery", label: "Received" }],
+    unsubscribeToken: "AbCdEfGhIjKlMnOpQrStUv",
+  },
+  recipient: "jane@example.com",
+  attempts: 1,
+});
 const INTERNAL_ROW = {
   id: "e-9",
   org_id: "o-1",
@@ -56,6 +74,7 @@ function setup(rows: unknown[], over: Partial<PortalNotifyDeps> = {}, handlers: 
   const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
     if (handlers[name]) return handlers[name](args);
     if (name === "enqueue_portal_nudges") return { data: 2, error: null };
+    if (name === "enqueue_portal_digests") return { data: 1, error: null };
     if (name === "claim_portal_emails") return { data: rows, error: null };
     if (name === "mark_portal_email") {
       marks.push(args);
@@ -85,10 +104,11 @@ describe("drainPortalEmails", () => {
     const { deps, rpc } = setup([]);
     const summary = await drainPortalEmails(deps);
     expect(rpc.mock.calls[0]).toEqual(["enqueue_portal_nudges", { p_now: "2026-10-14T22:30:00.000Z" }]);
-    expect(rpc.mock.calls[1]).toEqual(["claim_portal_emails", { p_limit: PORTAL_NOTIFY_BATCH }]);
+    expect(rpc.mock.calls[1]).toEqual(["enqueue_portal_digests", { p_now: "2026-10-14T22:30:00.000Z" }]);
+    expect(rpc.mock.calls[2]).toEqual(["claim_portal_emails", { p_limit: PORTAL_NOTIFY_BATCH }]);
     expect(PORTAL_NOTIFY_PACE_MS).toBe(600);
     expect(PORTAL_NOTIFY_BATCH).toBe(20);
-    expect(summary).toEqual({ nudgesQueued: 2, claimed: 0, sent: 0, dropped: 0, failed: 0 });
+    expect(summary).toEqual({ nudgesQueued: 2, digestsQueued: 1, claimed: 0, sent: 0, dropped: 0, failed: 0 });
   });
 
   it("sends a partner email in the ISO's name and brand, replying to the rep", async () => {
@@ -207,6 +227,44 @@ describe("drainPortalEmails", () => {
     expect(errorSpy).toHaveBeenCalled();
   });
 
+  it("keeps draining when the digest step fails", async () => {
+    const { deps, sendEmail } = setup([INTERNAL_ROW], {}, {
+      enqueue_portal_digests: () => ({ data: null, error: { message: "lock timeout" } }),
+    });
+    const summary = await drainPortalEmails(deps);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(summary.digestsQueued).toBe(0);
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
+  it("sends the weekly summary with the one-click unsubscribe headers and no Reply-To", async () => {
+    const api = "https://proj.supabase.co/functions/v1/portal_api";
+    const { deps, sendEmail, marks } = setup([digestRow("e-7")], { env: { ...ENV, portalApiUrl: api } });
+    await drainPortalEmails(deps);
+    const msg = sendEmail.mock.calls[0][0];
+    expect(msg.headers).toEqual({
+      "List-Unsubscribe": `<${api}/unsubscribe_digest?slug=acme&t=AbCdEfGhIjKlMnOpQrStUv>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    });
+    expect("replyTo" in msg).toBe(false);
+    expect(msg.from).toBe('"Acme ISO" <invites@send.getnavigatr.io>');
+    expect(msg.text).toContain("Unsubscribe from the weekly summary: https://app.getnavigatr.io/p/acme/unsubscribe?t=AbCdEfGhIjKlMnOpQrStUv");
+    expect(marks).toEqual([{ p_id: "e-7", p_outcome: "sent", p_error: null }]);
+  });
+
+  it("drops a weekly summary when the portal_api URL is not configured", async () => {
+    const { deps, sendEmail, marks } = setup([digestRow("e-8")]);
+    await drainPortalEmails(deps);
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(marks).toEqual([{ p_id: "e-8", p_outcome: "dropped", p_error: "invalid_payload" }]);
+  });
+
+  it("never adds headers to any other email", async () => {
+    const { deps, sendEmail } = setup([partnerRow("e-1"), INTERNAL_ROW], { env: { ...ENV, portalApiUrl: "https://x.example/fn" } });
+    await drainPortalEmails(deps);
+    for (const [msg] of sendEmail.mock.calls) expect("headers" in msg).toBe(false);
+  });
+
   it("throws when the claim fails", async () => {
     const { deps } = setup([], {}, { claim_portal_emails: () => ({ data: null, error: { message: "boom" } }) });
     await expect(drainPortalEmails(deps)).rejects.toThrow("claim failed: boom");
@@ -294,7 +352,7 @@ describe("handlePortalNotifyRequest", () => {
     const { deps } = setup([INTERNAL_ROW]);
     const res = await handlePortalNotifyRequest(req("Bearer s3cret"), "s3cret", deps);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ nudgesQueued: 2, claimed: 1, sent: 1, dropped: 0, failed: 0 });
+    expect(await res.json()).toEqual({ nudgesQueued: 2, digestsQueued: 1, claimed: 1, sent: 1, dropped: 0, failed: 0 });
   });
 
   it("answers 500 server_error when the claim fails", async () => {
