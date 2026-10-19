@@ -15,6 +15,7 @@
 - Migrations go in `supabase/migrations/` named `20261022000001_...` to `20261022000005_...`, applied in filename order. The latest existing migration is `20261020000004`. New enum values (`portal_audit_action` `note`, `export`, `unsubscribe`) are added ALONE in `20261022000001` (a value added by `ALTER TYPE ... ADD VALUE` cannot be used in the transaction that adds it). Never hand-apply SQL to staging or production. Never run a `supabase` command against a remote project while building this plan.
 - Partner and public SQL is service role only: `revoke execute ... from public, anon, authenticated;` then `grant execute ... to service_role;`. Internal RPCs are `security definer`, re-check org and rights inside, `revoke execute ... from public, anon;` and `grant execute ... to authenticated;`. Private helpers (`_portal_*`) are revoked from `public, anon, authenticated, service_role`. Triggers and helpers called from definer functions need no grant. `search_path` is pinned on every function; pgcrypto is called as `extensions.gen_random_bytes`.
 - Partners never see internal notes: the only rep-typed text a partner reads is `referral_updates.body` (1C) and, from this PR, `referrals.notes` on an OUTBOUND referral whose `partner_note_visible` is true. Backfilled and existing rows keep `partner_note_visible = false`.
+- Ryan rulings (binding): (Q1) only outbound referrals shared from this release on reach a partner: `referrals.shared_with_partner_at` is set to `now()` by both send RPCs, existing and backfilled rows stay null, and every sent-to-you read, note-back, the `partner_referral_sent` email and the digest's sent count require it; (Q2) both send paths email the partner; (Q3) a removed link (`status = 'withdrawn'`, the mark `remove_referral_link` leaves) disappears from the partner's list and detail, takes no notes, and its existing partner notes stay internal only.
 - Partner note-back is its own record (`referral_partner_notes`, shown as "Note from partner"), never an `activities` row (Ryan ruling: `activities.logged_by` is NOT NULL and feeds Activity-To-Win and Persistence).
 - Error tokens raised by the new SQL: `note_too_long` (rep app), `referral_not_found`, `invalid_input:body`, `rate_limited`, `not_authorized` (portal). portal_api maps them to `404 not_found`, `400 invalid_body {field:"body"}`, `429 rate_limited`, `500 server_error`.
 - New copy (exact). Rep app: SendReferralSheet note label `Note for <partner name> (they will see this)` (`Note for the partner (they will see this)` before a partner is picked), placeholder `Optional. Only write what the partner should read.`; Deal Detail eyebrow `Notes from <partner name>`; Partner Detail row line `1 note from partner` / `<n> notes from partner`; error `Keep the note under 1,000 characters.`. Portal: section `Sent to you`; page headings `Sent by <rep or ISO>`, `Business contact`, `Your notes`; composer label `Add a note for <ISO>`, button `Send note`; unsubscribe page `Stop the weekly summary?`, button `Unsubscribe`, done `You won't get the weekly summary. You can turn it back on in your profile.`. Emails: `<ISO> sent you a referral: <Company>`; `Your weekly referral summary from <ISO>`; footer link `Unsubscribe from the weekly summary`; internal `New partner note: <Company>`.
@@ -30,11 +31,11 @@
 
 ## Review Focus
 
-1. **A rep's internal note reaching a partner.** Old outbound rows (backfilled from `partner_deals`, written before partners could read anything), "Refer a deal" on Partner Detail, and stale PWA clients calling `refer_deal_to_partner` all carry `partner_note_visible = false`, so the portal and the email show no note. Pinned in Task 1 (063 sections 3 and 4), Task 2 (064 section 3, `rep_note` null for a row whose notes are internal) and Task 12 (the audit feeds a hostile row).
+1. **Something reaching a partner that was never shared with them**: an old outbound row (backfilled from `partner_deals` before partners could read anything), a removed link, or an internal rep note. Expected: old rows (`shared_with_partner_at` null) and removed links never appear, take no notes, send no email and are not counted in the digest; "Refer a deal" and stale clients calling `refer_deal_to_partner` carry `partner_note_visible = false`; a genuine deal-stage status (lost) is never hidden. Pinned in Task 1 (063 sections 3, 4 and 6b), Task 2 (064 sections 2 to 5, including the lost deal and the internal-only note on a removed link), Task 3 (065 legacy and removed rows not counted) and Task 12 (the audit feeds a hostile row).
 2. **A partner who unsubscribed (or whose identity was erased) after the digest was queued.** Expected: nothing is sent. Pinned in Task 3 (065 section 6: `claim_portal_emails` drops a digest whose user now has the preference off) and Task 4 (066: `portal_purge_user` drops queued rows and nulls the token in payloads).
 3. **A mail scanner or link previewer opening the unsubscribe link.** Expected: no side effect from a GET; the page needs a button press, and the edge refuses anything but POST. Pinned in Task 8 (GET answers 405 and calls nothing) and Task 11 (no API call until the button is pressed).
 4. **The digest firing at the wrong time or twice.** Expected: once per partner per ISO week, at or after Monday 08:00 in the partner owner's time zone, never before, never twice, and nothing for a quiet week. Pinned in Task 3 (065 sections 2 to 4: 07:00 local queues nothing, 08:30 queues one, a re-run queues nothing, a quiet partner gets nothing).
-5. **Note-back abuse or misdirection**: a flood of notes, a note on another partner's referral, on an inbound referral, or on a purged one. Expected: 20 per portal user per hour, and every other case looks like a missing referral. Pinned in Task 2 (064 section 4) and Task 7 (the 404 and 429 mappings).
+5. **Note-back abuse or misdirection**: a flood of notes, a note on another partner's referral, on an inbound referral, on an unshared legacy row, or on a removed link. Expected: 20 per portal user per hour, and every other case looks like a missing referral. Pinned in Task 2 (064 section 4) and Task 7 (the 404 and 429 mappings).
 
 ---
 
@@ -42,7 +43,7 @@
 
 **Create**
 - `supabase/migrations/20261022000001_portal_audit_actions_2b3.sql`: `portal_audit_action` gains `note`, `export`, `unsubscribe`.
-- `supabase/migrations/20261022000002_referral_sent_to_partner.sql`: `referrals.partner_note_visible`; outbox kinds `partner_referral_sent`, `partner_digest`, `internal_partner_note` and the relaxed recipient check; `_portal_referral_sent_payload`, `_portal_enqueue_referral_sent`, `send_referral_to_partner`; `refer_deal_to_partner` re-created to queue the email.
+- `supabase/migrations/20261022000002_referral_sent_to_partner.sql`: `referrals.partner_note_visible`, `referrals.shared_with_partner_at`; outbox kinds `partner_referral_sent`, `partner_digest`, `internal_partner_note` and the relaxed recipient check; `_portal_referral_sent_payload`, `_portal_enqueue_referral_sent`, `send_referral_to_partner`; `refer_deal_to_partner` re-created to queue the email.
 - `supabase/migrations/20261022000003_portal_sent_referrals.sql`: `referral_partner_notes` (+ RLS); `portal_list_sent_referrals`, `portal_get_sent_referral`, `portal_partner_notes`, `portal_post_partner_note`, `_portal_enqueue_partner_note`.
 - `supabase/migrations/20261022000004_portal_digest.sql`: `portal_users.digest_unsubscribe_token`, `portal_users.digest_week`; `_portal_digest_token`, `_portal_digest_wants`, `_portal_digest_events`, `enqueue_portal_digests`, `portal_unsubscribe_digest`, `portal_record_export`; `claim_portal_emails` re-created.
 - `supabase/migrations/20261022000005_partner_notes_purge.sql`: `purge_declined_referrals` and `portal_purge_user` re-created to erase notes, the note in queued payloads, and the unsubscribe token.
@@ -71,10 +72,11 @@
 
 1. **The flag rides a NEW RPC, `send_referral_to_partner(p_partner_id uuid, p_deal_id uuid, p_partner_note text default '')`.** Changing `refer_deal_to_partner`'s or `_link_deal_to_partner`'s signature would break DB test 035, which asserts both signatures by name. The new RPC calls the existing `_link_deal_to_partner(..., 'outbound', note)` and sets `partner_note_visible = true` only when the trimmed note is not empty (1,000 characters at most, `note_too_long`). `useReferDeal` switches to it, so SendReferralSheet (with a note) shares it and Partner Detail "Refer a deal" (no note) stays not visible. `refer_deal_to_partner` keeps its signature and never sets the flag, so a stale PWA client never exposes a note written under the old copy.
 2. **The "referral sent to you" email is queued by the two RPCs, not by an insert trigger.** A trigger would fire before the flag is set (so the note could never ride the email) and would also fire for the `partner_deals` mirror used by the demo reseed. Both `send_referral_to_partner` and the re-created `refer_deal_to_partner` (same signature and grants, now plpgsql) call `_portal_enqueue_referral_sent`.
-3. **"Sent to you" shows the partner label of the referral's status** (outbound status follows the deal stage: Accepted, In Progress, Closed Won, Not Moving Forward; a link a rep removed shows Withdrawn and stays listed). Never the stage itself, never a value: `value_cents` is not read by any outbound partner function.
-4. **Contact details are the snapshot's name, email and phone only** (brief allowlist); the address is not shared. Purged rows (a withdrawn outbound referral past retention) are listed with null contact fields and `detailsRemoved = true`, like 2A.
+3. **"Sent to you" shows the partner label of the referral's status** (outbound status follows the deal stage: Accepted, In Progress, Closed Won, Not Moving Forward). Never the stage itself, never a value: `value_cents` is not read by any outbound partner function. Per Ryan's Q3 ruling a removed link is hidden by `status <> 'withdrawn'`: `remove_referral_link` (and `withdraw_referral`, and the `partner_deals` mirror's delete) are the only writers of `withdrawn` on an outbound row, and `referral_status_for_stage` / `referrals_follow_deal_stage` only ever produce accepted, working, won or lost, so no stage-driven status is hidden (064 pins a lost deal staying visible).
+4. **Contact details are the snapshot's name, email and phone only** (brief allowlist); the address is not shared. Only withdrawn outbound rows are ever purged, and those are hidden, so a purged sent referral never reaches the portal; `detailsRemoved` stays in the API and page only as defense in depth.
+4a. **New column `referrals.shared_with_partner_at timestamptz` (Ryan's Q1 ruling).** Set to `now()` by both `send_referral_to_partner` and the re-created `refer_deal_to_partner`; existing and backfilled rows stay null and are never shown, noted, emailed or counted. The digest's "sent to you" bucket is timed by this column.
 5. **The sent date is `referrals.submitted_at`** (set to `now()` at insert by `_link_deal_to_partner`; there is no separate `created_at` meaning).
-6. **Notes are allowed on any unpurged outbound referral of the session's partner, Withdrawn included.** Inbound referrals keep their 1C path (published updates); a note there is `referral_not_found` (PRD section 13).
+6. **Notes are allowed only on a shared, not removed, unpurged outbound referral of the session's partner.** A removed link's existing notes stay in `referral_partner_notes`, visible to reps under RLS and never to the partner. Inbound referrals keep their 1C path (published updates); a note there is `referral_not_found` (PRD section 13).
 7. **`internal_partner_note` goes to the sender while active in the org, else the deal owner while active, else every active administrator** (`_portal_review_recipients`). Payload `{appUrlPath, companyNames, count}` links to `/pipeline/<deal id>`, or `/partners/<partner id>` when the deal is gone. One email per note per recipient (dedupe `internal_partner_note:<note id>:<user id>`).
 8. **The digest summarizes the previous ISO week** (Monday 00:00 to Monday 00:00 in the partner owner's time zone, `path_preferences.timezone` through `_portal_local_tz`, default America/New_York) and is queued at or after Monday 08:00 local. `portal_users.digest_week` records the week already evaluated, so a quiet partner is checked once per week instead of every 2 minutes. Counts are `{submitted, accepted, inProgress, closedWon, notMovingForward, sentToYou}` (distinct referrals per bucket); the payload has exactly the brief's 8 keys; an item's label is a partner label or `Sent to you`.
 9. **`claim_portal_emails` is re-created** so a `partner_digest` row (no referral) is live only while the user is active, the portal is on and the digest preference is still on. Every other branch is identical to 20261016000003.
@@ -104,10 +106,11 @@ None. No new secret: the digest's one-click URL is built from `SUPABASE_URL`, wh
 - Consumes (SQL): `_link_deal_to_partner(uuid, uuid, text, text) returns uuid` (raises `not_authorized`, `partner_not_visible`, `deal_not_visible`, `already_linked`), `_portal_referral_ref(uuid)`, `portal_users`, `organizations.portal_enabled/is_disabled`.
 - Produces (SQL):
   - `referrals.partner_note_visible boolean not null default false`.
+  - `referrals.shared_with_partner_at timestamptz null`: set to `now()` by BOTH send RPCs from this release on; every existing and backfilled row stays null and is never shown to a partner (Ryan ruling Q1).
   - Outbox kinds `partner_referral_sent` (portal user + referral), `partner_digest` (portal user, NO referral), `internal_partner_note` (internal recipient).
   - `public.send_referral_to_partner(p_partner_id uuid, p_deal_id uuid, p_partner_note text default '') returns uuid` (authenticated). Raises `note_too_long` over 1,000 characters.
   - `public.refer_deal_to_partner(uuid, uuid, text) returns uuid`: unchanged signature, now also queues the email.
-  - `public._portal_enqueue_referral_sent(p_referral uuid) returns void` and `public._portal_referral_sent_payload(p_referral uuid) returns jsonb` (private). Payload keys exactly: `slug, orgName, partnerName, companyName, ref, repName, repEmail, note` (`note` null unless `partner_note_visible`). Dedupe key `partner_referral_sent:<referral id>`.
+  - `public._portal_enqueue_referral_sent(p_referral uuid) returns void` (queues nothing unless the row is outbound, unpurged, `shared_with_partner_at is not null` and not `withdrawn`) and `public._portal_referral_sent_payload(p_referral uuid) returns jsonb` (private). Payload keys exactly: `slug, orgName, partnerName, companyName, ref, repName, repEmail, note` (`note` null unless `partner_note_visible`). Dedupe key `partner_referral_sent:<referral id>`.
 
 - [ ] **Step 1: Write the failing DB test**
 
@@ -200,7 +203,8 @@ do $$ declare v_id uuid; r referrals; o portal_email_outbox; begin
 
   select * into r from referrals where id = v_id;
   if r.direction <> 'outbound' or r.notes <> 'Ask for Ann after 3pm.' or not r.partner_note_visible
-     or r.submitted_by_user_id <> 'a0630000-0000-0000-0000-000000000002' or r.contact_name <> 'Ann' then
+     or r.submitted_by_user_id <> 'a0630000-0000-0000-0000-000000000002' or r.contact_name <> 'Ann'
+     or r.shared_with_partner_at is null then
     raise exception 'sent referral wrong: %', row_to_json(r);
   end if;
 
@@ -241,6 +245,9 @@ do $$ declare v_id uuid; begin
   if (select partner_note_visible from referrals where id = v_id) then
     raise exception 'refer_deal_to_partner must never make a note visible';
   end if;
+  if (select shared_with_partner_at is null from referrals where id = v_id) then
+    raise exception 'refer_deal_to_partner shares the referral from this release on';
+  end if;
   if (select payload->'note' from portal_email_outbox where referral_id = v_id and kind = 'partner_referral_sent') <> 'null'::jsonb then
     raise exception 'refer_deal_to_partner queues the email without the note';
   end if;
@@ -274,8 +281,27 @@ do $$ declare v_id uuid; begin
   perform _t_act('a0630000-0000-0000-0000-000000000002');
   v_id := public.log_referral('a063a000-0000-0000-0000-000000000001', 'Logged Co');
   perform set_config('role', 'postgres', true);
-  if (select partner_note_visible from referrals where id = v_id) then
-    raise exception 'an inbound referral is never partner-note-visible';
+  if (select partner_note_visible or shared_with_partner_at is not null from referrals where id = v_id) then
+    raise exception 'an inbound referral is never partner-note-visible or shared';
+  end if;
+end $$;
+
+-- 6b. An outbound row from before this release (backfill, old links) is never
+--     shared: no email even when the helper is asked directly. A removed
+--     (withdrawn) shared link is not emailed either.
+do $$ declare v_old uuid := 'a063e000-0000-0000-0000-000000000001'; v_gone uuid := 'a063e000-0000-0000-0000-000000000002'; begin
+  insert into referrals (id, org_id, partner_id, direction, source, status, company_name, deal_id, assigned_user_id, submitted_by_user_id, shared_with_partner_at)
+  values (v_old,  '00000000-0000-0000-0000-000000001063', 'a063a000-0000-0000-0000-000000000002', 'outbound', 'rep_entered', 'accepted', 'Legacy Co',
+          'a063d000-0000-0000-0000-000000000004', 'a0630000-0000-0000-0000-000000000002', 'a0630000-0000-0000-0000-000000000002', null),
+         (v_gone, '00000000-0000-0000-0000-000000001063', 'a063a000-0000-0000-0000-000000000001', 'outbound', 'rep_entered', 'withdrawn', 'Removed Co',
+          null, 'a0630000-0000-0000-0000-000000000002', 'a0630000-0000-0000-0000-000000000002', now());
+  -- Give P2 portal access so only the sharing rule can stop the legacy email.
+  insert into portal_users (id, org_id, partner_id, email, status) values
+    ('a063b000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001063', 'a063a000-0000-0000-0000-000000000002', 'kim@st.example', 'active');
+  perform public._portal_enqueue_referral_sent(v_old);
+  perform public._portal_enqueue_referral_sent(v_gone);
+  if exists (select 1 from portal_email_outbox where referral_id in (v_old, v_gone)) then
+    raise exception 'an unshared or removed outbound referral is never emailed';
   end if;
 end $$;
 
@@ -333,6 +359,10 @@ Create `supabase/migrations/20261022000002_referral_sent_to_partner.sql`:
 --    the partner (send_referral_to_partner with a note). Every existing row,
 --    the backfill from partner_deals, refer_deal_to_partner and inbound
 --    referrals keep false: their notes were never meant for a partner.
+--    referrals.shared_with_partner_at (Ryan ruling Q1): set by both send RPCs
+--    from this release on. Rows linked before it (including the partner_deals
+--    backfill) stay null and are never shown to a partner, emailed, noted or
+--    counted in a digest.
 -- 2. Outbox kinds for this phase. partner_digest is the one partner email with
 --    no referral (a weekly summary), so the recipient rule gains a branch.
 -- 3. "<ISO> sent you a referral": queued by the two outbound RPCs (not by a
@@ -343,6 +373,7 @@ Create `supabase/migrations/20261022000002_referral_sent_to_partner.sql`:
 
 -- 1. Flag -------------------------------------------------------------------------
 alter table referrals add column if not exists partner_note_visible boolean not null default false;
+alter table referrals add column if not exists shared_with_partner_at timestamptz;
 
 -- 2. Outbox kinds and the recipient rule --------------------------------------------
 alter table portal_email_outbox drop constraint portal_email_outbox_kind_check;
@@ -391,7 +422,9 @@ declare
   v_portal_user uuid;
 begin
   select * into r from referrals where id = p_referral;
-  if r.id is null or r.direction <> 'outbound' or r.purged_at is not null then
+  -- Only a referral shared from this release on, and not a removed link.
+  if r.id is null or r.direction <> 'outbound' or r.purged_at is not null
+     or r.shared_with_partner_at is null or r.status = 'withdrawn' then
     return;
   end if;
   select u.id into v_portal_user
@@ -424,21 +457,23 @@ begin
     raise exception 'note_too_long' using errcode = '22023';
   end if;
   v_id := public._link_deal_to_partner(p_partner_id, p_deal_id, 'outbound', v_note);
-  if v_note <> '' then
-    update referrals set partner_note_visible = true where id = v_id;
-  end if;
+  update referrals
+     set shared_with_partner_at = now(),
+         partner_note_visible   = (v_note <> '')
+   where id = v_id;
   perform public._portal_enqueue_referral_sent(v_id);
   return v_id;
 end $$;
 
 -- Same signature and grants as 20261007000003 (DB test 035 asserts them). Kept
--- for stale clients; it never makes a note visible, and now also emails.
+-- for stale clients; it never makes a note visible, and now shares and emails.
 create or replace function public.refer_deal_to_partner(p_partner_id uuid, p_deal_id uuid, p_note text default '')
 returns uuid language plpgsql security definer set search_path = public as $$
 declare
   v_id uuid;
 begin
   v_id := public._link_deal_to_partner(p_partner_id, p_deal_id, 'outbound', p_note);
+  update referrals set shared_with_partner_at = now() where id = v_id;
   perform public._portal_enqueue_referral_sent(v_id);
   return v_id;
 end $$;
@@ -481,10 +516,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes (SQL): Task 1 (`partner_note_visible`, outbox kind `internal_partner_note`, audit action `note`); `_portal_assert_scope(uuid, uuid, uuid)` (raises `not_authorized`), `_portal_audit_referral(uuid, uuid, portal_audit_action, uuid, text)`, `_portal_referral_ref(uuid)`, `_portal_review_recipients(uuid, uuid)`.
 - Produces (SQL, service role only unless noted):
   - Table `referral_partner_notes (id uuid, org_id uuid, referral_id uuid, portal_user_id uuid null, body text 1..1000 trimmed, created_at timestamptz)`; `authenticated` may SELECT under RLS (visible when the referral is visible); nobody writes directly.
-  - `public.portal_list_sent_referrals(p_org uuid, p_partner uuid, p_since timestamptz) returns table (id uuid, ref text, company_name text, status referral_status, sent_at timestamptz, last_activity_at timestamptz)`: outbound referrals of that partner, newest activity first, at most 500, empty while the portal is off.
-  - `public.portal_get_sent_referral(p_org uuid, p_partner uuid, p_portal_user uuid, p_referral uuid, p_ip text) returns table (id uuid, ref text, company_name text, contact_name text, contact_email text, contact_phone text, rep_note text, status referral_status, sent_at timestamptz, rep_name text, rep_email text, details_removed boolean, can_post_note boolean)`: zero rows when not that partner's outbound referral; audits `view_referral` at most once per hour per referral.
-  - `public.portal_partner_notes(p_org uuid, p_partner uuid, p_referral uuid) returns table (id uuid, body text, created_at timestamptz)`: newest first, at most 100.
-  - `public.portal_post_partner_note(p_org uuid, p_partner uuid, p_portal_user uuid, p_referral uuid, p_body text, p_ip text) returns table (id uuid, body text, created_at timestamptz)`: raises `referral_not_found`, `invalid_input:body`, `rate_limited` (20 per portal user per hour), `not_authorized`. Audits `note`, queues `internal_partner_note`.
+  - `public.portal_list_sent_referrals(p_org uuid, p_partner uuid, p_since timestamptz) returns table (id uuid, ref text, company_name text, status referral_status, sent_at timestamptz, last_activity_at timestamptz)`: that partner's SHARED outbound referrals (`shared_with_partner_at is not null`) that are not removed (`status <> 'withdrawn'`, the mark `remove_referral_link` leaves), newest activity first, at most 500, empty while the portal is off.
+  - `public.portal_get_sent_referral(p_org uuid, p_partner uuid, p_portal_user uuid, p_referral uuid, p_ip text) returns table (id uuid, ref text, company_name text, contact_name text, contact_email text, contact_phone text, rep_note text, status referral_status, sent_at timestamptz, rep_name text, rep_email text, details_removed boolean, can_post_note boolean)`: zero rows unless it is that partner's shared, not removed, outbound referral; audits `view_referral` at most once per hour per referral.
+  - `public.portal_partner_notes(p_org uuid, p_partner uuid, p_referral uuid) returns table (id uuid, body text, created_at timestamptz)`: newest first, at most 100, empty for a removed or unshared referral (its notes stay internal).
+  - `public.portal_post_partner_note(p_org uuid, p_partner uuid, p_portal_user uuid, p_referral uuid, p_body text, p_ip text) returns table (id uuid, body text, created_at timestamptz)`: only on a shared, not removed, unpurged outbound referral of that partner; raises `referral_not_found`, `invalid_input:body`, `rate_limited` (20 per portal user per hour), `not_authorized`. Audits `note`, queues `internal_partner_note`.
   - `public._portal_enqueue_partner_note(p_referral referrals, p_note uuid) returns void` (private).
 
 - [ ] **Step 1: Write the failing DB test**
@@ -501,11 +536,13 @@ Create `supabase/tests/064_portal_sent_referrals.sql`:
 -- separate branches. P1 Jane CPA (owner rita, ACTIVE PU1), P2 Kim CPA (owner
 -- rita, ACTIVE PU2), P3 Lee CPA (owner rita, SUSPENDED PU3). Deals D1..D3 (rita).
 -- Referrals (inserted as postgres):
---   R1 outbound P1 D1, sent by boss, note for the partner, accepted
---   R2 outbound P1 D2, sent by rita, internal note (not visible), working
---   R3 outbound P1 D3, withdrawn and purged
+--   R1 outbound P1 D1, shared, sent by boss, note for the partner, accepted
+--   R2 outbound P1 D2, shared, sent by rita, internal note (not visible), working
+--   R3 outbound P1 D3, shared, then the link was removed (withdrawn), with a
+--      partner note written before the removal
 --   R4 inbound  P1, rep-entered
---   R5 outbound P2 D1 (another partner)
+--   R5 outbound P2 D1, shared (another partner)
+--   R6 outbound P1 D4, from before this release (shared_with_partner_at null)
 -- Org sent-read-b: bob administrator.
 
 begin;
@@ -539,25 +576,33 @@ insert into portal_users (id, org_id, partner_id, email, status) values
 insert into deals (id, org_id, owner_id, company_name, address, contact_name, contact_email, contact_phone, value_cents, stage, lead_source) values
   ('a064d000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000001064', 'a0640000-0000-0000-0000-000000000002', 'Fresh Bakery', '5 Oak St',  'Ann', 'ann@fresh.example', '5550640001', 500000, 'contacted', 'inbound'),
   ('a064d000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001064', 'a0640000-0000-0000-0000-000000000002', 'Gold Gym',     '7 Elm St',  'Gil', 'gil@gold.example',  '5550640002', 250000, 'contacted', 'inbound'),
-  ('a064d000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000001064', 'a0640000-0000-0000-0000-000000000002', 'Blue Cafe',    '9 Pine St', 'Bea', 'bea@blue.example',  '5550640003', 100000, 'contacted', 'inbound');
+  ('a064d000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000001064', 'a0640000-0000-0000-0000-000000000002', 'Blue Cafe',    '9 Pine St', 'Bea', 'bea@blue.example',  '5550640003', 100000, 'contacted', 'inbound'),
+  ('a064d000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000001064', 'a0640000-0000-0000-0000-000000000002', 'Red Shop',     '11 Ash St', 'Rod', 'rod@red.example',   '5550640004', 100000, 'contacted', 'inbound');
 
 insert into referrals (id, org_id, partner_id, direction, source, status, company_name, contact_name, contact_email, contact_phone,
-                       notes, partner_note_visible, deal_id, assigned_user_id, submitted_by_user_id, submitted_at, purged_at) values
+                       notes, partner_note_visible, deal_id, assigned_user_id, submitted_by_user_id, submitted_at, shared_with_partner_at) values
   ('a064e000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001', 'outbound', 'rep_entered', 'accepted',
    'Fresh Bakery', 'Ann', 'ann@fresh.example', '5550640001', 'Ask for Ann after 3pm.', true,
-   'a064d000-0000-0000-0000-000000000001', 'a0640000-0000-0000-0000-000000000002', 'a0640000-0000-0000-0000-000000000001', now() - interval '2 days', null),
+   'a064d000-0000-0000-0000-000000000001', 'a0640000-0000-0000-0000-000000000002', 'a0640000-0000-0000-0000-000000000001', now() - interval '2 days', now() - interval '2 days'),
   ('a064e000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001', 'outbound', 'rep_entered', 'working',
    'Gold Gym', 'Gil', 'gil@gold.example', '5550640002', 'INTERNAL: owner is difficult', false,
-   'a064d000-0000-0000-0000-000000000002', 'a0640000-0000-0000-0000-000000000002', 'a0640000-0000-0000-0000-000000000002', now() - interval '1 hour', null),
+   'a064d000-0000-0000-0000-000000000002', 'a0640000-0000-0000-0000-000000000002', 'a0640000-0000-0000-0000-000000000002', now() - interval '1 hour', now() - interval '1 hour'),
   ('a064e000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001', 'outbound', 'rep_entered', 'withdrawn',
-   'Blue Cafe', null, null, null, '', true,
-   'a064d000-0000-0000-0000-000000000003', 'a0640000-0000-0000-0000-000000000002', 'a0640000-0000-0000-0000-000000000002', now() - interval '3 hours', now()),
+   'Blue Cafe', 'Bea', 'bea@blue.example', '5550640003', 'For Jane', true,
+   'a064d000-0000-0000-0000-000000000003', 'a0640000-0000-0000-0000-000000000002', 'a0640000-0000-0000-0000-000000000002', now() - interval '3 hours', now() - interval '3 hours'),
   ('a064e000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001', 'inbound', 'rep_entered', 'submitted',
    'Inbound Co', null, null, null, 'rep wrote this', false,
    null, 'a0640000-0000-0000-0000-000000000002', 'a0640000-0000-0000-0000-000000000002', now() - interval '1 hour', null),
   ('a064e000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000002', 'outbound', 'rep_entered', 'accepted',
    'Fresh Bakery', 'Ann', 'ann@fresh.example', '5550640001', 'For Kim', true,
-   'a064d000-0000-0000-0000-000000000001', 'a0640000-0000-0000-0000-000000000002', 'a0640000-0000-0000-0000-000000000002', now() - interval '1 hour', null);
+   'a064d000-0000-0000-0000-000000000001', 'a0640000-0000-0000-0000-000000000002', 'a0640000-0000-0000-0000-000000000002', now() - interval '1 hour', now() - interval '1 hour'),
+  ('a064e000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001', 'outbound', 'rep_entered', 'accepted',
+   'Red Shop', 'Rod', 'rod@red.example', '5550640004', 'old partner_deals note', false,
+   'a064d000-0000-0000-0000-000000000004', 'a0640000-0000-0000-0000-000000000002', 'a0640000-0000-0000-0000-000000000002', now() - interval '30 days', null);
+
+-- A note Jane wrote on R3 before the rep removed the link: it stays, internal only.
+insert into referral_partner_notes (org_id, referral_id, portal_user_id, body) values
+  ('00000000-0000-0000-0000-000000001064', 'a064e000-0000-0000-0000-000000000003', 'a064b000-0000-0000-0000-000000000001', 'Bea was not interested.');
 
 create or replace function _t_act(p_user uuid) returns void language plpgsql as $$
 begin
@@ -615,16 +660,16 @@ do $$ declare f text; begin
   end if;
 end $$;
 
--- 2. List: this partner's outbound referrals only, purged ones included, window applied.
+-- 2. List: this partner's shared, not removed, outbound referrals only; window applied.
 do $$ declare ids uuid[]; begin
   select array_agg(id order by id) into ids
     from public.portal_list_sent_referrals('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001', null);
-  if ids is distinct from array['a064e000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000002', 'a064e000-0000-0000-0000-000000000003']::uuid[] then
-    raise exception 'sent list wrong: %', ids;
+  if ids is distinct from array['a064e000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000002']::uuid[] then
+    raise exception 'sent list wrong (a removed link and an unshared legacy row must not appear): %', ids;
   end if;
   select array_agg(id order by id) into ids
     from public.portal_list_sent_referrals('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001', now() - interval '1 day');
-  if ids is distinct from array['a064e000-0000-0000-0000-000000000002', 'a064e000-0000-0000-0000-000000000003']::uuid[] then
+  if ids is distinct from array['a064e000-0000-0000-0000-000000000002']::uuid[] then
     raise exception 'the window must apply to the sent date: %', ids;
   end if;
   if exists (select 1 from public.portal_list_sent_referrals('00000000-0000-0000-0000-000000001164', 'a064a000-0000-0000-0000-000000000001', null)) then
@@ -637,7 +682,9 @@ do $$ declare ids uuid[]; begin
   update organizations set portal_enabled = true where id = '00000000-0000-0000-0000-000000001064';
 end $$;
 
--- 3. Detail: allowlisted fields, the rep note only when visible, purged details removed.
+-- 3. Detail: allowlisted fields, the rep note only when visible; a removed link, a
+--    legacy row, an inbound row and another partner's row all look missing; a
+--    deal-stage status (lost) is never hidden.
 do $$ declare g record; n int; begin
   select * into g from public.portal_get_sent_referral('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
     'a064b000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000001', '203.0.113.5');
@@ -656,10 +703,15 @@ do $$ declare g record; n int; begin
     'a064b000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000002', null);
   if g.rep_note is not null then raise exception 'an internal note must never reach the partner: %', g.rep_note; end if;
 
-  select * into g from public.portal_get_sent_referral('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
-    'a064b000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000003', null);
-  if not g.details_removed or g.can_post_note or g.contact_name is not null or g.rep_note is not null or g.status <> 'withdrawn' then
-    raise exception 'purged detail wrong: %', row_to_json(g);
+  if exists (select 1 from public.portal_get_sent_referral('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
+               'a064b000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000003', null))
+     or exists (select 1 from public.portal_get_sent_referral('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
+               'a064b000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000006', null)) then
+    raise exception 'a removed link and an unshared legacy row must look missing';
+  end if;
+  if exists (select 1 from public.portal_partner_notes('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
+               'a064e000-0000-0000-0000-000000000003')) then
+    raise exception 'notes on a removed link must stay internal';
   end if;
 
   if exists (select 1 from public.portal_get_sent_referral('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
@@ -670,6 +722,16 @@ do $$ declare g record; n int; begin
   end if;
   perform _t_raises($q$select * from public.portal_get_sent_referral('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000003',
     'a064b000-0000-0000-0000-000000000003', 'a064e000-0000-0000-0000-000000000001', null)$q$, 'not_authorized');
+
+  -- The deal is lost: R1 follows the stage (not a removal) and stays visible.
+  update deals set stage = 'lost' where id = 'a064d000-0000-0000-0000-000000000001';
+  select * into g from public.portal_get_sent_referral('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
+    'a064b000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000001', null);
+  if g.status is distinct from 'lost' then raise exception 'a deal-stage status must not hide the referral: %', row_to_json(g); end if;
+  if not exists (select 1 from public.portal_list_sent_referrals('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001', null)
+                  where id = 'a064e000-0000-0000-0000-000000000001') then
+    raise exception 'a lost referral stays in the list';
+  end if;
 end $$;
 
 -- 4. Note-back: stored, audited, emailed to the sender (then the deal owner), scoped, limited.
@@ -719,6 +781,8 @@ do $$ declare p record; o portal_email_outbox; n int; begin
   perform _t_raises($q$select * from public.portal_post_partner_note('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
     'a064b000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000003', 'x', null)$q$, 'referral_not_found');
   perform _t_raises($q$select * from public.portal_post_partner_note('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
+    'a064b000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000006', 'x', null)$q$, 'referral_not_found');
+  perform _t_raises($q$select * from public.portal_post_partner_note('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
     'a064b000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000001', E' \n ', null)$q$, 'invalid_input:body');
   perform _t_raises($q$select * from public.portal_post_partner_note('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
     'a064b000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000001', repeat('y', 1001), null)$q$, 'invalid_input:body');
@@ -730,13 +794,14 @@ do $$ declare p record; o portal_email_outbox; n int; begin
   select '00000000-0000-0000-0000-000000001064', 'a064b000-0000-0000-0000-000000000001', 'note' from generate_series(1, 18);
   perform _t_raises($q$select * from public.portal_post_partner_note('00000000-0000-0000-0000-000000001064', 'a064a000-0000-0000-0000-000000000001',
     'a064b000-0000-0000-0000-000000000001', 'a064e000-0000-0000-0000-000000000001', 'one too many', null)$q$, 'rate_limited');
-  select count(*) into n from referral_partner_notes;
+  select count(*) into n from referral_partner_notes where referral_id <> 'a064e000-0000-0000-0000-000000000003';
   if n <> 2 then raise exception 'refused notes must not be stored, got %', n; end if;
 end $$;
 
--- 5. Internal reads under RLS: the deal owner sees the notes; another branch and another org do not.
+-- 5. Internal reads under RLS: the deal owner sees the notes (including the one on
+--    the removed link, which stays internal); another branch and another org do not.
 do $$ begin
-  if _t_visible_notes('a0640000-0000-0000-0000-000000000002') <> 2 then raise exception 'rita should see the notes on her deal'; end if;
+  if _t_visible_notes('a0640000-0000-0000-0000-000000000002') <> 3 then raise exception 'rita should see all three notes on her deals'; end if;
   if _t_visible_notes('a0640000-0000-0000-0000-000000000003') <> 0 then raise exception 'rob must not see them'; end if;
   if _t_visible_notes('a0640000-0000-0000-0000-000000000004') <> 0 then raise exception 'another org must not see them'; end if;
 end $$;
@@ -770,9 +835,15 @@ Create `supabase/migrations/20261022000003_portal_sent_referrals.sql`:
 --    label (portal_api maps status), the sent date, the sender's name and
 --    business email, the rep's note ONLY when partner_note_visible, and their
 --    own notes. Never the stage, a value, an internal note or another partner.
---    Purged rows stay listed with personal fields null (FR-PORT-92).
--- 3. portal_post_partner_note: only on that partner's unpurged outbound
---    referrals, 1..1000 characters, 20 per portal user per hour, audited, and
+--    Only rows shared from this release on (shared_with_partner_at, Ryan ruling
+--    Q1). A removed link disappears (Ryan ruling Q3): remove_referral_link (and
+--    withdraw_referral) set status 'withdrawn', a status the deal-stage trigger
+--    never produces (referral_status_for_stage only yields accepted, working,
+--    won, lost), so status <> 'withdrawn' hides removals and nothing else.
+--    Notes on a removed link stay, internal only. Only withdrawn outbound rows
+--    are ever purged, so a purged row is never shown either.
+-- 3. portal_post_partner_note: only on that partner's shared, not removed,
+--    unpurged outbound referrals, 1..1000 characters, 20 per portal user per hour, audited, and
 --    the sender (else the deal owner, else administrators) is emailed.
 
 -- 1. Notes -------------------------------------------------------------------------------
@@ -822,6 +893,7 @@ language sql stable security definer set search_path = public, extensions as $$
     ) n on true
    where r.org_id = p_org and r.partner_id = p_partner
      and r.direction = 'outbound'
+     and r.shared_with_partner_at is not null and r.status <> 'withdrawn'
      and o.portal_enabled and not o.is_disabled
      and (p_since is null or r.submitted_at >= p_since)
    order by last_activity_at desc, r.id
@@ -844,6 +916,7 @@ begin
     select 1 from referrals r
      where r.id = p_referral and r.org_id = p_org and r.partner_id = p_partner
        and r.direction = 'outbound'
+       and r.shared_with_partner_at is not null and r.status <> 'withdrawn'
   ) then
     return;
   end if;
@@ -884,6 +957,7 @@ language sql stable security definer set search_path = public, extensions as $$
    where n.referral_id = p_referral
      and r.org_id = p_org and r.partner_id = p_partner
      and r.direction = 'outbound'
+     and r.shared_with_partner_at is not null and r.status <> 'withdrawn'
    order by n.created_at desc, n.id
    limit 100
 $$;
@@ -940,6 +1014,7 @@ begin
     from referrals x
    where x.id = p_referral and x.org_id = p_org and x.partner_id = p_partner
      and x.direction = 'outbound' and x.purged_at is null
+     and x.shared_with_partner_at is not null and x.status <> 'withdrawn'
      for update;
   if r.id is null then
     raise exception 'referral_not_found' using errcode = 'P0002';
@@ -1005,7 +1080,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes (SQL): Task 1 (outbox kind `partner_digest`, audit actions `export` and `unsubscribe`); `_portal_local_tz(text)`, `_portal_status_label(referral_status)`, `_portal_assert_scope`, `_portal_audit(uuid, uuid, portal_audit_action, text, uuid)`, `_portal_audit_referral`.
 - Produces (SQL):
   - `portal_users.digest_unsubscribe_token text` (unique when set), `portal_users.digest_week text` (`IYYY-IW` of the last week evaluated). Neither is granted to `authenticated`.
-  - `public.enqueue_portal_digests(p_now timestamptz) returns integer` (service role): queues one `partner_digest` per active portal user whose digest preference is on, per ISO week, at or after Monday 08:00 in the partner owner's time zone, summarizing the previous Monday-to-Monday; skips quiet weeks. Payload keys exactly `slug, orgName, partnerName, weekLabel, counts, valueCents, items, unsubscribeToken`; `counts` keys exactly `submitted, accepted, inProgress, closedWon, notMovingForward, sentToYou`; `items` at most 10 of `{companyName, label}`; dedupe `digest:<portal user id>:<IYYY-IW>`.
+  - `public.enqueue_portal_digests(p_now timestamptz) returns integer` (service role): queues one `partner_digest` per active portal user whose digest preference is on, per ISO week, at or after Monday 08:00 in the partner owner's time zone, summarizing the previous Monday-to-Monday; skips quiet weeks. `sentToYou` counts only outbound referrals with `shared_with_partner_at` in the week and `status <> 'withdrawn'`. Payload keys exactly `slug, orgName, partnerName, weekLabel, counts, valueCents, items, unsubscribeToken`; `counts` keys exactly `submitted, accepted, inProgress, closedWon, notMovingForward, sentToYou`; `items` at most 10 of `{companyName, label}`; dedupe `digest:<portal user id>:<IYYY-IW>`.
   - `public.portal_unsubscribe_digest(p_slug text, p_token text, p_ip text) returns void` (service role): turns the digest off for the token's user in that org; silent on any mismatch; 30 per IP per hour.
   - `public.portal_record_export(p_org uuid, p_partner uuid, p_portal_user uuid, p_ip text) returns void` (service role): scope-checked `export` audit row.
   - `public.claim_portal_emails(integer)`: same signature and result; digest rows live only while the user is active, the portal on, and the preference on.
@@ -1069,6 +1144,14 @@ insert into referrals (id, org_id, partner_id, direction, source, status, compan
   ('a065e000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000001065', 'a065a000-0000-0000-0000-000000000001', 'inbound',  'rep_entered', 'submitted','Eps Co',   null, 'a0650000-0000-0000-0000-000000000002', 'a0650000-0000-0000-0000-000000000002', '2030-01-08 18:00Z'),
   ('a065e000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-000000001065', 'a065a000-0000-0000-0000-000000000001', 'inbound',  'rep_entered', 'won',      'Zeta Co',  'a065d000-0000-0000-0000-000000000002', 'a0650000-0000-0000-0000-000000000002', 'a0650000-0000-0000-0000-000000000002', '2029-11-02 18:00Z'),
   ('a065e000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000001065', 'a065a000-0000-0000-0000-000000000002', 'inbound',  'rep_entered', 'submitted','Kim Co',   null, 'a0650000-0000-0000-0000-000000000002', 'a0650000-0000-0000-0000-000000000002', '2030-01-02 18:00Z');
+
+-- R4 was shared from this release on; R8 is a legacy outbound row (never
+-- shared) and R9 a shared link the rep removed, both inside week 1: neither
+-- counts as "sent to you".
+update referrals set shared_with_partner_at = '2030-01-03 12:00Z' where id = 'a065e000-0000-0000-0000-000000000004';
+insert into referrals (id, org_id, partner_id, direction, source, status, company_name, assigned_user_id, submitted_by_user_id, submitted_at, shared_with_partner_at) values
+  ('a065e000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000001065', 'a065a000-0000-0000-0000-000000000001', 'outbound', 'rep_entered', 'accepted',  'Legacy Co',  'a0650000-0000-0000-0000-000000000002', 'a0650000-0000-0000-0000-000000000002', '2030-01-04 12:00Z', null),
+  ('a065e000-0000-0000-0000-000000000009', '00000000-0000-0000-0000-000000001065', 'a065a000-0000-0000-0000-000000000001', 'outbound', 'rep_entered', 'withdrawn', 'Removed Co', 'a0650000-0000-0000-0000-000000000002', 'a0650000-0000-0000-0000-000000000002', '2030-01-04 12:00Z', '2030-01-04 12:00Z');
 
 -- Twelve more for P1 in week 2 (2030-01-07 to 2030-01-14).
 insert into referrals (org_id, partner_id, direction, source, status, company_name, assigned_user_id, submitted_by_user_id, submitted_at)
@@ -1268,7 +1351,8 @@ Create `supabase/migrations/20261022000004_portal_digest.sql`:
 --    _portal_local_tz, default America/New_York): one email about the previous
 --    Monday to Monday. Inbound referrals by partner label (new, Accepted, In
 --    Progress, Closed Won, Not Moving Forward) and referrals sent to the
---    partner. Closed Won value only while the ISO shows values (FR-PORT-85).
+--    partner (only shared ones, Ryan ruling Q1, and not removed links, Q3).
+--    Closed Won value only while the ISO shows values (FR-PORT-85).
 --    Nothing for a quiet week. portal_users.digest_week remembers the week
 --    already evaluated, so a quiet partner is not re-scanned every 2 minutes.
 -- 2. Unsubscribe (FR-PORT-84): a per-user token, issued at the first digest,
@@ -1320,10 +1404,11 @@ language sql stable security definer set search_path = public, extensions as $$
      and h.to_status in ('accepted','working','won','lost','declined')
      and h.created_at >= p_from and h.created_at < p_to
   union all
-  select r.id, r.company_name, r.submitted_at, 'sent_to_you'::text, 0, 'Sent to you'::text
+  select r.id, r.company_name, r.shared_with_partner_at, 'sent_to_you'::text, 0, 'Sent to you'::text
     from referrals r
    where r.org_id = p_org and r.partner_id = p_partner and r.direction = 'outbound'
-     and r.submitted_at >= p_from and r.submitted_at < p_to
+     and r.shared_with_partner_at is not null and r.status <> 'withdrawn'
+     and r.shared_with_partner_at >= p_from and r.shared_with_partner_at < p_to
 $$;
 
 -- 3. The weekly summary ------------------------------------------------------------------------
@@ -3794,9 +3879,11 @@ describe("PortalSentReferralPage", () => {
     expect(screen.queryByLabelText("Add a note for Acme ISO")).toBeNull();
   });
 
+  // SQL never returns a purged sent referral (only removed links are purged, and
+  // removed links are hidden); the page still handles the flag defensively.
   it("says the contact details were removed", async () => {
     api.getSentReferral.mockResolvedValue({
-      ...DETAIL, contactName: null, contactEmail: null, contactPhone: null, repNote: null, detailsRemoved: true, canPostNote: false, label: "Withdrawn",
+      ...DETAIL, contactName: null, contactEmail: null, contactPhone: null, repNote: null, detailsRemoved: true, canPostNote: false,
     });
     renderAt();
     expect(await screen.findByText("Contact details for this referral were removed for privacy.")).toBeInTheDocument();
@@ -4380,6 +4467,8 @@ In `describe("portal_api responses", ...)`, inside the `rpc` switch of `deps(...
 Append inside `describe("portal_api responses", ...)`:
 
 ```ts
+  // Defense in depth: SQL never returns a withdrawn (removed) or unshared row,
+  // but the API layer must stay clean for any status a row could carry.
   it.each(INTERNAL_STATUSES)("sent-to-you detail leaks nothing internal for a referral that is %s", async (status) => {
     const body = await call("get_sent_referral", { referralId: "3f9a21c0-1111-4222-8333-444455556666" }, status);
     auditJson(body);
@@ -4409,14 +4498,16 @@ Append inside `describe("portal_api responses", ...)`:
 
 - [ ] **Step 3: Add the rendered-page audits**
 
-In `describe("rendered portal pages: UI copy audit", ...)`'s `beforeEach`, add `api.listSentReferrals.mockResolvedValue([]);`. Append inside that describe:
+In `describe("rendered portal pages: UI copy audit", ...)`'s `beforeEach`, add `api.listSentReferrals.mockResolvedValue([]);`. A sent referral can only carry the labels its deal stage produces (Accepted, In Progress, Closed Won, Not Moving Forward): unshared rows and removed links (Withdrawn) never reach the portal (Ryan rulings Q1 and Q3), and an outbound row is never Received. Add this constant at the top of the describe and append inside it:
 
 ```ts
-  it("dashboard with Sent to you in every label", async () => {
+  const SENT_LABELS = PORTAL_LABELS.filter((l) => l !== "Received" && l !== "Withdrawn");
+
+  it("dashboard with Sent to you in every label it can show", async () => {
     api.listReferrals.mockResolvedValue([]);
     api.dashboard.mockResolvedValue({ submitted: 0, active: 0, closedWon: 0, conversionRate: null, valueVisible: false });
     api.listSentReferrals.mockResolvedValue(
-      PORTAL_LABELS.map((label, i) => ({
+      SENT_LABELS.map((label, i) => ({
         id: `s-${i}`,
         ref: `REF-1000000${i}`,
         companyName: `Sent ${i}`,
@@ -4426,11 +4517,11 @@ In `describe("rendered portal pages: UI copy audit", ...)`'s `beforeEach`, add `
       })),
     );
     renderAt("/p/acme/home");
-    await screen.findByRole("link", { name: /Sent 5/ });
+    await screen.findByRole("link", { name: /Sent 3/ });
     expectCleanScreen();
   });
 
-  it.each(PORTAL_LABELS)("sent referral page labelled %s, with notes and the composer", async (label) => {
+  it.each(SENT_LABELS)("sent referral page labelled %s, with notes and the composer", async (label) => {
     api.getSentReferral.mockResolvedValue({
       id: "s-1",
       ref: "REF-BBBB0001",
@@ -4441,7 +4532,7 @@ In `describe("rendered portal pages: UI copy audit", ...)`'s `beforeEach`, add `
       repNote: "Ask for Gil after 3pm.",
       label,
       sentAt: "2026-10-01T12:00:00Z",
-      rep: label === "Withdrawn" ? null : { name: "Rita Rep", email: "rita@acme.example" },
+      rep: label === "Not Moving Forward" ? null : { name: "Rita Rep", email: "rita@acme.example" },
       detailsRemoved: false,
       canPostNote: true,
       notes: [{ id: "n-1", body: "Called Gil.", createdAt: "2026-10-02T12:00:00Z" }],
@@ -5241,7 +5332,7 @@ Push the current feature branch (`claude/partner-portal-2b3`) to origin with ups
 git push -u origin claude/partner-portal-2b3
 gh pr create --base main --title "Partner Portal 2B-3: referrals sent to you, partner note-back, weekly summary" --body "$(cat <<'EOF'
 ## Summary
-- Partners now see "Sent to you" in their portal: every deal a rep referred to them, with the business contact (name, email, phone), who sent it, the date, and its current label. The rep's note shows only when the rep wrote it for the partner; older referrals and internal notes never show.
+- Partners now see "Sent to you" in their portal: every deal a rep refers to them from this release on, with the business contact (name, email, phone), who sent it, the date, and its current label. Referrals linked before this release never show. The rep's note shows only when the rep wrote it for the partner; internal notes never show.
 - On Deal Detail, "Send as referral" now labels the note "Note for <partner> (they will see this)". "Refer a deal" on the partner page sends no note, as before.
 - When a rep sends a referral to a partner with portal access, the partner gets "<ISO> sent you a referral: <Company>", replying to the rep.
 - Partners can write a note back on a referral sent to them (up to 1,000 characters, 20 an hour). The rep who sent it (or the deal owner if they left) gets an email, sees "Notes from <partner>" on the deal, and the partner page shows a note count on that referral. The note is its own record, never an activity, so it does not touch the activity reports.
@@ -5255,7 +5346,8 @@ Plan: docs/superpowers/plans/2026-10-22-partner-portal-2b3-sent-notes-digest.md
 ## Deviations (details in the plan)
 - The partner-visible note uses a new save action; the old one stays for older app versions and never shows a note to a partner.
 - The "sent you a referral" email is sent by both save actions, including "Refer a deal" on the partner page (without a note).
-- A referral a rep removed stays in the partner's "Sent to you" list as Withdrawn.
+- Only referrals sent from this release on are shared (a new "shared with partner" time); older links stay internal.
+- A referral a rep removes disappears from the partner's list and can no longer take notes; notes the partner already wrote stay visible to the team only.
 - The weekly summary covers the previous Monday to Monday and is sent from Monday 8am in the partner owner's time zone.
 
 ## Not in this PR
@@ -5266,6 +5358,8 @@ Plan: docs/superpowers/plans/2026-10-22-partner-portal-2b3-sent-notes-digest.md
 - [ ] `pnpm --filter app test` and `pnpm --filter app build` pass
 - [ ] Staging: from a deal, Send as referral to a partner with portal access, with a note; the partner gets the email (reply goes to the rep) and sees the deal under Sent to you with the note
 - [ ] Staging: "Refer a deal" from the partner page; the partner sees it with no note
+- [ ] Staging: a deal linked to that partner before this release does not appear in their portal
+- [ ] Staging: remove a "Referred to them" link; it disappears from the partner's list and its page says it can't be found
 - [ ] Staging: as the partner, add a note; the rep gets "New partner note" and sees it on the deal; the partner page shows "1 note from partner"
 - [ ] Staging: the next Monday after 8am, the partner gets the weekly summary; the footer link opens the confirm page and Unsubscribe stops the next one; Gmail shows its own unsubscribe button
 - [ ] Staging: a CSV download from the portal writes an export row in the portal audit log
@@ -5307,8 +5401,10 @@ Use the ccd_pr `get_status` tool; if it does not report this PR, call `bind_pr` 
 - Firms, attachments, the 1-hour SLA, partner accept or decline, commission (agreed cuts).
 - Status-change emails for outbound referrals (their status follows the deal stage; avoided as noise).
 
-## Open questions for Ryan (product, not engineering)
+## Product decisions (answered by Ryan, folded in)
 
-1. **Old outbound referrals become visible to partners.** Every deal already linked as "Referred to them" (including ones moved over from the old partner links) will appear under the partner's "Sent to you" with the business contact name, email and phone captured when it was linked, but never the old notes. The plan shows them all, since those businesses were already sent to the partner. Say if only referrals sent from this release on should appear.
-2. **"Refer a deal" on the partner page also emails the partner** ("<ISO> sent you a referral"), the same as "Send as referral" from the deal. Say if only the deal-page path should email.
-3. **Removed links stay listed as Withdrawn.** When a rep removes a "Referred to them" link, the partner keeps seeing that referral labelled Withdrawn (their notes stay until the 90-day purge). Say if removed links should disappear from the partner's list instead.
+1. Only outbound referrals shared from this release on appear to partners (`shared_with_partner_at`).
+2. Both send paths ("Send as referral" and "Refer a deal") email the partner.
+3. A removed link disappears from the partner's list and detail and takes no notes; its existing notes stay internal.
+
+No open product questions remain.
