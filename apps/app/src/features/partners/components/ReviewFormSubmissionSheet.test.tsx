@@ -257,4 +257,49 @@ describe("ReviewFormSubmissionSheet", () => {
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(toastSuccess).toHaveBeenCalledWith("Reassigned to Rob Rep");
   });
+
+  it("keeps the business and the referral id when the parent drops the row mid-flow", async () => {
+    acceptReferral.mockResolvedValueOnce({ result: "duplicate", dealId: "d-1" });
+    mergeReferral.mockResolvedValueOnce(undefined);
+    const onOpenChange = vi.fn();
+    const { rerender } = render(<ReviewFormSubmissionSheet submission={submission} open onOpenChange={onOpenChange} />);
+    await pickExistingPartner();
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await screen.findByRole("button", { name: "Merge into deal" });
+    rerender(<ReviewFormSubmissionSheet submission={null} open onOpenChange={onOpenChange} />);
+    expect(screen.getByText("Fresh Bakery")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Merge into deal" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Merge into deal" }));
+    expect(mergeReferral).toHaveBeenCalledWith({ referralId: "r-new", dealId: "d-1" });
+    expect(attribute).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a completion that lands after the sheet moved to another submission", async () => {
+    let resolveAccept: (v: string) => void = () => {};
+    acceptSubmission.mockReturnValueOnce(new Promise<string>((r) => { resolveAccept = r; }));
+    const onOpenChange = vi.fn();
+    const { rerender } = render(<ReviewFormSubmissionSheet submission={submission} open onOpenChange={onOpenChange} />);
+    await userEvent.click(screen.getByRole("button", { name: "No partner" }));
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    rerender(<ReviewFormSubmissionSheet submission={{ ...submission, id: "s-2", companyName: "Other Co" }} open onOpenChange={onOpenChange} />);
+    resolveAccept("d-new");
+    await new Promise((r) => setTimeout(r, 10));
+    expect(toastSuccess).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByText("Other Co")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "No partner" }));
+    expect(screen.getByRole("button", { name: "Accept" })).toBeEnabled();
+  });
+
+  it("locks the who-toggle and new partner fields once the partner is created", async () => {
+    attribute.mockReset();
+    attribute.mockRejectedValueOnce(new Error("Couldn't save who sent it"));
+    renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "New partner" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Partner name" }), "Pat");
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(screen.getByRole("textbox", { name: "Partner name" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "No partner" })).toBeDisabled();
+  });
 });

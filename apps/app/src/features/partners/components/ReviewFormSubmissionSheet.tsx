@@ -61,7 +61,17 @@ export interface ReviewFormSubmissionSheetProps {
   onOpenChange: (open: boolean) => void;
 }
 
-export function ReviewFormSubmissionSheet({ submission, open, onOpenChange }: ReviewFormSubmissionSheetProps) {
+export function ReviewFormSubmissionSheet({ submission: submissionProp, open, onOpenChange }: ReviewFormSubmissionSheetProps) {
+  // Snapshot for the whole session. Attributing sets triaged_at, so the queue
+  // refetch drops the row and the parent may pass null mid-flow; the sheet keeps
+  // rendering the snapshot and only changes on close or a different submission.
+  const [submission, setSnapshot] = React.useState<QueueSubmission | null>(submissionProp);
+  if (!open) {
+    if (submission !== submissionProp) setSnapshot(submissionProp);
+  } else if (submissionProp && submissionProp.id !== submission?.id) {
+    setSnapshot(submissionProp);
+  }
+  const sessionRef = React.useRef<string | null>(null);
   const viewerId = useAuth((s) => s.user?.id);
   const profile = useProfile();
   const canReassign = canReassignReferrals(profile.data);
@@ -105,6 +115,8 @@ export function ReviewFormSubmissionSheet({ submission, open, onOpenChange }: Re
     setNote("");
     setMergeDealId("");
     setAssigneeId("");
+    setBusy(false);
+    sessionRef.current = open ? submissionId ?? null : null;
     // Keyed on the submission id so a refetch with a new object does not reset the sheet.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, submissionId]);
@@ -136,6 +148,7 @@ export function ReviewFormSubmissionSheet({ submission, open, onOpenChange }: Re
   if (!submission) return null;
 
   const attributed = referralId !== null;
+  const locked = attributed || createdPartnerId !== null;
   const viaPartner = attributed || who === "existing" || who === "new";
   const whoReady =
     attributed ||
@@ -151,24 +164,29 @@ export function ReviewFormSubmissionSheet({ submission, open, onOpenChange }: Re
   const setField = (k: NewPartnerField) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setNewPartner((p) => ({ ...p, [k]: e.target.value }));
 
-  const run = async (fn: () => Promise<void>) => {
+  // A completion that lands after the sheet closed or moved to another
+  // submission is ignored: no toast, no close, no state writes.
+  const run = async (fn: (live: () => boolean) => Promise<void>) => {
+    const key = sessionRef.current;
+    const live = () => sessionRef.current === key;
     setBusy(true);
     try {
-      await fn();
+      await fn(live);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Something went wrong");
+      if (live()) toast.error(err instanceof Error ? err.message : "Something went wrong");
     } finally {
-      setBusy(false);
+      if (live()) setBusy(false);
     }
   };
 
-  const done = (message: string) => {
+  const done = (live: () => boolean, message: string) => {
+    if (!live()) return;
     toast.success(message);
     onOpenChange(false);
   };
 
   // The referral this submission becomes. Made once; every later step reuses it.
-  const ensureReferral = async (): Promise<string> => {
+  const ensureReferral = async (live: () => boolean): Promise<string> => {
     if (referralId) return referralId;
     let pid = who === "new" ? createdPartnerId : partnerId;
     if (who === "new" && !pid) {
@@ -180,63 +198,64 @@ export function ReviewFormSubmissionSheet({ submission, open, onOpenChange }: Re
         phone: phoneToE164(newPartner.phone) ?? undefined,
       });
       pid = created.id;
-      setCreatedPartnerId(created.id);
+      if (live()) setCreatedPartnerId(created.id);
     }
     const rid = await attribute.mutateAsync({ submissionId: submission.id, partnerId: pid as string });
-    setReferralId(rid);
+    if (live()) setReferralId(rid);
     return rid;
   };
 
-  const onAccept = () => run(async () => {
+  const onAccept = () => run(async (live) => {
     if (!viaPartner) {
       await acceptSubmission.mutateAsync(submission.id);
-      done("Accepted. Deal created.");
+      done(live, "Accepted. Deal created.");
       return;
     }
-    const rid = await ensureReferral();
+    const rid = await ensureReferral(live);
     const res = await acceptReferral.mutateAsync(rid);
     if (res.result === "accepted") {
-      done("Accepted. Deal created.");
+      done(live, "Accepted. Deal created.");
       return;
     }
+    if (!live()) return;
     toast.error("Already in your team's pipeline");
     setMergeDealId(res.dealId ?? "");
     setMode("merge");
   });
 
-  const onDecline = () => run(async () => {
+  const onDecline = () => run(async (live) => {
     if (!reason) return;
     if (viaPartner) {
-      const rid = await ensureReferral();
+      const rid = await ensureReferral(live);
       await declineReferral.mutateAsync({ referralId: rid, reason, note });
     } else {
       await declineSubmission.mutateAsync({ submissionId: submission.id, reason, note });
     }
-    done("Referral declined");
+    done(live, "Referral declined");
   });
 
-  const onMerge = () => run(async () => {
+  const onMerge = () => run(async (live) => {
     if (!mergeDealId) return;
     if (viaPartner) {
-      const rid = await ensureReferral();
+      const rid = await ensureReferral(live);
       await mergeReferral.mutateAsync({ referralId: rid, dealId: mergeDealId });
     } else {
       await mergeSubmission.mutateAsync({ submissionId: submission.id, dealId: mergeDealId });
     }
-    done("Merged into the existing deal");
+    done(live, "Merged into the existing deal");
   });
 
-  const onReassign = () => run(async () => {
+  const onReassign = () => run(async (live) => {
     if (!assigneeId) return;
     await reassign.mutateAsync({ submissionId: submission.id, userId: assigneeId });
-    done(`Reassigned to ${pickedName ?? "that teammate"}`);
+    done(live, `Reassigned to ${pickedName ?? "that teammate"}`);
   });
 
   const details: Array<[string, React.ReactNode]> = [
     ["Contact", submission.contactName],
     ["Phone", submission.contactPhone ? <PhoneWithClickToCall phoneNumber={submission.contactPhone} size="lg" /> : null],
     ["Email", submission.contactEmail ? (
-      <a href={`mailto:${submission.contactEmail}`} className="text-accent-blue hover:underline">
+      <a href={`mailto:${submission.contactEmail}`} className="inline-flex min-h-11 items-center text-accent-blue hover:underline">
         {submission.contactEmail}
       </a>
     ) : null],
@@ -256,7 +275,7 @@ export function ReviewFormSubmissionSheet({ submission, open, onOpenChange }: Re
           <div className="flex items-center justify-between">
             <Dialog.Title className="text-heading-sm text-text-default">Review referral</Dialog.Title>
             <Dialog.Close asChild>
-              <button aria-label="Close" className="rounded-radius-sm p-1 text-text-muted hover:text-text-default">
+              <button aria-label="Close" className="inline-flex h-11 w-11 items-center justify-center rounded-radius-sm text-text-muted hover:text-text-default">
                 <X className="h-5 w-5" aria-hidden />
               </button>
             </Dialog.Close>
@@ -308,7 +327,7 @@ export function ReviewFormSubmissionSheet({ submission, open, onOpenChange }: Re
                   size="lg"
                   variant={who === o.value ? "primary" : "secondary"}
                   aria-pressed={who === o.value}
-                  disabled={attributed || busy}
+                  disabled={locked || busy}
                   onClick={() => setWho(o.value)}
                 >
                   {o.label}
@@ -321,10 +340,11 @@ export function ReviewFormSubmissionSheet({ submission, open, onOpenChange }: Re
                   aria-label="Search partners"
                   placeholder="Search partners"
                   value={search}
-                  disabled={attributed || busy}
+                  disabled={locked || busy}
                   onChange={(e) => setSearch(e.target.value)}
                 />
                 <Select
+                  aria-label="Pick a partner…"
                   value={partnerId}
                   onValueChange={setPartnerId}
                   placeholder="Pick a partner…"
@@ -337,10 +357,10 @@ export function ReviewFormSubmissionSheet({ submission, open, onOpenChange }: Re
             )}
             {who === "new" && (
               <div className="flex flex-col gap-2">
-                <Input aria-label="Partner name" placeholder="Name (required)" value={newPartner.name} disabled={attributed || busy} onChange={setField("name")} />
-                <Input aria-label="Partner company" placeholder="Company" value={newPartner.company} disabled={attributed || busy} onChange={setField("company")} />
-                <Input aria-label="Partner email" type="email" placeholder="Email" value={newPartner.email} disabled={attributed || busy} onChange={setField("email")} />
-                <Input aria-label="Partner phone" type="tel" placeholder="Phone" value={newPartner.phone} disabled={attributed || busy} onChange={setField("phone")} />
+                <Input aria-label="Partner name" placeholder="Name (required)" value={newPartner.name} disabled={locked || busy} onChange={setField("name")} />
+                <Input aria-label="Partner company" placeholder="Company" value={newPartner.company} disabled={locked || busy} onChange={setField("company")} />
+                <Input aria-label="Partner email" type="email" placeholder="Email" value={newPartner.email} disabled={locked || busy} onChange={setField("email")} />
+                <Input aria-label="Partner phone" type="tel" placeholder="Phone" value={newPartner.phone} disabled={locked || busy} onChange={setField("phone")} />
               </div>
             )}
           </fieldset>
