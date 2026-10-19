@@ -1,3 +1,4 @@
+import * as React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
@@ -5,19 +6,27 @@ import { ReferralQueueCard } from "./ReferralQueueCard";
 import type { QueueReferral } from "../hooks/useReferralQueue";
 
 let queue: QueueReferral[] | undefined;
+const mounts = { referral: 0, submission: 0 };
+const queueOpts: Array<unknown> = [];
 vi.mock("../hooks/useReferralQueue", () => ({ useReferralQueue: () => ({ data: queue }) }));
 vi.mock("./ReviewReferralSheet", () => ({
-  ReviewReferralSheet: ({ referral, open }: { referral: QueueReferral | null; open: boolean }) =>
-    open ? <div data-testid="sheet">{referral?.companyName}</div> : null,
+  ReviewReferralSheet: ({ referral, open }: { referral: QueueReferral | null; open: boolean }) => {
+    React.useEffect(() => { mounts.referral += 1; }, []);
+    return open ? <div data-testid="sheet">{referral?.companyName}</div> : null;
+  },
 }));
 
 import type { QueueSubmission } from "../hooks/useFormSubmissionQueue";
 
 let submissions: QueueSubmission[] | undefined;
-vi.mock("../hooks/useFormSubmissionQueue", () => ({ useFormSubmissionQueue: () => ({ data: submissions }) }));
+vi.mock("../hooks/useFormSubmissionQueue", () => ({
+  useFormSubmissionQueue: (opts?: unknown) => { queueOpts.push(opts); return { data: submissions }; },
+}));
 vi.mock("./ReviewFormSubmissionSheet", () => ({
-  ReviewFormSubmissionSheet: ({ submission, open }: { submission: QueueSubmission | null; open: boolean }) =>
-    open ? <div data-testid="submission-sheet">{submission?.companyName}</div> : null,
+  ReviewFormSubmissionSheet: ({ submission, open }: { submission: QueueSubmission | null; open: boolean }) => {
+    React.useEffect(() => { mounts.submission += 1; }, []);
+    return open ? <div data-testid="submission-sheet">{submission?.companyName}</div> : null;
+  },
 }));
 vi.mock("@/stores/auth", () => ({
   useAuth: (selector: (s: { user: { id: string } | null }) => unknown) => selector({ user: { id: "user-1" } }),
@@ -38,7 +47,7 @@ function q(id: string, partnerId: string, companyName: string): QueueReferral {
   };
 }
 
-beforeEach(() => { queue = undefined; submissions = undefined; });
+beforeEach(() => { queue = undefined; submissions = undefined; mounts.referral = 0; mounts.submission = 0; queueOpts.length = 0; });
 
 describe("ReferralQueueCard", () => {
   it("renders nothing when the queue is empty or loading", () => {
@@ -113,5 +122,27 @@ describe("ReferralQueueCard", () => {
     rerender(<ReferralQueueCard />);
     expect(screen.getByTestId("submission-sheet")).toHaveTextContent("Corner Cafe");
     expect(screen.queryByText("Referrals to review")).toBeNull();
+    expect(mounts.submission).toBe(1);
+  });
+
+  it("keeps an open referral sheet mounted once when the queue empties under it", () => {
+    queue = [q("r-1", "p-1", "Fresh Bakery")];
+    const { rerender } = render(<ReferralQueueCard />);
+    fireEvent.click(screen.getByRole("button", { name: "Review Fresh Bakery" }));
+    queue = [];
+    rerender(<ReferralQueueCard />);
+    expect(screen.getByTestId("sheet")).toHaveTextContent("Fresh Bakery");
+    expect(screen.queryByText("Referrals to review")).toBeNull();
+    expect(mounts.referral).toBe(1);
+  });
+
+  it("does not fetch submissions on a partner's page", () => {
+    render(<ReferralQueueCard partnerId="p-1" />);
+    expect(queueOpts).toEqual([{ enabled: false }]);
+  });
+
+  it("fetches submissions on the main queue", () => {
+    render(<ReferralQueueCard />);
+    expect(queueOpts).toEqual([{ enabled: true }]);
   });
 });

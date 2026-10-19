@@ -44,11 +44,11 @@ const COLUMNS =
 export const FORM_SUBMISSION_QUEUE_QUERY_KEY = (userId: string | undefined) =>
   ["referrals", "form-submissions", userId ?? "anon"] as const;
 
-export function useFormSubmissionQueue() {
+export function useFormSubmissionQueue({ enabled = true }: { enabled?: boolean } = {}) {
   const userId = useAuth((s) => s.user?.id);
   return useQuery({
     queryKey: FORM_SUBMISSION_QUEUE_QUERY_KEY(userId),
-    enabled: Boolean(userId),
+    enabled: enabled && Boolean(userId),
     queryFn: async (): Promise<QueueSubmission[]> => {
       const { data, error } = await supabase
         .from("referral_form_submissions")

@@ -22,7 +22,7 @@ type QueueItem =
 
 export function ReferralQueueCard({ partnerId }: { partnerId?: string }) {
   const { data } = useReferralQueue();
-  const { data: submissions } = useFormSubmissionQueue();
+  const { data: submissions } = useFormSubmissionQueue({ enabled: !partnerId });
   const viewerId = useAuth((s) => s.user?.id);
   const [active, setActive] = React.useState<QueueReferral | null>(null);
   const [activeSubmission, setActiveSubmission] = React.useState<QueueSubmission | null>(null);
@@ -53,43 +53,47 @@ export function ReferralQueueCard({ partnerId }: { partnerId?: string }) {
     </>
   );
 
-  if (items.length === 0) return active || activeSubmission ? sheets : null;
-
+  // One stable tree: the sheets keep the same position whether or not the card
+  // is showing, so React never remounts an open sheet when the queue empties.
   return (
-    <Card padding="md">
-      <div className="mb-3 flex items-center gap-2">
-        <h3 className="text-body-strong text-text-default">Referrals to review</h3>
-        <span className="rounded-full bg-status-warning-bg px-2 text-caption font-medium tabular-nums text-status-warning">
-          {items.length}
-        </span>
-      </div>
-      <ul className="flex flex-col divide-y divide-border-subtle">
-        {items.map((q) => (
-          <li key={q.key} className="flex items-center justify-between gap-3 py-2">
-            <div className="flex min-w-0 flex-col">
-              <span className="truncate text-body-md text-text-default">{q.item.companyName}</span>
-              <span className="truncate text-caption text-text-muted">
-                {q.kind === "referral"
-                  ? `From ${q.item.partnerName}`
-                  : formSubmissionSourceLabel(q.item.linkType, q.item.assignedUserId === viewerId)}
-              </span>
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              aria-label={`Review ${q.item.companyName}`}
-              onClick={() => {
-                if (q.kind === "referral") setActive(q.item);
-                else setActiveSubmission(q.item);
-              }}
-            >
-              Review
-            </Button>
-          </li>
-        ))}
-      </ul>
+    <>
+      {items.length > 0 && (
+        <Card padding="md">
+          <div className="mb-3 flex items-center gap-2">
+            <h3 className="text-body-strong text-text-default">Referrals to review</h3>
+            <span className="rounded-full bg-status-warning-bg px-2 text-caption font-medium tabular-nums text-status-warning">
+              {items.length}
+            </span>
+          </div>
+          <ul className="flex flex-col divide-y divide-border-subtle">
+            {items.map((q) => (
+              <li key={q.key} className="flex items-center justify-between gap-3 py-2">
+                <div className="flex min-w-0 flex-col">
+                  <span className="truncate text-body-md text-text-default">{q.item.companyName}</span>
+                  <span className="truncate text-caption text-text-muted">
+                    {q.kind === "referral"
+                      ? `From ${q.item.partnerName}`
+                      : formSubmissionSourceLabel(q.item.linkType, q.item.assignedUserId === viewerId)}
+                  </span>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  aria-label={`Review ${q.item.companyName}`}
+                  onClick={() => {
+                    if (q.kind === "referral") setActive(q.item);
+                    else setActiveSubmission(q.item);
+                  }}
+                >
+                  Review
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
       {sheets}
-    </Card>
+    </>
   );
 }
 

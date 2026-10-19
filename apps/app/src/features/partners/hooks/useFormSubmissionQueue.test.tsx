@@ -64,6 +64,13 @@ describe("useFormSubmissionQueue", () => {
     }]);
   });
 
+  it("does not fetch when disabled", async () => {
+    const { result } = renderHook(() => useFormSubmissionQueue({ enabled: false }), { wrapper });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(orderMock).not.toHaveBeenCalled();
+  });
+
   it("surfaces a load error", async () => {
     orderMock.mockResolvedValueOnce({ data: null, error: { message: "boom" } });
     const { result } = renderHook(() => useFormSubmissionQueue(), { wrapper });
