@@ -26,6 +26,11 @@ insert into partners (id, org_id, created_by, owner_id, name, company, type, ema
 insert into portal_users (id, org_id, partner_id, email, status, digest_unsubscribe_token, digest_week) values
   ('a066b000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000001066', 'a066a000-0000-0000-0000-000000000001', 'jane@np.example', 'active', 'npTokennpTokennpToken1', '2030-02');
 
+insert into partners (id, org_id, created_by, owner_id, name, company, type, email, phone) values
+  ('a066a000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001066', 'a0660000-0000-0000-0000-000000000002', 'a0660000-0000-0000-0000-000000000002', 'Kim CPA', 'Kim & Co', 'cpa', 'kim@np.example', null);
+insert into portal_users (id, org_id, partner_id, email, status, digest_unsubscribe_token, digest_week) values
+  ('a066b000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001066', 'a066a000-0000-0000-0000-000000000002', 'kim@np.example', 'active', 'npTokennpTokennpToken2', '2030-03');
+
 insert into referrals (id, org_id, partner_id, direction, source, status, company_name, contact_name, notes, partner_note_visible,
                        assigned_user_id, submitted_by_user_id) values
   ('a066e000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000001066', 'a066a000-0000-0000-0000-000000000001', 'outbound', 'rep_entered', 'withdrawn',
@@ -33,12 +38,26 @@ insert into referrals (id, org_id, partner_id, direction, source, status, compan
   ('a066e000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001066', 'a066a000-0000-0000-0000-000000000001', 'outbound', 'rep_entered', 'accepted',
    'Live Co', 'Liv', '', false, 'a0660000-0000-0000-0000-000000000002', 'a0660000-0000-0000-0000-000000000002');
 
+insert into referrals (id, org_id, partner_id, direction, source, status, company_name, contact_name, notes, partner_note_visible,
+                       assigned_user_id, submitted_by_user_id) values
+  ('a066e000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000001066', 'a066a000-0000-0000-0000-000000000002', 'outbound', 'rep_entered', 'accepted',
+   'Kim Live Co', 'Kay', '', false, 'a0660000-0000-0000-0000-000000000002', 'a0660000-0000-0000-0000-000000000002');
+
 update referral_status_history set created_at = now() - interval '100 days'
  where referral_id = 'a066e000-0000-0000-0000-000000000001';
 
 insert into referral_partner_notes (org_id, referral_id, portal_user_id, body) values
   ('00000000-0000-0000-0000-000000001066', 'a066e000-0000-0000-0000-000000000001', 'a066b000-0000-0000-0000-000000000001', 'Olga says no'),
-  ('00000000-0000-0000-0000-000000001066', 'a066e000-0000-0000-0000-000000000002', 'a066b000-0000-0000-0000-000000000001', 'Liv is keen');
+  ('00000000-0000-0000-0000-000000001066', 'a066e000-0000-0000-0000-000000000002', 'a066b000-0000-0000-0000-000000000001', 'Liv is keen'),
+  ('00000000-0000-0000-0000-000000001066', 'a066e000-0000-0000-0000-000000000003', 'a066b000-0000-0000-0000-000000000002', 'Kay is keen');
+
+-- Negative controls: a queued sent-to-you email on a LIVE referral, and the other partner's digest.
+insert into portal_email_outbox (org_id, kind, referral_id, portal_user_id, payload, dedupe_key) values
+  ('00000000-0000-0000-0000-000000001066', 'partner_referral_sent', 'a066e000-0000-0000-0000-000000000002', 'a066b000-0000-0000-0000-000000000001',
+   '{"slug": "np-a", "companyName": "Live Co", "note": "Live note"}', 't066-sent-live');
+insert into portal_email_outbox (org_id, kind, portal_user_id, payload, dedupe_key) values
+  ('00000000-0000-0000-0000-000000001066', 'partner_digest', 'a066b000-0000-0000-0000-000000000002',
+   '{"partnerName": "Kim CPA", "unsubscribeToken": "npTokennpTokennpToken2"}', 't066-digest-kim');
 
 insert into portal_email_outbox (org_id, kind, referral_id, portal_user_id, payload, dedupe_key) values
   ('00000000-0000-0000-0000-000000001066', 'partner_referral_sent', 'a066e000-0000-0000-0000-000000000001', 'a066b000-0000-0000-0000-000000000001',
@@ -76,6 +95,13 @@ do $$ declare n int; begin
   end if;
 end $$;
 
+do $$ begin
+  if not exists (select 1 from portal_email_outbox where dedupe_key = 't066-sent-live'
+                  and payload->>'note' = 'Live note' and dropped_at is null) then
+    raise exception 'a queued email on a live referral keeps its note and stays queued';
+  end if;
+end $$;
+
 -- 2. Erasing the identity deletes their notes and the unsubscribe token everywhere.
 do $$ begin
   perform _t_act('a0660000-0000-0000-0000-000000000001');
@@ -91,6 +117,17 @@ do $$ begin
   if not exists (select 1 from portal_email_outbox where dedupe_key = 't066-digest'
                   and payload->'unsubscribeToken' = 'null'::jsonb and payload->'partnerName' = 'null'::jsonb) then
     raise exception 'queued payloads must lose the token and the name';
+  end if;
+  if not exists (select 1 from referral_partner_notes where portal_user_id = 'a066b000-0000-0000-0000-000000000002' and body = 'Kay is keen') then
+    raise exception 'another partner''s notes survive';
+  end if;
+  if not exists (select 1 from portal_users where id = 'a066b000-0000-0000-0000-000000000002' and status = 'active'
+                  and digest_unsubscribe_token = 'npTokennpTokennpToken2' and digest_week = '2030-03') then
+    raise exception 'another partner''s token, digest week and status survive';
+  end if;
+  if not exists (select 1 from portal_email_outbox where dedupe_key = 't066-digest-kim'
+                  and payload->>'unsubscribeToken' = 'npTokennpTokennpToken2' and payload->>'partnerName' = 'Kim CPA') then
+    raise exception 'another partner''s queued payload survives';
   end if;
   if not exists (select 1 from portal_users where id = 'a066b000-0000-0000-0000-000000000001' and status = 'revoked') then
     raise exception 'the 2A erase still revokes access';

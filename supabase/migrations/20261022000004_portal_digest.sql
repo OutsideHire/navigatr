@@ -283,6 +283,12 @@ begin
                                        else rf.id is not null and rf.org_id = o.org_id
                                             and rf.partner_id = pu.partner_id
                                             and rf.purged_at is null
+                                            -- 2B-3: a "sent to you" email goes out only while the
+                                            -- referral is still shared and not removed (Ryan Q1, Q3).
+                                            and (o.kind <> 'partner_referral_sent'
+                                                 or (rf.direction = 'outbound'
+                                                     and rf.shared_with_partner_at is not null
+                                                     and rf.status <> 'withdrawn'))
                                   end, false)
                 else coalesce(pr.deactivated_at is null and pr.org_id = o.org_id
                               and nullif(btrim(pr.email), '') is not null and not org.is_disabled, false)

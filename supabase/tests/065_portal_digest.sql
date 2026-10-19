@@ -237,4 +237,96 @@ do $$ declare n int; begin
     'a065b000-0000-0000-0000-000000000004', null)$q$, 'not_authorized');
 end $$;
 
+-- 9. The claim drops a "sent to you" email whose referral is no longer shareable:
+--    removed (withdrawn), never shared (legacy) or not outbound. Only R4 is live.
+do $$ declare n int; begin
+  insert into portal_email_outbox (org_id, kind, referral_id, portal_user_id, payload, dedupe_key) values
+    ('00000000-0000-0000-0000-000000001065', 'partner_referral_sent', 'a065e000-0000-0000-0000-000000000004', 'a065b000-0000-0000-0000-000000000001', '{}', 't065-sent-live'),
+    ('00000000-0000-0000-0000-000000001065', 'partner_referral_sent', 'a065e000-0000-0000-0000-000000000009', 'a065b000-0000-0000-0000-000000000001', '{}', 't065-sent-removed'),
+    ('00000000-0000-0000-0000-000000001065', 'partner_referral_sent', 'a065e000-0000-0000-0000-000000000008', 'a065b000-0000-0000-0000-000000000001', '{}', 't065-sent-legacy'),
+    ('00000000-0000-0000-0000-000000001065', 'partner_referral_sent', 'a065e000-0000-0000-0000-000000000001', 'a065b000-0000-0000-0000-000000000001', '{}', 't065-sent-inbound');
+  create temp table _claimed as select c.id, c.referral_id, c.kind from public.claim_portal_emails(50) c;
+  if not exists (select 1 from _claimed c join portal_email_outbox o on o.id = c.id
+                  where o.dedupe_key = 't065-sent-live' and c.kind = 'partner_referral_sent') then
+    raise exception 'the live sent-to-you email must be claimed';
+  end if;
+  select count(*) into n from portal_email_outbox o
+   where o.dedupe_key in ('t065-sent-removed', 't065-sent-legacy', 't065-sent-inbound')
+     and o.dropped_at is not null and o.last_error = 'recipient_inactive'
+     and not exists (select 1 from _claimed c where c.id = o.id);
+  if n <> 3 then raise exception 'removed, legacy and inbound sent rows must all be dropped, got %', n; end if;
+  drop table _claimed;
+end $$;
+
+-- 10. Daylight saving. Two New York partners (one with a path_preferences row, one
+--     without: the default is America/New_York). No role switching here.
+insert into auth.users (id, email, aud, role, created_at, updated_at, email_confirmed_at) values
+  ('a0650000-0000-0000-0000-0000000000a1', 'ny1@dg.example', 'authenticated', 'authenticated', now(), now(), now()),
+  ('a0650000-0000-0000-0000-0000000000a2', 'ny2@dg.example', 'authenticated', 'authenticated', now(), now(), now());
+insert into profiles (id, org_id, role, role_level, full_name, email, role_path, manager_id) values
+  ('a0650000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000001165', 'rep', 'sales_professional', 'NY One', 'ny1@dg.example', 'nyone'::ltree, null),
+  ('a0650000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-000000001165', 'rep', 'sales_professional', 'NY Two', 'ny2@dg.example', 'nytwo'::ltree, null);
+insert into path_preferences (user_id, timezone, end_of_day_minutes) values
+  ('a0650000-0000-0000-0000-0000000000a1', 'America/New_York', null);
+insert into partners (id, org_id, created_by, owner_id, name, company, type, email, phone) values
+  ('a065a000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000001165', 'a0650000-0000-0000-0000-0000000000a1', 'a0650000-0000-0000-0000-0000000000a1', 'NY CPA One', 'NY 1', 'cpa', 'nyp1@dg.example', null),
+  ('a065a000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-000000001165', 'a0650000-0000-0000-0000-0000000000a2', 'a0650000-0000-0000-0000-0000000000a2', 'NY CPA Two', 'NY 2', 'cpa', 'nyp2@dg.example', null);
+insert into portal_users (id, org_id, partner_id, email, status, notification_prefs) values
+  ('a065b000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000001165', 'a065a000-0000-0000-0000-0000000000a1', 'ny1p@dg.example', 'active', '{}'),
+  ('a065b000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-000000001165', 'a065a000-0000-0000-0000-0000000000a2', 'ny2p@dg.example', 'active', '{}');
+
+-- Spring forward (Sun 2030-03-10 02:00): the week is Mon 03-04 00:00 EST (05:00Z) to
+-- Mon 03-11 00:00 EDT (04:00Z). In scope: 03-04 05:00Z (exact start) and 03-11 03:30Z
+-- (23:30 local Sunday, already Monday in UTC). Out: 03-04 04:59Z, 03-11 04:00Z.
+insert into referrals (org_id, partner_id, direction, source, status, company_name, assigned_user_id, submitted_by_user_id, submitted_at)
+select '00000000-0000-0000-0000-000000001165', pid, 'inbound', 'rep_entered', 'submitted', 'Spring ' || t, uid, uid, t::timestamptz
+  from (values ('a065a000-0000-0000-0000-0000000000a1'::uuid, 'a0650000-0000-0000-0000-0000000000a1'::uuid),
+               ('a065a000-0000-0000-0000-0000000000a2'::uuid, 'a0650000-0000-0000-0000-0000000000a2'::uuid)) p(pid, uid),
+       (values ('2030-03-04 04:59Z'), ('2030-03-04 05:00Z'), ('2030-03-11 03:30Z'), ('2030-03-11 04:00Z')) e(t);
+
+do $$ declare k text; begin
+  -- 07:59 EDT: too early (an EST reading would say 06:59; a UTC default would say 11:59 and fire).
+  if public.enqueue_portal_digests('2030-03-11 11:59Z') is distinct from 0 then raise exception '07:59 EDT is too early'; end if;
+  if exists (select 1 from portal_users where id in ('a065b000-0000-0000-0000-0000000000a1', 'a065b000-0000-0000-0000-0000000000a2')
+                and digest_week is not null) then
+    raise exception 'no week evaluated before 08:00 local (including the owner with no preference row)';
+  end if;
+  -- 08:00 EDT = 12:00Z.
+  perform public.enqueue_portal_digests('2030-03-11 12:00Z');
+  foreach k in array array['a065b000-0000-0000-0000-0000000000a1', 'a065b000-0000-0000-0000-0000000000a2'] loop
+    if not exists (select 1 from portal_email_outbox o
+                    where o.dedupe_key = 'digest:' || k || ':2030-11'
+                      and o.payload->'counts'->>'submitted' = '2'
+                      and o.payload->>'weekLabel' = 'Mar 4') then
+      raise exception 'spring digest for % must count exactly the two in-window referrals', k;
+    end if;
+  end loop;
+end $$;
+
+-- Fall back (Sun 2030-11-03 02:00): Mon 10-28 00:00 EDT (04:00Z) to Mon 11-04 00:00 EST (05:00Z).
+-- In: 10-28 04:00Z and 11-04 04:30Z (23:30 local Sunday). Out: 10-28 03:59Z, 11-04 05:00Z.
+insert into referrals (org_id, partner_id, direction, source, status, company_name, assigned_user_id, submitted_by_user_id, submitted_at)
+select '00000000-0000-0000-0000-000000001165', pid, 'inbound', 'rep_entered', 'submitted', 'Fall ' || t, uid, uid, t::timestamptz
+  from (values ('a065a000-0000-0000-0000-0000000000a1'::uuid, 'a0650000-0000-0000-0000-0000000000a1'::uuid),
+               ('a065a000-0000-0000-0000-0000000000a2'::uuid, 'a0650000-0000-0000-0000-0000000000a2'::uuid)) p(pid, uid),
+       (values ('2030-10-28 03:59Z'), ('2030-10-28 04:00Z'), ('2030-11-04 04:30Z'), ('2030-11-04 05:00Z')) e(t);
+
+do $$ declare k text; begin
+  -- 12:59Z is 07:59 EST.
+  perform public.enqueue_portal_digests('2030-11-04 12:59Z');
+  if exists (select 1 from portal_email_outbox o where o.dedupe_key like 'digest:%:2030-45') then
+    raise exception '07:59 EST is too early';
+  end if;
+  perform public.enqueue_portal_digests('2030-11-04 13:00Z');
+  foreach k in array array['a065b000-0000-0000-0000-0000000000a1', 'a065b000-0000-0000-0000-0000000000a2'] loop
+    if not exists (select 1 from portal_email_outbox o
+                    where o.dedupe_key = 'digest:' || k || ':2030-45'
+                      and o.payload->'counts'->>'submitted' = '2'
+                      and o.payload->>'weekLabel' = 'Oct 28') then
+      raise exception 'fall digest for % must count exactly the two in-window referrals', k;
+    end if;
+  end loop;
+end $$;
+
+
 rollback;
