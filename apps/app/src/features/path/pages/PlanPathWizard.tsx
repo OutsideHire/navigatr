@@ -518,6 +518,7 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
             pathName={effectiveName || originLabel || "Your path"}
             stopCount={orderedStops.length}
             reminderLabel={formatReminder(reminderAt)}
+            isToday={scheduleDate === todayISO()}
             onViewUpcoming={finishSaved}
             onBuildAnother={resetWizard}
             onDone={finishSaved}

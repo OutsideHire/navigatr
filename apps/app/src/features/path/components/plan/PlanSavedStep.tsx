@@ -2,10 +2,12 @@
  * PlanSavedStep — final step of the Plan-a-Path wizard.
  *
  * Confirmation summary after the path is saved (createPath + addStops ran in the
- * parent's review Continue). Shows a checklist and the exit actions:
- *   - "View upcoming" → /path
- *   - "Build another" → reset the wizard to `mode`
- *   - "Done"          → /path
+ * parent's schedule Continue). Copy depends on the saved day: a today save is
+ * ready to run (primary action "View route"), a later day waits in Upcoming
+ * (primary action "View upcoming"). Exit actions:
+ *   - "View route" / "View upcoming": finish (the parent routes by the date)
+ *   - "Build another": reset the wizard
+ *   - "Done": finish
  */
 import { CheckCircle2, Route as RouteIcon } from "lucide-react";
 import { Button, Card } from "@/components/navigatr";
@@ -16,6 +18,8 @@ export interface PlanSavedStepProps {
   stopCount: number;
   /** Formatted "{date · time}" reminder line, or null when no reminder is set. */
   reminderLabel?: string | null;
+  /** The path was saved for today: it is ready to run now, not waiting in Upcoming. */
+  isToday?: boolean;
   onViewUpcoming: () => void;
   onBuildAnother: () => void;
   onDone: () => void;
@@ -25,6 +29,7 @@ export function PlanSavedStep({
   pathName,
   stopCount,
   reminderLabel,
+  isToday = false,
   onViewUpcoming,
   onBuildAnother,
   onDone,
@@ -33,7 +38,7 @@ export function PlanSavedStep({
     `${stopCount} ${stopCount === 1 ? "stop" : "stops"} added`,
     "Route optimized for the shortest drive",
     ...(reminderLabel ? [`Reminder set for ${reminderLabel}`] : []),
-    "Launch it from Upcoming anytime",
+    isToday ? "On your Path for today" : "Open it from Upcoming anytime",
   ];
 
   return (
@@ -45,7 +50,7 @@ export function PlanSavedStep({
         <div className="flex flex-col gap-1">
           <h2 className="text-heading-md text-text-default">{pathName} is ready</h2>
           <p className="text-body-md text-text-muted">
-            Saved to Upcoming — launch it from there anytime.
+            {isToday ? "Ready to run today." : "Saved to Upcoming. Open it there anytime."}
           </p>
         </div>
         <ul className="flex w-full max-w-sm flex-col gap-2 text-left">
@@ -60,7 +65,7 @@ export function PlanSavedStep({
 
       <div className="flex flex-col gap-2 sm:flex-row">
         <Button variant="primary" leadingIcon={RouteIcon} className="flex-1" onClick={onViewUpcoming}>
-          View upcoming
+          {isToday ? "View route" : "View upcoming"}
         </Button>
         <Button variant="secondary" className="flex-1" onClick={onBuildAnother}>
           Build another

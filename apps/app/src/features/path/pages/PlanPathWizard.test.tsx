@@ -251,6 +251,26 @@ describe("PlanPathWizard", () => {
     expect(onOpenChangeMock).toHaveBeenCalledWith(false);
   });
 
+  it("a plan saved for today says it is ready to run and offers View route", async () => {
+    originState.current = WITH_ORIGIN;
+    merchantsState.current = {
+      merchants: [m("a", "Alpha Cafe")],
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    };
+    renderWizard();
+    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add to today's path/i }));
+    fireEvent.click(screen.getByRole("button", { name: /review path/i }));
+    fireEvent.click(screen.getByRole("button", { name: /schedule path/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^today/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save path/i }));
+    await waitFor(() => expect(screen.getByText(/ready to run today/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /view route/i }));
+    expect(onSavedMock).toHaveBeenCalledWith(todayISO());
+  });
+
   it("save uses the scheduled date + name + reminder_at, and runs exactly once", async () => {
     originState.current = WITH_ORIGIN;
     merchantsState.current = {
