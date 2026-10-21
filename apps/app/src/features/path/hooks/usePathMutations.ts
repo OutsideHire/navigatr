@@ -183,20 +183,42 @@ export function usePathMutations() {
 
   // Delete a planned path the rep no longer wants. A planned path may carry an
   // all-day calendar block, and sync_path can only find (and remove) that block
-  // while the row exists. So when there is a block: mark the path completed,
-  // await the reconcile (which deletes the block), THEN delete the row. Without
-  // a block it is a plain delete. syncPath never throws (best-effort).
+  // while the row exists. Whether there is a block is read FRESH from the row:
+  // the caller's cached sync status can still be null for a just-planned path
+  // (the plan-save sync is fire-and-forget and the list is not refetched after
+  // it). With a block: mark the path completed, await the reconcile (which
+  // deletes the block), THEN delete the row. If that delete fails, put the path
+  // back to planned and re-sync (restoring the block) before rethrowing, so a
+  // hidden completed row never blocks the day. syncPath never throws.
   const deletePlannedPath = useMutation({
-    mutationFn: async (input: { pathId: string; hasCalendarBlock: boolean }): Promise<void> => {
-      if (input.hasCalendarBlock) {
-        const { error: e1 } = await supabase.from("paths").update({ status: "completed" }).eq("id", input.pathId);
+    mutationFn: async (pathId: string): Promise<void> => {
+      const { data: row, error: e0 } = await supabase
+        .from("paths")
+        .select("path_calendar_event_id")
+        .eq("id", pathId)
+        .maybeSingle();
+      if (e0) throw e0;
+      const hasBlock = Boolean((row as { path_calendar_event_id?: string | null } | null)?.path_calendar_event_id);
+      if (hasBlock) {
+        const { error: e1 } = await supabase.from("paths").update({ status: "completed" }).eq("id", pathId);
         if (e1) throw e1;
-        await syncPath(input.pathId);
+        await syncPath(pathId);
       }
-      const { error } = await supabase.from("paths").delete().eq("id", input.pathId);
-      if (error) throw error;
+      const { error } = await supabase.from("paths").delete().eq("id", pathId);
+      if (error) {
+        if (hasBlock) {
+          // Best-effort revert; the original error is what the caller sees.
+          try {
+            await supabase.from("paths").update({ status: "planned" }).eq("id", pathId);
+            await syncPath(pathId);
+          } catch {
+            // Swallow: surfacing the delete failure matters more.
+          }
+        }
+        throw error;
+      }
     },
-    onSuccess: invalidate,
+    onSettled: invalidate,
   });
 
   // Mark every still-unfinished path older than `beforeDate` completed and skip

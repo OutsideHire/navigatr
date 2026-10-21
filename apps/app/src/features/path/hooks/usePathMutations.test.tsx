@@ -11,6 +11,8 @@ let nextSingle: { data: unknown; error: unknown } = { data: { id: "today-1" }, e
 let pendingStops: { id: string }[] = []; // returned by the prev-path pending fetch
 let olderPaths: { id: string }[] = []; // returned by the finalizeOlderThan paths fetch
 let upsertResult: { data: unknown; error: unknown } = { data: null, error: null };
+let maybeSingleData: unknown = null; // returned by .maybeSingle() reads
+let deleteError: unknown = null; // makes a .delete() resolve with this error
 
 // A chain recorder. Terminal points (.single(), .order(), thenable) resolve data.
 function builder(table: string) {
@@ -27,6 +29,7 @@ function builder(table: string) {
     in: (c: string, v: unknown) => typeof api;
     order: (c: string, o?: unknown) => Promise<{ data: unknown; error: unknown }>;
     single: () => Promise<{ data: unknown; error: unknown }>;
+    maybeSingle: () => Promise<{ data: unknown; error: unknown }>;
     then: (res: (r: { data: unknown; error: unknown }) => void) => void;
   } = {
     select(_c?: string) {
@@ -76,8 +79,16 @@ function builder(table: string) {
       calls.push(rec);
       return Promise.resolve(upsertResult.data !== null || upsertResult.error !== null ? upsertResult : nextSingle);
     },
+    maybeSingle() {
+      calls.push(rec);
+      return Promise.resolve({ data: maybeSingleData, error: null });
+    },
     then(res: (r: { data: unknown; error: unknown }) => void) {
       calls.push(rec);
+      if (rec.op === "delete" && deleteError) {
+        res({ data: null, error: deleteError });
+        return;
+      }
       // Reads (select-only) resolve table-specific rows; writes resolve the upsert/error result.
       if (rec.op === "read") {
         res({ data: table === "path_stops" ? pendingStops : olderPaths, error: null });
@@ -112,6 +123,8 @@ beforeEach(() => {
   olderPaths = [];
   nextSingle = { data: { id: "today-1" }, error: null };
   upsertResult = { data: null, error: null };
+  maybeSingleData = null;
+  deleteError = null;
   syncPathMock.mockClear();
 });
 
@@ -439,10 +452,14 @@ describe("usePathMutations.updatePath", () => {
 });
 
 describe("usePathMutations.deletePlannedPath", () => {
-  it("clears the calendar block first (complete + sync) and then deletes the path", async () => {
-    // Record how many DB calls had run when the sync fired, to prove the block is
-    // cleared AFTER the path is marked completed and BEFORE the row is deleted
-    // (sync_path needs the row to find and remove the block).
+  const isComplete = (c: Call) =>
+    c.table === "paths" && c.op === "update" && (c.payload as { status?: string }).status === "completed";
+
+  it("reads the calendar block fresh and, when the row has one, completes + syncs before deleting", async () => {
+    // The caller's cached sync status can be null for a just-planned path (the
+    // sync is fire-and-forget and the list is not refetched after it), so the
+    // mutation must not trust it: the ROW has an event id here.
+    maybeSingleData = { path_calendar_event_id: "evt-1" };
     let syncedAfterCalls = -1;
     syncPathMock.mockImplementationOnce(async (_id: string) => {
       syncedAfterCalls = calls.length;
@@ -450,11 +467,11 @@ describe("usePathMutations.deletePlannedPath", () => {
     });
     const { result } = renderHook(() => usePathMutations(), { wrapper });
     await act(async () => {
-      await result.current.deletePlannedPath.mutateAsync({ pathId: "p1", hasCalendarBlock: true });
+      await result.current.deletePlannedPath.mutateAsync("p1");
     });
-    const completeIdx = calls.findIndex(
-      (c) => c.table === "paths" && c.op === "update" && (c.payload as { status?: string }).status === "completed",
-    );
+    const read = calls.find((c) => c.table === "paths" && c.op === "read");
+    expect(read?.filters).toContainEqual(["id", "p1"]);
+    const completeIdx = calls.findIndex(isComplete);
     const deleteIdx = calls.findIndex((c) => c.table === "paths" && c.op === "delete");
     expect(completeIdx).toBeGreaterThanOrEqual(0);
     expect(deleteIdx).toBeGreaterThan(completeIdx);
@@ -464,13 +481,34 @@ describe("usePathMutations.deletePlannedPath", () => {
     expect(syncedAfterCalls).toBeLessThanOrEqual(deleteIdx);
   });
 
-  it("skips the calendar step when the path has no block", async () => {
+  it("skips the calendar step when the row has no block", async () => {
+    maybeSingleData = { path_calendar_event_id: null };
     const { result } = renderHook(() => usePathMutations(), { wrapper });
     await act(async () => {
-      await result.current.deletePlannedPath.mutateAsync({ pathId: "p2", hasCalendarBlock: false });
+      await result.current.deletePlannedPath.mutateAsync("p2");
     });
     expect(syncPathMock).not.toHaveBeenCalled();
     expect(calls.some((c) => c.table === "paths" && c.op === "update")).toBe(false);
     expect(calls.find((c) => c.table === "paths" && c.op === "delete")?.filters).toContainEqual(["id", "p2"]);
+  });
+
+  it("if the delete fails after completing, reverts to planned, re-syncs the block and rethrows", async () => {
+    maybeSingleData = { path_calendar_event_id: "evt-1" };
+    deleteError = { code: "500", message: "boom" };
+    const { result } = renderHook(() => usePathMutations(), { wrapper });
+    await expect(
+      act(async () => {
+        await result.current.deletePlannedPath.mutateAsync("p1");
+      }),
+    ).rejects.toMatchObject({ message: "boom" });
+    const deleteIdx = calls.findIndex((c) => c.table === "paths" && c.op === "delete");
+    const revert = calls.findIndex(
+      (c, i) =>
+        i > deleteIdx && c.table === "paths" && c.op === "update" && (c.payload as { status?: string }).status === "planned",
+    );
+    expect(revert).toBeGreaterThan(deleteIdx);
+    expect(calls[revert]!.filters).toContainEqual(["id", "p1"]);
+    // Once to remove the block, once to put it back.
+    expect(syncPathMock).toHaveBeenCalledTimes(2);
   });
 });
