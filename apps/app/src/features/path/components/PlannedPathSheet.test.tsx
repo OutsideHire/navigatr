@@ -15,17 +15,30 @@ vi.mock("sonner", () => ({ toast: toastMock }));
 
 // MerchantMap is MapLibre; expose what it was handed.
 vi.mock("./MerchantMap", () => ({
-  MerchantMap: (props: { merchants: unknown[]; routePath?: unknown[] }) => (
-    <div data-testid="map" data-pins={props.merchants.length} data-route={props.routePath?.length ?? 0} />
+  MerchantMap: (props: {
+    merchants: Array<{ status?: string }>;
+    routePath?: unknown[];
+    showPosition?: boolean;
+    fitToMerchants?: boolean;
+  }) => (
+    <div
+      data-testid="map"
+      data-pins={props.merchants.length}
+      data-route={props.routePath?.length ?? 0}
+      data-statuses={props.merchants.map((m) => m.status ?? "").join(",")}
+      data-show-position={String(props.showPosition ?? true)}
+      data-fit={String(props.fitToMerchants ?? false)}
+    />
   ),
 }));
 
 let stopsData: PathStop[] = [];
+let stopsFetching = false;
 const activePathSpy = vi.fn();
 vi.mock("../hooks/useActivePath", () => ({
   useActivePath: (date: string) => {
     activePathSpy(date);
-    return { data: { path: null, stops: stopsData }, isLoading: false };
+    return { data: { path: null, stops: stopsData }, isLoading: false, isFetching: stopsFetching };
   },
 }));
 
@@ -96,6 +109,7 @@ function renderSheet(path: Path = makePath()) {
 beforeEach(() => {
   stopsData = [stop("s1", "Alpha Cafe", 0), stop("s2", "Bravo Tire", 1), stop("s3", "Charlie Dental", 2)];
   pathsData = [];
+  stopsFetching = false;
   for (const f of [updatePath, removeStop, reorderStops, deletePlannedPath, syncPath, onOpenChange, onMovedToToday, activePathSpy]) {
     f.mockReset();
   }
@@ -125,6 +139,18 @@ describe("PlannedPathSheet: view", () => {
     const map = screen.getByTestId("map");
     expect(map).toHaveAttribute("data-pins", "3");
     expect(map).toHaveAttribute("data-route", "3");
+    // Pins need a real status (MerchantMap colors by it), no "you are here"
+    // marker for another day's plan, and the view fits the stops.
+    expect(map).toHaveAttribute("data-statuses", "prospect,prospect,prospect");
+    expect(map).toHaveAttribute("data-show-position", "false");
+    expect(map).toHaveAttribute("data-fit", "true");
+  });
+
+  it("titles the details section for editing", () => {
+    renderSheet();
+    expect(screen.getByRole("heading", { level: 3, name: "When" })).toBeInTheDocument();
+    expect(screen.getByText("Move it to another day or change the reminder.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /schedule your path/i })).not.toBeInTheDocument();
   });
 });
 
@@ -159,9 +185,7 @@ describe("PlannedPathSheet: edit stops", () => {
     expect(removeStop).not.toHaveBeenCalled();
     expect(screen.getByText(/last stop/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
-    await waitFor(() =>
-      expect(deletePlannedPath).toHaveBeenCalledWith({ pathId: "p1", hasCalendarBlock: true }),
-    );
+    await waitFor(() => expect(deletePlannedPath).toHaveBeenCalledWith("p1"));
   });
 });
 
@@ -266,9 +290,96 @@ describe("PlannedPathSheet: delete", () => {
     renderSheet(makePath({ pathCalendarSyncStatus: null }));
     fireEvent.click(screen.getByRole("button", { name: /^delete path$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
-    await waitFor(() =>
-      expect(deletePlannedPath).toHaveBeenCalledWith({ pathId: "p1", hasCalendarBlock: false }),
-    );
+    await waitFor(() => expect(deletePlannedPath).toHaveBeenCalledWith("p1"));
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+});
+
+describe("PlannedPathSheet: busy and race guards", () => {
+  it("disables Move while the stops are refetching (reorder race)", () => {
+    stopsFetching = true;
+    renderSheet();
+    expect(screen.getByRole("button", { name: "Move Alpha Cafe down" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Move Charlie Dental up" })).toBeDisabled();
+  });
+
+  it("disables Save changes and the stop buttons while a stop edit is saving", async () => {
+    let finish: () => void = () => {};
+    removeStop.mockImplementationOnce(() => new Promise<void>((r) => (finish = r)));
+    renderSheet();
+    fireEvent.change(screen.getByLabelText(/name this path/i), { target: { value: "Edmond north" } });
+    fireEvent.click(screen.getByRole("button", { name: "Remove Bravo Tire" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /save changes/i })).toBeDisabled());
+    expect(screen.getByRole("button", { name: "Remove Alpha Cafe" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Move Alpha Cafe down" })).toBeDisabled();
+    finish();
+    await waitFor(() => expect(screen.getByRole("button", { name: /save changes/i })).toBeEnabled());
+  });
+
+  it("disables the stop buttons while the details are saving", async () => {
+    let finish: () => void = () => {};
+    updatePath.mockImplementationOnce(() => new Promise<void>((r) => (finish = r)));
+    renderSheet();
+    fireEvent.change(screen.getByLabelText(/name this path/i), { target: { value: "Edmond north" } });
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Remove Alpha Cafe" })).toBeDisabled());
+    expect(screen.getByRole("button", { name: "Move Alpha Cafe down" })).toBeDisabled();
+    finish();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Remove Alpha Cafe" })).toBeEnabled());
+  });
+});
+
+describe("PlannedPathSheet: moving to a today that already has a route", () => {
+  it("points the rep to Path when today's row has no stops", () => {
+    pathsData = [makePath(), makePath({ id: "today-row", date: todayISO(), name: null, stopCount: 0 })];
+    renderSheet();
+    fireEvent.click(screen.getByRole("button", { name: /^today/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    expect(screen.getByText("Today already has a route. Add stops from Path.")).toBeInTheDocument();
+    expect(updatePath).not.toHaveBeenCalled();
+  });
+
+  it("uses the plain message when today's path already has stops", () => {
+    pathsData = [makePath(), makePath({ id: "today-row", date: todayISO(), stopCount: 4 })];
+    renderSheet();
+    fireEvent.click(screen.getByRole("button", { name: /^today/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    expect(screen.getByText("You already have a path on that day.")).toBeInTheDocument();
+  });
+});
+
+describe("PlannedPathSheet: error paths", () => {
+  it("a failed save shows a retry message and does not re-sync", async () => {
+    updatePath.mockRejectedValueOnce(new Error("network"));
+    renderSheet();
+    fireEvent.change(screen.getByLabelText(/name this path/i), { target: { value: "Edmond north" } });
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+    expect(await screen.findByText("Couldn't save. Try again.")).toBeInTheDocument();
+    expect(syncPath).not.toHaveBeenCalled();
+    expect(onMovedToToday).not.toHaveBeenCalled();
+  });
+
+  it("a failed remove shows an error toast", async () => {
+    removeStop.mockRejectedValueOnce(new Error("x"));
+    renderSheet();
+    fireEvent.click(screen.getByRole("button", { name: "Remove Bravo Tire" }));
+    await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith("Couldn't remove the stop. Try again."));
+  });
+
+  it("a failed reorder shows an error toast", async () => {
+    reorderStops.mockRejectedValueOnce(new Error("x"));
+    renderSheet();
+    fireEvent.click(screen.getByRole("button", { name: "Move Alpha Cafe down" }));
+    await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith("Couldn't reorder. Try again."));
+  });
+
+  it("a failed delete shows an error toast and keeps the sheet open", async () => {
+    deletePlannedPath.mockRejectedValueOnce(new Error("x"));
+    renderSheet();
+    fireEvent.click(screen.getByRole("button", { name: /^delete path$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
+    await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith("Couldn't delete the path. Try again."));
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(screen.getByRole("button", { name: /^delete$/i })).toBeEnabled();
   });
 });

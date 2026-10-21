@@ -102,4 +102,10 @@ describe("UpcomingPaths", () => {
     expect(screen.queryByText("Not synced")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
   });
+
+  it("gives Open a 44px touch target", () => {
+    pathsData = [makePath({ id: "a", date: "2026-07-05" })];
+    render(<UpcomingPaths onLaunch={vi.fn()} todayIso={TODAY} />);
+    expect(screen.getByRole("button", { name: /open/i }).className).toMatch(/\bh-11\b/);
+  });
 });

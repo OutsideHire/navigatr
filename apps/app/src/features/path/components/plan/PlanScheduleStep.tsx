@@ -37,6 +37,12 @@ export interface PlanScheduleStepProps {
   onNameChange: (name: string) => void;
   /** Whether the chosen date is valid (today or later) — drives the inline hint. */
   dateValid: boolean;
+  /** Section heading. Defaults to the wizard's "Schedule your path". */
+  title?: string;
+  /** Line under the heading. Defaults to the wizard's Upcoming copy. */
+  description?: string;
+  /** Heading element. Defaults to h2 (the wizard step); the edit sheet uses h3. */
+  headingLevel?: "h2" | "h3";
 }
 
 export function PlanScheduleStep({
@@ -48,7 +54,11 @@ export function PlanScheduleStep({
   name,
   onNameChange,
   dateValid,
+  title = "Schedule your path",
+  description = "Pick a day to run it and we'll remind you. It'll wait in Upcoming until you launch.",
+  headingLevel = "h2",
 }: PlanScheduleStepProps) {
+  const Heading = headingLevel;
   const quickPicks: Array<{ key: DateQuickPick; label: string; iso: string }> = [
     { key: "today", label: "Today", iso: todayISO() },
     { key: "tomorrow", label: "Tomorrow", iso: addDaysISO(todayISO(), 1) },
@@ -58,10 +68,8 @@ export function PlanScheduleStep({
   return (
     <div className="flex flex-col gap-5 md:mx-auto md:w-full md:max-w-2xl">
       <div className="flex flex-col gap-1">
-        <h2 className="text-heading-md text-text-default">Schedule your path</h2>
-        <p className="text-body-md text-text-muted">
-          Pick a day to run it and we&apos;ll remind you. It&apos;ll wait in Upcoming until you launch.
-        </p>
+        <Heading className="text-heading-md text-text-default">{title}</Heading>
+        <p className="text-body-md text-text-muted">{description}</p>
       </div>
 
       <Card padding="lg" className="flex flex-col gap-5">

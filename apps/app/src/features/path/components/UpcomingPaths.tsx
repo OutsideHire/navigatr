@@ -76,6 +76,7 @@ export function UpcomingPaths({ onLaunch, todayIso = todayISO() }: UpcomingPaths
                   variant="secondary"
                   size="sm"
                   trailingIcon={ChevronRight}
+                  className="h-11"
                   onClick={() => onLaunch(p)}
                 >
                   Open

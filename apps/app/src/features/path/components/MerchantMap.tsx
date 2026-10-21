@@ -51,6 +51,12 @@ export interface MerchantMapProps {
    *  drawn as distinct purple, time-labeled markers. NOT added to the route
    *  polyline — they're fixed context, not curated stops. */
   calendarPins?: Array<{ id: string; lat: number; lng: number; title: string; start: string }>;
+  /** Show the "you are here" marker at `position` (and follow it). Default true.
+   *  False for maps that are not about the rep's location, such as a planned
+   *  path for another day. */
+  showPosition?: boolean;
+  /** Fit the view to the merchant pins whenever they change. Default false. */
+  fitToMerchants?: boolean;
   className?: string;
 }
 
@@ -105,6 +111,8 @@ export function MerchantMap({
   onMerchantClick,
   routePath,
   calendarPins,
+  showPosition = true,
+  fitToMerchants = false,
   className,
 }: MerchantMapProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
@@ -155,7 +163,7 @@ export function MerchantMap({
   // ── "You are here" marker + follow on position change ────────────
   React.useEffect(() => {
     const map = mapRef.current;
-    if (!map || !styleLoaded) return;
+    if (!map || !styleLoaded || !showPosition) return;
     if (!userMarkerRef.current) {
       const el = document.createElement("div");
       el.style.cssText = [
@@ -178,7 +186,24 @@ export function MerchantMap({
       map.flyTo({ center: [position.lng, position.lat], duration: 500 });
     }
     lastPosRef.current = { lat: position.lat, lng: position.lng };
-  }, [position, styleLoaded]);
+  }, [position, styleLoaded, showPosition]);
+
+  // ── Fit the view to the pins (opt-in) ────────────────────────────
+  React.useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleLoaded || !fitToMerchants) return;
+    const pts = merchants.filter((x) => Number.isFinite(x.lat) && Number.isFinite(x.lng));
+    if (pts.length === 0) return;
+    const lngs = pts.map((x) => x.lng);
+    const lats = pts.map((x) => x.lat);
+    map.fitBounds(
+      [
+        [Math.min(...lngs), Math.min(...lats)],
+        [Math.max(...lngs), Math.max(...lats)],
+      ],
+      { padding: 32, maxZoom: 15, duration: 0 },
+    );
+  }, [merchants, styleLoaded, fitToMerchants]);
 
   // ── Merchant pins ────────────────────────────────────────────────
   React.useEffect(() => {

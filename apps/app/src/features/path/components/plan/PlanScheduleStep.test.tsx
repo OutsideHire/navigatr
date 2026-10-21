@@ -83,3 +83,36 @@ describe("PlanScheduleStep", () => {
     expect(screen.getByText(/today or a future date/i)).toBeInTheDocument();
   });
 });
+
+describe("PlanScheduleStep heading overrides", () => {
+  const base = {
+    date: addDaysISO(todayISO(), 1),
+    activePick: "tomorrow" as DateQuickPick,
+    reminderTime: "08:30",
+    name: "x",
+    dateValid: true,
+    onDateChange: vi.fn(),
+    onReminderTimeChange: vi.fn(),
+    onNameChange: vi.fn(),
+  };
+
+  it("defaults to the wizard's h2 heading and copy", () => {
+    render(<PlanScheduleStep {...base} />);
+    expect(screen.getByRole("heading", { level: 2, name: "Schedule your path" })).toBeInTheDocument();
+    expect(screen.getByText(/wait in Upcoming/i)).toBeInTheDocument();
+  });
+
+  it("accepts a custom title, description and heading level", () => {
+    render(
+      <PlanScheduleStep
+        {...base}
+        title="When"
+        description="Move it to another day or change the reminder."
+        headingLevel="h3"
+      />,
+    );
+    expect(screen.getByRole("heading", { level: 3, name: "When" })).toBeInTheDocument();
+    expect(screen.getByText("Move it to another day or change the reminder.")).toBeInTheDocument();
+    expect(screen.queryByText(/wait in Upcoming/i)).not.toBeInTheDocument();
+  });
+});

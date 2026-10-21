@@ -14,7 +14,8 @@
  *   - One path per day (paths is unique on user_id + path_date). Picking a day
  *     that already has a path shows "You already have a path on that day." and
  *     changes nothing (checked against the cached list, and the database's
- *     unique violation is mapped to the same message).
+ *     unique violation is mapped to the same message). Moving to a today whose
+ *     row has no stops says "Today already has a route. Add stops from Path."
  *   - Removing the LAST stop is not allowed on its own: a path with no stops is
  *     an empty Upcoming row. Instead the sheet offers to delete the whole path.
  *   - Moving the path to today closes the sheet and the parent lands on today's
@@ -38,6 +39,7 @@ import { PlanScheduleStep, type DateQuickPick } from "./plan/PlanScheduleStep";
 import { MerchantMap } from "./MerchantMap";
 
 const DUPLICATE_DAY_MESSAGE = "You already have a path on that day.";
+const TODAY_HAS_ROUTE_MESSAGE = "Today already has a route. Add stops from Path.";
 
 export interface PlannedPathSheetProps {
   /** The path to show. Null keeps the sheet closed. */
@@ -97,6 +99,8 @@ function stopAsMerchant(s: PathStop): Merchant {
     lat: s.lat,
     lng: s.lng,
     category: s.category as MerchantCategory,
+    // MerchantMap colors pins by status; a planned stop is a prospect.
+    status: "prospect",
   } as Merchant;
 }
 
@@ -126,8 +130,11 @@ function PlannedPathBody({
   const [error, setError] = React.useState<string | null>(null);
   const [confirm, setConfirm] = React.useState<Confirm>(null);
   const [busy, setBusy] = React.useState(false);
+  // A remove / reorder is in flight (tracked locally so the whole sheet locks
+  // even before the mutation's own pending flag settles).
+  const [stopEditing, setStopEditing] = React.useState(false);
 
-  const { data: active, isLoading: stopsLoading } = useActivePath(saved.date);
+  const { data: active, isLoading: stopsLoading, isFetching: stopsFetching } = useActivePath(saved.date);
   const stops = React.useMemo(() => active?.stops ?? [], [active]);
   const { data: allPaths = [] } = usePaths();
   const { updatePath, removeStop, reorderStops, deletePlannedPath } = usePathMutations();
@@ -136,7 +143,11 @@ function PlannedPathBody({
   const dateValid = isTodayOrFuture(date);
   const savedTime = reminderTimeOf(saved.reminderAt);
   const dirty = name.trim() !== (saved.name ?? "") || date !== saved.date || reminderTime !== savedTime;
-  const stopsBusy = removeStop.isPending || reorderStops.isPending;
+  const stopsBusy = stopEditing || removeStop.isPending || reorderStops.isPending;
+  // Stop buttons lock while anything is saving. Move also waits for the stop
+  // list to refetch, so a second move never reorders a stale list.
+  const stopButtonsLocked = stopsBusy || busy;
+  const moveLocked = stopButtonsLocked || Boolean(stopsFetching);
 
   const displayName = saved.name ?? path.originLabel ?? "Planned path";
   const reminderLabel = formatReminder(saved.reminderAt);
@@ -157,10 +168,13 @@ function PlannedPathBody({
   }, []);
 
   const handleSave = React.useCallback(async () => {
-    if (!dirty || !dateValid || busy) return;
+    if (!dirty || !dateValid || busy || stopsBusy) return;
     // One path per day: catch it from the cached list before writing anything.
-    if (date !== saved.date && allPaths.some((p) => p.id !== path.id && p.date === date)) {
-      setError(DUPLICATE_DAY_MESSAGE);
+    const clash = date !== saved.date ? allPaths.find((p) => p.id !== path.id && p.date === date) : undefined;
+    if (clash) {
+      // Today's row with no stops is usually an auto-created day: point the rep
+      // to Path to add stops there instead of a bare "already have" message.
+      setError(date === todayISO() && clash.stopCount === 0 ? TODAY_HAS_ROUTE_MESSAGE : DUPLICATE_DAY_MESSAGE);
       return;
     }
     const nextName = name.trim() === "" ? null : name.trim();
@@ -184,7 +198,7 @@ function PlannedPathBody({
       return;
     }
     toast.success("Path updated");
-  }, [dirty, dateValid, busy, date, saved.date, allPaths, path.id, name, reminderTime, updatePath, syncPath, onMovedToToday]);
+  }, [dirty, dateValid, busy, stopsBusy, date, saved.date, allPaths, path.id, name, reminderTime, updatePath, syncPath, onMovedToToday]);
 
   const handleRemove = React.useCallback(
     async (s: PathStop) => {
@@ -192,10 +206,13 @@ function PlannedPathBody({
         setConfirm("last-stop");
         return;
       }
+      setStopEditing(true);
       try {
         await removeStop.mutateAsync(s.id);
       } catch {
         toast.error("Couldn't remove the stop. Try again.");
+      } finally {
+        setStopEditing(false);
       }
     },
     [stops.length, removeStop],
@@ -207,10 +224,13 @@ function PlannedPathBody({
       if (target < 0 || target >= stops.length) return;
       const ids = stops.map((s) => s.id);
       [ids[index], ids[target]] = [ids[target]!, ids[index]!];
+      setStopEditing(true);
       try {
         await reorderStops.mutateAsync({ orderedStopIds: ids });
       } catch {
         toast.error("Couldn't reorder. Try again.");
+      } finally {
+        setStopEditing(false);
       }
     },
     [stops, reorderStops],
@@ -219,17 +239,15 @@ function PlannedPathBody({
   const handleDelete = React.useCallback(async () => {
     setBusy(true);
     try {
-      await deletePlannedPath.mutateAsync({
-        pathId: path.id,
-        hasCalendarBlock: path.pathCalendarSyncStatus != null,
-      });
+      // The mutation reads the calendar block fresh from the row.
+      await deletePlannedPath.mutateAsync(path.id);
       toast.success("Path deleted");
       onClose();
     } catch {
       toast.error("Couldn't delete the path. Try again.");
       setBusy(false);
     }
-  }, [deletePlannedPath, path.id, path.pathCalendarSyncStatus, onClose]);
+  }, [deletePlannedPath, path.id, onClose]);
 
   return (
     <>
@@ -261,7 +279,13 @@ function PlannedPathBody({
         <div className="flex flex-col gap-5">
           {mapCenter && stops.length > 0 && (
             <div className="h-44 w-full overflow-hidden rounded-radius-md">
-              <MerchantMap position={mapCenter} merchants={mapMerchants} routePath={routePath} />
+              <MerchantMap
+                position={mapCenter}
+                merchants={mapMerchants}
+                routePath={routePath}
+                showPosition={false}
+                fitToMerchants
+              />
             </div>
           )}
 
@@ -291,21 +315,21 @@ function PlannedPathBody({
                       <IconButton
                         label={`Move ${s.name} up`}
                         onClick={() => void handleMove(i, "up")}
-                        disabled={i === 0 || stopsBusy}
+                        disabled={i === 0 || moveLocked}
                       >
                         <ArrowUp className="h-4 w-4" aria-hidden />
                       </IconButton>
                       <IconButton
                         label={`Move ${s.name} down`}
                         onClick={() => void handleMove(i, "down")}
-                        disabled={i === stops.length - 1 || stopsBusy}
+                        disabled={i === stops.length - 1 || moveLocked}
                       >
                         <ArrowDown className="h-4 w-4" aria-hidden />
                       </IconButton>
                       <IconButton
                         label={`Remove ${s.name}`}
                         onClick={() => void handleRemove(s)}
-                        disabled={stopsBusy}
+                        disabled={stopButtonsLocked}
                         danger
                       >
                         <X className="h-4 w-4" aria-hidden />
@@ -332,6 +356,9 @@ function PlannedPathBody({
               setError(null);
             }}
             dateValid={dateValid}
+            title="When"
+            description="Move it to another day or change the reminder."
+            headingLevel="h3"
           />
 
           {confirm === null && (
@@ -377,7 +404,7 @@ function PlannedPathBody({
               variant="primary"
               size="lg"
               fullWidth
-              disabled={!dirty || !dateValid || busy}
+              disabled={!dirty || !dateValid || busy || stopsBusy}
               loading={busy}
               onClick={() => void handleSave()}
             >
