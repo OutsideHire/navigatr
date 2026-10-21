@@ -335,7 +335,7 @@ describe("PlannedPathSheet: moving to a today that already has a route", () => {
     renderSheet();
     fireEvent.click(screen.getByRole("button", { name: /^today/i }));
     fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
-    expect(screen.getByText("Today already has a route. Add stops from Path.")).toBeInTheDocument();
+    expect(screen.getByText("Today already has a path. Add stops from there.")).toBeInTheDocument();
     expect(updatePath).not.toHaveBeenCalled();
   });
 

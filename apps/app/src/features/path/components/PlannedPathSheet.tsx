@@ -15,7 +15,7 @@
  *     that already has a path shows "You already have a path on that day." and
  *     changes nothing (checked against the cached list, and the database's
  *     unique violation is mapped to the same message). Moving to a today whose
- *     row has no stops says "Today already has a route. Add stops from Path."
+ *     row has no stops says "Today already has a path. Add stops from there."
  *   - Removing the LAST stop is not allowed on its own: a path with no stops is
  *     an empty Upcoming row. Instead the sheet offers to delete the whole path.
  *   - Moving the path to today closes the sheet and the parent lands on today's
@@ -39,7 +39,7 @@ import { PlanScheduleStep, type DateQuickPick } from "./plan/PlanScheduleStep";
 import { MerchantMap } from "./MerchantMap";
 
 const DUPLICATE_DAY_MESSAGE = "You already have a path on that day.";
-const TODAY_HAS_ROUTE_MESSAGE = "Today already has a route. Add stops from Path.";
+const TODAY_HAS_ROUTE_MESSAGE = "Today already has a path. Add stops from there.";
 
 export interface PlannedPathSheetProps {
   /** The path to show. Null keeps the sheet closed. */
