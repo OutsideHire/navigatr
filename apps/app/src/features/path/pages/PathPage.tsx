@@ -77,6 +77,7 @@ import { useTodaysPath } from "../hooks/useTodaysPath";
 import { useCaptureTimezone } from "../hooks/useCaptureTimezone";
 import { useBackfillOwedCoords } from "../hooks/useBackfillOwedCoords";
 import type { OrderedStop } from "../lib/todaysPath";
+import { todayISO } from "../lib/today";
 import { OwedVisitsList, type OwedVisitRow } from "../components/OwedVisitsList";
 import type { OwedVisit } from "../lib/owedVisits";
 import { useTaskMutations } from "@/features/activities/hooks/useTaskMutations";
@@ -315,6 +316,19 @@ export function PathPage() {
   const handleDoneDiscovering = React.useCallback(
     () => setPathView(queueStops.length > 0 ? "path" : "entry"),
     [queueStops.length],
+  );
+
+  // Plan a new area finished (Done on the Saved step). Route by the saved date:
+  // today -> the run surface, any later day -> the entry landing where Upcoming
+  // paths lists it. Forcing "entry" for a today save stranded the rep on "No
+  // stops today": the saved stops had already landed (the sync effect had set
+  // "path"), so queueStops.length never changed again to flip the view back.
+  // Same bug class as handleDoneDiscovering (Path QA R4). The save awaited the
+  // stop insert, so today's stops are in the cache or arriving; the sync effect
+  // still settles the view whenever their count changes.
+  const handlePlanSaved = React.useCallback(
+    (savedDate: string) => setPathView(savedDate === todayISO() ? "path" : "entry"),
+    [],
   );
 
   // Continue the unfinished path into today: reparent its pending stops; the
@@ -1328,7 +1342,7 @@ export function PathPage() {
       <PlanPathWizard
         open={planOpen}
         onOpenChange={setPlanOpen}
-        onSaved={() => setPathView("entry")}
+        onSaved={handlePlanSaved}
       />
 
       <PathSettings open={settingsOpen} onOpenChange={setSettingsOpen} />

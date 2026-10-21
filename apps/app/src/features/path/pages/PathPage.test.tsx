@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import type { ReactNode } from "react";
 import { PathPage } from "./PathPage";
 import type { PathOrigin } from "../hooks/usePathOrigin";
+import { todayISO, addDaysISO } from "../lib/today";
 
 // The Plan a Path slide-out is a Radix Dialog; jsdom lacks these.
 if (!Element.prototype.hasPointerCapture) Element.prototype.hasPointerCapture = () => false;
@@ -79,6 +80,20 @@ vi.mock("../components/RunningPath", () => ({
     );
   },
 }));
+
+// Plan a Path wizard: render the REAL wizard but capture its onSaved so tests can
+// simulate the rep tapping Done on the Saved step for a given date.
+let capturedOnSaved: ((savedDate: string) => void) | null = null;
+vi.mock("./PlanPathWizard", async (orig) => {
+  const actual = await orig<typeof import("./PlanPathWizard")>();
+  return {
+    ...actual,
+    PlanPathWizard: (props: Parameters<typeof actual.PlanPathWizard>[0]) => {
+      capturedOnSaved = (props.onSaved as ((d: string) => void) | undefined) ?? null;
+      return actual.PlanPathWizard(props);
+    },
+  };
+});
 
 // No prospects unless origin is set; keep the discovery hook quiet.
 type UseMerchantsFull = ReturnType<typeof import("../hooks/useMerchants")["useMerchants"]>;
@@ -1227,5 +1242,38 @@ describe("PathPage 'Your day' landing header (v2.2 A6)", () => {
     expect(screen.queryByRole("heading", { name: /^your day$/i })).not.toBeInTheDocument();
     // The one quiet muted explainer line for the count difference.
     expect(screen.getByText(/businesses near you, not stops on your day/i)).toBeInTheDocument();
+  });
+});
+
+describe("PathPage Plan a new area: landing after save", () => {
+  const readyOrigin: PathOrigin = {
+    ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
+  };
+
+  it("shows today's route after saving a plan for today, not the empty landing", () => {
+    // Reported defect: plan an area for today, tap Done, and the route doesn't
+    // display. The saved stops already landed (the sync effect flipped the view
+    // to "path"), then onSaved forced "entry" and nothing flipped it back.
+    originState.current = readyOrigin;
+    todayState.current = {
+      ...todayState.current,
+      stops: [{ merchantId: "a", name: "Alpha", status: "pending" }] as unknown as typeof todayState.current.stops,
+    };
+    render(<PathPage />, { wrapper });
+    expect(screen.getByTestId("running-path")).toBeInTheDocument();
+
+    act(() => capturedOnSaved?.(todayISO()));
+
+    expect(screen.getByTestId("running-path")).toBeInTheDocument();
+    expect(screen.queryByText(/no stops today/i)).not.toBeInTheDocument();
+  });
+
+  it("lands on the entry landing after saving a plan for a future day", () => {
+    originState.current = readyOrigin;
+    todayState.current = { ...todayState.current, stops: [] as unknown as typeof todayState.current.stops };
+    render(<PathPage />, { wrapper });
+    act(() => capturedOnSaved?.(addDaysISO(todayISO(), 3)));
+    expect(screen.queryByTestId("running-path")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /build my day/i })).toBeInTheDocument();
   });
 });

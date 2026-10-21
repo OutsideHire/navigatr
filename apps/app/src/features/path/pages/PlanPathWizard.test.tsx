@@ -62,6 +62,7 @@ vi.mock("../components/DropInSheet", () => ({ DropInSheet: () => null }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 
 import { PlanPathWizard } from "./PlanPathWizard";
+import { todayISO, addDaysISO } from "../lib/today";
 
 function m(id: string, name: string): Merchant {
   return {
@@ -245,6 +246,8 @@ describe("PlanPathWizard", () => {
     await waitFor(() => expect(screen.getByText(/step 5 of 5/i)).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /done/i }));
     expect(onSavedMock).toHaveBeenCalledTimes(1);
+    // The saved date rides along so the parent can route today vs a future day.
+    expect(onSavedMock).toHaveBeenCalledWith(addDaysISO(todayISO(), 1));
     expect(onOpenChangeMock).toHaveBeenCalledWith(false);
   });
 
