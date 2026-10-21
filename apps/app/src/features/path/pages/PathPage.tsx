@@ -54,6 +54,8 @@ import { PlanPathWizard } from "./PlanPathWizard";
 import { TodaysPathView, ADD_NEARBY_ENABLED } from "../components/TodaysPathView";
 import { PathOverflowSheet } from "../components/PathOverflowSheet";
 import { UpcomingPaths } from "../components/UpcomingPaths";
+import { PlannedPathSheet } from "../components/PlannedPathSheet";
+import type { Path } from "../lib/pathTypes";
 import { PathSettings } from "../components/PathSettings";
 import { RunningPath } from "../components/RunningPath";
 import { ResumePathCard } from "../components/ResumePathCard";
@@ -210,6 +212,8 @@ export function PathPage() {
     [calWindow, calWaypoints, calTimeBlocks],
   );
   const [planOpen, setPlanOpen] = React.useState(false);
+  // The Upcoming path the rep opened to view / edit (null = sheet closed).
+  const [plannedPath, setPlannedPath] = React.useState<Path | null>(null);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
 
   // Path-first view state machine:
@@ -1033,9 +1037,9 @@ export function PathPage() {
             origin={origin}
             showAddNearby={ADD_NEARBY_ENABLED}
           />
-          {/* Upcoming (future-dated planned) paths — launch navigates to /path,
-              where the today-path/discover flow takes over. */}
-          <UpcomingPaths onLaunch={() => navigate("/path")} />
+          {/* Upcoming (future-dated planned) paths. Open shows that path in a
+              slide-out to view and edit it (PlannedPathSheet). */}
+          <UpcomingPaths onLaunch={setPlannedPath} />
         </div>
       ) : pathView === "path" ? (
         /* Any path with stops, and any explicitly-started appointment / follow-up
@@ -1343,6 +1347,19 @@ export function PathPage() {
         open={planOpen}
         onOpenChange={setPlanOpen}
         onSaved={handlePlanSaved}
+      />
+
+      <PlannedPathSheet
+        path={plannedPath}
+        open={plannedPath != null}
+        onOpenChange={(o) => {
+          if (!o) setPlannedPath(null);
+        }}
+        onMovedToToday={() => {
+          // The rep moved this plan to today: close and land on today's route.
+          setPlannedPath(null);
+          setPathView("path");
+        }}
       />
 
       <PathSettings open={settingsOpen} onOpenChange={setSettingsOpen} />

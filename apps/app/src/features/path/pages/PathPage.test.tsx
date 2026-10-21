@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, act, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import type { ReactNode } from "react";
@@ -94,6 +94,22 @@ vi.mock("./PlanPathWizard", async (orig) => {
     },
   };
 });
+
+// Upcoming paths list: controllable per test (default none, as before).
+const upcomingPathsState = { current: [] as import("../lib/pathTypes").Path[] };
+vi.mock("../hooks/usePaths", () => ({
+  usePaths: () => ({ data: upcomingPathsState.current }),
+  PATHS_QUERY_KEY: ["paths", "list"],
+}));
+// The planned-path sheet: stub that exposes which path it was opened for and
+// its onMovedToToday wiring.
+let capturedSheet: { path: { id: string } | null; open: boolean; onMovedToToday: () => void } | null = null;
+vi.mock("../components/PlannedPathSheet", () => ({
+  PlannedPathSheet: (props: { path: { id: string } | null; open: boolean; onMovedToToday: () => void }) => {
+    capturedSheet = props;
+    return props.open && props.path ? <div data-testid="planned-path-sheet" data-path-id={props.path.id} /> : null;
+  },
+}));
 
 // No prospects unless origin is set; keep the discovery hook quiet.
 type UseMerchantsFull = ReturnType<typeof import("../hooks/useMerchants")["useMerchants"]>;
@@ -260,6 +276,8 @@ beforeEach(() => {
     isLoading: false, isError: false, refetch: vi.fn(),
   };
   pathPrefsState.current = { data: undefined };
+  upcomingPathsState.current = [];
+  capturedSheet = null;
 });
 
 describe("PathPage location states", () => {
@@ -1275,5 +1293,36 @@ describe("PathPage Plan a new area: landing after save", () => {
     act(() => capturedOnSaved?.(addDaysISO(todayISO(), 3)));
     expect(screen.queryByTestId("running-path")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /build my day/i })).toBeInTheDocument();
+  });
+});
+
+describe("PathPage Upcoming paths: Open views and edits that path", () => {
+  const readyOrigin: PathOrigin = {
+    ...base, origin: { lat: 30, lng: -97 }, originSource: "gps", originLabel: "Current location", geoStatus: "ready",
+  };
+  const upcoming = (id: string, name: string, days: number) => ({
+    id, date: addDaysISO(todayISO(), days), name, originLabel: "Edmond, OK", originLat: 35.6, originLng: -97.4,
+    status: "planned" as const, reminderAt: null, startedAt: null, stopCount: 3, pathCalendarSyncStatus: null,
+  });
+
+  it("opens the sheet for the path the rep tapped", () => {
+    originState.current = readyOrigin;
+    upcomingPathsState.current = [upcoming("a", "Route A", 2), upcoming("b", "Route B", 4)];
+    render(<PathPage />, { wrapper });
+    expect(screen.queryByTestId("planned-path-sheet")).not.toBeInTheDocument();
+    const rowB = screen.getByText("Route B").closest("li")!;
+    fireEvent.click(within(rowB).getByRole("button", { name: /open/i }));
+    expect(screen.getByTestId("planned-path-sheet")).toHaveAttribute("data-path-id", "b");
+  });
+
+  it("moving the path to today closes the sheet and shows today's route", () => {
+    originState.current = readyOrigin;
+    upcomingPathsState.current = [upcoming("a", "Route A", 2)];
+    render(<PathPage />, { wrapper });
+    fireEvent.click(screen.getByRole("button", { name: /open/i }));
+    expect(screen.getByTestId("planned-path-sheet")).toBeInTheDocument();
+    act(() => capturedSheet?.onMovedToToday());
+    expect(screen.queryByTestId("planned-path-sheet")).not.toBeInTheDocument();
+    expect(screen.getByTestId("running-path")).toBeInTheDocument();
   });
 });

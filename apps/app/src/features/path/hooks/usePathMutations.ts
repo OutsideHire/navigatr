@@ -46,6 +46,21 @@ export interface StopSnapshot {
 }
 export interface AddStopsInput { pathId: string; basePosition: number; stops: StopSnapshot[]; }
 
+/** Edit a planned path's details. Only the supplied fields are written. */
+export interface UpdatePathInput {
+  pathId: string;
+  name?: string | null;
+  /** New path_date (yyyy-mm-dd). paths is unique on (user_id, path_date), so a
+   *  day that already has a path fails with Postgres code 23505. */
+  date?: string;
+  reminderAt?: string | null;
+}
+
+/** True when an error is the one-path-per-day unique violation. */
+export function isDuplicatePathDayError(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: unknown }).code === "23505";
+}
+
 export function usePathMutations() {
   const qc = useQueryClient();
   const userId = useAuth((s) => s.user?.id);
@@ -146,6 +161,39 @@ export function usePathMutations() {
   const deletePath = useMutation({
     mutationFn: async (pathId: string): Promise<void> => {
       const { error } = await supabase.from("paths").delete().eq("id", pathId);
+      if (error) throw error;
+    },
+    onSuccess: invalidate,
+  });
+
+  // Edit a planned path (name / date / reminder) from the Upcoming path sheet.
+  // RLS paths_update lets the owner write these columns. The caller re-syncs the
+  // calendar block afterwards (same as the Plan a Path save site).
+  const updatePath = useMutation({
+    mutationFn: async (input: UpdatePathInput): Promise<void> => {
+      const patch: Record<string, unknown> = {};
+      if (input.name !== undefined) patch.name = input.name;
+      if (input.date !== undefined) patch.path_date = input.date;
+      if (input.reminderAt !== undefined) patch.reminder_at = input.reminderAt;
+      const { error } = await supabase.from("paths").update(patch).eq("id", input.pathId);
+      if (error) throw error;
+    },
+    onSuccess: invalidate,
+  });
+
+  // Delete a planned path the rep no longer wants. A planned path may carry an
+  // all-day calendar block, and sync_path can only find (and remove) that block
+  // while the row exists. So when there is a block: mark the path completed,
+  // await the reconcile (which deletes the block), THEN delete the row. Without
+  // a block it is a plain delete. syncPath never throws (best-effort).
+  const deletePlannedPath = useMutation({
+    mutationFn: async (input: { pathId: string; hasCalendarBlock: boolean }): Promise<void> => {
+      if (input.hasCalendarBlock) {
+        const { error: e1 } = await supabase.from("paths").update({ status: "completed" }).eq("id", input.pathId);
+        if (e1) throw e1;
+        await syncPath(input.pathId);
+      }
+      const { error } = await supabase.from("paths").delete().eq("id", input.pathId);
       if (error) throw error;
     },
     onSuccess: invalidate,
@@ -304,5 +352,5 @@ export function usePathMutations() {
     },
   });
 
-  return { createPath, addStops, removeStop, reorderStops, setStopStatus, setStopDisposition, markDealCreated, deletePath, continuePreviousPath, carryToTomorrow, closePreviousPath, finalizeCurrentPath, markStarted };
+  return { createPath, addStops, removeStop, reorderStops, setStopStatus, setStopDisposition, markDealCreated, deletePath, updatePath, deletePlannedPath, continuePreviousPath, carryToTomorrow, closePreviousPath, finalizeCurrentPath, markStarted };
 }
