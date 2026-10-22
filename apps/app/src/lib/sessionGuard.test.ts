@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createSessionGuardFetch, setSessionGuardHooks } from "./sessionGuard";
+import { AUTH_REFRESH_TIMEOUT_MS, createSessionGuardFetch, setSessionGuardHooks } from "./sessionGuard";
 
 const ANON = "anon-key";
 const STORAGE = "navigatr-auth";
@@ -171,5 +171,107 @@ describe("sessionGuard", () => {
     });
     await guard(REST, { headers: { Authorization: `Bearer ${ANON}` } });
     expect(authHeaderOf(base)).toBe(`Bearer ${ANON}`);
+  });
+});
+
+/**
+ * ROOT CAUSE of "Session recovery failed ... reason=timeout" (prod 2026-10).
+ * auth-js sends the refresh-token request with no timeout, and it sends it
+ * while holding the auth lock. getSession and refreshSession queue behind that
+ * lock with no timeout of their own, so one stalled refresh (a dead socket
+ * after the laptop or iPad slept) froze every auth read in the tab. Bounding
+ * the refresh request turns a stall into auth-js's own retryable network
+ * error, which releases the lock and lets its existing backoff try again.
+ * No retry is added here.
+ */
+describe("sessionGuard bounds the refresh-token request", () => {
+  it("aborts a refresh request that never answers, after the timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const base = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("The operation was aborted.", "AbortError")),
+          );
+        }),
+      );
+      const { guard } = makeFetch(base as never);
+      const pending = guard(AUTH, { method: "POST", headers: { Authorization: `Bearer ${ANON}` } });
+      const settled = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      await vi.advanceTimersByTimeAsync(AUTH_REFRESH_TIMEOUT_MS);
+      await settled;
+      expect(base).toHaveBeenCalledTimes(1); // bounded, never retried here
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stays under Supabase's 10s refresh-token reuse window", () => {
+    // If the server rotated the token but the answer was lost, auth-js's next
+    // try reuses the old token. Inside the reuse window the server hands back
+    // the same new session; outside it, it revokes the family and signs out.
+    expect(AUTH_REFRESH_TIMEOUT_MS).toBeLessThan(10_000);
+  });
+
+  it("does not time-limit other auth requests (sign-in on a slow link must finish)", async () => {
+    const base = vi.fn(async (_i: RequestInfo | URL, _init?: RequestInit) => new Response("{}"));
+    const { guard } = makeFetch(base as never);
+    await guard("https://x.supabase.co/auth/v1/token?grant_type=password", { method: "POST" });
+    expect(base.mock.calls[0]![1]?.signal).toBeUndefined();
+  });
+
+  it("keeps a caller's own signal instead of replacing it", async () => {
+    const base = vi.fn(async (_i: RequestInfo | URL, _init?: RequestInit) => new Response("{}"));
+    const { guard } = makeFetch(base as never);
+    const own = new AbortController().signal;
+    await guard(AUTH, { method: "POST", signal: own });
+    expect(base.mock.calls[0]![1]?.signal).toBe(own);
+  });
+});
+
+/**
+ * B (prod 2026-10-22): the rep tapped Start driving, the SDK ended the
+ * session, and queries that were waiting on the token went out as anon and came
+ * back 42501. After a sign-out the app has observed, a table request carrying
+ * only the publishable key can only ever be refused (anon holds no table
+ * grants), so it is refused HERE without touching the network.
+ */
+describe("sessionGuard drains table requests right after a sign-out", () => {
+  const anonInit = { headers: { Authorization: `Bearer ${ANON}` } };
+
+  it("refuses an anon table request locally while the app is draining a sign-out", async () => {
+    const { base, guard } = makeFetch();
+    setSessionGuardHooks({
+      recover: vi.fn(async () => false),
+      getAccessToken: vi.fn(async () => null),
+      believesSignedIn: () => false,
+      refuseAnonTableRequests: () => true,
+    });
+    await expect(guard(REST, anonInit)).rejects.toMatchObject({ name: "AbortError" });
+    expect(base).not.toHaveBeenCalled();
+  });
+
+  it("still sends an anon RPC (public RPCs are legitimate without a session)", async () => {
+    const { base, guard } = makeFetch();
+    setSessionGuardHooks({
+      recover: vi.fn(async () => false),
+      getAccessToken: vi.fn(async () => null),
+      believesSignedIn: () => false,
+      refuseAnonTableRequests: () => true,
+    });
+    await guard("https://x.supabase.co/rest/v1/rpc/get_invite_preview", anonInit);
+    expect(base).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends anon table requests as before when not draining", async () => {
+    const { base, guard } = makeFetch();
+    setSessionGuardHooks({
+      recover: vi.fn(async () => false),
+      getAccessToken: vi.fn(async () => null),
+      believesSignedIn: () => false,
+      refuseAnonTableRequests: () => false,
+    });
+    await guard(REST, anonInit);
+    expect(base).toHaveBeenCalledTimes(1);
   });
 });

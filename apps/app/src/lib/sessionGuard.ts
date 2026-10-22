@@ -33,6 +33,56 @@
  *  request that would fix it. */
 const AUTH_PATH = "/auth/v1/";
 
+/**
+ * Ceiling on the refresh-token request. THE ROOT CAUSE of the 2026-10
+ * "Session recovery failed ... reason=timeout" events: auth-js sends this
+ * request with NO timeout and sends it while HOLDING the auth lock
+ * (GoTrueClient _callRefreshToken under _acquireLock). getSession and
+ * refreshSession queue behind that lock (the in-tab pendingInLock queue has no
+ * timeout at all), so one stalled refresh, typically a dead socket after the
+ * device slept, froze every auth read in the tab while the device reported
+ * itself online.
+ *
+ * Aborting turns the stall into the same thing a dropped connection produces:
+ * auth-js wraps it as AuthRetryableFetchError, releases the lock, and its OWN
+ * existing backoff tries again on a fresh connection. This adds no retry.
+ *
+ * 8s, deliberately under Supabase's 10s refresh_token_reuse_interval: if the
+ * server rotated the token but its answer was lost, the next attempt reuses
+ * the old token and, inside that window, gets the same new session back
+ * instead of having the whole token family revoked (which signs the rep out).
+ */
+export const AUTH_REFRESH_TIMEOUT_MS = 8000;
+
+function isRefreshTokenRequest(url: string): boolean {
+  return url.includes(`${AUTH_PATH}token`) && url.includes("grant_type=refresh_token");
+}
+
+/** Run one auth request with an abort deadline. Only used when the caller
+ *  brought no signal of its own, so we never override someone else's. */
+async function withDeadline(
+  base: typeof fetch,
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  ms: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await base(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** A PostgREST TABLE request (not an RPC). `anon` holds no table grants
+ *  (migration 20260813000002), so one sent with only the publishable key can
+ *  only ever come back 42501. RPCs are excluded: some are callable without a
+ *  session on purpose. */
+function isTableRequest(url: string): boolean {
+  return url.includes("/rest/v1/") && !url.includes("/rest/v1/rpc/");
+}
+
 export interface SessionGuardHooks {
   /** Recover the session. MUST be single-flight: many callers, one attempt. */
   recover: () => Promise<boolean>;
@@ -41,6 +91,11 @@ export interface SessionGuardHooks {
   /** True when the APP believes a user is signed in, whatever storage says.
    *  Optional so an older registration keeps working unchanged. */
   believesSignedIn?: () => boolean;
+  /** True for a short while after the app observed a definitive sign-out.
+   *  Queries that were already waiting on the token resolve AFTER the session
+   *  is gone and would otherwise leave as anon (prod 2026-10-22, three 42501s
+   *  in the second after a rep was sent to /login). */
+  refuseAnonTableRequests?: () => boolean;
 }
 
 let hooks: SessionGuardHooks | null = null;
@@ -81,7 +136,13 @@ export function createSessionGuardFetch(config: {
     input: RequestInfo | URL,
     init?: RequestInit,
   ): Promise<Response> {
-    if (urlOf(input).includes(AUTH_PATH)) return base(input, init);
+    const url = urlOf(input);
+    if (url.includes(AUTH_PATH)) {
+      if (isRefreshTokenRequest(url) && !init?.signal) {
+        return withDeadline(base, input, init, AUTH_REFRESH_TIMEOUT_MS);
+      }
+      return base(input, init);
+    }
 
     const headers = new Headers(
       init?.headers ?? (input instanceof Request ? input.headers : undefined),
@@ -106,6 +167,14 @@ export function createSessionGuardFetch(config: {
     // In both, the app is still rendering a signed-in rep. Ask it, and if it
     // says someone is signed in, treat the request as repairable.
     if (!hasPersistedSession(config.storageKey) && !hooks.believesSignedIn?.()) {
+      // Signed out. If that just happened, a table request still carrying the
+      // publishable key is a query that was waiting on the token when the
+      // session ended. It can only be refused (anon has no table grants), so
+      // refuse it here instead of on the wire. AbortError is what a cancelled
+      // request already looks like to every caller and to the Sentry filter.
+      if (isTableRequest(url) && hooks.refuseAnonTableRequests?.()) {
+        throw new DOMException("Signed out; request not sent", "AbortError");
+      }
       return base(input, init);
     }
 
