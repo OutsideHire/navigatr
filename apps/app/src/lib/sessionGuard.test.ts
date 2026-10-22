@@ -315,3 +315,25 @@ describe("sessionGuard bounds reading the refresh response too (M1)", () => {
     expect(await res.json()).toEqual({ error: "invalid_grant" });
   });
 });
+
+describe("sessionGuard bounds the sign-out request too (N1)", () => {
+  it("aborts a /logout that never answers, after the same deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const base = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("The operation was aborted.", "AbortError")),
+          );
+        }),
+      );
+      const { guard } = makeFetch(base as never);
+      const pending = guard("https://x.supabase.co/auth/v1/logout?scope=global", { method: "POST" });
+      const settled = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      await vi.advanceTimersByTimeAsync(AUTH_REFRESH_TIMEOUT_MS);
+      await settled;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

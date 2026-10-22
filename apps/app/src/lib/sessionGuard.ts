@@ -71,6 +71,13 @@ function isRefreshTokenRequest(url: string): boolean {
   return url.includes(`${AUTH_PATH}token`) && url.includes("grant_type=refresh_token");
 }
 
+/** Auth requests that get the deadline: the refresh (the root cause above)
+ *  and /logout, which a timed-out sign-out leaves queued behind the same lock
+ *  (the store's sign-out drain waits on it, so it must be bounded too). */
+function isBoundedAuthRequest(url: string): boolean {
+  return isRefreshTokenRequest(url) || url.includes(`${AUTH_PATH}logout`);
+}
+
 /** Statuses whose Response may not carry a body (the constructor throws). */
 const NULL_BODY_STATUS = new Set([101, 204, 205, 304]);
 
@@ -173,7 +180,7 @@ export function createSessionGuardFetch(config: {
   ): Promise<Response> {
     const url = urlOf(input);
     if (url.includes(AUTH_PATH)) {
-      if (isRefreshTokenRequest(url) && !init?.signal) {
+      if (isBoundedAuthRequest(url) && !init?.signal) {
         return withDeadline(base, input, init, AUTH_REFRESH_TIMEOUT_MS);
       }
       return base(input, init);
