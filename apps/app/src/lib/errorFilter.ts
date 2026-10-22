@@ -197,8 +197,9 @@ export function isExpectedPermissionError(err: unknown): boolean {
  * a resend were the top auth "errors").
  *
  * Matched on auth-js's stable error `code` first, then on the server's exact
- * wording for older servers that send no code. Only AuthApiError counts, so a
- * random Error that happens to say "invalid" still reports.
+ * wording for older servers that send no code. Only auth-js answer errors
+ * (AuthApiError, AuthWeakPasswordError) count, so a random Error that happens
+ * to say "invalid" still reports.
  *
  * Rate limits are deliberately NOT here. A silent auth email rate limit blocked
  * a beta customer's password reset for a week (2026-09-22) and is exactly the
@@ -215,10 +216,15 @@ const EXPECTED_AUTH_USER_ERROR_MESSAGES = [
   /^token has expired or is invalid$/i,
 ];
 
+/** auth-js error classes raised for a server answer about the request. A weak
+ *  password comes back as its own class (AuthWeakPasswordError, see auth-js
+ *  lib/fetch.ts handleError), not as AuthApiError. */
+const AUTH_ANSWER_ERROR_NAMES = new Set(["AuthApiError", "AuthWeakPasswordError"]);
+
 function authApiFields(err: unknown): { code: string; message: string } | null {
   if (!err || typeof err !== "object") return null;
   const e = err as { name?: unknown; code?: unknown; message?: unknown };
-  if (e.name !== "AuthApiError") return null;
+  if (typeof e.name !== "string" || !AUTH_ANSWER_ERROR_NAMES.has(e.name)) return null;
   return {
     code: typeof e.code === "string" ? e.code : "",
     message: typeof e.message === "string" ? e.message.trim() : "",
@@ -242,21 +248,21 @@ export function isOtpReplacedOrExpired(err: unknown): boolean {
 }
 
 /**
- * A 42501 "permission denied for table X" that happened while the app had NO
- * session. Such a request reached PostgREST as `anon` (supabase-js substitutes
+ * A 42501 "permission denied for table X" that happened while the app no longer
+ * believed anyone was signed in (no user in the store). Such a request reached PostgREST as `anon` (supabase-js substitutes
  * the publishable key when it has no token), which is the expected tail of a
  * sign-out: queries that were already waiting on the token went out without
  * one. Not a bug, so not reported.
  *
- * With a session present the same error IS a bug (a missing grant, or the
+ * While the app shows a signed-in user the same error IS a bug (a missing grant, or the
  * session guard failing to attach the token) and keeps reporting. Only tables:
  * a function or schema denial is a different question and is left alone.
  * Accepts the raw Supabase object or the Error normalizeError() makes of it.
  */
 const TABLE_DENIED_RE = /permission denied for table /i;
 
-export function isSignedOutPermissionDenied(err: unknown, hasSession: boolean): boolean {
-  if (hasSession) return false;
+export function isSignedOutPermissionDenied(err: unknown, signedIn: boolean): boolean {
+  if (signedIn) return false;
   if (isSupabaseError(err)) return err.code === "42501" && TABLE_DENIED_RE.test(err.message);
   if (err instanceof Error) return /^\[42501\] /.test(err.message) && TABLE_DENIED_RE.test(err.message);
   return false;
@@ -387,9 +393,9 @@ function rewriteEventTitle(event: SentryEventLike, type: string, value: string):
 export function normalizeSupabaseSentryEvent(
   event: SentryEventLike,
   originalException: unknown,
-  /** Whether the app held a session when this was captured. Unknown counts as
-   *  yes, so a caller that cannot tell keeps today's reporting. */
-  context: { hasSession?: boolean } = {},
+  /** Whether the app believed a user was signed in when this was captured.
+   *  Unknown counts as yes, so a caller that cannot tell keeps reporting. */
+  context: { signedIn?: boolean } = {},
 ): { drop: boolean } {
   // Transient network transport failure (any shape): the fetch never reached the
   // server. Drop it before the shape-specific handling below; a rep's momentary
@@ -398,7 +404,7 @@ export function normalizeSupabaseSentryEvent(
   // Supabase raw-object path: richest handling (code/details/hint + authz drop).
   if (isSupabaseError(originalException)) {
     if (isExpectedPermissionError(originalException)) return { drop: true };
-    if (isSignedOutPermissionDenied(originalException, context.hasSession ?? true)) {
+    if (isSignedOutPermissionDenied(originalException, context.signedIn ?? true)) {
       return { drop: true };
     }
     rewriteEventTitle(event, "SupabaseError", `[${originalException.code}] ${originalException.message}`);

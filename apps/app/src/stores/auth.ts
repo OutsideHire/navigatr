@@ -17,7 +17,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase, AUTH_STORAGE_KEY } from "@/lib/supabase";
 import { setSessionGuardHooks } from "@/lib/sessionGuard";
 import { haltQueriesForSignOut } from "@/lib/sessionQueries";
-import { setSessionPresenceProbe } from "@/lib/sessionPresence";
+import { setSignedInProbe } from "@/lib/sessionPresence";
 
 export type Profession = "payroll" | "merchant_services" | "treasury_management";
 
@@ -737,10 +737,12 @@ setSessionGuardHooks({
   },
 });
 
-// Error reporting asks this to tell "42501 because the session ended" (expected,
-// dropped) from "42501 while signed in" (a real grant or token bug, reported).
-// A provisional user has no confirmed session, so it counts as none.
-setSessionPresenceProbe(() => useAuth.getState().session != null);
+// Error reporting asks this to tell "42501 after the app let go of the user"
+// (the expected tail of a sign-out, dropped) from "42501 while the app shows a
+// signed-in rep" (reported). Keyed on USER, not session: a shown user whose
+// request still left as anon, including one held on the stored session while
+// reconnecting, is the #185 token-failed-to-attach signal.
+setSignedInProbe(() => useAuth.getState().user != null);
 
 /**
  * Hydrate the store from the SDK's persisted session at boot. Guarded by a

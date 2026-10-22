@@ -374,7 +374,12 @@ describe("isExpectedAuthUserError", () => {
   });
 
   it("flags weak and reused passwords", () => {
-    expect(isExpectedAuthUserError(authApiError("Password should be at least 8 characters.", "weak_password", 422))).toBe(true);
+    // auth-js raises a weak password as its own class, not AuthApiError
+    // (lib/fetch.ts handleError), so match the shape it really throws.
+    const weak = Object.assign(new Error("Password should be at least 8 characters."), {
+      name: "AuthWeakPasswordError", status: 422, code: "weak_password", reasons: ["length"],
+    });
+    expect(isExpectedAuthUserError(weak)).toBe(true);
     expect(isExpectedAuthUserError(authApiError("New password should be different from the old password.", "same_password", 422))).toBe(true);
   });
 
@@ -440,11 +445,11 @@ describe("normalizeSupabaseSentryEvent and the signed-out 42501", () => {
   const denied = { code: "42501", message: "permission denied for table paths", details: null, hint: null };
 
   it("drops an unhandled 42501 when there is no session", () => {
-    expect(normalizeSupabaseSentryEvent({}, denied, { hasSession: false })).toEqual({ drop: true });
+    expect(normalizeSupabaseSentryEvent({}, denied, { signedIn: false })).toEqual({ drop: true });
   });
 
   it("keeps it when a session exists", () => {
-    expect(normalizeSupabaseSentryEvent({}, denied, { hasSession: true })).toEqual({ drop: false });
+    expect(normalizeSupabaseSentryEvent({}, denied, { signedIn: true })).toEqual({ drop: false });
   });
 
   it("keeps it when the caller does not know (defaults to reporting)", () => {

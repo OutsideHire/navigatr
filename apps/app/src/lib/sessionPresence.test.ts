@@ -1,24 +1,24 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { hasSessionNow, setSessionPresenceProbe } from "./sessionPresence";
+import { appBelievesSignedIn, setSignedInProbe } from "./sessionPresence";
 
-afterEach(() => setSessionPresenceProbe(null));
+afterEach(() => setSignedInProbe(null));
 
-describe("hasSessionNow", () => {
+describe("appBelievesSignedIn", () => {
   it("assumes a session when nothing has registered (keeps reporting as before)", () => {
-    expect(hasSessionNow()).toBe(true);
+    expect(appBelievesSignedIn()).toBe(true);
   });
 
   it("answers with the registered probe", () => {
-    setSessionPresenceProbe(() => false);
-    expect(hasSessionNow()).toBe(false);
-    setSessionPresenceProbe(() => true);
-    expect(hasSessionNow()).toBe(true);
+    setSignedInProbe(() => false);
+    expect(appBelievesSignedIn()).toBe(false);
+    setSignedInProbe(() => true);
+    expect(appBelievesSignedIn()).toBe(true);
   });
 
   it("assumes a session when the probe throws, so a broken probe never hides an error", () => {
-    setSessionPresenceProbe(() => {
+    setSignedInProbe(() => {
       throw new Error("boom");
     });
-    expect(hasSessionNow()).toBe(true);
+    expect(appBelievesSignedIn()).toBe(true);
   });
 });

@@ -31,7 +31,7 @@ import {
   normalizeSupabaseSentryEvent,
 } from "./errorFilter";
 import { scrubUrl } from "./scrubUrl";
-import { hasSessionNow } from "./sessionPresence";
+import { appBelievesSignedIn } from "./sessionPresence";
 
 let initialized = false;
 
@@ -88,7 +88,7 @@ export function initObservability(): void {
       // into event.extra get PII-scrubbed. No-op for errors the wrapper already
       // normalized (their originalException is an Error, not a raw object).
       const { drop } = normalizeSupabaseSentryEvent(event, hint?.originalException, {
-        hasSession: hasSessionNow(),
+        signedIn: appBelievesSignedIn(),
       });
       if (drop) return null;
       if (event.request?.url) {
@@ -158,7 +158,7 @@ export function captureException(
   // A 42501 table denial with NO session is the expected tail of a sign-out
   // (queries waiting on the token went out as anon). With a session it is a
   // real grant or token bug and still reports.
-  if (isSignedOutPermissionDenied(err, hasSessionNow())) return;
+  if (isSignedOutPermissionDenied(err, appBelievesSignedIn())) return;
   // A raw Supabase error object would log as the useless "Object captured as
   // exception with keys: code, details, hint, message" — normalize it to a
   // readable, groupable Error and move the raw fields to extra.

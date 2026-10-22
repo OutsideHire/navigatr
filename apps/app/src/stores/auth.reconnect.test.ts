@@ -46,7 +46,7 @@ import {
   bootstrapSession,
   RECOVERY_REPORT_AFTER_MS,
 } from "./auth";
-import { hasSessionNow } from "@/lib/sessionPresence";
+import { appBelievesSignedIn } from "@/lib/sessionPresence";
 
 const KEY = "navigatr-auth";
 const watcher = onAuthStateChange.mock.calls[0][0] as (event: string, s: unknown) => void;
@@ -168,18 +168,23 @@ describe("a definitive sign-out stops the data layer first", () => {
   });
 });
 
-describe("error reporting knows whether a session is held", () => {
-  it("answers no session when the store has none, yes when it has one", () => {
+describe("error reporting knows whether the app believes a user is signed in", () => {
+  it("answers no once the store has let go of the user, yes while it shows one", () => {
     useAuth.setState({ user: null, session: null });
-    expect(hasSessionNow()).toBe(false);
+    expect(appBelievesSignedIn()).toBe(false);
     useAuth.setState({ user: session().user as never, session: session() as never });
-    expect(hasSessionNow()).toBe(true);
+    expect(appBelievesSignedIn()).toBe(true);
   });
 
-  it("answers no session while only holding a provisional user", () => {
+  it("answers yes for a user shown without a confirmed session (an anon 42501 then is the #185 signal and must report)", () => {
+    // Covers the held-on-stored-session case and the SDK having dropped the
+    // session while the store still shows the rep: a request leaving as anon
+    // there means the token failed to attach, which we must keep seeing.
     persistSession();
     holdProvisionalSession();
-    expect(hasSessionNow()).toBe(false);
+    expect(appBelievesSignedIn()).toBe(true);
+    useAuth.setState({ user: session().user as never, session: null, reconnecting: false });
+    expect(appBelievesSignedIn()).toBe(true);
   });
 });
 

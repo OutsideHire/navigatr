@@ -122,10 +122,10 @@ describe("observability", () => {
   it("captureException drops a 42501 table denial when the app holds no session", async () => {
     vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
     const Sentry = await import("@sentry/react");
-    const { setSessionPresenceProbe } = await import("./sessionPresence");
+    const { setSignedInProbe } = await import("./sessionPresence");
     const { initObservability, captureException } = await import("./observability");
     initObservability();
-    setSessionPresenceProbe(() => false);
+    setSignedInProbe(() => false);
     captureException(
       { code: "42501", message: "permission denied for table task", details: null, hint: null },
       { source: "react-query" },
@@ -136,10 +136,10 @@ describe("observability", () => {
   it("captureException still reports a 42501 table denial when a session exists", async () => {
     vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
     const Sentry = await import("@sentry/react");
-    const { setSessionPresenceProbe } = await import("./sessionPresence");
+    const { setSignedInProbe } = await import("./sessionPresence");
     const { initObservability, captureException } = await import("./observability");
     initObservability();
-    setSessionPresenceProbe(() => true);
+    setSignedInProbe(() => true);
     captureException(
       { code: "42501", message: "permission denied for table task", details: null, hint: null },
       { source: "react-query" },
@@ -150,10 +150,10 @@ describe("observability", () => {
   it("beforeSend drops an UNHANDLED 42501 table denial when the app holds no session", async () => {
     vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
     const Sentry = await import("@sentry/react");
-    const { setSessionPresenceProbe } = await import("./sessionPresence");
+    const { setSignedInProbe } = await import("./sessionPresence");
     const { initObservability } = await import("./observability");
     initObservability();
-    setSessionPresenceProbe(() => false);
+    setSignedInProbe(() => false);
     const initArg = (Sentry.init as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
       beforeSend: (e: Record<string, unknown>, h?: { originalException?: unknown }) => Record<string, unknown> | null;
     };
