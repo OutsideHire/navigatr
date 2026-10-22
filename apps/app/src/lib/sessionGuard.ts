@@ -43,14 +43,27 @@ const AUTH_PATH = "/auth/v1/";
  * device slept, froze every auth read in the tab while the device reported
  * itself online.
  *
- * Aborting turns the stall into the same thing a dropped connection produces:
- * auth-js wraps it as AuthRetryableFetchError, releases the lock, and its OWN
- * existing backoff tries again on a fresh connection. This adds no retry.
+ * WHAT THE DEADLINE DOES AND DOES NOT DO. Aborting ends ONE attempt: auth-js
+ * wraps the abort as AuthRetryableFetchError, keeps the stored session, and
+ * its OWN existing backoff tries again on a fresh connection (no retry is
+ * added here). It does NOT release the lock early. _refreshAccessToken's
+ * retry loop runs inside the lock, retrying while the next send would still
+ * fall within 30s of the first, so with this deadline a fully stalled link
+ * sends at about 0s, 8.2s, 16.6s and 25.4s and holds the lock for up to about
+ * 33s before auth-js gives up retryably and releases it. What the deadline
+ * buys is that the hold is BOUNDED (it was unbounded: a dead socket could
+ * hold it for minutes) and that each retry uses a fresh connection, which is
+ * usually what a resumed device needs. Waiting out that window without
+ * bouncing the rep is the job of the store's provisional hold.
  *
- * 8s, deliberately under Supabase's 10s refresh_token_reuse_interval: if the
- * server rotated the token but its answer was lost, the next attempt reuses
- * the old token and, inside that window, gets the same new session back
- * instead of having the whole token family revoked (which signs the rep out).
+ * 8s is under Supabase's 10s refresh_token_reuse_interval, which covers the
+ * FIRST retry only: if the server rotated the token on the first send but
+ * its answer was lost, the retry at about 8.2s reuses the old token inside
+ * the window and gets the same new session back. Later retries fall outside
+ * that window; they only matter when the first retry also got no answer.
+ *
+ * The deadline also covers reading the (small) response body, so a stall
+ * after the headers is bounded the same way.
  */
 export const AUTH_REFRESH_TIMEOUT_MS = 8000;
 
@@ -58,8 +71,18 @@ function isRefreshTokenRequest(url: string): boolean {
   return url.includes(`${AUTH_PATH}token`) && url.includes("grant_type=refresh_token");
 }
 
-/** Run one auth request with an abort deadline. Only used when the caller
- *  brought no signal of its own, so we never override someone else's. */
+/** Statuses whose Response may not carry a body (the constructor throws). */
+const NULL_BODY_STATUS = new Set([101, 204, 205, 304]);
+
+function abortError(): DOMException {
+  return new DOMException("The auth request took too long and was aborted.", "AbortError");
+}
+
+/** Run one auth request with an abort deadline that covers the headers AND
+ *  the body. The body is read here (it is a small token payload) and handed
+ *  back as a fresh Response with the same status and headers. Only used when
+ *  the caller brought no signal of its own, so we never override someone
+ *  else's. */
 async function withDeadline(
   base: typeof fetch,
   input: RequestInfo | URL,
@@ -68,8 +91,20 @@ async function withDeadline(
 ): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
+  // A real fetch errors its body stream on abort; a body stuck in some other
+  // layer might not, so race the read against the abort as well.
+  const aborted = new Promise<never>((_resolve, reject) => {
+    controller.signal.addEventListener("abort", () => reject(abortError()), { once: true });
+  });
+  aborted.catch(() => undefined);
   try {
-    return await base(input, { ...init, signal: controller.signal });
+    const res = await Promise.race([base(input, { ...init, signal: controller.signal }), aborted]);
+    const body = await Promise.race([res.text(), aborted]);
+    return new Response(NULL_BODY_STATUS.has(res.status) ? null : body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers: res.headers,
+    });
   } finally {
     clearTimeout(timer);
   }

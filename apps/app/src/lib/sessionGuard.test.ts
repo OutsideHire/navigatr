@@ -275,3 +275,43 @@ describe("sessionGuard drains table requests right after a sign-out", () => {
     expect(base).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("sessionGuard bounds reading the refresh response too (M1)", () => {
+  it("aborts when the headers arrive but the body never finishes", async () => {
+    vi.useFakeTimers();
+    try {
+      const stalledBody = new ReadableStream<Uint8Array>({ start() { /* never enqueues, never closes */ } });
+      const base = vi.fn(async (_i: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(stalledBody, { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+      const { guard } = makeFetch(base as never);
+      const pending = guard(AUTH, { method: "POST" });
+      const settled = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      await vi.advanceTimersByTimeAsync(AUTH_REFRESH_TIMEOUT_MS);
+      await settled;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("hands auth-js the same status, headers and body when the answer is prompt", async () => {
+    const base = vi.fn(async () =>
+      new Response(JSON.stringify({ access_token: "a" }), { status: 200, headers: { "X-Test": "1" } }),
+    );
+    const { guard } = makeFetch(base as never);
+    const res = await guard(AUTH, { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Test")).toBe("1");
+    expect(await res.json()).toEqual({ access_token: "a" });
+  });
+
+  it("passes a refused refresh straight through with its status", async () => {
+    const base = vi.fn(async () =>
+      new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 }),
+    );
+    const { guard } = makeFetch(base as never);
+    const res = await guard(AUTH, { method: "POST" });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_grant" });
+  });
+});

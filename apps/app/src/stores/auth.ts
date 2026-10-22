@@ -388,6 +388,11 @@ const BOOTSTRAP_TIMEOUT_MS = 8000;
  * working on it and the rep stays in the app. Reporting each one is what made
  * ~10 warnings a month for a handful of reps who were, in fact, fine. A rep
  * still stuck after this long IS worth seeing.
+ *
+ * In practice the warning lands at about 2.5 to 3 minutes, not exactly 2: the
+ * check runs only when a recovery run ends, runs are spaced by useReconnect's
+ * backoff (capped at 30s), and a run against a stuck lock takes up to about
+ * 18s (3 attempts x 2 steps x 3s).
  */
 export const RECOVERY_REPORT_AFTER_MS = 2 * 60_000;
 
