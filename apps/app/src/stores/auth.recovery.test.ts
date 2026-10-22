@@ -92,6 +92,10 @@ afterEach(async () => {
 });
 
 beforeEach(() => {
+  // After a SIGNED_OUT only a real SIGNED_IN brings a session back, so start
+  // each test from a signed-in-then-cleared state (an earlier test may have
+  // signed out).
+  watcher("SIGNED_IN", session("reset"));
   getSession.mockReset().mockResolvedValue(none());
   refreshSession.mockReset().mockResolvedValue(none());
   captureMessage.mockReset();

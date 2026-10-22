@@ -1016,8 +1016,10 @@ if (typeof window !== "undefined") {
         wipeStoredSession();
         return;
       }
-      const held = useAuth.getState().session;
-      if (held && held.user.id !== session.user.id) {
+      // Compare with the USER the app shows, not its session: a rep held on
+      // their stored session while reconnecting has a user but no session.
+      const shownUserId = useAuth.getState().user?.id;
+      if (shownUserId && shownUserId !== session.user.id) {
         if (event !== "SIGNED_IN") {
           // Defense in depth for N1: a refresh for a DIFFERENT user than the
           // one signed in here is stale work from before a sign-out. Never
@@ -1037,6 +1039,11 @@ if (typeof window !== "undefined") {
       return;
     }
     if (event === "SIGNED_OUT") {
+      // After ANY sign-out (this tab's SDK, or relayed from another tab), a
+      // session event other than a real SIGNED_IN is stale work landing late,
+      // for example another tab's stuck refresh for the rep who just signed
+      // out. Treat it like the local sign-out case: wipe it, never adopt it.
+      localSignOutActive = true;
       endSessionNow();
       identifyUser(null);
       return;

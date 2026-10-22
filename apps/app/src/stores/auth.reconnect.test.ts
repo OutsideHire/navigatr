@@ -136,9 +136,11 @@ describe("holdProvisionalSession", () => {
   });
 
   it("ends when a real session arrives from the SDK", () => {
-    persistSession();
+    persistSession("stored-user");
     holdProvisionalSession();
-    watcher("TOKEN_REFRESHED", session("fresh"));
+    // auth-js refreshed the SAME rep's session (a different user is never
+    // adopted; see the different-user tests).
+    watcher("TOKEN_REFRESHED", session("stored-user"));
     expect(useAuth.getState().reconnecting).toBe(false);
     expect(useAuth.getState().session).not.toBeNull();
   });
@@ -327,9 +329,11 @@ describe("bootstrapSession", () => {
  */
 describe("ending a hold with a session reloads the failed screens", () => {
   it("on TOKEN_REFRESHED from auth-js while reconnecting", () => {
-    persistSession();
+    persistSession("stored-user");
     holdProvisionalSession();
-    watcher("TOKEN_REFRESHED", session("fresh"));
+    // auth-js refreshed the SAME rep's session (a different user is never
+    // adopted; see the different-user tests).
+    watcher("TOKEN_REFRESHED", session("stored-user"));
     expect(refetchFailedQueries).toHaveBeenCalledTimes(1);
   });
 
@@ -665,5 +669,45 @@ describe("auth events never mix two users", () => {
     watcher("SIGNED_IN", session("rep-a"));
     watcher("TOKEN_REFRESHED", { ...session("rep-a"), access_token: "rotated" });
     expect(useAuth.getState().session?.access_token).toBe("rotated");
+  });
+});
+
+describe("after any SIGNED_OUT, only a real sign-in brings a session back (round 3 M1)", () => {
+  it("a late TOKEN_REFRESHED for the signed-out rep is wiped and not adopted; a SIGNED_IN afterwards is", () => {
+    watcher("SIGNED_IN", session("rep-a"));
+    // Signed out by the SDK (this tab, or relayed from another tab).
+    watcher("SIGNED_OUT", null);
+    // Another tab's stuck refresh for rep A finally lands and is relayed here.
+    persistSession("rep-a");
+    watcher("TOKEN_REFRESHED", session("rep-a"));
+
+    expect(useAuth.getState().user).toBeNull();
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+
+    watcher("SIGNED_IN", session("rep-a"));
+    expect(useAuth.getState().user?.id).toBe("rep-a");
+    expect(useAuth.getState().session).not.toBeNull();
+  });
+});
+
+describe("the different-user check covers a held rep (round 3 M2)", () => {
+  it("a held rep receiving a refresh for a different user does not adopt it", () => {
+    persistSession("rep-a");
+    holdProvisionalSession();
+    expect(useAuth.getState().session).toBeNull();
+
+    persistSession("rep-b");
+    watcher("TOKEN_REFRESHED", session("rep-b"));
+
+    expect(useAuth.getState().user).toBeNull();
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it("a held rep receiving their own refresh is confirmed as usual", () => {
+    persistSession("rep-a");
+    holdProvisionalSession();
+    watcher("TOKEN_REFRESHED", session("rep-a"));
+    expect(useAuth.getState().user?.id).toBe("rep-a");
+    expect(useAuth.getState().reconnecting).toBe(false);
   });
 });
