@@ -80,6 +80,19 @@ function persistSession(id = "stored-user") {
   window.localStorage.setItem(KEY, JSON.stringify(session(id)));
 }
 
+// Hung SDK calls are released after each test. Recovery keeps a handle on an
+// outstanding timed-out call (I2) and will not pile new calls on top of it, so
+// a promise left hanging forever would leak into the next test.
+const hung: Array<(v: unknown) => void> = [];
+function hang<T = never>(): Promise<T> {
+  return new Promise<T>((resolve) => { hung.push(resolve as (v: unknown) => void); });
+}
+afterEach(async () => {
+  vi.useRealTimers();
+  hung.splice(0).forEach((release) => release({ data: { session: null }, error: null }));
+  await new Promise((r) => setTimeout(r, 0));
+});
+
 beforeEach(() => {
   getSession.mockReset().mockResolvedValue(none());
   refreshSession.mockReset().mockResolvedValue(none());
@@ -91,10 +104,6 @@ beforeEach(() => {
   useAuth.setState({ user: null, session: null, loading: false, error: null, reconnecting: false });
   installLocalStorage();
 });
-afterEach(() => {
-  vi.useRealTimers();
-});
-
 describe("holdProvisionalSession", () => {
   it("keeps the rep in the app as the stored user and marks the store reconnecting", () => {
     persistSession("stored-user");
@@ -200,7 +209,7 @@ describe("recoverSession keeps a late answer", () => {
     persistSession();
     let release!: (v: unknown) => void;
     getSession.mockReturnValueOnce(new Promise((r) => { release = r; }));
-    refreshSession.mockReturnValue(new Promise(() => {}));
+    refreshSession.mockReturnValue(hang());
 
     expect(await recoverSession({ attempts: 1, backoffMs: 0, timeoutMs: 5 })).toBe("timeout");
     // auth-js finally got the lock and answered. Throwing that away is what
@@ -214,10 +223,13 @@ describe("recoverSession keeps a late answer", () => {
 describe("the Sentry warning fires on a definitive failure or after a long wait, not on every timeout", () => {
   it("does not warn on a timeout that has not lasted long", async () => {
     persistSession();
-    getSession.mockReturnValue(new Promise(() => {}));
-    refreshSession.mockReturnValue(new Promise(() => {}));
+    getSession.mockReturnValue(hang());
+    refreshSession.mockReturnValue(hang());
     expect(await recoverSession({ attempts: 1, backoffMs: 0, timeoutMs: 5 })).toBe("timeout");
-    await new Promise((r) => setTimeout(r, 20));
+    // trackRecovery reports through a lazy import; wait for it to land rather
+    // than for an arbitrary stretch of real time, so the absence is real.
+    await vi.dynamicImportSettled();
+    expect(addBreadcrumb).toHaveBeenCalled();
     expect(captureMessage).not.toHaveBeenCalled();
   });
 
@@ -229,8 +241,8 @@ describe("the Sentry warning fires on a definitive failure or after a long wait,
     getSession.mockResolvedValueOnce(ok(session()));
     await recoverSession({ backoffMs: 0 });
     useAuth.setState({ user: null, session: null });
-    getSession.mockReturnValue(new Promise(() => {}));
-    refreshSession.mockReturnValue(new Promise(() => {}));
+    getSession.mockReturnValue(hang());
+    refreshSession.mockReturnValue(hang());
 
     await recoverSession({ attempts: 1, backoffMs: 0, timeoutMs: 5 });
     vi.setSystemTime(new Date(Date.parse("2026-10-22T12:00:00Z") + RECOVERY_REPORT_AFTER_MS + 1000));
@@ -270,7 +282,7 @@ describe("bootstrapSession", () => {
   it("on a hung SDK with a stored session, opens the app as that user and reconnects", async () => {
     useAuth.setState({ loading: true });
     persistSession("stored-user");
-    getSession.mockReturnValueOnce(new Promise(() => {}));
+    getSession.mockReturnValueOnce(hang());
     await bootstrapSession(5);
     expect(useAuth.getState().user?.id).toBe("stored-user");
     expect(useAuth.getState().reconnecting).toBe(true);
@@ -279,7 +291,7 @@ describe("bootstrapSession", () => {
 
   it("on a hung SDK with nothing stored, settles signed out as before", async () => {
     useAuth.setState({ loading: true });
-    getSession.mockReturnValueOnce(new Promise(() => {}));
+    getSession.mockReturnValueOnce(hang());
     await bootstrapSession(5);
     expect(useAuth.getState().user).toBeNull();
     expect(useAuth.getState().reconnecting).toBe(false);
@@ -317,7 +329,7 @@ describe("ending a hold with a session reloads the failed screens", () => {
     holdProvisionalSession();
     let release!: (v: unknown) => void;
     getSession.mockReturnValueOnce(new Promise((r) => { release = r; }));
-    refreshSession.mockReturnValue(new Promise(() => {}));
+    refreshSession.mockReturnValue(hang());
     await recoverSession({ attempts: 1, backoffMs: 0, timeoutMs: 5 });
     release(ok(session("late")));
     await vi.waitFor(() => expect(refetchFailedQueries).toHaveBeenCalledTimes(1));
@@ -349,7 +361,7 @@ describe("signOut finishes on the device even when auth-js cannot answer", () =>
   it("while reconnecting: wipes the stored session at once and signs out", async () => {
     persistAll();
     holdProvisionalSession();
-    sdkSignOut.mockReturnValue(new Promise(() => {}));
+    sdkSignOut.mockReturnValue(hang());
 
     await useAuth.getState().signOut();
 
@@ -363,7 +375,7 @@ describe("signOut finishes on the device even when auth-js cannot answer", () =>
     vi.useFakeTimers();
     persistAll();
     useAuth.setState({ user: session().user as never, session: session() as never });
-    sdkSignOut.mockReturnValue(new Promise(() => {}));
+    sdkSignOut.mockReturnValue(hang());
 
     const done = useAuth.getState().signOut();
     await vi.advanceTimersByTimeAsync(SIGN_OUT_TIMEOUT_MS);
@@ -398,9 +410,9 @@ describe("signOut finishes on the device even when auth-js cannot answer", () =>
     holdProvisionalSession();
     let release!: (v: unknown) => void;
     getSession.mockReturnValueOnce(new Promise((r) => { release = r; }));
-    refreshSession.mockReturnValue(new Promise(() => {}));
+    refreshSession.mockReturnValue(hang());
     await recoverSession({ attempts: 1, backoffMs: 0, timeoutMs: 5 });
-    sdkSignOut.mockReturnValue(new Promise(() => {}));
+    sdkSignOut.mockReturnValue(hang());
 
     await useAuth.getState().signOut();
     release(ok(session("stale")));
@@ -413,7 +425,7 @@ describe("signOut finishes on the device even when auth-js cannot answer", () =>
   it("a fresh sign-in after a local sign-out is accepted", async () => {
     persistAll();
     holdProvisionalSession();
-    sdkSignOut.mockReturnValue(new Promise(() => {}));
+    sdkSignOut.mockReturnValue(hang());
     await useAuth.getState().signOut();
 
     watcher("SIGNED_IN", session("fresh"));
@@ -457,5 +469,63 @@ describe("signOut finishes on the device even when auth-js cannot answer", () =>
     finish({ error: { name: "AuthRetryableFetchError", status: 0, message: "Failed to fetch" } });
     await vi.advanceTimersByTimeAsync(0);
     expect(storedKeys()).toEqual([]);
+  });
+});
+
+/**
+ * I2 (review): a timed-out getSession/refreshSession is not cancelled; auth-js
+ * keeps it queued behind its lock. Every new recovery run used to add more, so
+ * when the link came back they burst into back-to-back token rotations.
+ * While one is outstanding, recovery waits on it instead of adding another.
+ */
+describe("recovery never stacks SDK calls behind a stuck lock", () => {
+  it("N runs against a stuck SDK add at most one outstanding call", async () => {
+    persistSession();
+    getSession.mockReturnValue(hang());
+    refreshSession.mockReturnValue(hang());
+
+    for (let n = 0; n < 5; n++) {
+      expect(await recoverSession({ attempts: 3, backoffMs: 0, timeoutMs: 2 })).toBe("timeout");
+    }
+
+    expect(getSession.mock.calls.length + refreshSession.mock.calls.length).toBe(1);
+  });
+
+  it("uses the outstanding call's answer when it lands, without a new call", async () => {
+    persistSession();
+    let release!: (v: unknown) => void;
+    getSession.mockReturnValueOnce(new Promise((r) => { release = r; }));
+    refreshSession.mockReturnValue(hang());
+    expect(await recoverSession({ attempts: 1, backoffMs: 0, timeoutMs: 2 })).toBe("timeout");
+
+    const next = recoverSession({ attempts: 1, backoffMs: 0, timeoutMs: 50 });
+    release(ok(session("landed")));
+    expect(await next).toBe("recovered");
+    expect(getSession).toHaveBeenCalledTimes(1);
+    expect(refreshSession).not.toHaveBeenCalled();
+  });
+
+  it("issues fresh calls again once the outstanding one has settled", async () => {
+    persistSession();
+    let release!: (v: unknown) => void;
+    getSession.mockReturnValueOnce(new Promise((r) => { release = r; }));
+    refreshSession.mockReturnValue(hang());
+    await recoverSession({ attempts: 1, backoffMs: 0, timeoutMs: 2 });
+    release(none());
+    await new Promise((r) => setTimeout(r, 0));
+
+    getSession.mockResolvedValueOnce(ok(session("fresh")));
+    expect(await recoverSession({ attempts: 1, backoffMs: 0, timeoutMs: 50 })).toBe("recovered");
+    expect(getSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("counts a hung boot read as the outstanding call too", async () => {
+    useAuth.setState({ loading: true });
+    persistSession();
+    getSession.mockReturnValue(hang());
+    refreshSession.mockReturnValue(hang());
+    await bootstrapSession(2);
+    await recoverSession({ attempts: 2, backoffMs: 0, timeoutMs: 2 });
+    expect(getSession.mock.calls.length + refreshSession.mock.calls.length).toBe(1);
   });
 });

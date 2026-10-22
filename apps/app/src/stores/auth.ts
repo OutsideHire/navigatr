@@ -531,6 +531,46 @@ function gradeSettled(s: Settled<{ error: unknown }>): RecoveryFailure {
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+type SdkSessionResult = { data: { session: Session | null }; error: unknown };
+
+/**
+ * The SDK call (getSession or refreshSession) from a timed-out attempt that has
+ * not answered yet. Timing out does not cancel it: auth-js keeps it queued
+ * behind its lock and runs it when the lock frees. Recovery used to issue two
+ * NEW calls on every attempt regardless, so a long stall stacked up dozens,
+ * and when the link came back they ran back to back as a burst of token
+ * rotations. While one is outstanding we wait on it instead (I2).
+ */
+let outstandingSdkCall: Promise<SdkSessionResult> | null = null;
+
+function trackOutstanding(call: Promise<SdkSessionResult>): void {
+  outstandingSdkCall = call;
+  const clear = () => {
+    if (outstandingSdkCall === call) outstandingSdkCall = null;
+  };
+  call.then(clear, clear);
+}
+
+/**
+ * One recovery step: either wait on the outstanding call (if there is one)
+ * or issue `make()`. Never both, so a run adds at most one queued SDK call.
+ * A call that times out becomes the outstanding one, and its late answer is
+ * adopted (adoptLate).
+ */
+async function sdkStep(
+  make: () => Promise<SdkSessionResult>,
+  timeoutMs: number,
+): Promise<Settled<SdkSessionResult>> {
+  if (outstandingSdkCall) return settle(outstandingSdkCall, timeoutMs);
+  const call = make();
+  const result = await settle(call, timeoutMs);
+  if (result.kind === "timeout") {
+    trackOutstanding(call);
+    adoptLate(call);
+  }
+  return result;
+}
+
 /** True when the SDK has a session persisted to storage. Lets recovery skip
  *  pointless retries for a genuinely signed-out visitor (nothing to recover)
  *  while still retrying hard when a token IS present but the SDK momentarily
@@ -738,9 +778,7 @@ async function runRecovery(
   };
 
   for (let i = 0; i < maxAttempts; i++) {
-    const readCall = supabase.auth.getSession();
-    const read = await settle(readCall, timeoutMs);
-    if (read.kind === "timeout") adoptLate(readCall);
+    const read = await sdkStep(() => supabase.auth.getSession(), timeoutMs);
     if (read.kind === "ok" && read.value.data.session) {
       adoptSession(read.value.data.session);
       if (persisted) trackRecovery("recovered", { caller, attempts: i + 1 });
@@ -749,9 +787,7 @@ async function runRecovery(
     note(gradeSettled(read));
 
     if (persisted) {
-      const refreshCall = supabase.auth.refreshSession();
-      const refreshed = await settle(refreshCall, timeoutMs);
-      if (refreshed.kind === "timeout") adoptLate(refreshCall);
+      const refreshed = await sdkStep(() => supabase.auth.refreshSession(), timeoutMs);
       if (refreshed.kind === "ok" && refreshed.value.data.session) {
         adoptSession(refreshed.value.data.session);
         trackRecovery("recovered", { caller, attempts: i + 1 });
@@ -841,7 +877,10 @@ export async function bootstrapSession(timeoutMs: number = BOOTSTRAP_TIMEOUT_MS)
   const call = supabase.auth.getSession();
   const settled = await settle(call, timeoutMs);
   if (settled.kind !== "ok") {
-    if (settled.kind === "timeout") adoptLate(call);
+    if (settled.kind === "timeout") {
+      trackOutstanding(call);
+      adoptLate(call);
+    }
     if (!holdProvisionalSession()) useAuth.setState({ loading: false });
     return;
   }
