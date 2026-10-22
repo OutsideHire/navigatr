@@ -5,13 +5,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 
-const { recoverSession } = vi.hoisted(() => ({ recoverSession: vi.fn() }));
-vi.mock("@/stores/auth", () => ({ recoverSession }));
+const { recoverSession, holdProvisionalSession } = vi.hoisted(() => ({
+  recoverSession: vi.fn(),
+  holdProvisionalSession: vi.fn(() => false),
+}));
+vi.mock("@/stores/auth", () => ({ recoverSession, holdProvisionalSession }));
 
 import { useSessionRecovery } from "./useSessionRecovery";
 
 beforeEach(() => {
   recoverSession.mockReset();
+  holdProvisionalSession.mockReset().mockReturnValue(false);
 });
 
 describe("useSessionRecovery", () => {
@@ -121,5 +125,54 @@ describe("useSessionRecovery holds instead of settling when the network is the p
         expect.objectContaining({ caller: "protected_route" }),
       ),
     );
+  });
+});
+
+/**
+ * TIMEOUT is not an answer: the device is online and a session is stored,
+ * auth-js just has not replied (prod 2026-10: every "recovery failed" event was
+ * reason=timeout, online=true). Keep the rep in the app on their stored
+ * session instead of a wall they can only leave by signing in again.
+ */
+describe("useSessionRecovery on a TIMEOUT", () => {
+  it("keeps the rep in the app on their stored session", async () => {
+    recoverSession.mockResolvedValue("timeout");
+    holdProvisionalSession.mockReturnValue(true);
+    renderHook(() => useSessionRecovery(true));
+    await waitFor(() => expect(holdProvisionalSession).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not hold on TRANSPORT (offline keeps today's wall)", async () => {
+    recoverSession.mockResolvedValue("transport");
+    const { result } = renderHook(() => useSessionRecovery(true));
+    await waitFor(() => expect(result.current).toBe("reconnecting"));
+    expect(holdProvisionalSession).not.toHaveBeenCalled();
+  });
+
+  it("with nothing usable stored, shows the wall but retries on a timer (an online rep gets no 'online' event)", async () => {
+    vi.useFakeTimers();
+    try {
+      recoverSession.mockResolvedValue("timeout");
+      const { result } = renderHook(() => useSessionRecovery(true));
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(result.current).toBe("reconnecting");
+      expect(recoverSession).toHaveBeenCalledTimes(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+      expect(recoverSession).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does NOT add a timer for TRANSPORT (offline retries only on online or return, as today)", async () => {
+    vi.useFakeTimers();
+    try {
+      recoverSession.mockResolvedValue("transport");
+      renderHook(() => useSessionRecovery(true));
+      await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+      expect(recoverSession).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

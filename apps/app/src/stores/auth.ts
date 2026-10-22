@@ -16,6 +16,8 @@ import { create } from "zustand";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase, AUTH_STORAGE_KEY } from "@/lib/supabase";
 import { setSessionGuardHooks } from "@/lib/sessionGuard";
+import { haltQueriesForSignOut } from "@/lib/sessionQueries";
+import { setSessionPresenceProbe } from "@/lib/sessionPresence";
 
 export type Profession = "payroll" | "merchant_services" | "treasury_management";
 
@@ -24,6 +26,14 @@ interface AuthState {
   session: Session | null;
   loading: boolean;
   error: string | null;
+  /**
+   * True while the rep is kept in the app as the user stored on this device
+   * but the SDK has not yet confirmed the session (auth-js did not answer in
+   * time). `session` is null meanwhile. Cleared when a real session arrives
+   * or the session definitively ends. ProtectedRoute shows "Reconnecting..."
+   * and keeps retrying in the background while it is set.
+   */
+  reconnecting: boolean;
 
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signInWithMagicLink: (email: string) => Promise<void>;
@@ -52,6 +62,7 @@ export const useAuth = create<AuthState>((set) => ({
   session: null,
   loading: true,
   error: null,
+  reconnecting: false,
 
   signInWithEmail: async (email, password) => {
     set({ error: null });
@@ -344,6 +355,30 @@ const RECOVERY_DEFAULTS: RecoveryOptions = { attempts: 3, backoffMs: 250, timeou
 const BOOTSTRAP_TIMEOUT_MS = 8000;
 
 /**
+ * How long a rep may stay unresolved (timeout or transport, never a definitive
+ * answer) before we tell Sentry. A timeout is not a failure: auth-js is still
+ * working on it and the rep stays in the app. Reporting each one is what made
+ * ~10 warnings a month for a handful of reps who were, in fact, fine. A rep
+ * still stuck after this long IS worth seeing.
+ */
+export const RECOVERY_REPORT_AFTER_MS = 2 * 60_000;
+
+/** After a definitive sign-out, how long the session guard refuses table
+ *  requests that still carry only the publishable key. Long enough for the
+ *  queries that were waiting on the token to drain; short enough that nothing
+ *  legitimate later in the page's life is affected. */
+const SIGN_OUT_DRAIN_MS = 5000;
+let signedOutAt: number | null = null;
+
+/** Start of the current unresolved stretch, and whether it was reported. */
+let unresolvedSince: number | null = null;
+let unresolvedReported = false;
+function endUnresolvedEpisode(): void {
+  unresolvedSince = null;
+  unresolvedReported = false;
+}
+
+/**
  * Why a recovery attempt produced no session. This distinction is the whole
  * point: "the server refused your refresh token" and "your phone never reached
  * the server" are OPPOSITE conditions that call for opposite responses, and the
@@ -372,8 +407,7 @@ const FAILURE_RANK: Record<RecoveryFailure, number> = {
 };
 
 /** A settled promise that never rejects, keeping WHICH of the three things
- *  happened. `withTimeout` below is this with the reason thrown away, for the
- *  one caller (bootstrap) that genuinely does not need it. */
+ *  happened. */
 type Settled<T> =
   | { kind: "ok"; value: T }
   | { kind: "timeout" }
@@ -387,12 +421,6 @@ function settle<T>(p: Promise<T>, ms: number): Promise<Settled<T>> {
       (error: unknown) => { clearTimeout(timer); resolve({ kind: "threw", error }); },
     );
   });
-}
-
-/** Resolve to null if `p` doesn't settle within `ms`. Never rejects; a hung or
- *  throwing SDK call becomes "no result this attempt" rather than an exception. */
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
-  return settle(p, ms).then((s) => (s.kind === "ok" ? s.value : null));
 }
 
 /**
@@ -453,7 +481,80 @@ function hasPersistedSession(): boolean {
  *  onAuthStateChange event, so we push it ourselves; refreshSession does emit
  *  one, but setting it here too is idempotent and closes the render gap. */
 function adoptSession(session: Session): void {
-  useAuth.setState({ session, user: session.user, loading: false });
+  endUnresolvedEpisode();
+  useAuth.setState({ session, user: session.user, loading: false, reconnecting: false });
+}
+
+/** Adopt a session the SDK hands back AFTER we stopped waiting for it. A
+ *  timed-out call is not cancelled: auth-js keeps queueing it behind its lock
+ *  and answers eventually. getSession emits no event when it returns a stored,
+ *  unexpired session, so discarding that answer left reps on the
+ *  Reconnecting screen with a perfectly good session. Only adopts while the
+ *  store has no confirmed session, so it can never override a newer one. */
+function adoptLate(p: Promise<{ data: { session: Session | null } }>): void {
+  p.then(
+    (r) => {
+      const s = r?.data?.session;
+      if (s && !useAuth.getState().session) adoptSession(s);
+    },
+    () => {
+      /* a late failure changes nothing: the attempt was already graded */
+    },
+  );
+}
+
+/** The session auth-js persisted on this device, if it carries a user.
+ *  auth-js stores the whole session object (user included) under the storage
+ *  key. Used only to keep showing the rep their own app while the SDK is slow
+ *  to confirm it; it grants no access (every request still needs the token). */
+function readPersistedUser(): User | null {
+  try {
+    const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { user?: { id?: unknown } } | null;
+    const user = parsed?.user;
+    return user && typeof user.id === "string" ? (user as User) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Keep the rep in the app when auth-js has not answered in time but a session
+ * IS stored on this device (recovery outcome "timeout"). Before this, that
+ * rep got a full-screen wall that only retried on `online` (already online,
+ * never fires) or a tab switch, so their way out was "Sign in again": the
+ * bounce to /login in production. Returns false when nothing usable is
+ * stored, so the caller falls back to the wall.
+ */
+export function holdProvisionalSession(): boolean {
+  const user = readPersistedUser();
+  if (!user) return false;
+  useAuth.setState((s) => ({
+    user: s.user ?? user,
+    session: s.session,
+    loading: false,
+    reconnecting: s.session == null,
+  }));
+  return true;
+}
+
+/** A definitive answer arrived while holding a provisional user (the token was
+ *  refused, or the stored session is gone). Stop the data layer, then let
+ *  ProtectedRoute route to sign in as it always has. */
+export function abandonProvisionalSession(): void {
+  endSessionNow();
+}
+
+/** The one place a session ends in the store. Halts queries FIRST, while the
+ *  screens are still mounted, so nothing refetches or retries into an anon
+ *  request, and opens the session guard's drain window for the requests that
+ *  were already waiting on the token. */
+function endSessionNow(): void {
+  haltQueriesForSignOut();
+  signedOutAt = Date.now();
+  endUnresolvedEpisode();
+  useAuth.setState({ session: null, user: null, loading: false, reconnecting: false });
 }
 
 /** Fire-and-forget Sentry signal so Ryan can watch the involuntary-logout rate
@@ -462,7 +563,7 @@ function adoptSession(session: Session): void {
  *  not be recovered (the rare, high-signal case). Lazy import keeps Sentry out
  *  of the bundle when observability is disabled. */
 function trackRecovery(
-  outcome: "recovered" | "failed",
+  outcome: "recovered" | "failed" | "unresolved",
   detail: { caller: RecoveryCaller; attempts: number; reason?: RecoveryFailure },
 ): void {
   // navigator.onLine is a weak signal (it only knows about the link, not
@@ -476,7 +577,7 @@ function trackRecovery(
     .then(({ addBreadcrumb, captureMessage }) => {
       addBreadcrumb({
         category: "auth",
-        level: outcome === "failed" ? "warning" : "info",
+        level: outcome === "recovered" ? "info" : "warning",
         message: `session.${outcome}`,
         data: { caller: detail.caller, attempts: detail.attempts, reason: detail.reason ?? null },
       });
@@ -496,6 +597,29 @@ function trackRecovery(
     .catch(() => {
       /* observability is best-effort; never let it break auth */
     });
+}
+
+/**
+ * Report a failed run. A definitive answer ("expired", or "unknown", which the
+ * UI also treats as final) reports at once, as before. "timeout" and
+ * "transport" mean no answer yet: the rep is held in the app and retried, so
+ * they only leave a breadcrumb until the stretch has lasted
+ * RECOVERY_REPORT_AFTER_MS, then report ONCE with the same tags.
+ */
+function reportFailure(detail: { caller: RecoveryCaller; attempts: number; reason: RecoveryFailure }): void {
+  if (detail.reason === "expired" || detail.reason === "unknown") {
+    endUnresolvedEpisode();
+    trackRecovery("failed", detail);
+    return;
+  }
+  const now = Date.now();
+  if (unresolvedSince === null) unresolvedSince = now;
+  if (!unresolvedReported && now - unresolvedSince >= RECOVERY_REPORT_AFTER_MS) {
+    unresolvedReported = true;
+    trackRecovery("failed", detail);
+    return;
+  }
+  trackRecovery("unresolved", detail);
 }
 
 /**
@@ -528,7 +652,9 @@ async function runRecovery(
   };
 
   for (let i = 0; i < maxAttempts; i++) {
-    const read = await settle(supabase.auth.getSession(), timeoutMs);
+    const readCall = supabase.auth.getSession();
+    const read = await settle(readCall, timeoutMs);
+    if (read.kind === "timeout") adoptLate(readCall);
     if (read.kind === "ok" && read.value.data.session) {
       adoptSession(read.value.data.session);
       if (persisted) trackRecovery("recovered", { caller, attempts: i + 1 });
@@ -537,7 +663,9 @@ async function runRecovery(
     note(gradeSettled(read));
 
     if (persisted) {
-      const refreshed = await settle(supabase.auth.refreshSession(), timeoutMs);
+      const refreshCall = supabase.auth.refreshSession();
+      const refreshed = await settle(refreshCall, timeoutMs);
+      if (refreshed.kind === "timeout") adoptLate(refreshCall);
       if (refreshed.kind === "ok" && refreshed.value.data.session) {
         adoptSession(refreshed.value.data.session);
         trackRecovery("recovered", { caller, attempts: i + 1 });
@@ -552,7 +680,7 @@ async function runRecovery(
   // involuntary-logout signal worth watching; a plain signed-out visitor
   // (no persisted token) is not, so it stays quiet.
   if (!persisted) return "no-session";
-  trackRecovery("failed", { caller, attempts: maxAttempts, reason });
+  reportFailure({ caller, attempts: maxAttempts, reason });
   return reason;
 }
 
@@ -598,11 +726,53 @@ setSessionGuardHooks({
   // through as anon straight into a 42501. If the app believes someone is
   // signed in, a request carrying the publishable key is wrong, full stop.
   believesSignedIn: () => useAuth.getState().user != null,
+  // Queries that were waiting on the token when the session ended resolve a
+  // moment later with no token. Refuse their table requests locally for a
+  // short drain window instead of sending them as anon into a 42501.
+  refuseAnonTableRequests: () =>
+    signedOutAt !== null && Date.now() - signedOutAt < SIGN_OUT_DRAIN_MS,
   getAccessToken: async () => {
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token ?? null;
   },
 });
+
+// Error reporting asks this to tell "42501 because the session ended" (expected,
+// dropped) from "42501 while signed in" (a real grant or token bug, reported).
+// A provisional user has no confirmed session, so it counts as none.
+setSessionPresenceProbe(() => useAuth.getState().session != null);
+
+/**
+ * Hydrate the store from the SDK's persisted session at boot. Guarded by a
+ * timeout so a hung getSession cannot strand the app on a spinner. On timeout
+ * with a session stored on this device, open the app as that user and keep
+ * reconnecting (see holdProvisionalSession) instead of settling signed out and
+ * sending the rep through a recovery that will hit the same stuck lock.
+ */
+export async function bootstrapSession(timeoutMs: number = BOOTSTRAP_TIMEOUT_MS): Promise<void> {
+  const call = supabase.auth.getSession();
+  const settled = await settle(call, timeoutMs);
+  if (settled.kind !== "ok") {
+    if (settled.kind === "timeout") adoptLate(call);
+    if (!holdProvisionalSession()) useAuth.setState({ loading: false });
+    return;
+  }
+  const { data, error } = settled.value;
+  if (error) {
+    useAuth.setState({
+      loading: false,
+      error: errorMessage(error, "Failed to read session"),
+    });
+    return;
+  }
+  if (data.session) endUnresolvedEpisode();
+  useAuth.setState({
+    session: data.session,
+    user: data.session?.user ?? null,
+    loading: false,
+    reconnecting: false,
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Module-level side effects: hydrate from Supabase + subscribe to changes.
@@ -625,28 +795,7 @@ if (typeof window !== "undefined") {
   //    timeout so a hung getSession can't leave the app spinning forever: on
   //    timeout (or error) we settle to "no user" and let ProtectedRoute's
   //    recovery try to reconstitute the session.
-  void (async () => {
-    const result = await withTimeout(supabase.auth.getSession(), BOOTSTRAP_TIMEOUT_MS);
-    if (result === null) {
-      // getSession hung or threw. Don't strand the boot spinner; recovery
-      // (triggered on the null user) will re-attempt with retry + refresh.
-      useAuth.setState({ loading: false });
-      return;
-    }
-    const { data, error } = result;
-    if (error) {
-      useAuth.setState({
-        loading: false,
-        error: errorMessage(error, "Failed to read session"),
-      });
-      return;
-    }
-    useAuth.setState({
-      session: data.session,
-      user: data.session?.user ?? null,
-      loading: false,
-    });
-  })();
+  void bootstrapSession();
 
   // 2) Live-subscribe so other tabs / refresh events / sign-outs propagate.
   //    Event-aware on purpose: we only HARD-CLEAR the user on a genuine
@@ -658,12 +807,13 @@ if (typeof window !== "undefined") {
   //    in a broken authed state.
   supabase.auth.onAuthStateChange((event, session) => {
     if (session) {
-      useAuth.setState({ session, user: session.user, loading: false });
+      endUnresolvedEpisode();
+      useAuth.setState({ session, user: session.user, loading: false, reconnecting: false });
       identifyUser(session.user);
       return;
     }
     if (event === "SIGNED_OUT") {
-      useAuth.setState({ session: null, user: null, loading: false });
+      endSessionNow();
       identifyUser(null);
       return;
     }
