@@ -8,7 +8,7 @@
  * signed out, and (b) NOT wipe a held user on a transient null event — only on a
  * genuine SIGNED_OUT.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // SDK auth surface — driven per test. vi.hoisted so the vi.mock factory (which
 // is itself hoisted above the imports) can safely close over these. Defaults are
@@ -78,7 +78,24 @@ function persistToken() {
   window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ access_token: "x" }));
 }
 
+// Hung SDK calls are released after each test. Recovery keeps a handle on an
+// outstanding timed-out call (I2) and will not pile new calls on top of it, so
+// a promise left hanging forever would leak into the next test.
+const hung: Array<(v: unknown) => void> = [];
+function hang<T = never>(): Promise<T> {
+  return new Promise<T>((resolve) => { hung.push(resolve as (v: unknown) => void); });
+}
+afterEach(async () => {
+  vi.useRealTimers();
+  hung.splice(0).forEach((release) => release({ data: { session: null }, error: null }));
+  await new Promise((r) => setTimeout(r, 0));
+});
+
 beforeEach(() => {
+  // After a SIGNED_OUT only a real SIGNED_IN brings a session back, so start
+  // each test from a signed-in-then-cleared state (an earlier test may have
+  // signed out).
+  watcher("SIGNED_IN", session("reset"));
   getSession.mockReset().mockResolvedValue(none());
   refreshSession.mockReset().mockResolvedValue(none());
   captureMessage.mockReset();
@@ -177,7 +194,7 @@ describe("recoverSession", () => {
 
   it("does not hang when getSession never resolves (timeout guard)", async () => {
     // Hung SDK call: settle() resolves a timeout so recovery still settles.
-    getSession.mockReturnValue(new Promise(() => {}));
+    getSession.mockReturnValue(hang());
 
     const recovered = await recoverSession({ attempts: 1, backoffMs: 0, timeoutMs: 10 });
 
@@ -246,8 +263,8 @@ describe("recoverSession grades WHY it failed", () => {
 
   it("grades a hung call as timeout when a token IS persisted", async () => {
     persistToken();
-    getSession.mockReturnValue(new Promise(() => {}));
-    refreshSession.mockReturnValue(new Promise(() => {}));
+    getSession.mockReturnValue(hang());
+    refreshSession.mockReturnValue(hang());
 
     expect(await recoverSession({ attempts: 1, backoffMs: 0, timeoutMs: 5 })).toBe("timeout");
   });
@@ -266,9 +283,13 @@ describe("recoverSession grades WHY it failed", () => {
   it("lets a definite expiry outrank a timeout seen on an earlier attempt", async () => {
     persistToken();
     getSession.mockResolvedValue(none());
+    // Attempt 1: no answer in time. The server's refusal lands later, while
+    // attempt 2 is waiting on that same call (recovery does not stack a new
+    // call behind a stuck one), and attempt 2's fresh refresh is refused too.
+    const refused = authError({ status: 400, message: "Invalid Refresh Token" });
     refreshSession
-      .mockReturnValueOnce(new Promise(() => {})) // attempt 1: no answer
-      .mockResolvedValue(authError({ status: 400, message: "Invalid Refresh Token" }));
+      .mockReturnValueOnce(new Promise((r) => setTimeout(() => r(refused), 10)))
+      .mockResolvedValue(refused);
 
     // The server did eventually answer and refuse the token, so it really is
     // dead; an earlier silence must not soften that into "just reconnect".

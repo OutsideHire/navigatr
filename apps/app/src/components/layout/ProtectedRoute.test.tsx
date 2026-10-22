@@ -11,8 +11,10 @@ import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { ProtectedRoute } from "./ProtectedRoute";
 
 // Mock useAuth so we don't run the module-level Supabase bootstrap.
+const { storeSignOut } = vi.hoisted(() => ({ storeSignOut: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/stores/auth", () => ({
-  useAuth: (selector: (s: AuthShape) => unknown) => selector(authShape),
+  useAuth: (selector: (s: AuthShape & { signOut: typeof storeSignOut }) => unknown) =>
+    selector({ ...authShape, signOut: storeSignOut }),
 }));
 
 // Mock useProfile so we can drive React Query states directly.
@@ -32,6 +34,11 @@ vi.mock("@/features/auth/useSessionRecovery", () => ({
   useSessionRecovery: () => recoveryPhase,
 }));
 
+// The background reconnect loop is covered in useReconnect.test.tsx; here we
+// only check ProtectedRoute runs it exactly while the store is reconnecting.
+const { useReconnect } = vi.hoisted(() => ({ useReconnect: vi.fn() }));
+vi.mock("@/features/auth/useReconnect", () => ({ useReconnect }));
+
 // AppLayout pulls in TopBar / SidebarNav / data-fetching hooks; stub it
 // so this test stays focused on ProtectedRoute's branching.
 vi.mock("./AppLayout", () => ({
@@ -49,6 +56,7 @@ vi.mock("@/features/branding/BrandProvider", () => ({
 interface AuthShape {
   user: { id: string; email: string; user_metadata: Record<string, unknown> } | null;
   loading: boolean;
+  reconnecting?: boolean;
 }
 
 let authShape: AuthShape;
@@ -257,5 +265,83 @@ describe("ProtectedRoute", () => {
     expect(screen.queryByText("auth callback page")).not.toBeInTheDocument();
     expect(screen.queryByText("dashboard content")).not.toBeInTheDocument();
     expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+  });
+});
+
+/**
+ * Held on the stored session while auth-js has not answered (TIMEOUT, online).
+ * Production 2026-10: these reps were walled off and ended up on /login. They
+ * must stay in the app with a small, non-blocking indicator instead.
+ */
+describe("ProtectedRoute while reconnecting", () => {
+  beforeEach(() => {
+    authShape = {
+      user: { id: "user-1", email: "u@example.com", user_metadata: { full_name: "U Example" } },
+      loading: false,
+      reconnecting: true,
+    };
+    profileShape = { data: { id: "user-1" }, isLoading: false, isFetching: false, isError: false, error: null };
+    suspendedShape = { data: false, isLoading: false, isFetching: false, isError: false };
+    recoveryPhase = "settled";
+    useReconnect.mockClear();
+  });
+
+  it("keeps the rep in the app with a non-blocking Reconnecting indicator", () => {
+    renderAt("/dashboard");
+    expect(screen.getByText("dashboard content")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Reconnecting...");
+    expect(screen.queryByText("login page")).not.toBeInTheDocument();
+  });
+
+  it("runs the background reconnect loop only while reconnecting", () => {
+    renderAt("/dashboard");
+    expect(useReconnect).toHaveBeenLastCalledWith(true);
+    authShape = { ...authShape, reconnecting: false };
+    renderAt("/dashboard");
+    expect(useReconnect).toHaveBeenLastCalledWith(false);
+  });
+
+  it("does not show the indicator once the session is confirmed", () => {
+    authShape = { ...authShape, reconnecting: false };
+    renderAt("/dashboard");
+    expect(screen.queryByText("Reconnecting...")).not.toBeInTheDocument();
+  });
+
+  it("shows the indicator (not a bare spinner) while the profile waits on the token", () => {
+    profileShape = { data: undefined, isLoading: true, isFetching: true, isError: false, error: null };
+    renderAt("/dashboard");
+    expect(screen.getByRole("status")).toHaveTextContent("Reconnecting...");
+  });
+
+  it("does not show the terminal profile error while still reconnecting", () => {
+    // The profile read failed only because the token could not be confirmed
+    // yet. Once it is, the failed read reloads; until then this is not final.
+    profileShape = { data: undefined, isLoading: false, isFetching: false, isError: true, error: new Error("[42501] permission denied for table profiles") };
+    renderAt("/dashboard");
+    expect(screen.queryByText(/could not load your profile/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/reconnecting/i)).toBeInTheDocument();
+  });
+});
+
+describe("ProtectedRoute reconnecting wall escape while held", () => {
+  it("'Sign in again' signs out on this device and reaches the sign-in page", async () => {
+    // A plain link to /login would bounce straight back: the public-only route
+    // sees the held user and returns the rep to the app. Only dropping the
+    // store's user (not the SDK's stored session) let a late answer from
+    // auth-js sign the rep straight back in (M5), so this goes through the
+    // store's signOut, which wipes the stored session locally while held.
+    authShape = {
+      user: { id: "user-1", email: "u@example.com", user_metadata: {} },
+      loading: false,
+      reconnecting: true,
+    };
+    profileShape = { data: undefined, isLoading: false, isFetching: false, isError: true, error: new Error("x") };
+    suspendedShape = { data: false, isLoading: false, isFetching: false, isError: false };
+    recoveryPhase = "settled";
+    storeSignOut.mockClear();
+    renderAt("/dashboard");
+    screen.getByRole("button", { name: /sign in again/i }).click();
+    expect(storeSignOut).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("login page")).toBeInTheDocument();
   });
 });

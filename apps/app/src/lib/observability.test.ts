@@ -103,6 +103,67 @@ describe("observability", () => {
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 
+  it("captureException drops a user's own auth mistake (mistyped password, older code)", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { initObservability, captureException } = await import("./observability");
+    initObservability();
+    const wrongPassword = Object.assign(new Error("Invalid login credentials"), {
+      name: "AuthApiError", status: 400, code: "invalid_credentials",
+    });
+    const olderCode = Object.assign(new Error("Token has expired or is invalid"), {
+      name: "AuthApiError", status: 403, code: "otp_expired",
+    });
+    captureException(wrongPassword, undefined, { action: "auth.sign-in" });
+    captureException(olderCode, undefined, { action: "auth.verify-otp" });
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it("captureException drops a 42501 table denial when the app holds no session", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { setSignedInProbe } = await import("./sessionPresence");
+    const { initObservability, captureException } = await import("./observability");
+    initObservability();
+    setSignedInProbe(() => false);
+    captureException(
+      { code: "42501", message: "permission denied for table task", details: null, hint: null },
+      { source: "react-query" },
+    );
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it("captureException still reports a 42501 table denial when a session exists", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { setSignedInProbe } = await import("./sessionPresence");
+    const { initObservability, captureException } = await import("./observability");
+    initObservability();
+    setSignedInProbe(() => true);
+    captureException(
+      { code: "42501", message: "permission denied for table task", details: null, hint: null },
+      { source: "react-query" },
+    );
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+  });
+
+  it("beforeSend drops an UNHANDLED 42501 table denial when the app holds no session", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
+    const Sentry = await import("@sentry/react");
+    const { setSignedInProbe } = await import("./sessionPresence");
+    const { initObservability } = await import("./observability");
+    initObservability();
+    setSignedInProbe(() => false);
+    const initArg = (Sentry.init as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+      beforeSend: (e: Record<string, unknown>, h?: { originalException?: unknown }) => Record<string, unknown> | null;
+    };
+    const out = initArg.beforeSend(
+      { exception: { values: [{ value: "x" }] } },
+      { originalException: { code: "42501", message: "permission denied for table paths", details: null, hint: null } },
+    );
+    expect(out).toBeNull();
+  });
+
   it("captureException normalizes a raw Supabase error into a readable Error", async () => {
     vi.stubEnv("VITE_SENTRY_DSN", "https://example@sentry.io/123");
     const Sentry = await import("@sentry/react");

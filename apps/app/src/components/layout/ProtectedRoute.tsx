@@ -17,12 +17,13 @@
  */
 
 import type { ReactNode } from "react";
-import { Link, Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/stores/auth";
 import { useProfile } from "@/features/auth/useProfile";
 import { useOrgSuspended } from "@/features/auth/useOrgSuspended";
 import { useSessionRecovery } from "@/features/auth/useSessionRecovery";
+import { useReconnect } from "@/features/auth/useReconnect";
 import { AppLayout } from "./AppLayout";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { BrandProvider } from "@/features/branding/BrandProvider";
@@ -32,6 +33,28 @@ function Spinner() {
   return (
     <div className="flex min-h-dvh items-center justify-center bg-surface-canvas">
       <Loader2 className="h-6 w-6 animate-spin text-text-subtle" />
+    </div>
+  );
+}
+
+/**
+ * Small, non-blocking "Reconnecting..." pill shown while the rep is held in the
+ * app on the session stored on their device and auth-js has not confirmed it
+ * yet. Deliberately not a wall: the rep keeps their screen, and taps go
+ * through it (pointer-events-none). It disappears on its own once the session
+ * is confirmed, or the rep is sent to sign in if it turns out to be over.
+ */
+function ReconnectingIndicator() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+0.5rem)] z-50 flex justify-center px-4"
+    >
+      <span className="flex items-center gap-2 rounded-radius-full border border-border-subtle bg-surface-elevated px-3 py-1.5 text-caption font-medium text-text-muted shadow-sm">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+        Reconnecting...
+      </span>
     </div>
   );
 }
@@ -49,7 +72,9 @@ function Spinner() {
  * the app. The Sign in link is the deliberate escape for the case where they
  * really were signed out and would rather not wait.
  */
-function ReconnectingWall() {
+function ReconnectingWall({ held = false }: { held?: boolean }) {
+  const navigate = useNavigate();
+  const signOut = useAuth((s) => s.signOut);
   return (
     <div
       role="status"
@@ -62,12 +87,30 @@ function ReconnectingWall() {
           We can&apos;t reach the server right now. You&apos;re still signed in, and this
           will pick up on its own once your connection is back.
         </p>
-        <Link
-          to="/login"
-          className="mt-6 inline-block text-body-sm font-medium text-text-default underline underline-offset-2 hover:text-text-muted"
-        >
-          Sign in again
-        </Link>
+        {held ? (
+          // Held on the stored session: a plain link would bounce straight
+          // back, because the public-only /login route sees the held user.
+          // Sign out on this device first (while held, the store wipes the
+          // stored session synchronously, so a late answer from auth-js
+          // cannot sign the rep back in), then go to sign in.
+          <button
+            type="button"
+            onClick={() => {
+              void signOut().catch(() => undefined);
+              navigate("/login", { replace: true });
+            }}
+            className="mt-6 inline-block text-body-sm font-medium text-text-default underline underline-offset-2 hover:text-text-muted"
+          >
+            Sign in again
+          </button>
+        ) : (
+          <Link
+            to="/login"
+            className="mt-6 inline-block text-body-sm font-medium text-text-default underline underline-offset-2 hover:text-text-muted"
+          >
+            Sign in again
+          </Link>
+        )}
       </div>
     </div>
   );
@@ -105,6 +148,7 @@ function OrgSuspendedWall() {
 export function ProtectedRoute({ children }: { children: ReactNode }) {
   const user = useAuth((s) => s.user);
   const loading = useAuth((s) => s.loading);
+  const reconnecting = useAuth((s) => s.reconnecting) === true;
   const profile = useProfile();
   const suspended = useOrgSuspended();
   const location = useLocation();
@@ -115,6 +159,9 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   // that transient null is what logged reps out on mobile. Only run once the
   // boot has settled (loading === false) and the store shows no user.
   const recovery = useSessionRecovery(!loading && !user);
+  // Held on the stored session while auth-js has not answered: keep confirming
+  // it in the background until it is confirmed or definitively over.
+  useReconnect(!!user && reconnecting);
 
   if (loading) return <Spinner />;
 
@@ -136,7 +183,23 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   // it, but the new fetch is still in flight on the first render). Without
   // this, ProtectedRoute reads the stale null and bounces to /auth/callback,
   // which idempotent-succeeds and bounces back — infinite loop.
-  if (profile.isLoading || profile.isFetching) return <Spinner />;
+  if (profile.isLoading || profile.isFetching) {
+    // While reconnecting, the profile read is waiting on the token. Say so,
+    // rather than leaving the rep on a bare spinner.
+    return reconnecting ? (
+      <>
+        <Spinner />
+        <ReconnectingIndicator />
+      </>
+    ) : (
+      <Spinner />
+    );
+  }
+
+  // While reconnecting, a failed profile read failed for lack of a confirmed
+  // token, not because the profile is broken. It reloads once the session is
+  // confirmed (refetchFailedQueries), so this is not the terminal error below.
+  if (profile.isError && reconnecting) return <ReconnectingWall held />;
 
   // If the profile fetch errored, do NOT redirect — /auth/callback would
   // re-query and hit the same error, producing a redirect loop that
@@ -200,6 +263,7 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
       <AppLayout user={topBarUser}>
         <RouteErrorBoundary>{children}</RouteErrorBoundary>
       </AppLayout>
+      {reconnecting && <ReconnectingIndicator />}
     </BrandProvider>
   );
 }

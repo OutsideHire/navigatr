@@ -8,6 +8,7 @@ import { Toaster } from "sonner";
 import { App } from "@/App";
 import { initObservability, reportCacheError } from "@/lib/observability";
 import { installChunkReloadHandler } from "@/lib/chunkReload";
+import { bindQueryClient } from "@/lib/sessionQueries";
 import "@/index.css";
 
 // Observability MUST init before any other side-effect import — otherwise
@@ -51,6 +52,11 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// Let the auth store stop the data layer the moment a session ends (cancel
+// in-flight reads, drop the cache) and reload failed screens when a held
+// session reconnects. See lib/sessionQueries.ts.
+bindQueryClient(queryClient);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

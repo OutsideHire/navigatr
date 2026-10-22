@@ -6,6 +6,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { reportError } from "@/lib/reportError";
 import { captureException } from "@/lib/observability";
+import { isOtpReplacedOrExpired } from "@/lib/errorFilter";
 import { Mail } from "lucide-react";
 import { Button, FormField, Input } from "@/components/navigatr";
 import { useAuth } from "@/stores/auth";
@@ -29,6 +30,11 @@ type Values = z.infer<typeof schema>;
  * we swap the whole form for a "check your email" confirmation card.
  */
 type Mode = "password" | "magic-link";
+
+/** Shown when the typed code is no longer valid. The usual cause: the rep tapped
+ *  "send another" and then typed the code from the older email. */
+const OTP_REPLACED_MESSAGE =
+  "That code was replaced or expired. Use the code from your newest email.";
 
 export function LoginForm() {
   const signInWithEmail = useAuth((s) => s.signInWithEmail);
@@ -121,7 +127,11 @@ export function LoginForm() {
         await verifyMagicLinkCode(magicSentTo, code);
         navigate("/dashboard");
       } catch (err) {
-        reportError(err, { action: "auth.verify-otp", fallback: "Couldn't verify code" });
+        reportError(err, {
+          action: "auth.verify-otp",
+          fallback: "Couldn't verify code",
+          message: isOtpReplacedOrExpired(err) ? OTP_REPLACED_MESSAGE : undefined,
+        });
       } finally {
         setVerifying(false);
       }
