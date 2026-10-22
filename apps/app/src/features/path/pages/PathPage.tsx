@@ -54,6 +54,8 @@ import { PlanPathWizard } from "./PlanPathWizard";
 import { TodaysPathView, ADD_NEARBY_ENABLED } from "../components/TodaysPathView";
 import { PathOverflowSheet } from "../components/PathOverflowSheet";
 import { UpcomingPaths } from "../components/UpcomingPaths";
+import { PlannedPathSheet } from "../components/PlannedPathSheet";
+import type { Path } from "../lib/pathTypes";
 import { PathSettings } from "../components/PathSettings";
 import { RunningPath } from "../components/RunningPath";
 import { ResumePathCard } from "../components/ResumePathCard";
@@ -77,6 +79,7 @@ import { useTodaysPath } from "../hooks/useTodaysPath";
 import { useCaptureTimezone } from "../hooks/useCaptureTimezone";
 import { useBackfillOwedCoords } from "../hooks/useBackfillOwedCoords";
 import type { OrderedStop } from "../lib/todaysPath";
+import { todayISO } from "../lib/today";
 import { OwedVisitsList, type OwedVisitRow } from "../components/OwedVisitsList";
 import type { OwedVisit } from "../lib/owedVisits";
 import { useTaskMutations } from "@/features/activities/hooks/useTaskMutations";
@@ -209,6 +212,8 @@ export function PathPage() {
     [calWindow, calWaypoints, calTimeBlocks],
   );
   const [planOpen, setPlanOpen] = React.useState(false);
+  // The Upcoming path the rep opened to view / edit (null = sheet closed).
+  const [plannedPath, setPlannedPath] = React.useState<Path | null>(null);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
 
   // Path-first view state machine:
@@ -315,6 +320,19 @@ export function PathPage() {
   const handleDoneDiscovering = React.useCallback(
     () => setPathView(queueStops.length > 0 ? "path" : "entry"),
     [queueStops.length],
+  );
+
+  // Plan a new area finished (Done on the Saved step). Route by the saved date:
+  // today -> the run surface, any later day -> the entry landing where Upcoming
+  // paths lists it. Forcing "entry" for a today save stranded the rep on "No
+  // stops today": the saved stops had already landed (the sync effect had set
+  // "path"), so queueStops.length never changed again to flip the view back.
+  // Same bug class as handleDoneDiscovering (Path QA R4). The save awaited the
+  // stop insert, so today's stops are in the cache or arriving; the sync effect
+  // still settles the view whenever their count changes.
+  const handlePlanSaved = React.useCallback(
+    (savedDate: string) => setPathView(savedDate === todayISO() ? "path" : "entry"),
+    [],
   );
 
   // Continue the unfinished path into today: reparent its pending stops; the
@@ -1019,9 +1037,9 @@ export function PathPage() {
             origin={origin}
             showAddNearby={ADD_NEARBY_ENABLED}
           />
-          {/* Upcoming (future-dated planned) paths — launch navigates to /path,
-              where the today-path/discover flow takes over. */}
-          <UpcomingPaths onLaunch={() => navigate("/path")} />
+          {/* Upcoming (future-dated planned) paths. Open shows that path in a
+              slide-out to view and edit it (PlannedPathSheet). */}
+          <UpcomingPaths onLaunch={setPlannedPath} />
         </div>
       ) : pathView === "path" ? (
         /* Any path with stops, and any explicitly-started appointment / follow-up
@@ -1328,7 +1346,20 @@ export function PathPage() {
       <PlanPathWizard
         open={planOpen}
         onOpenChange={setPlanOpen}
-        onSaved={() => setPathView("entry")}
+        onSaved={handlePlanSaved}
+      />
+
+      <PlannedPathSheet
+        path={plannedPath}
+        open={plannedPath != null}
+        onOpenChange={(o) => {
+          if (!o) setPlannedPath(null);
+        }}
+        onMovedToToday={() => {
+          // The rep moved this plan to today: close and land on today's route.
+          setPlannedPath(null);
+          setPathView("path");
+        }}
       />
 
       <PathSettings open={settingsOpen} onOpenChange={setSettingsOpen} />

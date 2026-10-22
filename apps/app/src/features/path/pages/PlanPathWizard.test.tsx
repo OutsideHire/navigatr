@@ -62,6 +62,7 @@ vi.mock("../components/DropInSheet", () => ({ DropInSheet: () => null }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 
 import { PlanPathWizard } from "./PlanPathWizard";
+import { todayISO, addDaysISO } from "../lib/today";
 
 function m(id: string, name: string): Merchant {
   return {
@@ -245,7 +246,29 @@ describe("PlanPathWizard", () => {
     await waitFor(() => expect(screen.getByText(/step 5 of 5/i)).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /done/i }));
     expect(onSavedMock).toHaveBeenCalledTimes(1);
+    // The saved date rides along so the parent can route today vs a future day.
+    expect(onSavedMock).toHaveBeenCalledWith(addDaysISO(todayISO(), 1));
     expect(onOpenChangeMock).toHaveBeenCalledWith(false);
+  });
+
+  it("a plan saved for today says it is ready to run and offers View route", async () => {
+    originState.current = WITH_ORIGIN;
+    merchantsState.current = {
+      merchants: [m("a", "Alpha Cafe")],
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    };
+    renderWizard();
+    fireEvent.click(screen.getByRole("button", { name: /^continue$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add to today's path/i }));
+    fireEvent.click(screen.getByRole("button", { name: /review path/i }));
+    fireEvent.click(screen.getByRole("button", { name: /schedule path/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^today/i }));
+    fireEvent.click(screen.getByRole("button", { name: /save path/i }));
+    await waitFor(() => expect(screen.getByText(/ready to run today/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /view route/i }));
+    expect(onSavedMock).toHaveBeenCalledWith(todayISO());
   });
 
   it("save uses the scheduled date + name + reminder_at, and runs exactly once", async () => {
