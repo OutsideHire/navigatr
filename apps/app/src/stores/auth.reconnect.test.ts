@@ -30,8 +30,11 @@ vi.mock("@/lib/observability", () => ({
   setUser: vi.fn(),
 }));
 
-const { haltQueriesForSignOut } = vi.hoisted(() => ({ haltQueriesForSignOut: vi.fn() }));
-vi.mock("@/lib/sessionQueries", () => ({ haltQueriesForSignOut }));
+const { haltQueriesForSignOut, refetchFailedQueries } = vi.hoisted(() => ({
+  haltQueriesForSignOut: vi.fn(),
+  refetchFailedQueries: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/sessionQueries", () => ({ haltQueriesForSignOut, refetchFailedQueries }));
 
 const { guardHooks } = vi.hoisted(() => ({ guardHooks: { current: null as null | Record<string, () => unknown> } }));
 vi.mock("@/lib/sessionGuard", () => ({
@@ -81,6 +84,7 @@ beforeEach(() => {
   captureMessage.mockReset();
   addBreadcrumb.mockReset();
   haltQueriesForSignOut.mockReset();
+  refetchFailedQueries.mockReset().mockResolvedValue(undefined);
   useAuth.setState({ user: null, session: null, loading: false, error: null, reconnecting: false });
   installLocalStorage();
 });
@@ -288,5 +292,37 @@ describe("bootstrapSession", () => {
     release(ok(session("confirmed")));
     await vi.waitFor(() => expect(useAuth.getState().user?.id).toBe("confirmed"));
     expect(useAuth.getState().reconnecting).toBe(false);
+  });
+});
+
+/**
+ * C1 (review): screens that failed while held must reload however the hold
+ * ends. auth-js's own retry or visibility handler emits TOKEN_REFRESHED, a late
+ * getSession answer is adopted, the boot read lands late: none of those went
+ * through useReconnect, so the rep was left on "Could not load your profile".
+ */
+describe("ending a hold with a session reloads the failed screens", () => {
+  it("on TOKEN_REFRESHED from auth-js while reconnecting", () => {
+    persistSession();
+    holdProvisionalSession();
+    watcher("TOKEN_REFRESHED", session("fresh"));
+    expect(refetchFailedQueries).toHaveBeenCalledTimes(1);
+  });
+
+  it("on a late answer adopted after a timed-out attempt", async () => {
+    persistSession();
+    holdProvisionalSession();
+    let release!: (v: unknown) => void;
+    getSession.mockReturnValueOnce(new Promise((r) => { release = r; }));
+    refreshSession.mockReturnValue(new Promise(() => {}));
+    await recoverSession({ attempts: 1, backoffMs: 0, timeoutMs: 5 });
+    release(ok(session("late")));
+    await vi.waitFor(() => expect(refetchFailedQueries).toHaveBeenCalledTimes(1));
+  });
+
+  it("not on an ordinary token refresh (nothing was held)", () => {
+    useAuth.setState({ user: session().user as never, session: session() as never });
+    watcher("TOKEN_REFRESHED", session("fresh"));
+    expect(refetchFailedQueries).not.toHaveBeenCalled();
   });
 });

@@ -44,7 +44,7 @@ describe("useReconnect", () => {
     expect(recoverSession).not.toHaveBeenCalled();
   });
 
-  it("keeps retrying with backoff while auth-js has not answered, then reloads failed screens on success", async () => {
+  it("keeps retrying with backoff while auth-js has not answered, then stops on success", async () => {
     recoverSession
       .mockResolvedValueOnce("timeout")
       .mockResolvedValueOnce("timeout")
@@ -59,7 +59,10 @@ describe("useReconnect", () => {
     await advance(8000);
     expect(recoverSession).toHaveBeenCalledTimes(3);
 
-    expect(refetchFailedQueries).toHaveBeenCalledTimes(1);
+    // Reloading failed screens is the STORE's job on every hold-ending
+    // transition (C1): the hook's own success can lose the race to its
+    // cleanup, and auth-js often ends the hold without the hook at all.
+    expect(refetchFailedQueries).not.toHaveBeenCalled();
     expect(abandonProvisionalSession).not.toHaveBeenCalled();
     // Recovered: no further attempts.
     await advance(120_000);

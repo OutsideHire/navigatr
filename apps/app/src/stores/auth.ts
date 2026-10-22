@@ -16,7 +16,7 @@ import { create } from "zustand";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase, AUTH_STORAGE_KEY } from "@/lib/supabase";
 import { setSessionGuardHooks } from "@/lib/sessionGuard";
-import { haltQueriesForSignOut } from "@/lib/sessionQueries";
+import { haltQueriesForSignOut, refetchFailedQueries } from "@/lib/sessionQueries";
 import { setSignedInProbe } from "@/lib/sessionPresence";
 
 export type Profession = "payroll" | "merchant_services" | "treasury_management";
@@ -481,8 +481,23 @@ function hasPersistedSession(): boolean {
  *  onAuthStateChange event, so we push it ourselves; refreshSession does emit
  *  one, but setting it here too is idempotent and closes the render gap. */
 function adoptSession(session: Session): void {
+  confirmSession(session);
+}
+
+/**
+ * Mirror a confirmed session into the store. Every path that ends a hold with
+ * a session comes through here: our recovery, a late answer, the boot read,
+ * and auth-js's own TOKEN_REFRESHED / SIGNED_IN (its retry loop or its
+ * visibility handler often finish first). When a hold ends, the screens that
+ * failed while the token was unconfirmed reload. That used to live in
+ * useReconnect, which only saw its own wins and could lose even those to its
+ * cleanup, leaving the rep on "Could not load your profile".
+ */
+function confirmSession(session: Session): void {
+  const wasHeld = useAuth.getState().reconnecting;
   endUnresolvedEpisode();
   useAuth.setState({ session, user: session.user, loading: false, reconnecting: false });
+  if (wasHeld) void refetchFailedQueries();
 }
 
 /** Adopt a session the SDK hands back AFTER we stopped waiting for it. A
@@ -809,8 +824,7 @@ if (typeof window !== "undefined") {
   //    in a broken authed state.
   supabase.auth.onAuthStateChange((event, session) => {
     if (session) {
-      endUnresolvedEpisode();
-      useAuth.setState({ session, user: session.user, loading: false, reconnecting: false });
+      confirmSession(session);
       identifyUser(session.user);
       return;
     }

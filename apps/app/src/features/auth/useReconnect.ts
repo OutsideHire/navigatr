@@ -5,8 +5,8 @@
  * the store keeps the rep in the app as that user and sets `reconnecting`
  * (see holdProvisionalSession). This hook, mounted by ProtectedRoute, keeps
  * asking until there is an answer:
- *   - recovered        -> the store confirms the session; screens that failed
- *                         meanwhile load again (refetchFailedQueries).
+ *   - recovered        -> the store confirms the session; it also reloads the
+ *                         screens that failed meanwhile (confirmSession).
  *   - timeout/transport-> still no answer; try again later, backing off.
  *   - expired, unknown, no-session -> a definitive answer; hand the rep to
  *                         sign-in exactly as before (abandonProvisionalSession).
@@ -19,7 +19,6 @@
  */
 import { useEffect } from "react";
 import { abandonProvisionalSession, recoverSession } from "@/stores/auth";
-import { refetchFailedQueries } from "@/lib/sessionQueries";
 
 const DELAYS_MS = [2000, 4000, 8000, 16000, 30000];
 
@@ -50,8 +49,9 @@ export function useReconnect(active: boolean): void {
           running = false;
           if (stopped) return;
           if (outcome === "recovered") {
+            // The store reloads failed screens on every hold-ending
+            // transition, however it ends (see confirmSession in auth.ts).
             stopped = true;
-            void refetchFailedQueries();
             return;
           }
           if (outcome === "timeout" || outcome === "transport") {
