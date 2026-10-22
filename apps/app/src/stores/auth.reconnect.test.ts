@@ -10,15 +10,18 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const { getSession, refreshSession, onAuthStateChange, sdkSignOut } = vi.hoisted(() => ({
+const { getSession, refreshSession, onAuthStateChange, sdkSignOut, signInWithPassword } = vi.hoisted(() => ({
   sdkSignOut: vi.fn().mockResolvedValue({ error: null }),
+  signInWithPassword: vi.fn().mockResolvedValue({ error: null }),
   getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
   refreshSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
   onAuthStateChange: vi.fn().mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
 }));
 vi.mock("@/lib/supabase", () => ({
   AUTH_STORAGE_KEY: "navigatr-auth",
-  supabase: { auth: { getSession, refreshSession, onAuthStateChange, signOut: sdkSignOut } },
+  supabase: {
+    auth: { getSession, refreshSession, onAuthStateChange, signOut: sdkSignOut, signInWithPassword },
+  },
 }));
 
 const { captureMessage, addBreadcrumb } = vi.hoisted(() => ({
@@ -50,6 +53,7 @@ import {
   bootstrapSession,
   RECOVERY_REPORT_AFTER_MS,
   SIGN_OUT_TIMEOUT_MS,
+  SIGN_OUT_DRAIN_WAIT_MS,
 } from "./auth";
 import { appBelievesSignedIn } from "@/lib/sessionPresence";
 
@@ -94,6 +98,11 @@ afterEach(async () => {
 });
 
 beforeEach(() => {
+  // A fresh sign-in ends any local sign-out left over from an earlier test
+  // (its drain was released and flushed in afterEach).
+  watcher("SIGNED_IN", session("reset"));
+  useAuth.setState({ user: null, session: null });
+  signInWithPassword.mockReset().mockResolvedValue({ error: null });
   getSession.mockReset().mockResolvedValue(none());
   refreshSession.mockReset().mockResolvedValue(none());
   sdkSignOut.mockReset().mockResolvedValue({ error: null });
@@ -427,6 +436,8 @@ describe("signOut finishes on the device even when auth-js cannot answer", () =>
     holdProvisionalSession();
     sdkSignOut.mockReturnValue(hang());
     await useAuth.getState().signOut();
+    // The sign-out drain (a getSession queued behind the lock) has finished.
+    await new Promise((r) => setTimeout(r, 0));
 
     watcher("SIGNED_IN", session("fresh"));
     expect(useAuth.getState().user?.id).toBe("fresh");
@@ -527,5 +538,132 @@ describe("recovery never stacks SDK calls behind a stuck lock", () => {
     await bootstrapSession(2);
     await recoverSession({ attempts: 2, backoffMs: 0, timeoutMs: 2 });
     expect(getSession.mock.calls.length + refreshSession.mock.calls.length).toBe(1);
+  });
+});
+
+/**
+ * N1 (review round 2): auth-js's signInWithPassword and verifyOtp do NOT take
+ * the auth lock; they write straight to storage. Work still queued behind the
+ * stuck lock from before a local sign-out then runs against the NEW user's
+ * session: a queued /logout?scope=global revokes all of the new user's
+ * sessions, or the old rep's refresh retry succeeds, overwrites storage and
+ * emits TOKEN_REFRESHED for the old user (a cross-user swap on a shared
+ * device). A local sign-out now drains that queue before anyone can sign in.
+ */
+describe("a local sign-out drains auth-js's queue before the next sign-in", () => {
+  function persistAll() {
+    persistSession();
+    window.localStorage.setItem(`${KEY}-code-verifier`, "v");
+    window.localStorage.setItem(`${KEY}-user`, "{}");
+  }
+
+  it("a sign-in during the drain waits for it, then proceeds", async () => {
+    persistAll();
+    holdProvisionalSession();
+    let finishDrain!: (v: unknown) => void;
+    getSession.mockReturnValueOnce(new Promise((r) => { finishDrain = r; }));
+    await useAuth.getState().signOut();
+
+    const signingIn = useAuth.getState().signInWithEmail("b@example.com", "pw");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(signInWithPassword).not.toHaveBeenCalled();
+
+    finishDrain(none());
+    await signingIn;
+    expect(signInWithPassword).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives up with a friendly message if the drain is still stuck after the bound", async () => {
+    vi.useFakeTimers();
+    persistAll();
+    holdProvisionalSession();
+    getSession.mockReturnValueOnce(hang());
+    await useAuth.getState().signOut();
+
+    const signingIn = useAuth.getState().signInWithEmail("b@example.com", "pw");
+    const rejected = expect(signingIn).rejects.toThrow("Still finishing sign-out. Try again in a moment.");
+    await vi.advanceTimersByTimeAsync(SIGN_OUT_DRAIN_WAIT_MS);
+    await rejected;
+    expect(signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it("after a timed-out SDK sign-out, the drain also waits for that queued call", async () => {
+    vi.useFakeTimers();
+    persistAll();
+    useAuth.setState({ user: session().user as never, session: session() as never });
+    let finishSignOut!: (v: unknown) => void;
+    sdkSignOut.mockReturnValue(new Promise((r) => { finishSignOut = r; }));
+    const out = useAuth.getState().signOut();
+    await vi.advanceTimersByTimeAsync(SIGN_OUT_TIMEOUT_MS);
+    await out;
+
+    const signingIn = useAuth.getState().signInWithEmail("b@example.com", "pw");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(signInWithPassword).not.toHaveBeenCalled();
+
+    finishSignOut({ error: null });
+    await vi.advanceTimersByTimeAsync(0);
+    await signingIn;
+    expect(signInWithPassword).toHaveBeenCalledTimes(1);
+  });
+
+  it("a SIGNED_IN that auth-js emits during the drain does not end the local sign-out", async () => {
+    persistAll();
+    holdProvisionalSession();
+    getSession.mockReturnValueOnce(hang());
+    await useAuth.getState().signOut();
+
+    persistSession("stale");
+    watcher("SIGNED_IN", session("stale"));
+    watcher("TOKEN_REFRESHED", session("stale"));
+
+    expect(useAuth.getState().user).toBeNull();
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it("tells other tabs, through auth-js's own channel, that this device signed out", async () => {
+    const posts: Array<{ name: string; data: unknown }> = [];
+    class FakeChannel {
+      constructor(public name: string) {}
+      postMessage(data: unknown) { posts.push({ name: this.name, data }); }
+      close() {}
+    }
+    vi.stubGlobal("BroadcastChannel", FakeChannel);
+    try {
+      persistAll();
+      holdProvisionalSession();
+      await useAuth.getState().signOut();
+      expect(posts).toEqual([{ name: KEY, data: { event: "SIGNED_OUT", session: null } }]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("auth events never mix two users", () => {
+  it("a late TOKEN_REFRESHED for rep A after rep B signed in is not adopted, and storage is wiped", () => {
+    watcher("SIGNED_IN", session("rep-b"));
+    persistSession("rep-a");
+    watcher("TOKEN_REFRESHED", session("rep-a"));
+
+    expect(useAuth.getState().user?.id).not.toBe("rep-a");
+    expect(useAuth.getState().user).toBeNull();
+    expect(window.localStorage.getItem(KEY)).toBeNull();
+    expect(haltQueriesForSignOut).toHaveBeenCalled();
+  });
+
+  it("a SIGNED_IN for a different user drops the previous user's data before adopting", () => {
+    watcher("SIGNED_IN", session("rep-a"));
+    haltQueriesForSignOut.mockClear();
+    watcher("SIGNED_IN", session("rep-b"));
+
+    expect(haltQueriesForSignOut).toHaveBeenCalledTimes(1);
+    expect(useAuth.getState().user?.id).toBe("rep-b");
+  });
+
+  it("a TOKEN_REFRESHED for the same user is adopted as usual", () => {
+    watcher("SIGNED_IN", session("rep-a"));
+    watcher("TOKEN_REFRESHED", { ...session("rep-a"), access_token: "rotated" });
+    expect(useAuth.getState().session?.access_token).toBe("rotated");
   });
 });

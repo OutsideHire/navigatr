@@ -66,6 +66,7 @@ export const useAuth = create<AuthState>((set) => ({
 
   signInWithEmail: async (email, password) => {
     set({ error: null });
+    await awaitSignOutDrain();
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       set({ error: error.message });
@@ -133,6 +134,7 @@ export const useAuth = create<AuthState>((set) => ({
    */
   verifyMagicLinkCode: async (email, code) => {
     set({ error: null });
+    await awaitSignOutDrain();
     const normalizedEmail = email.trim().toLowerCase();
     const token = code.trim();
 
@@ -168,6 +170,7 @@ export const useAuth = create<AuthState>((set) => ({
 
   signInWithGoogle: async (inviteCode) => {
     set({ error: null });
+    await awaitSignOutDrain();
     // Primary carrier: URL. Fallback: sessionStorage (refresh-recovery).
     // See design doc § "Signup & Org Assignment" — sessionStorage alone
     // breaks in new tabs and Safari ITP. The URL is the source of truth.
@@ -197,6 +200,7 @@ export const useAuth = create<AuthState>((set) => ({
 
   signInWithMicrosoft: async (inviteCode) => {
     set({ error: null });
+    await awaitSignOutDrain();
     if (inviteCode) sessionStorage.setItem("pending_invite", inviteCode);
     const callback = `${window.location.origin}/auth/callback${
       inviteCode ? `?invite=${encodeURIComponent(inviteCode)}` : ""
@@ -221,6 +225,7 @@ export const useAuth = create<AuthState>((set) => ({
 
   signUp: async (email, password, fullName, inviteCode) => {
     set({ error: null });
+    await awaitSignOutDrain();
     // Email/password path: invite_code travels in user_metadata. The
     // handle_new_user_signup trigger reads it server-side and creates the
     // profiles row (or raises, rolling back the auth.users insert).
@@ -408,6 +413,66 @@ export const SIGN_OUT_TIMEOUT_MS = 3000;
  */
 let localSignOutActive = false;
 
+/**
+ * N1: what a local sign-out must wait for before anyone signs in again.
+ * auth-js's signInWithPassword and verifyOtp do NOT take the auth lock; they
+ * write straight to storage. So anything still queued behind the stuck lock
+ * from before the sign-out (the old rep's refresh retry, a timed-out
+ * /logout?scope=global) would otherwise run AFTER the next sign-in, against
+ * the NEW user's session: revoke all of their sessions, or overwrite storage
+ * with the old rep's refreshed session and emit TOKEN_REFRESHED for them.
+ * The drain is a call queued at the BACK of that lock (plus the pending SDK
+ * sign-out, if any), so it settles only once everything ahead has run. Until
+ * then the local sign-out stays in force (late sessions are wiped, never
+ * adopted) and sign-in entries wait (awaitSignOutDrain).
+ */
+let signOutDrain: Promise<unknown> | null = null;
+
+/** How long a sign-in waits for the drain before telling the rep to retry.
+ *  auth-js's own refresh loop ends within about 33s with the guard deadline. */
+export const SIGN_OUT_DRAIN_WAIT_MS = 45_000;
+const STILL_SIGNING_OUT = "Still finishing sign-out. Try again in a moment.";
+
+function startSignOutDrain(pending?: Promise<unknown>): void {
+  const queuedRead = supabase.auth.getSession();
+  const drain: Promise<unknown> = pending ? Promise.allSettled([pending, queuedRead]) : queuedRead;
+  signOutDrain = drain;
+  const done = () => {
+    if (signOutDrain === drain) signOutDrain = null;
+  };
+  drain.then(done, done);
+}
+
+async function awaitSignOutDrain(): Promise<void> {
+  const drain = signOutDrain;
+  if (!drain) return;
+  const waited = await settle(drain, SIGN_OUT_DRAIN_WAIT_MS);
+  if (waited.kind === "timeout") {
+    useAuth.setState({ error: STILL_SIGNING_OUT });
+    const error = new Error(STILL_SIGNING_OUT);
+    error.name = "SignOutPendingError";
+    throw error;
+  }
+}
+
+/** N2: auth-js relays auth events between tabs on a BroadcastChannel named
+ *  after the storage key, and the other tabs' clients re-emit what they
+ *  receive to their subscribers. It does not watch `storage` events, so
+ *  removing the key alone tells no one. A local sign-out bypasses auth-js,
+ *  so post its SIGNED_OUT ourselves: every other tab's store then signs out
+ *  too. (This tab's own client also receives it; ending an already-ended
+ *  session is harmless.) */
+function announceSignOutToOtherTabs(): void {
+  try {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel(AUTH_STORAGE_KEY);
+    channel.postMessage({ event: "SIGNED_OUT", session: null });
+    channel.close();
+  } catch {
+    /* best effort: a tab that misses it still fails closed on its next auth call */
+  }
+}
+
 /** The keys auth-js writes for a session (see its _removeSession). */
 function wipeStoredSession(): void {
   for (const key of [AUTH_STORAGE_KEY, `${AUTH_STORAGE_KEY}-code-verifier`, `${AUTH_STORAGE_KEY}-user`]) {
@@ -427,6 +492,8 @@ function signOutOnDevice(pending?: Promise<{ error: unknown }>): void {
   wipeStoredSession();
   endSessionNow();
   identifyUser(null);
+  startSignOutDrain(pending);
+  announceSignOutToOtherTabs();
   pending?.then(
     (r) => {
       if (localSignOutActive && r?.error) wipeStoredSession();
@@ -939,13 +1006,31 @@ if (typeof window !== "undefined") {
   //    in a broken authed state.
   supabase.auth.onAuthStateChange((event, session) => {
     if (session) {
-      if (event === "SIGNED_IN") {
+      if (event === "SIGNED_IN" && !signOutDrain) {
+        // A real new sign-in (sign-in entries cannot start while a drain is
+        // pending, so a SIGNED_IN during one came from stale queued work).
         localSignOutActive = false;
       } else if (localSignOutActive) {
-        // auth-js finished a refresh that was stuck behind the lock and saved
-        // a session the rep already signed out of. Remove it again.
+        // auth-js finished work that was stuck behind the lock and saved a
+        // session the rep already signed out of. Remove it again.
         wipeStoredSession();
         return;
+      }
+      const held = useAuth.getState().session;
+      if (held && held.user.id !== session.user.id) {
+        if (event !== "SIGNED_IN") {
+          // Defense in depth for N1: a refresh for a DIFFERENT user than the
+          // one signed in here is stale work from before a sign-out. Never
+          // adopt it; its write already replaced the current user's stored
+          // session, so end the session on this device cleanly.
+          wipeStoredSession();
+          endSessionNow();
+          identifyUser(null);
+          return;
+        }
+        // A genuine sign-in as someone else: drop the previous user's data
+        // first so nothing of theirs is shown to the new user.
+        haltQueriesForSignOut();
       }
       confirmSession(session);
       identifyUser(session.user);
