@@ -11,10 +11,10 @@ import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { ProtectedRoute } from "./ProtectedRoute";
 
 // Mock useAuth so we don't run the module-level Supabase bootstrap.
-const { abandonProvisionalSession } = vi.hoisted(() => ({ abandonProvisionalSession: vi.fn() }));
+const { storeSignOut } = vi.hoisted(() => ({ storeSignOut: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/stores/auth", () => ({
-  useAuth: (selector: (s: AuthShape) => unknown) => selector(authShape),
-  abandonProvisionalSession,
+  useAuth: (selector: (s: AuthShape & { signOut: typeof storeSignOut }) => unknown) =>
+    selector({ ...authShape, signOut: storeSignOut }),
 }));
 
 // Mock useProfile so we can drive React Query states directly.
@@ -324,9 +324,12 @@ describe("ProtectedRoute while reconnecting", () => {
 });
 
 describe("ProtectedRoute reconnecting wall escape while held", () => {
-  it("'Sign in again' lets go of the held session and reaches the sign-in page", async () => {
+  it("'Sign in again' signs out on this device and reaches the sign-in page", async () => {
     // A plain link to /login would bounce straight back: the public-only route
-    // sees the held user and returns the rep to the app.
+    // sees the held user and returns the rep to the app. Only dropping the
+    // store's user (not the SDK's stored session) let a late answer from
+    // auth-js sign the rep straight back in (M5), so this goes through the
+    // store's signOut, which wipes the stored session locally while held.
     authShape = {
       user: { id: "user-1", email: "u@example.com", user_metadata: {} },
       loading: false,
@@ -335,10 +338,10 @@ describe("ProtectedRoute reconnecting wall escape while held", () => {
     profileShape = { data: undefined, isLoading: false, isFetching: false, isError: true, error: new Error("x") };
     suspendedShape = { data: false, isLoading: false, isFetching: false, isError: false };
     recoveryPhase = "settled";
-    abandonProvisionalSession.mockClear();
+    storeSignOut.mockClear();
     renderAt("/dashboard");
     screen.getByRole("button", { name: /sign in again/i }).click();
-    expect(abandonProvisionalSession).toHaveBeenCalledTimes(1);
+    expect(storeSignOut).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("login page")).toBeInTheDocument();
   });
 });

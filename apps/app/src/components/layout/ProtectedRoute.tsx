@@ -19,7 +19,7 @@
 import type { ReactNode } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
-import { abandonProvisionalSession, useAuth } from "@/stores/auth";
+import { useAuth } from "@/stores/auth";
 import { useProfile } from "@/features/auth/useProfile";
 import { useOrgSuspended } from "@/features/auth/useOrgSuspended";
 import { useSessionRecovery } from "@/features/auth/useSessionRecovery";
@@ -74,6 +74,7 @@ function ReconnectingIndicator() {
  */
 function ReconnectingWall({ held = false }: { held?: boolean }) {
   const navigate = useNavigate();
+  const signOut = useAuth((s) => s.signOut);
   return (
     <div
       role="status"
@@ -89,11 +90,13 @@ function ReconnectingWall({ held = false }: { held?: boolean }) {
         {held ? (
           // Held on the stored session: a plain link would bounce straight
           // back, because the public-only /login route sees the held user.
-          // Let go of it first, then go to sign in.
+          // Sign out on this device first (while held, the store wipes the
+          // stored session synchronously, so a late answer from auth-js
+          // cannot sign the rep back in), then go to sign in.
           <button
             type="button"
             onClick={() => {
-              abandonProvisionalSession();
+              void signOut().catch(() => undefined);
               navigate("/login", { replace: true });
             }}
             className="mt-6 inline-block text-body-sm font-medium text-text-default underline underline-offset-2 hover:text-text-muted"

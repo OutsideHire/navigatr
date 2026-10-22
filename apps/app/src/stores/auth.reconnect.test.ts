@@ -10,14 +10,15 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const { getSession, refreshSession, onAuthStateChange } = vi.hoisted(() => ({
+const { getSession, refreshSession, onAuthStateChange, sdkSignOut } = vi.hoisted(() => ({
+  sdkSignOut: vi.fn().mockResolvedValue({ error: null }),
   getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
   refreshSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
   onAuthStateChange: vi.fn().mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
 }));
 vi.mock("@/lib/supabase", () => ({
   AUTH_STORAGE_KEY: "navigatr-auth",
-  supabase: { auth: { getSession, refreshSession, onAuthStateChange } },
+  supabase: { auth: { getSession, refreshSession, onAuthStateChange, signOut: sdkSignOut } },
 }));
 
 const { captureMessage, addBreadcrumb } = vi.hoisted(() => ({
@@ -48,6 +49,7 @@ import {
   abandonProvisionalSession,
   bootstrapSession,
   RECOVERY_REPORT_AFTER_MS,
+  SIGN_OUT_TIMEOUT_MS,
 } from "./auth";
 import { appBelievesSignedIn } from "@/lib/sessionPresence";
 
@@ -81,6 +83,7 @@ function persistSession(id = "stored-user") {
 beforeEach(() => {
   getSession.mockReset().mockResolvedValue(none());
   refreshSession.mockReset().mockResolvedValue(none());
+  sdkSignOut.mockReset().mockResolvedValue({ error: null });
   captureMessage.mockReset();
   addBreadcrumb.mockReset();
   haltQueriesForSignOut.mockReset();
@@ -324,5 +327,135 @@ describe("ending a hold with a session reloads the failed screens", () => {
     useAuth.setState({ user: session().user as never, session: session() as never });
     watcher("TOKEN_REFRESHED", session("fresh"));
     expect(refetchFailedQueries).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * I1 (review): signing out while held did nothing. supabase.auth.signOut()
+ * queues behind the same stuck auth lock, then refreshes again, fails
+ * retryably and returns {error} WITHOUT removing the session or emitting
+ * SIGNED_OUT. Sign-out must finish on this device regardless.
+ */
+describe("signOut finishes on the device even when auth-js cannot answer", () => {
+  function storedKeys(): string[] {
+    return [KEY, `${KEY}-code-verifier`, `${KEY}-user`].filter((k) => window.localStorage.getItem(k) !== null);
+  }
+  function persistAll() {
+    persistSession();
+    window.localStorage.setItem(`${KEY}-code-verifier`, "v");
+    window.localStorage.setItem(`${KEY}-user`, "{}");
+  }
+
+  it("while reconnecting: wipes the stored session at once and signs out", async () => {
+    persistAll();
+    holdProvisionalSession();
+    sdkSignOut.mockReturnValue(new Promise(() => {}));
+
+    await useAuth.getState().signOut();
+
+    expect(storedKeys()).toEqual([]);
+    expect(useAuth.getState().user).toBeNull();
+    expect(useAuth.getState().reconnecting).toBe(false);
+    expect(haltQueriesForSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("when the SDK sign-out does not answer in time: signs out locally", async () => {
+    vi.useFakeTimers();
+    persistAll();
+    useAuth.setState({ user: session().user as never, session: session() as never });
+    sdkSignOut.mockReturnValue(new Promise(() => {}));
+
+    const done = useAuth.getState().signOut();
+    await vi.advanceTimersByTimeAsync(SIGN_OUT_TIMEOUT_MS);
+    await done;
+
+    expect(storedKeys()).toEqual([]);
+    expect(useAuth.getState().user).toBeNull();
+  });
+
+  it("when the SDK sign-out fails retryably: signs out locally instead of throwing", async () => {
+    persistAll();
+    useAuth.setState({ user: session().user as never, session: session() as never });
+    sdkSignOut.mockResolvedValue({ error: { name: "AuthRetryableFetchError", status: 0, message: "Failed to fetch" } });
+
+    await expect(useAuth.getState().signOut()).resolves.toBeUndefined();
+    expect(storedKeys()).toEqual([]);
+    expect(useAuth.getState().user).toBeNull();
+  });
+
+  it("a definite server refusal still surfaces as before", async () => {
+    persistAll();
+    useAuth.setState({ user: session().user as never, session: session() as never });
+    const refusal = { name: "AuthApiError", status: 422, message: "nope" };
+    sdkSignOut.mockResolvedValue({ error: refusal });
+
+    await expect(useAuth.getState().signOut()).rejects.toBe(refusal);
+    expect(storedKeys()).toHaveLength(3);
+  });
+
+  it("after a local sign-out, a late SDK answer or refresh event does not bring the rep back", async () => {
+    persistAll();
+    holdProvisionalSession();
+    let release!: (v: unknown) => void;
+    getSession.mockReturnValueOnce(new Promise((r) => { release = r; }));
+    refreshSession.mockReturnValue(new Promise(() => {}));
+    await recoverSession({ attempts: 1, backoffMs: 0, timeoutMs: 5 });
+    sdkSignOut.mockReturnValue(new Promise(() => {}));
+
+    await useAuth.getState().signOut();
+    release(ok(session("stale")));
+    watcher("TOKEN_REFRESHED", session("stale"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(useAuth.getState().user).toBeNull();
+  });
+
+  it("a fresh sign-in after a local sign-out is accepted", async () => {
+    persistAll();
+    holdProvisionalSession();
+    sdkSignOut.mockReturnValue(new Promise(() => {}));
+    await useAuth.getState().signOut();
+
+    watcher("SIGNED_IN", session("fresh"));
+    expect(useAuth.getState().user?.id).toBe("fresh");
+    watcher("TOKEN_REFRESHED", session("fresh"));
+    expect(useAuth.getState().session).not.toBeNull();
+  });
+
+  it("while reconnecting, does not queue an SDK sign-out behind the stuck lock", async () => {
+    // A queued sign-out would run whenever the lock frees, against whatever
+    // session is stored THEN, which could be a fresh sign-in.
+    persistAll();
+    holdProvisionalSession();
+    await useAuth.getState().signOut();
+    expect(sdkSignOut).not.toHaveBeenCalled();
+  });
+
+  it("if auth-js's stuck refresh later writes the session back, it is wiped again and ignored", async () => {
+    persistAll();
+    holdProvisionalSession();
+    await useAuth.getState().signOut();
+
+    persistSession("stale");
+    watcher("TOKEN_REFRESHED", session("stale"));
+
+    expect(storedKeys()).toEqual([]);
+    expect(useAuth.getState().user).toBeNull();
+  });
+
+  it("after a timed-out SDK sign-out, wipes again if that call later fails and left a session", async () => {
+    vi.useFakeTimers();
+    persistAll();
+    useAuth.setState({ user: session().user as never, session: session() as never });
+    let finish!: (v: unknown) => void;
+    sdkSignOut.mockReturnValue(new Promise((r) => { finish = r; }));
+    const done = useAuth.getState().signOut();
+    await vi.advanceTimersByTimeAsync(SIGN_OUT_TIMEOUT_MS);
+    await done;
+
+    persistSession("stale");
+    finish({ error: { name: "AuthRetryableFetchError", status: 0, message: "Failed to fetch" } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(storedKeys()).toEqual([]);
   });
 });

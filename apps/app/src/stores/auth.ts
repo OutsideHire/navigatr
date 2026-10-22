@@ -268,13 +268,41 @@ export const useAuth = create<AuthState>((set) => ({
     }
   },
 
+  /**
+   * Sign out, and make sure it finishes ON THIS DEVICE even when auth-js
+   * cannot answer. supabase.auth.signOut() takes the same auth lock that a
+   * stuck refresh holds, then refreshes again before signing out, and on a
+   * network failure returns {error} WITHOUT removing the stored session or
+   * emitting SIGNED_OUT. A held rep tapping "Sign out" used to get nothing.
+   *
+   *   - Held (reconnecting): sign out locally at once and do NOT queue an SDK
+   *     sign-out behind the stuck lock (it would run later against whatever
+   *     session is stored then, possibly a fresh sign-in).
+   *   - Otherwise: ask the SDK, bounded by SIGN_OUT_TIMEOUT_MS. On a timeout
+   *     or a network-type failure, sign out locally.
+   *   - A definite server refusal surfaces as before.
+   *
+   * A local sign-out cannot revoke anything on the server: the refresh token
+   * stays valid there until it expires (or until a sign-out reaches the
+   * server). It is gone from this device, which is what the rep asked for.
+   */
   signOut: async () => {
     set({ error: null });
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      set({ error: error.message });
-      throw error;
+    if (useAuth.getState().reconnecting) {
+      signOutOnDevice();
+      return;
     }
+    const call = supabase.auth.signOut();
+    const result = await settle(call, SIGN_OUT_TIMEOUT_MS);
+    if (result.kind === "ok" && !result.value.error) return;
+    const error =
+      result.kind === "ok" ? result.value.error : result.kind === "threw" ? result.error : null;
+    if (result.kind === "timeout" || classifyAuthError(error) === "transport") {
+      signOutOnDevice(call);
+      return;
+    }
+    set({ error: errorMessage(error, "Sign out failed") });
+    throw error;
   },
 
   resetPassword: async (email) => {
@@ -362,6 +390,47 @@ const BOOTSTRAP_TIMEOUT_MS = 8000;
  * still stuck after this long IS worth seeing.
  */
 export const RECOVERY_REPORT_AFTER_MS = 2 * 60_000;
+
+/** How long the store waits on supabase.auth.signOut() before finishing the
+ *  sign-out on the device instead. */
+export const SIGN_OUT_TIMEOUT_MS = 3000;
+
+/**
+ * Set by a sign-out we finished on the device without the SDK. Until a fresh
+ * SIGNED_IN, any session auth-js hands back late (a stuck refresh finally
+ * saving, a late getSession) is stale: it is wiped again and never adopted, so
+ * it cannot sign the rep straight back in.
+ */
+let localSignOutActive = false;
+
+/** The keys auth-js writes for a session (see its _removeSession). */
+function wipeStoredSession(): void {
+  for (const key of [AUTH_STORAGE_KEY, `${AUTH_STORAGE_KEY}-code-verifier`, `${AUTH_STORAGE_KEY}-user`]) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      /* blocked storage: nothing stored to wipe */
+    }
+  }
+}
+
+/** Finish a sign-out on this device without the SDK. `pending` is an SDK
+ *  sign-out already sent: if it later fails and auth-js left a session behind,
+ *  wipe again. */
+function signOutOnDevice(pending?: Promise<{ error: unknown }>): void {
+  localSignOutActive = true;
+  wipeStoredSession();
+  endSessionNow();
+  identifyUser(null);
+  pending?.then(
+    (r) => {
+      if (localSignOutActive && r?.error) wipeStoredSession();
+    },
+    () => {
+      if (localSignOutActive) wipeStoredSession();
+    },
+  );
+}
 
 /** After a definitive sign-out, how long the session guard refuses table
  *  requests that still carry only the publishable key. Long enough for the
@@ -481,6 +550,8 @@ function hasPersistedSession(): boolean {
  *  onAuthStateChange event, so we push it ourselves; refreshSession does emit
  *  one, but setting it here too is idempotent and closes the render gap. */
 function adoptSession(session: Session): void {
+  // A late answer after the rep signed out on this device is stale.
+  if (localSignOutActive) return;
   confirmSession(session);
 }
 
@@ -824,6 +895,14 @@ if (typeof window !== "undefined") {
   //    in a broken authed state.
   supabase.auth.onAuthStateChange((event, session) => {
     if (session) {
+      if (event === "SIGNED_IN") {
+        localSignOutActive = false;
+      } else if (localSignOutActive) {
+        // auth-js finished a refresh that was stuck behind the lock and saved
+        // a session the rep already signed out of. Remove it again.
+        wipeStoredSession();
+        return;
+      }
       confirmSession(session);
       identifyUser(session.user);
       return;
