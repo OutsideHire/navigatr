@@ -39,7 +39,7 @@ describe("real auth-js client + a refresh request that never answers", () => {
     // The dead socket: the request is sent and nothing ever comes back,
     // unless it is aborted.
     const refreshSends: number[] = [];
-    const deadFetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const deadFetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
       refreshSends.push(Date.now());
       return new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener("abort", () =>
