@@ -20,7 +20,7 @@ import type { Path } from "../lib/pathTypes";
 import { PathBlockSyncIndicator } from "./PathBlockSyncIndicator";
 
 export interface UpcomingPathsProps {
-  /** Launch/open a planned path. */
+  /** Open a planned path (the parent shows it in PlannedPathSheet to view and edit). */
   onLaunch: (path: Path) => void;
   /** Override "today" for tests. */
   todayIso?: string;
@@ -76,6 +76,7 @@ export function UpcomingPaths({ onLaunch, todayIso = todayISO() }: UpcomingPaths
                   variant="secondary"
                   size="sm"
                   trailingIcon={ChevronRight}
+                  className="h-11"
                   onClick={() => onLaunch(p)}
                 >
                   Open

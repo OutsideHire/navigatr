@@ -46,6 +46,21 @@ export interface StopSnapshot {
 }
 export interface AddStopsInput { pathId: string; basePosition: number; stops: StopSnapshot[]; }
 
+/** Edit a planned path's details. Only the supplied fields are written. */
+export interface UpdatePathInput {
+  pathId: string;
+  name?: string | null;
+  /** New path_date (yyyy-mm-dd). paths is unique on (user_id, path_date), so a
+   *  day that already has a path fails with Postgres code 23505. */
+  date?: string;
+  reminderAt?: string | null;
+}
+
+/** True when an error is the one-path-per-day unique violation. */
+export function isDuplicatePathDayError(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: unknown }).code === "23505";
+}
+
 export function usePathMutations() {
   const qc = useQueryClient();
   const userId = useAuth((s) => s.user?.id);
@@ -149,6 +164,61 @@ export function usePathMutations() {
       if (error) throw error;
     },
     onSuccess: invalidate,
+  });
+
+  // Edit a planned path (name / date / reminder) from the Upcoming path sheet.
+  // RLS paths_update lets the owner write these columns. The caller re-syncs the
+  // calendar block afterwards (same as the Plan a Path save site).
+  const updatePath = useMutation({
+    mutationFn: async (input: UpdatePathInput): Promise<void> => {
+      const patch: Record<string, unknown> = {};
+      if (input.name !== undefined) patch.name = input.name;
+      if (input.date !== undefined) patch.path_date = input.date;
+      if (input.reminderAt !== undefined) patch.reminder_at = input.reminderAt;
+      const { error } = await supabase.from("paths").update(patch).eq("id", input.pathId);
+      if (error) throw error;
+    },
+    onSuccess: invalidate,
+  });
+
+  // Delete a planned path the rep no longer wants. A planned path may carry an
+  // all-day calendar block, and sync_path can only find (and remove) that block
+  // while the row exists. Whether there is a block is read FRESH from the row:
+  // the caller's cached sync status can still be null for a just-planned path
+  // (the plan-save sync is fire-and-forget and the list is not refetched after
+  // it). With a block: mark the path completed, await the reconcile (which
+  // deletes the block), THEN delete the row. If that delete fails, put the path
+  // back to planned and re-sync (restoring the block) before rethrowing, so a
+  // hidden completed row never blocks the day. syncPath never throws.
+  const deletePlannedPath = useMutation({
+    mutationFn: async (pathId: string): Promise<void> => {
+      const { data: row, error: e0 } = await supabase
+        .from("paths")
+        .select("path_calendar_event_id")
+        .eq("id", pathId)
+        .maybeSingle();
+      if (e0) throw e0;
+      const hasBlock = Boolean((row as { path_calendar_event_id?: string | null } | null)?.path_calendar_event_id);
+      if (hasBlock) {
+        const { error: e1 } = await supabase.from("paths").update({ status: "completed" }).eq("id", pathId);
+        if (e1) throw e1;
+        await syncPath(pathId);
+      }
+      const { error } = await supabase.from("paths").delete().eq("id", pathId);
+      if (error) {
+        if (hasBlock) {
+          // Best-effort revert; the original error is what the caller sees.
+          try {
+            await supabase.from("paths").update({ status: "planned" }).eq("id", pathId);
+            await syncPath(pathId);
+          } catch {
+            // Swallow: surfacing the delete failure matters more.
+          }
+        }
+        throw error;
+      }
+    },
+    onSettled: invalidate,
   });
 
   // Mark every still-unfinished path older than `beforeDate` completed and skip
@@ -304,5 +374,5 @@ export function usePathMutations() {
     },
   });
 
-  return { createPath, addStops, removeStop, reorderStops, setStopStatus, setStopDisposition, markDealCreated, deletePath, continuePreviousPath, carryToTomorrow, closePreviousPath, finalizeCurrentPath, markStarted };
+  return { createPath, addStops, removeStop, reorderStops, setStopStatus, setStopDisposition, markDealCreated, deletePath, updatePath, deletePlannedPath, continuePreviousPath, carryToTomorrow, closePreviousPath, finalizeCurrentPath, markStarted };
 }

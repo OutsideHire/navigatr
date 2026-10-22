@@ -65,9 +65,10 @@ const DEFAULT_REMINDER_TIME = "08:30"; // local wall-clock
 export interface PlanPathWizardProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Fired when the rep finishes a saved path (Done / View upcoming) — lets the
-   *  parent land on the entry/Upcoming screen rather than an active route view. */
-  onSaved?: () => void;
+  /** Fired when the rep finishes a saved path (Done / View upcoming) with the
+   *  saved path's date, so the parent can land on today's route (saved for today)
+   *  or the entry/Upcoming screen (saved for a later day). */
+  onSaved?: (savedDate: string) => void;
 }
 
 export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardProps) {
@@ -280,12 +281,12 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
     setNameTouched(false);
   }, []);
 
-  // Finishing a saved path (Done / View upcoming): notify the parent (so it can
-  // land on the entry/Upcoming screen) and close the slide-out.
+  // Finishing a saved path (Done / View upcoming): notify the parent with the
+  // saved date (so it can land on today's route or the Upcoming list) and close.
   const finishSaved = React.useCallback(() => {
-    onSaved?.();
+    onSaved?.(scheduleDate);
     onOpenChange(false);
-  }, [onSaved, onOpenChange]);
+  }, [onSaved, onOpenChange, scheduleDate]);
 
   // Reset to a clean wizard each time the slide-out (re)opens.
   React.useEffect(() => {
@@ -517,6 +518,7 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
             pathName={effectiveName || originLabel || "Your path"}
             stopCount={orderedStops.length}
             reminderLabel={formatReminder(reminderAt)}
+            isToday={scheduleDate === todayISO()}
             onViewUpcoming={finishSaved}
             onBuildAnother={resetWizard}
             onDone={finishSaved}
