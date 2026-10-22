@@ -11,6 +11,9 @@ import { MemoryRouter } from "react-router-dom";
 
 import { LoginForm } from "./LoginForm";
 
+const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }));
+vi.mock("sonner", () => ({ toast: { error: toastError, success: vi.fn() } }));
+
 const signInWithEmailMock = vi.fn();
 const signInWithMagicLinkMock = vi.fn();
 const verifyMagicLinkCodeMock = vi.fn();
@@ -49,6 +52,7 @@ beforeEach(() => {
   signInWithEmailMock.mockReset();
   signInWithMagicLinkMock.mockReset();
   verifyMagicLinkCodeMock.mockReset();
+  toastError.mockReset();
 });
 
 describe("LoginForm / magic link path", () => {
@@ -157,5 +161,44 @@ describe("LoginForm / magic link path", () => {
 
     expect(await screen.findByText(/valid email/i)).toBeInTheDocument();
     expect(signInWithMagicLinkMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("LoginForm / a code that was replaced or expired", () => {
+  async function submitCode(err: unknown) {
+    signInWithMagicLinkMock.mockResolvedValueOnce(undefined);
+    verifyMagicLinkCodeMock.mockRejectedValueOnce(err);
+    const user = userEvent.setup();
+    renderForm();
+    await user.click(screen.getByRole("button", { name: /sign in without a password/i }));
+    await user.type(screen.getByLabelText(/work email/i), "ryan@navigatr.app");
+    await user.click(screen.getByRole("button", { name: /email me a sign-in code/i }));
+    await screen.findByPlaceholderText("12345678");
+    await user.type(screen.getByPlaceholderText("12345678"), "123456");
+    await user.click(screen.getByRole("button", { name: /^sign in$/i }));
+  }
+
+  it("tells the rep to use the code from their newest email", async () => {
+    // The usual cause in production: they tapped "send another", then typed
+    // the code from the OLDER email, which the newer one replaced.
+    await submitCode(
+      Object.assign(new Error("Token has expired or is invalid"), {
+        name: "AuthApiError", status: 403, code: "otp_expired",
+      }),
+    );
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        "That code was replaced or expired. Use the code from your newest email.",
+      ),
+    );
+  });
+
+  it("keeps the server's message for any other verify failure", async () => {
+    await submitCode(
+      Object.assign(new Error("email rate limit exceeded"), {
+        name: "AuthApiError", status: 429, code: "over_email_send_rate_limit",
+      }),
+    );
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("email rate limit exceeded"));
   });
 });

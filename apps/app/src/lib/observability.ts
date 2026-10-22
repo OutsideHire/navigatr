@@ -21,14 +21,17 @@
 import * as Sentry from "@sentry/react";
 import {
   IGNORED_ERROR_PATTERNS,
+  isExpectedAuthUserError,
   isExpectedDomainError,
   isExpectedPermissionError,
   isFunctionsFetchError,
+  isSignedOutPermissionDenied,
   isTransientNetworkError,
   normalizeError,
   normalizeSupabaseSentryEvent,
 } from "./errorFilter";
 import { scrubUrl } from "./scrubUrl";
+import { hasSessionNow } from "./sessionPresence";
 
 let initialized = false;
 
@@ -84,7 +87,9 @@ export function initObservability(): void {
       // (NAVIGATR-APP-7). Runs BEFORE redactPii so the raw details/hint it moves
       // into event.extra get PII-scrubbed. No-op for errors the wrapper already
       // normalized (their originalException is an Error, not a raw object).
-      const { drop } = normalizeSupabaseSentryEvent(event, hint?.originalException);
+      const { drop } = normalizeSupabaseSentryEvent(event, hint?.originalException, {
+        hasSession: hasSessionNow(),
+      });
       if (drop) return null;
       if (event.request?.url) {
         event.request.url = stripTokensFromUrl(event.request.url);
@@ -147,6 +152,13 @@ export function captureException(
   // A business outcome the UI already handled with a friendly message (pipeline
   // dedupe, immutable lead source). Not a failure.
   if (isExpectedDomainError(err)) return;
+  // The person mistyped a password or typed the code from an older email. The
+  // form already told them; it is not a failure of ours.
+  if (isExpectedAuthUserError(err)) return;
+  // A 42501 table denial with NO session is the expected tail of a sign-out
+  // (queries waiting on the token went out as anon). With a session it is a
+  // real grant or token bug and still reports.
+  if (isSignedOutPermissionDenied(err, hasSessionNow())) return;
   // A raw Supabase error object would log as the useless "Object captured as
   // exception with keys: code, details, hint, message" — normalize it to a
   // readable, groupable Error and move the raw fields to extra.

@@ -189,6 +189,80 @@ export function isExpectedPermissionError(err: unknown): boolean {
 }
 
 /**
+ * An auth error caused by what the USER typed, not by our system: a mistyped
+ * password, a sign-in code that was replaced by a newer email or has expired, a
+ * password that fails the strength rule or matches the old one. The form shows
+ * the person a message; reporting these to Sentry only buries real failures
+ * (production 2026-10: mistyped passwords on /login and older codes typed after
+ * a resend were the top auth "errors").
+ *
+ * Matched on auth-js's stable error `code` first, then on the server's exact
+ * wording for older servers that send no code. Only AuthApiError counts, so a
+ * random Error that happens to say "invalid" still reports.
+ *
+ * Rate limits are deliberately NOT here. A silent auth email rate limit blocked
+ * a beta customer's password reset for a week (2026-09-22) and is exactly the
+ * kind of auth failure we must keep seeing.
+ */
+const EXPECTED_AUTH_USER_ERROR_CODES = new Set([
+  "invalid_credentials",
+  "otp_expired",
+  "weak_password",
+  "same_password",
+]);
+const EXPECTED_AUTH_USER_ERROR_MESSAGES = [
+  /^invalid login credentials$/i,
+  /^token has expired or is invalid$/i,
+];
+
+function authApiFields(err: unknown): { code: string; message: string } | null {
+  if (!err || typeof err !== "object") return null;
+  const e = err as { name?: unknown; code?: unknown; message?: unknown };
+  if (e.name !== "AuthApiError") return null;
+  return {
+    code: typeof e.code === "string" ? e.code : "",
+    message: typeof e.message === "string" ? e.message.trim() : "",
+  };
+}
+
+export function isExpectedAuthUserError(err: unknown): boolean {
+  const f = authApiFields(err);
+  if (!f) return false;
+  if (EXPECTED_AUTH_USER_ERROR_CODES.has(f.code)) return true;
+  return EXPECTED_AUTH_USER_ERROR_MESSAGES.some((re) => re.test(f.message));
+}
+
+/** The sign-in code the person typed is no longer valid: usually because they
+ *  tapped "send another" and then typed the code from the OLDER email. Lets the
+ *  form say so plainly instead of the server's "Token has expired or is invalid". */
+export function isOtpReplacedOrExpired(err: unknown): boolean {
+  const f = authApiFields(err);
+  if (!f) return false;
+  return f.code === "otp_expired" || /^token has expired or is invalid$/i.test(f.message);
+}
+
+/**
+ * A 42501 "permission denied for table X" that happened while the app had NO
+ * session. Such a request reached PostgREST as `anon` (supabase-js substitutes
+ * the publishable key when it has no token), which is the expected tail of a
+ * sign-out: queries that were already waiting on the token went out without
+ * one. Not a bug, so not reported.
+ *
+ * With a session present the same error IS a bug (a missing grant, or the
+ * session guard failing to attach the token) and keeps reporting. Only tables:
+ * a function or schema denial is a different question and is left alone.
+ * Accepts the raw Supabase object or the Error normalizeError() makes of it.
+ */
+const TABLE_DENIED_RE = /permission denied for table /i;
+
+export function isSignedOutPermissionDenied(err: unknown, hasSession: boolean): boolean {
+  if (hasSession) return false;
+  if (isSupabaseError(err)) return err.code === "42501" && TABLE_DENIED_RE.test(err.message);
+  if (err instanceof Error) return /^\[42501\] /.test(err.message) && TABLE_DENIED_RE.test(err.message);
+  return false;
+}
+
+/**
  * A transient CLIENT-side network transport failure: the browser's fetch never
  * completed (dead zone, tunnel, tower handoff, captive portal, connection reset)
  * so no HTTP response was received. This is the rep's connectivity, not our app;
@@ -313,6 +387,9 @@ function rewriteEventTitle(event: SentryEventLike, type: string, value: string):
 export function normalizeSupabaseSentryEvent(
   event: SentryEventLike,
   originalException: unknown,
+  /** Whether the app held a session when this was captured. Unknown counts as
+   *  yes, so a caller that cannot tell keeps today's reporting. */
+  context: { hasSession?: boolean } = {},
 ): { drop: boolean } {
   // Transient network transport failure (any shape): the fetch never reached the
   // server. Drop it before the shape-specific handling below; a rep's momentary
@@ -321,6 +398,9 @@ export function normalizeSupabaseSentryEvent(
   // Supabase raw-object path: richest handling (code/details/hint + authz drop).
   if (isSupabaseError(originalException)) {
     if (isExpectedPermissionError(originalException)) return { drop: true };
+    if (isSignedOutPermissionDenied(originalException, context.hasSession ?? true)) {
+      return { drop: true };
+    }
     rewriteEventTitle(event, "SupabaseError", `[${originalException.code}] ${originalException.message}`);
     // Deliberately set NO fingerprint. Sentry groups by the rewritten type +
     // value ("SupabaseError: [code] message"), which redactPii scrubs before the

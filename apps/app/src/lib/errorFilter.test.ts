@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   IGNORED_ERROR_PATTERNS,
+  isExpectedAuthUserError,
   isExpectedDomainError,
   isExpectedPermissionError,
+  isOtpReplacedOrExpired,
+  isSignedOutPermissionDenied,
   isFunctionsFetchError,
   isMessageObject,
   isSupabaseError,
@@ -342,5 +345,109 @@ describe("expected RPC sentinels (P0001)", () => {
   it("matches the sentinel exactly, never as a substring", () => {
     expect(isExpectedPermissionError(supa("P0001", "invite_not_found_or_already_resolved_somehow"))).toBe(false);
     expect(isExpectedPermissionError(supa("P0001", "not already_in_organization"))).toBe(false);
+  });
+});
+
+/**
+ * Auth mistakes a USER made, not failures of ours. Production Sentry
+ * (2026-10) was reporting a mistyped password and a rep typing the code from
+ * an older email as errors. The rep still sees a message; we just stop paging
+ * on it. Rate limits are deliberately NOT in this class: a silent auth email
+ * rate limit blocked a beta customer for a week (2026-09-22).
+ */
+describe("isExpectedAuthUserError", () => {
+  function authApiError(message: string, code?: string, status = 400) {
+    return Object.assign(new Error(message), { name: "AuthApiError", status, code });
+  }
+
+  it("flags a mistyped password (invalid_credentials)", () => {
+    expect(isExpectedAuthUserError(authApiError("Invalid login credentials", "invalid_credentials"))).toBe(true);
+  });
+
+  it("flags an expired or replaced sign-in code (otp_expired)", () => {
+    expect(isExpectedAuthUserError(authApiError("Token has expired or is invalid", "otp_expired", 403))).toBe(true);
+  });
+
+  it("flags the same mistakes by message when an older server sends no code", () => {
+    expect(isExpectedAuthUserError(authApiError("Invalid login credentials"))).toBe(true);
+    expect(isExpectedAuthUserError(authApiError("Token has expired or is invalid", undefined, 403))).toBe(true);
+  });
+
+  it("flags weak and reused passwords", () => {
+    expect(isExpectedAuthUserError(authApiError("Password should be at least 8 characters.", "weak_password", 422))).toBe(true);
+    expect(isExpectedAuthUserError(authApiError("New password should be different from the old password.", "same_password", 422))).toBe(true);
+  });
+
+  it("does NOT flag an auth email rate limit (that must stay visible)", () => {
+    expect(isExpectedAuthUserError(authApiError("email rate limit exceeded", "over_email_send_rate_limit", 429))).toBe(false);
+  });
+
+  it("does NOT flag a server failure from the auth endpoint", () => {
+    expect(isExpectedAuthUserError(authApiError("Internal Server Error", "unexpected_failure", 500))).toBe(false);
+  });
+
+  it("does NOT flag a non-auth error that happens to say 'invalid'", () => {
+    expect(isExpectedAuthUserError(new Error("Invalid login credentials"))).toBe(false);
+    expect(isExpectedAuthUserError({ code: "22P02", message: "invalid input syntax", details: null, hint: null })).toBe(false);
+  });
+});
+
+describe("isOtpReplacedOrExpired", () => {
+  it("is true for otp_expired and its message", () => {
+    const byCode = Object.assign(new Error("whatever"), { name: "AuthApiError", status: 403, code: "otp_expired" });
+    const byMsg = Object.assign(new Error("Token has expired or is invalid"), { name: "AuthApiError", status: 403 });
+    expect(isOtpReplacedOrExpired(byCode)).toBe(true);
+    expect(isOtpReplacedOrExpired(byMsg)).toBe(true);
+  });
+
+  it("is false for a wrong password", () => {
+    const err = Object.assign(new Error("Invalid login credentials"), { name: "AuthApiError", status: 400, code: "invalid_credentials" });
+    expect(isOtpReplacedOrExpired(err)).toBe(false);
+  });
+});
+
+/**
+ * 42501 "permission denied for table X" means the request reached PostgREST as
+ * `anon`. With a live session that is a real bug (a missing grant, or the
+ * session guard failing) and must keep reporting. With NO session it is the
+ * expected tail of a sign-out: queries already waiting on the token went out
+ * without one. Production 2026-10-22: three of these in one second right after
+ * a rep was sent to /login.
+ */
+describe("isSignedOutPermissionDenied", () => {
+  const denied = { code: "42501", message: "permission denied for table scheduled_appointments", details: null, hint: "GRANT SELECT ON scheduled_appointments TO anon" };
+
+  it("is true when there is no session", () => {
+    expect(isSignedOutPermissionDenied(denied, false)).toBe(true);
+  });
+
+  it("is false when a session exists (a real grant or token bug)", () => {
+    expect(isSignedOutPermissionDenied(denied, true)).toBe(false);
+  });
+
+  it("is false for any other error, even with no session", () => {
+    expect(isSignedOutPermissionDenied({ code: "P0001", message: "not_authenticated", details: null, hint: null }, false)).toBe(false);
+    expect(isSignedOutPermissionDenied({ code: "42501", message: "permission denied for function foo", details: null, hint: null }, false)).toBe(false);
+  });
+
+  it("recognises the readable Error normalizeError produces", () => {
+    const { error } = normalizeError(denied);
+    expect(isSignedOutPermissionDenied(error, false)).toBe(true);
+  });
+});
+
+describe("normalizeSupabaseSentryEvent and the signed-out 42501", () => {
+  const denied = { code: "42501", message: "permission denied for table paths", details: null, hint: null };
+
+  it("drops an unhandled 42501 when there is no session", () => {
+    expect(normalizeSupabaseSentryEvent({}, denied, { hasSession: false })).toEqual({ drop: true });
+  });
+
+  it("keeps it when a session exists", () => {
+    expect(normalizeSupabaseSentryEvent({}, denied, { hasSession: true })).toEqual({ drop: false });
+  });
+
+  it("keeps it when the caller does not know (defaults to reporting)", () => {
+    expect(normalizeSupabaseSentryEvent({}, denied)).toEqual({ drop: false });
   });
 });
