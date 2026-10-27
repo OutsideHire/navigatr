@@ -1,8 +1,9 @@
 // apps/app/src/features/partners/components/ReviewReferralSheet.tsx
 /**
  * ReviewReferralSheet: triage one submitted referral. Accept creates the deal
- * (lead source Partner referral, first follow-up task); Decline needs a reason;
- * Merge links it to a deal the rep can already see and leaves that deal's lead
+ * (lead source Partner referral, first follow-up task); Decline needs a reason
+ * (internal, like its note) and takes an optional message the partner sees
+ * (FR-PORT-65); Merge links it to a deal the rep can already see and leaves that deal's lead
  * source alone. Same Radix Dialog shell as SendReferralSheet.
  *
  * Phase 1B: a referral sent through the partner portal says so, and one the
@@ -33,6 +34,7 @@ import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { useCustomerMatch } from "../hooks/useCustomerMatch";
 import type { QueueReferral } from "../hooks/useReferralQueue";
 import { useAcceptReferral, useDeclineReferral, useMergeReferral } from "../hooks/useReferralMutations";
+import { REFERRAL_UPDATE_MAX } from "../hooks/useReferralUpdates";
 import { WithdrawReferralConfirm } from "./WithdrawReferralConfirm";
 import { useAssigneeSeesPartner, useReassignReferral, useReferralAssignees } from "../hooks/useReassignReferral";
 import { DECLINE_REASON_OPTIONS, canReassignReferrals, icpFlagLabels, mergeResultMessage, type DeclineReason } from "../lib/referrals";
@@ -70,6 +72,7 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
   const [mode, setMode] = React.useState<Mode>("main");
   const [reason, setReason] = React.useState<DeclineReason | "">("");
   const [note, setNote] = React.useState("");
+  const [partnerMessage, setPartnerMessage] = React.useState("");
   const [mergeDealId, setMergeDealId] = React.useState("");
   const [dupName, setDupName] = React.useState<string | null>(null);
   const [overrideReason, setOverrideReason] = React.useState("");
@@ -86,6 +89,7 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
     setMode("main");
     setReason(isFlagged(referral) ? "duplicate" : "");
     setNote("");
+    setPartnerMessage("");
     setMergeDealId("");
     setDupName(null);
     setOverrideReason("");
@@ -154,7 +158,7 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
 
   const onDecline = () => run(async () => {
     if (!reason) return;
-    await decline.mutateAsync({ referralId: referral.id, reason, note });
+    await decline.mutateAsync({ referralId: referral.id, reason, note, partnerMessage });
     toast.success("Referral declined");
     onOpenChange(false);
   });
@@ -324,6 +328,16 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
                 />
               </label>
               <NotesFieldWithMic value={note} onChange={setNote} placeholder="Internal note (optional)" />
+              <label htmlFor="decline-partner-message" className="-mb-1.5 text-caption font-medium text-text-muted">
+                Message to the partner (they will see this, optional)
+              </label>
+              <NotesFieldWithMic
+                id="decline-partner-message"
+                value={partnerMessage}
+                onChange={setPartnerMessage}
+                placeholder="A short note for the partner"
+                maxLength={REFERRAL_UPDATE_MAX}
+              />
               <div className="flex gap-2">
                 <Button variant="secondary" className="flex-1" onClick={() => setMode("main")}>Back</Button>
                 <Button

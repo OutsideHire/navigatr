@@ -196,9 +196,27 @@ describe("ReviewReferralSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "Decline" }));
     await userEvent.selectOptions(screen.getByLabelText("Pick a reason…"), "outside_icp");
     await userEvent.click(screen.getByRole("button", { name: "Decline referral" }));
-    expect(decline).toHaveBeenCalledWith({ referralId: "r-1", reason: "outside_icp", note: "" });
+    expect(decline).toHaveBeenCalledWith({ referralId: "r-1", reason: "outside_icp", note: "", partnerMessage: "" });
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(toastSuccess).toHaveBeenCalledWith("Referral declined");
+  });
+
+  it("declines with a message the partner will see, kept apart from the internal note", async () => {
+    decline.mockResolvedValueOnce(undefined);
+    renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Decline" }));
+    await userEvent.selectOptions(screen.getByLabelText("Pick a reason…"), "outside_icp");
+    await userEvent.type(screen.getByPlaceholderText("Internal note (optional)"), "Too small");
+    const message = screen.getByLabelText("Message to the partner (they will see this, optional)");
+    expect(message).toHaveAttribute("maxLength", "1000");
+    await userEvent.type(message, "Thanks Jane, not a fit right now.");
+    await userEvent.click(screen.getByRole("button", { name: "Decline referral" }));
+    expect(decline).toHaveBeenCalledWith({
+      referralId: "r-1",
+      reason: "outside_icp",
+      note: "Too small",
+      partnerMessage: "Thanks Jane, not a fit right now.",
+    });
   });
 
   it("merges into the picked deal", async () => {
