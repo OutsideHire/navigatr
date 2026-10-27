@@ -1,0 +1,122 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+const api = vi.hoisted(() => ({
+  getTerms: vi.fn(),
+  acceptTerms: vi.fn(),
+}));
+
+vi.mock("../lib/portalApi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/portalApi")>();
+  return { ...actual, portalApi: api };
+});
+
+import { PortalTermsPage } from "./PortalTermsPage";
+import { PortalApiError } from "../lib/portalApi";
+
+const BRAND = { orgName: "Acme ISO", productName: "navigatr", primaryColor: null, logoUrl: null, darkLogoUrl: null };
+const TERMS = { termsText: "Terms two.", termsVersion: 2, termsCurrent: false };
+
+function renderPage() {
+  const onAccepted = vi.fn();
+  const onExpired = vi.fn();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <PortalTermsPage slug="acme" token="sess" brand={BRAND} onAccepted={onAccepted} onExpired={onExpired} />
+    </QueryClientProvider>,
+  );
+  return { onAccepted, onExpired };
+}
+
+beforeEach(() => {
+  Object.values(api).forEach((fn) => fn.mockReset());
+});
+
+describe("PortalTermsPage", () => {
+  it("shows the ISO's new terms and accepts only once the partner agrees", async () => {
+    const user = userEvent.setup();
+    api.getTerms.mockResolvedValue(TERMS);
+    api.acceptTerms.mockResolvedValue(undefined);
+    const { onAccepted } = renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Acme ISO updated its partner terms" })).toBeInTheDocument();
+    expect(api.getTerms).toHaveBeenCalledWith("acme", "sess");
+    expect(screen.getByText("Terms two.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Partner terms" })).toBeInTheDocument();
+
+    const accept = screen.getByRole("button", { name: "Accept and continue" });
+    expect(accept).toBeDisabled();
+    await user.click(screen.getByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(accept);
+
+    expect(api.acceptTerms).toHaveBeenCalledWith("acme", "sess", 2);
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+  });
+
+  it("reloads the terms and asks again when they changed while the partner was reading", async () => {
+    const user = userEvent.setup();
+    api.getTerms.mockResolvedValueOnce(TERMS).mockResolvedValueOnce({ ...TERMS, termsText: "Terms three.", termsVersion: 3 });
+    api.acceptTerms.mockRejectedValueOnce(new PortalApiError(409, "terms_changed"));
+    const { onAccepted } = renderPage();
+
+    await user.click(await screen.findByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(screen.getByRole("button", { name: "Accept and continue" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("The terms were just updated. Please read them again.");
+    expect(await screen.findByText("Terms three.")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "I agree to these terms" })).not.toBeChecked();
+    expect(onAccepted).not.toHaveBeenCalled();
+
+    api.acceptTerms.mockResolvedValueOnce(undefined);
+    await user.click(screen.getByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(screen.getByRole("button", { name: "Accept and continue" }));
+    expect(api.acceptTerms).toHaveBeenLastCalledWith("acme", "sess", 3);
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers a retry when accepting can't reach the ISO", async () => {
+    const user = userEvent.setup();
+    api.getTerms.mockResolvedValue(TERMS);
+    api.acceptTerms.mockRejectedValueOnce(new PortalApiError(0, "network_error")).mockResolvedValueOnce(undefined);
+    const { onAccepted } = renderPage();
+
+    await user.click(await screen.findByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(screen.getByRole("button", { name: "Accept and continue" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Acme ISO/);
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns to sign-in when the session is gone", async () => {
+    api.getTerms.mockResolvedValue(null);
+    const { onExpired } = renderPage();
+    await vi.waitFor(() => expect(onExpired).toHaveBeenCalled());
+  });
+
+  it("returns to sign-in when the session dies while accepting", async () => {
+    const user = userEvent.setup();
+    api.getTerms.mockResolvedValue(TERMS);
+    api.acceptTerms.mockRejectedValueOnce(new PortalApiError(401, "unauthorized"));
+    const { onExpired, onAccepted } = renderPage();
+    await user.click(await screen.findByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(screen.getByRole("button", { name: "Accept and continue" }));
+    await vi.waitFor(() => expect(onExpired).toHaveBeenCalled());
+    expect(onAccepted).not.toHaveBeenCalled();
+  });
+
+  it("moves on without asking when the terms are already current (accepted on another device)", async () => {
+    api.getTerms.mockResolvedValue({ ...TERMS, termsCurrent: true });
+    const { onAccepted } = renderPage();
+    await vi.waitFor(() => expect(onAccepted).toHaveBeenCalled());
+    expect(api.acceptTerms).not.toHaveBeenCalled();
+  });
+
+  it("offers a retry when the terms can't be loaded", async () => {
+    api.getTerms.mockRejectedValue(new PortalApiError(503, "server_error"));
+    renderPage();
+    expect(await screen.findByRole("button", { name: /try again/i })).toBeInTheDocument();
+  });
+});

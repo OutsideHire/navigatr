@@ -1,7 +1,7 @@
 /**
  * PartnerPortalTab: the admin "Partner portal" settings card (spec 5.10).
- * Turn the portal on, edit the partner terms (every change bumps the version; partners who join
- * after a change accept the new version) and the consent line, choose whether partners see
+ * Turn the portal on, edit the partner terms (every change bumps the version; partners accept
+ * the new version at their next sign-in, FR-PORT-18) and the consent line, choose whether partners see
  * closed-won value, and copy the portal address.
  *
  * The form remounts whenever the saved state changes (key below), so it always
@@ -83,7 +83,7 @@ function PartnerPortalForm({ initial }: { initial: PortalSettings }) {
 
   const termsHelper =
     initial.termsVersion > 0
-      ? `Version ${initial.termsVersion}. Partners who join after a change accept the new version.`
+      ? `Version ${initial.termsVersion}. Partners accept the new version at their next sign-in.`
       : "Partners accept these before they first sign in. Leave blank to start from a draft.";
 
   return (

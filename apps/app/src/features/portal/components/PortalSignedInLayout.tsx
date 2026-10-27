@@ -5,6 +5,11 @@
  * expire(), which forgets the session on this device and returns to sign-in.
  * An expiry keeps an unsent referral draft so nothing typed is lost; an
  * explicit Sign out also clears it, since the device may be shared.
+ *
+ * FR-PORT-18: when me reports the ISO's terms changed since the partner last
+ * accepted them, the terms page stands in for every signed-in page until they
+ * agree (Sign out stays available). A 403 terms_required from any request
+ * mid-session re-checks me, so the terms page comes up at the next action.
  */
 import * as React from "react";
 import { Link, Navigate, Outlet, useNavigate } from "react-router-dom";
@@ -12,7 +17,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, LogOut, User } from "lucide-react";
 import { Button } from "@/components/navigatr";
 import { PortalRetry } from "./PortalRetry";
-import { portalApi, type PortalBrand } from "../lib/portalApi";
+import { PortalTermsPage } from "../pages/PortalTermsPage";
+import { onPortalTermsRequired, portalApi, type PortalBrand } from "../lib/portalApi";
 import { clearPortalDraft } from "../lib/portalDraft";
 import { clearPortalSession, readPortalSession } from "../lib/portalSession";
 import type { PortalSignedInContext } from "../lib/portalSignedIn";
@@ -43,6 +49,15 @@ export function PortalSignedInLayout({ slug, brand }: { slug: string; brand: Por
     if (expired) forget();
   }, [expired, forget]);
 
+  const recheck = me.refetch;
+  React.useEffect(() => onPortalTermsRequired(() => void recheck()), [recheck]);
+
+  const termsAccepted = React.useCallback(() => {
+    // Pages that hit terms_required load afresh when they mount again.
+    void queryClient.invalidateQueries({ queryKey: ["portal", "data", slug], refetchType: "none" });
+    void recheck();
+  }, [queryClient, slug, recheck]);
+
   if (!token) return <Navigate to={`/p/${slug}`} replace />;
   const sessionToken: string = token;
 
@@ -59,6 +74,7 @@ export function PortalSignedInLayout({ slug, brand }: { slug: string; brand: Por
   }
 
   const account = me.data;
+  const needsTerms = account.termsCurrent === false;
   const context: PortalSignedInContext = { slug, token: sessionToken, brand, me: account, expire: forget };
 
   const signOut = async () => {
@@ -79,13 +95,15 @@ export function PortalSignedInLayout({ slug, brand }: { slug: string; brand: Por
           Signed in as {account.partnerName} at {account.orgName}
         </p>
         <div className="flex shrink-0 items-center gap-1">
-          <Link
-            to={`/p/${slug}/profile`}
-            className="inline-flex min-h-11 items-center gap-1 rounded-radius-sm px-2 text-body-sm font-medium text-brand-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
-          >
-            <User className="h-4 w-4" aria-hidden />
-            Profile
-          </Link>
+          {!needsTerms && (
+            <Link
+              to={`/p/${slug}/profile`}
+              className="inline-flex min-h-11 items-center gap-1 rounded-radius-sm px-2 text-body-sm font-medium text-brand-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+            >
+              <User className="h-4 w-4" aria-hidden />
+              Profile
+            </Link>
+          )}
           <Button
             variant="tertiary"
             size="lg"
@@ -98,7 +116,17 @@ export function PortalSignedInLayout({ slug, brand }: { slug: string; brand: Por
           </Button>
         </div>
       </div>
-      <Outlet context={context} />
+      {needsTerms ? (
+        <PortalTermsPage
+          slug={slug}
+          token={sessionToken}
+          brand={brand}
+          onAccepted={termsAccepted}
+          onExpired={forget}
+        />
+      ) : (
+        <Outlet context={context} />
+      )}
     </div>
   );
 }

@@ -159,6 +159,10 @@ do $$ declare v text := (select v from _t where k = 'sess1'); r record; n int; b
      or r.partner_name is distinct from 'Jane CPA' or r.org_slug is distinct from 'portal-sign' then
     raise exception 'lookup returned the wrong identity: %', row_to_json(r);
   end if;
+  -- FR-PORT-18: an org that never set terms (version 0) blocks nobody.
+  if r.terms_current is distinct from true then
+    raise exception 'terms_current should be true when the org has no terms: %', row_to_json(r);
+  end if;
   select count(*) into n from public.portal_session_lookup('portal-sign-b', v);
   if n <> 0 then raise exception 'a session must not open another tenant''s portal'; end if;
 end $$;

@@ -114,10 +114,10 @@ describe("PartnerPortalTab", () => {
     expect(toast.error).toHaveBeenCalledWith("Couldn't save the portal settings. Try again.");
   });
 
-  it("explains that only partners who join later accept a changed version", async () => {
+  it("explains that partners accept a changed version at their next sign-in", async () => {
     rpcMock.mockResolvedValueOnce({ data: [SEEDED], error: null });
     renderTab();
-    expect(await screen.findByText(/Version 1\. Partners who join after a change accept the new version\./)).toBeInTheDocument();
+    expect(await screen.findByText(/Version 1\. Partners accept the new version at their next sign-in\./)).toBeInTheDocument();
     expect(screen.queryByText(/accept again/i)).not.toBeInTheDocument();
   });
 

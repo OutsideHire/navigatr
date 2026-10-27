@@ -21,6 +21,7 @@ const LOOKUP = [
     user_email: "jane@example.com",
     org_name: "Acme ISO",
     org_slug: "acme",
+    terms_current: true,
   },
 ];
 

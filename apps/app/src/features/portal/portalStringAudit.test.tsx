@@ -56,6 +56,8 @@ const api = vi.hoisted(() => ({
   getSentReferral: vi.fn(),
   postNote: vi.fn(),
   unsubscribeDigest: vi.fn(),
+  getTerms: vi.fn(),
+  acceptTerms: vi.fn(),
 }));
 
 vi.mock("./lib/portalApi", async (importOriginal) => {
@@ -143,7 +145,7 @@ describe("portal_api responses", () => {
       switch (name) {
         case "portal_session_lookup":
           return {
-            data: [{ portal_user_id: "u-1", org_id: "o-1", partner_id: "p-1", partner_name: "Jane", user_email: "j@x.co", org_name: "Acme ISO", org_slug: "acme" }],
+            data: [{ portal_user_id: "u-1", org_id: "o-1", partner_id: "p-1", partner_name: "Jane", user_email: "j@x.co", org_name: "Acme ISO", org_slug: "acme", terms_current: true }],
             error: null,
           };
         case "portal_list_referrals":
@@ -642,6 +644,14 @@ describe("rendered portal pages: UI copy audit", () => {
     api.dashboard.mockResolvedValue({ submitted: 6, active: 3, closedWon: 1, conversionRate: 0.5, valueVisible: true, totalValueCents: 500000 });
     renderAt("/p/acme/home");
     await screen.findByRole("link", { name: /Business 5/ });
+    expectCleanScreen();
+  });
+
+  it("the updated-terms page a signed-in partner must accept (FR-PORT-18)", async () => {
+    api.me.mockResolvedValue({ partnerName: "Jane", email: "jane@example.com", orgName: "Acme ISO", termsCurrent: false });
+    api.getTerms.mockResolvedValue({ termsText: "Terms two.", termsVersion: 2, termsCurrent: false });
+    renderAt("/p/acme/home");
+    await screen.findByText("Terms two.");
     expectCleanScreen();
   });
 

@@ -12,7 +12,7 @@ const NOW = new Date("2026-10-22T15:00:00Z");
 const URL_BASE = "https://proj.supabase.co/functions/v1/portal_api";
 const RID = "3f9a21c0-1111-4222-8333-444455556666";
 const LOOKUP = [
-  { portal_user_id: "u-1", org_id: "o-1", partner_id: "p-1", partner_name: "Jane", user_email: "jane@example.com", org_name: "Acme ISO", org_slug: "acme" },
+  { portal_user_id: "u-1", org_id: "o-1", partner_id: "p-1", partner_name: "Jane", user_email: "jane@example.com", org_name: "Acme ISO", org_slug: "acme", terms_current: true },
 ];
 const ok = (data: unknown): PortalRpcResult => ({ data, error: null });
 const fail = (message: string): PortalRpcResult => ({ data: null, error: { message } });

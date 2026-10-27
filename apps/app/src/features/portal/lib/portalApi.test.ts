@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { PORTAL_API_URL, PortalApiError, portalApi } from "./portalApi";
+import { PORTAL_API_URL, PortalApiError, onPortalTermsRequired, portalApi } from "./portalApi";
 
 const fetchMock = vi.fn<(input: string, init: RequestInit) => Promise<Response>>();
 
@@ -106,6 +106,44 @@ describe("portalApi", () => {
     await expect(portalApi.requestCode("acme", "a@b.co")).rejects.toMatchObject({ status: 0, code: "network_error" });
     fetchMock.mockResolvedValueOnce(new Response("<html>bad gateway</html>", { status: 502 }));
     await expect(portalApi.requestCode("acme", "a@b.co")).rejects.toMatchObject({ status: 502, code: "request_failed" });
+  });
+});
+
+describe("terms re-acceptance (FR-PORT-18)", () => {
+  it("reads the terms for the session, null when the session is gone", async () => {
+    const terms = { termsText: "Terms two.", termsVersion: 2, termsCurrent: false };
+    fetchMock.mockResolvedValueOnce(respond(200, { terms }));
+    await expect(portalApi.getTerms("acme", "sess")).resolves.toEqual(terms);
+    expect(lastCall().url).toBe(`${PORTAL_API_URL}/get_terms`);
+    expect(lastCall().headers["x-portal-session"]).toBe("sess");
+    expect(lastCall().body).toEqual({ slug: "acme" });
+    fetchMock.mockResolvedValueOnce(respond(401, { error: "unauthorized" }));
+    await expect(portalApi.getTerms("acme", "dead")).resolves.toBeNull();
+  });
+
+  it("accepts a version with the session and reports terms_changed", async () => {
+    fetchMock.mockResolvedValueOnce(respond(200, { ok: true }));
+    await portalApi.acceptTerms("acme", "sess", 2);
+    expect(lastCall().url).toBe(`${PORTAL_API_URL}/accept_terms`);
+    expect(lastCall().headers["x-portal-session"]).toBe("sess");
+    expect(lastCall().body).toEqual({ slug: "acme", termsVersion: 2 });
+    fetchMock.mockResolvedValueOnce(respond(409, { error: "terms_changed" }));
+    await expect(portalApi.acceptTerms("acme", "sess", 1)).rejects.toMatchObject({ status: 409, code: "terms_changed" });
+  });
+
+  it("tells listeners when any action answers 403 terms_required, and only then", async () => {
+    const listener = vi.fn();
+    const off = onPortalTermsRequired(listener);
+    fetchMock.mockResolvedValueOnce(respond(403, { error: "terms_required" }));
+    await expect(portalApi.dashboard("acme", "sess", "all")).rejects.toMatchObject({ status: 403, code: "terms_required" });
+    expect(listener).toHaveBeenCalledTimes(1);
+    fetchMock.mockResolvedValueOnce(respond(403, { error: "forbidden" }));
+    await expect(portalApi.dashboard("acme", "sess", "all")).rejects.toMatchObject({ status: 403 });
+    expect(listener).toHaveBeenCalledTimes(1);
+    off();
+    fetchMock.mockResolvedValueOnce(respond(403, { error: "terms_required" }));
+    await expect(portalApi.dashboard("acme", "sess", "all")).rejects.toMatchObject({ code: "terms_required" });
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -20,6 +20,8 @@ const api = vi.hoisted(() => ({
   getReferral: vi.fn(),
   withdrawReferral: vi.fn(),
   transcribe: vi.fn(),
+  getTerms: vi.fn(),
+  acceptTerms: vi.fn(),
 }));
 
 const EMPTY_DASHBOARD = { submitted: 0, active: 0, closedWon: 0, conversionRate: null, valueVisible: false };
@@ -30,12 +32,12 @@ vi.mock("../lib/portalApi", async (importOriginal) => {
 });
 
 import { PortalRoot } from "./PortalRoot";
-import { PortalApiError } from "../lib/portalApi";
+import { PortalApiError, notifyPortalTermsRequired } from "../lib/portalApi";
 import { clearPortalSession, readPortalSession, writePortalSession } from "../lib/portalSession";
 import { readPortalDraft, writePortalDraft, EMPTY_DRAFT } from "../lib/portalDraft";
 
 const BRAND = { orgName: "Acme ISO", productName: "navigatr", primaryColor: null, logoUrl: null, darkLogoUrl: null };
-const ME = { partnerName: "Jane", email: "jane@example.com", orgName: "Acme ISO" };
+const ME = { partnerName: "Jane", email: "jane@example.com", orgName: "Acme ISO", termsCurrent: true };
 
 function renderAt(path: string, client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return render(
@@ -306,5 +308,64 @@ describe("PortalRoot", () => {
     await user.click(screen.getByRole("button", { name: "Sign out" }));
     await screen.findByRole("heading", { name: "Sign in to Acme ISO" });
     expect(client.getQueryCache().findAll({ queryKey: ["portal", "me", "acme"] })).toHaveLength(0);
+  });
+  describe("re-accepting changed terms (FR-PORT-18)", () => {
+    const NEW_TERMS = { termsText: "Terms two.", termsVersion: 2, termsCurrent: false };
+
+    it("holds the portal behind the new terms at sign-in, and opens it once the partner accepts", async () => {
+      const user = userEvent.setup();
+      api.brand.mockResolvedValue(BRAND);
+      api.me.mockResolvedValueOnce({ ...ME, termsCurrent: false }).mockResolvedValue(ME);
+      api.getTerms.mockResolvedValue(NEW_TERMS);
+      api.acceptTerms.mockResolvedValue(undefined);
+      writePortalSession("acme", "live");
+
+      renderAt("/p/acme/home");
+      expect(await screen.findByRole("heading", { name: "Acme ISO updated its partner terms" })).toBeInTheDocument();
+      expect(screen.getByText("Terms two.")).toBeInTheDocument();
+      // Still signed in, with a way out, but no partner data is requested.
+      expect(screen.getByText("Signed in as Jane at Acme ISO")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+      expect(api.dashboard).not.toHaveBeenCalled();
+      expect(api.listReferrals).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("checkbox", { name: "I agree to these terms" }));
+      await user.click(screen.getByRole("button", { name: "Accept and continue" }));
+      expect(api.acceptTerms).toHaveBeenCalledWith("acme", "live", 2);
+
+      await vi.waitFor(() => expect(api.dashboard).toHaveBeenCalled());
+      expect(screen.queryByRole("heading", { name: "Acme ISO updated its partner terms" })).toBeNull();
+      expect(readPortalSession("acme")).toBe("live");
+    });
+
+    it("shows the terms page mid-session when an action answers terms_required", async () => {
+      api.brand.mockResolvedValue(BRAND);
+      api.me.mockResolvedValueOnce(ME).mockResolvedValue({ ...ME, termsCurrent: false });
+      api.getTerms.mockResolvedValue(NEW_TERMS);
+      api.dashboard.mockImplementation(async () => {
+        notifyPortalTermsRequired();
+        throw new PortalApiError(403, "terms_required");
+      });
+      writePortalSession("acme", "live");
+
+      renderAt("/p/acme/home");
+      expect(await screen.findByRole("heading", { name: "Acme ISO updated its partner terms" })).toBeInTheDocument();
+      expect(readPortalSession("acme")).toBe("live");
+    });
+
+    it("lets a partner sign out instead of accepting", async () => {
+      const user = userEvent.setup();
+      api.brand.mockResolvedValue(BRAND);
+      api.me.mockResolvedValue({ ...ME, termsCurrent: false });
+      api.getTerms.mockResolvedValue(NEW_TERMS);
+      api.signOut.mockResolvedValue(undefined);
+      writePortalSession("acme", "live");
+
+      renderAt("/p/acme/home");
+      await screen.findByRole("heading", { name: "Acme ISO updated its partner terms" });
+      await user.click(screen.getByRole("button", { name: "Sign out" }));
+      expect(await screen.findByRole("heading", { name: "Sign in to Acme ISO" })).toBeInTheDocument();
+      expect(api.acceptTerms).not.toHaveBeenCalled();
+    });
   });
 });
