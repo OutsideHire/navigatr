@@ -552,6 +552,9 @@ function SourceCard({ deal }: { deal: Deal }) {
                 {referral.partnerName} ({referral.partnerCompany})
               </Link>
             </>
+          ) : referral.partnerName ? (
+            // FR-PORT-55: name the partner read-only when the viewer cannot open it.
+            `Referred by ${referral.partnerName}${referral.partnerCompany ? ` (${referral.partnerCompany})` : ""}`
           ) : referral.partnerCompanySnapshot ? (
             `Referred by a partner (${referral.partnerCompanySnapshot})`
           ) : (
@@ -562,7 +565,7 @@ function SourceCard({ deal }: { deal: Deal }) {
       {referral && (
         <ReferralUpdatesPanel
           referralId={referral.referralId}
-          partnerLabel={referral.partnerVisible && referral.partnerName ? referral.partnerName : "the partner"}
+          partnerLabel={referral.partnerName ?? "the partner"}
         />
       )}
       {referral && (referral.status === "accepted" || referral.status === "working") && (

@@ -8,8 +8,10 @@ import { useReferralQueue } from "./useReferralQueue";
 const orderMock = vi.fn();
 const eqMock = vi.fn();
 const selectMock = vi.fn();
+const rpcMock = vi.fn();
 vi.mock("@/lib/supabase", () => ({
   supabase: {
+    rpc: (...a: unknown[]) => rpcMock(...a),
     from: (table: string) => {
       if (table !== "referrals") throw new Error(`unexpected table ${table}`);
       return { select: (...a: unknown[]) => { selectMock(...a); return { eq: (...e: unknown[]) => { eqMock(...e); return { eq: (...e2: unknown[]) => { eqMock(...e2); return { eq: (...e3: unknown[]) => { eqMock(...e3); return { order: orderMock }; } }; } }; } }; } };
@@ -24,7 +26,7 @@ const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>
 );
 
-beforeEach(() => { orderMock.mockReset(); eqMock.mockReset(); selectMock.mockReset(); });
+beforeEach(() => { orderMock.mockReset(); eqMock.mockReset(); selectMock.mockReset(); rpcMock.mockReset(); });
 
 describe("useReferralQueue", () => {
   it("loads submitted inbound referrals oldest first and maps them", async () => {
@@ -49,6 +51,8 @@ describe("useReferralQueue", () => {
       source: "rep_entered", duplicateOfReferralId: null, duplicateOfDealId: null, urgency: null,
       icpFlags: [],
     }]);
+    // Every partner was visible, so no name lookup.
+    expect(rpcMock).not.toHaveBeenCalled();
   });
 
   it("carries the portal source and the duplicate flags", async () => {
@@ -82,9 +86,41 @@ describe("useReferralQueue", () => {
       }],
       error: null,
     });
+    rpcMock.mockResolvedValueOnce({ data: [], error: null });
     const { result } = renderHook(() => useReferralQueue(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.[0]).toMatchObject({ partnerName: "", partnerCompany: "Snap & Co" });
+  });
+
+  it("names partners the viewer cannot open with one batched lookup (FR-PORT-55)", async () => {
+    const hidden = (id: string) => ({
+      id, partner_id: `p-${id}`, company_name: "Hidden Co", contact_name: null,
+      contact_email: null, contact_phone: null, address: null, place_id: null,
+      notes: "", submitted_at: "2026-10-07T12:00:00Z", assigned_user_id: "user-1",
+      partner_company_snapshot: "Snap & Co", partner: null,
+    });
+    orderMock.mockResolvedValueOnce({
+      data: [
+        hidden("r-5"),
+        { ...hidden("r-6"), partner: { name: "Jane", company: "Jane & Co" } },
+        hidden("r-7"),
+      ],
+      error: null,
+    });
+    rpcMock.mockResolvedValueOnce({
+      data: [
+        { referral_id: "r-5", partner_id: "p-r-5", name: "Pat CPA", company: "Pat & Co", visible: false },
+        { referral_id: "r-7", partner_id: "p-r-7", name: "Kim CPA", company: "Kim & Co", visible: false },
+      ],
+      error: null,
+    });
+    const { result } = renderHook(() => useReferralQueue(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+    expect(rpcMock).toHaveBeenCalledWith("referral_partner_names", { p_referral_ids: ["r-5", "r-7"] });
+    expect(result.current.data?.map((r) => [r.partnerName, r.partnerCompany])).toEqual([
+      ["Pat CPA", "Pat & Co"], ["Jane", "Jane & Co"], ["Kim CPA", "Kim & Co"],
+    ]);
   });
 
   it("throws the query error", async () => {

@@ -112,6 +112,18 @@ describe("DealDetailPage / referred by", () => {
     expect(screen.queryByRole("link", { name: /Snap|Jane/ })).not.toBeInTheDocument();
   });
 
+  it("names a partner the viewer cannot open, read-only with no link (FR-PORT-55)", async () => {
+    dealReferral = {
+      referralId: "r-3", partnerId: "p-3", partnerVisible: false, partnerName: "Jane CPA",
+      partnerCompany: "Jane & Co", partnerCompanySnapshot: "Old Snap",
+    };
+    renderDealDetail();
+    expect(await screen.findByText("Referred by Jane CPA (Jane & Co)")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Jane/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Share update with partner" }));
+    expect(await screen.findByText("Share an update with Jane CPA")).toBeInTheDocument();
+  });
+
   it("drops the parenthetical when a hidden partner has no snapshot", async () => {
     dealReferral = {
       referralId: "r-2", partnerId: "p-2", partnerVisible: false, partnerName: null,

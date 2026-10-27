@@ -7,6 +7,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
+import { fetchReferralPartnerNames } from "./useReferralPartnerNames";
 
 export interface QueueReferral {
   id: string;
@@ -78,11 +79,15 @@ export function useReferralQueue() {
         .eq("can_triage", true)
         .order("submitted_at", { ascending: true });
       if (error) throw error;
-      return ((data ?? []) as unknown as QueueRow[]).map((r) => ({
+      const rows = (data ?? []) as unknown as QueueRow[];
+      // Partners the viewer cannot open come back with a null embed. Name them
+      // anyway, read-only, with one batched lookup (FR-PORT-55).
+      const hidden = await fetchReferralPartnerNames(rows.filter((r) => r.partner === null).map((r) => r.id));
+      return rows.map((r) => ({
         id: r.id,
         partnerId: r.partner_id,
-        partnerName: r.partner?.name ?? "",
-        partnerCompany: r.partner?.company ?? r.partner_company_snapshot ?? "",
+        partnerName: r.partner?.name ?? hidden.get(r.id)?.name ?? "",
+        partnerCompany: r.partner?.company ?? hidden.get(r.id)?.company ?? r.partner_company_snapshot ?? "",
         companyName: r.company_name,
         contactName: r.contact_name,
         contactEmail: r.contact_email,
