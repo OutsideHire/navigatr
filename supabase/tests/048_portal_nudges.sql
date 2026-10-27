@@ -163,13 +163,28 @@ do $$ begin
   if public.enqueue_portal_nudges('2026-10-15 22:30+00') <> 0 then raise exception 'already nudged referrals are not repeated'; end if;
 end $$;
 
--- A referral reassigned after its nudge is not nudged again to the new assignee.
+-- A referral reassigned after its nudge restarts the reminder: the new assignee
+-- is nudged at their own next end of day, counted from the reassign time. The
+-- RPC stamps the real clock, so the test moves nudge_from_at onto the fixed one.
 do $$ begin
-  update referrals set assigned_user_id = 'a0480000-0000-0000-0000-000000000004', submitted_at = '2026-10-15 15:00+00'
-   where id = 'a048f000-0000-0000-0000-000000000001';
-  if public.enqueue_portal_nudges('2026-10-15 22:30+00') <> 0 then
-    raise exception 'a nudged referral is never nudged a second time';
+  perform set_config('request.jwt.claim.sub', 'a0480000-0000-0000-0000-000000000001', true);
+  perform set_config('role', 'authenticated', true);
+  perform public.reassign_referral('a048f000-0000-0000-0000-000000000001', 'a0480000-0000-0000-0000-000000000004');
+  perform set_config('role', 'postgres', true);
+  if (select nudge_from_at from referrals where id = 'a048f000-0000-0000-0000-000000000001') is null
+     or (select nudged_at from referrals where id = 'a048f000-0000-0000-0000-000000000001') is not null
+     or exists (select 1 from referral_nudges where referral_id = 'a048f000-0000-0000-0000-000000000001') then
+    raise exception 'reassign should restart the reminder';
   end if;
+  update referrals set nudge_from_at = '2026-10-15 15:00+00' where id = 'a048f000-0000-0000-0000-000000000001';
+  if public.enqueue_portal_nudges('2026-10-15 22:30+00') <> 1 then
+    raise exception 'the reassigned referral nudges its new assignee';
+  end if;
+  if (select payload from portal_email_outbox where dedupe_key = 'internal_nudge:a0480000-0000-0000-0000-000000000004:2026-10-15')
+     <> '{"appUrlPath":"/partners","companyNames":["Morning Co"],"count":1}'::jsonb then
+    raise exception 'repCHI digest should carry Morning Co';
+  end if;
+  if public.enqueue_portal_nudges('2026-10-15 22:30+00') <> 0 then raise exception 'and only once'; end if;
 end $$;
 
 -- F1: today's digest already exists, a newly due referral is NOT consumed.
