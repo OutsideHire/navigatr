@@ -923,8 +923,12 @@ setSessionGuardHooks({
   // Queries that were waiting on the token when the session ended resolve a
   // moment later with no token. Refuse their table requests locally for a
   // short drain window instead of sending them as anon into a 42501.
-  refuseAnonTableRequests: () =>
-    signedOutAt !== null && Date.now() - signedOutAt < SIGN_OUT_DRAIN_MS,
+  // A clock that moved backwards (negative elapsed) must not refuse forever.
+  refuseAnonTableRequests: () => {
+    if (signedOutAt === null) return false;
+    const elapsed = Date.now() - signedOutAt;
+    return elapsed >= 0 && elapsed < SIGN_OUT_DRAIN_MS;
+  },
   getAccessToken: async () => {
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token ?? null;
