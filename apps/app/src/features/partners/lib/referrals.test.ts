@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  mergeResultMessage,
   DECLINE_REASON_OPTIONS,
   SUBMISSION_DECLINE_REASON_OPTIONS,
   formSubmissionSourceLabel,
@@ -114,5 +115,22 @@ describe("public form submissions", () => {
     expect(referralErrorMessage({ message: "submission_not_found" }, "x")).toBe("That referral no longer exists.");
     expect(referralErrorMessage({ message: "invalid_reason" }, "x")).toBe("Pick a reason.");
     expect(referralErrorMessage({ message: "portal_disabled" }, "x")).toBe("Turn on the partner portal first.");
+  });
+});
+
+describe("mergeResultMessage", () => {
+  it("says a plain merge merged", () => {
+    expect(mergeResultMessage({ result: "merged", creditedPartnerName: null })).toBe("Merged into the existing deal");
+  });
+
+  it("names the partner who keeps credit when the rep can see them", () => {
+    expect(mergeResultMessage({ result: "closed_duplicate", creditedPartnerName: "Jane CPA" }))
+      .toBe("Merged. Jane CPA keeps credit, so this referral closed as a duplicate.");
+  });
+
+  it("falls back to Another partner when the name is missing or blank", () => {
+    const generic = "Merged. Another partner keeps credit, so this referral closed as a duplicate.";
+    expect(mergeResultMessage({ result: "closed_duplicate", creditedPartnerName: null })).toBe(generic);
+    expect(mergeResultMessage({ result: "closed_duplicate", creditedPartnerName: "  " })).toBe(generic);
   });
 });

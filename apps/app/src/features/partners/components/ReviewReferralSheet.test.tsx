@@ -178,7 +178,7 @@ describe("ReviewReferralSheet", () => {
   });
 
   it("merges into the picked deal", async () => {
-    merge.mockResolvedValueOnce(undefined);
+    merge.mockResolvedValueOnce({ result: "merged", creditedPartnerName: null });
     const onOpenChange = renderSheet();
     await userEvent.click(screen.getByRole("button", { name: "Merge" }));
     await userEvent.selectOptions(screen.getByLabelText("Pick a deal…"), "d-1");
@@ -243,7 +243,7 @@ describe("ReviewReferralSheet", () => {
   });
 
   it("requires a reason to merge a flagged referral", async () => {
-    merge.mockResolvedValueOnce(undefined);
+    merge.mockResolvedValueOnce({ result: "merged", creditedPartnerName: null });
     const onOpenChange = vi.fn();
     render(<ReviewReferralSheet referral={flagged} open onOpenChange={onOpenChange} />);
     await userEvent.click(screen.getByRole("button", { name: "Merge" }));
@@ -270,6 +270,17 @@ describe("ReviewReferralSheet", () => {
     // The reason already written carries over, so the merge can go ahead.
     expect(screen.getByPlaceholderText("Why merge it anyway?")).toHaveValue("Different location");
     expect(screen.getByRole("button", { name: "Merge into deal" })).toBeEnabled();
+  });
+
+  it("says plainly when the other partner keeps credit and this referral closed as a duplicate", async () => {
+    merge.mockResolvedValueOnce({ result: "closed_duplicate", creditedPartnerName: "Bob Broker" });
+    const onOpenChange = renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Merge" }));
+    await userEvent.selectOptions(screen.getByLabelText("Pick a deal…"), "d-1");
+    await userEvent.click(screen.getByRole("button", { name: "Merge into deal" }));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(toastSuccess).toHaveBeenCalledWith("Merged. Bob Broker keeps credit, so this referral closed as a duplicate.");
+    expect(toastSuccess).not.toHaveBeenCalledWith("Merged into the existing deal");
   });
 
   it("lists only open deals sorted by company name", async () => {

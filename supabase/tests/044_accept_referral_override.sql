@@ -10,7 +10,8 @@
 -- Merge fixture: partner P2 (portal user active) and deals DA (credited to P1)
 -- and DN (no partner). P2's referrals: M flagged (plain merge refused), H flagged
 -- against DA, K flagged against DN, L flagged (long reason). P1's referral S is
--- flagged against DA (same partner).
+-- flagged against DA (same partner). Unflagged P2 referrals: U (merged into DA)
+-- and V (merged into DH, credited to boss's partner P3, which rep1 cannot see).
 
 begin;
 
@@ -40,19 +41,25 @@ insert into referrals (id, org_id, partner_id, source, company_name, address, co
 insert into partners (id, org_id, created_by, owner_id, name, company, type) values
   ('a044a000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001044', 'a0440000-0000-0000-0000-000000000002', 'a0440000-0000-0000-0000-000000000002', 'Bob Broker', 'Bob LLC', 'other');
 
+insert into partners (id, org_id, created_by, owner_id, name, company, type) values
+  ('a044a000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000001044', 'a0440000-0000-0000-0000-000000000001', 'a0440000-0000-0000-0000-000000000001', 'Hidden Hank', 'Hank Co', 'other');
+
 insert into portal_users (id, org_id, partner_id, email, status) values
   ('a044b000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001044', 'a044a000-0000-0000-0000-000000000002', 'bob@ao.example', 'active');
 
 insert into deals (id, org_id, owner_id, company_name, address, contact_name, contact_email, contact_phone, value_cents, stage, lead_source, source_partner_id) values
   ('a044d000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-000000001044', 'a0440000-0000-0000-0000-000000000002', 'Credit Spot', '2 Credit St', 'C', 'c@ao.example', '5550440002', 100, 'contacted', 'partner_referral', 'a044a000-0000-0000-0000-000000000001'),
-  ('a044d000-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-000000001044', 'a0440000-0000-0000-0000-000000000002', 'Open Spot',   '3 Open St',   'C', 'o@ao.example', '5550440003', 100, 'contacted', 'path',             null);
+  ('a044d000-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-000000001044', 'a0440000-0000-0000-0000-000000000002', 'Open Spot',   '3 Open St',   'C', 'o@ao.example', '5550440003', 100, 'contacted', 'path',             null),
+  ('a044d000-0000-0000-0000-00000000000c', '00000000-0000-0000-0000-000000001044', 'a0440000-0000-0000-0000-000000000002', 'Hidden Spot', '5 Hidden St', 'C', 'h@ao.example', '5550440005', 100, 'contacted', 'partner_referral', 'a044a000-0000-0000-0000-000000000003');
 
 insert into referrals (id, org_id, partner_id, source, company_name, address, contact_name, assigned_user_id, duplicate_of_deal_id) values
   ('a044f000-0000-0000-0000-00000000000d', '00000000-0000-0000-0000-000000001044', 'a044a000-0000-0000-0000-000000000002', 'portal_signed_in', 'Credit Spot', '2 Credit St', 'Mo', 'a0440000-0000-0000-0000-000000000002', 'a044d000-0000-0000-0000-00000000000a'),
   ('a044f000-0000-0000-0000-00000000000e', '00000000-0000-0000-0000-000000001044', 'a044a000-0000-0000-0000-000000000002', 'portal_signed_in', 'Credit Spot', '2 Credit St', 'Hu', 'a0440000-0000-0000-0000-000000000002', 'a044d000-0000-0000-0000-00000000000a'),
   ('a044f000-0000-0000-0000-00000000000f', '00000000-0000-0000-0000-000000001044', 'a044a000-0000-0000-0000-000000000002', 'portal_signed_in', 'Open Spot',   '3 Open St',   'Ky', 'a0440000-0000-0000-0000-000000000002', 'a044d000-0000-0000-0000-00000000000b'),
   ('a044f000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000001044', 'a044a000-0000-0000-0000-000000000002', 'portal_signed_in', 'Long Spot',   '4 Long St',   'Lu', 'a0440000-0000-0000-0000-000000000002', 'a044d000-0000-0000-0000-00000000000b'),
-  ('a044f000-0000-0000-0000-000000000011', '00000000-0000-0000-0000-000000001044', 'a044a000-0000-0000-0000-000000000001', 'portal_signed_in', 'Credit Spot', '2 Credit St', 'Su', 'a0440000-0000-0000-0000-000000000002', 'a044d000-0000-0000-0000-00000000000a');
+  ('a044f000-0000-0000-0000-000000000011', '00000000-0000-0000-0000-000000001044', 'a044a000-0000-0000-0000-000000000001', 'portal_signed_in', 'Credit Spot', '2 Credit St', 'Su', 'a0440000-0000-0000-0000-000000000002', 'a044d000-0000-0000-0000-00000000000a'),
+  ('a044f000-0000-0000-0000-000000000012', '00000000-0000-0000-0000-000000001044', 'a044a000-0000-0000-0000-000000000002', 'rep_entered',      'Credit Spot', '2 Credit St', 'Uma', 'a0440000-0000-0000-0000-000000000002', null),
+  ('a044f000-0000-0000-0000-000000000013', '00000000-0000-0000-0000-000000001044', 'a044a000-0000-0000-0000-000000000002', 'rep_entered',      'Hidden Spot', '5 Hidden St', 'Vi',  'a0440000-0000-0000-0000-000000000002', null);
 
 create or replace function _t_act(p_user uuid) returns void language plpgsql as $$
 begin
@@ -171,9 +178,12 @@ end $$;
 -- 6. First partner keeps credit: P2's flagged referral merged into DA (credited to
 --    P1) leaves DA with P1 and ends P2's referral declined (duplicate). P2 gets the
 --    not-moving-forward email and never an accepted or won one.
-do $$ declare h record; r referrals; begin
+do $$ declare h record; r referrals; res jsonb; begin
   perform _t_act('a0440000-0000-0000-0000-000000000002');
-  perform public.merge_referral_override('a044f000-0000-0000-0000-00000000000e', 'a044d000-0000-0000-0000-00000000000a', '  Same owner, second location  ');
+  res := public.merge_referral_override('a044f000-0000-0000-0000-00000000000e', 'a044d000-0000-0000-0000-00000000000a', '  Same owner, second location  ');
+  if res is distinct from jsonb_build_object('result', 'closed_duplicate', 'credited_partner_name', 'Jane CPA') then
+    raise exception 'merge should report closed_duplicate naming the visible partner, got %', res;
+  end if;
   if (select source_partner_id from deals where id = 'a044d000-0000-0000-0000-00000000000a') is distinct from 'a044a000-0000-0000-0000-000000000001' then
     raise exception 'DA must keep P1 as its source partner';
   end if;
@@ -214,9 +224,12 @@ end $$;
 
 -- 7. A deal with no partner: the override merges as today (credit goes to P2),
 --    and the reason is on the accepted history row.
-do $$ declare h record; r referrals; begin
+do $$ declare h record; r referrals; res jsonb; begin
   perform _t_act('a0440000-0000-0000-0000-000000000002');
-  perform public.merge_referral_override('a044f000-0000-0000-0000-00000000000f', 'a044d000-0000-0000-0000-00000000000b', 'Different owner');
+  res := public.merge_referral_override('a044f000-0000-0000-0000-00000000000f', 'a044d000-0000-0000-0000-00000000000b', 'Different owner');
+  if res is distinct from jsonb_build_object('result', 'merged', 'credited_partner_name', null) then
+    raise exception 'a plain merge should report merged, got %', res;
+  end if;
   select * into r from referrals where id = 'a044f000-0000-0000-0000-00000000000f';
   if r.status <> 'working' or r.deal_id is distinct from 'a044d000-0000-0000-0000-00000000000b' then
     raise exception 'K should be merged into DN and working, got % %', r.status, r.deal_id;
@@ -231,9 +244,10 @@ do $$ declare h record; r referrals; begin
 end $$;
 
 -- 8. The same partner as the deal's: merges as today, credit unchanged.
-do $$ declare r referrals; begin
+do $$ declare r referrals; res jsonb; begin
   perform _t_act('a0440000-0000-0000-0000-000000000002');
-  perform public.merge_referral_override('a044f000-0000-0000-0000-000000000011', 'a044d000-0000-0000-0000-00000000000a', 'Partner sent it twice');
+  res := public.merge_referral_override('a044f000-0000-0000-0000-000000000011', 'a044d000-0000-0000-0000-00000000000a', 'Partner sent it twice');
+  if res->>'result' is distinct from 'merged' then raise exception 'same partner should report merged, got %', res; end if;
   select * into r from referrals where id = 'a044f000-0000-0000-0000-000000000011';
   if r.status <> 'working' or r.deal_id is distinct from 'a044d000-0000-0000-0000-00000000000a' then
     raise exception 'S should be merged into DA, got % %', r.status, r.deal_id;
@@ -251,6 +265,45 @@ do $$ declare h record; begin
    where referral_id = 'a044f000-0000-0000-0000-000000000010' and to_status = 'accepted';
   if h.note is distinct from 'Merged despite possible duplicate: ' || repeat('x', 500) then
     raise exception 'the merge reason should be capped at 500 characters, got % chars', length(h.note);
+  end if;
+end $$;
+
+-- 10. The credit rule applies to every merge: P2's UNFLAGGED referral U merged
+--     into DA (credited to P1) needs no reason, leaves DA with P1 and closes U
+--     declined (duplicate) with no history note.
+do $$ declare r referrals; res jsonb; h record; begin
+  perform _t_act('a0440000-0000-0000-0000-000000000002');
+  res := public.merge_referral('a044f000-0000-0000-0000-000000000012', 'a044d000-0000-0000-0000-00000000000a');
+  if res is distinct from jsonb_build_object('result', 'closed_duplicate', 'credited_partner_name', 'Jane CPA') then
+    raise exception 'unflagged merge into another partner''s deal should close as duplicate, got %', res;
+  end if;
+  if (select source_partner_id from deals where id = 'a044d000-0000-0000-0000-00000000000a') is distinct from 'a044a000-0000-0000-0000-000000000001' then
+    raise exception 'DA must keep P1 after an unflagged merge';
+  end if;
+  select * into r from referrals where id = 'a044f000-0000-0000-0000-000000000012';
+  if r.status <> 'declined' or r.decline_reason is distinct from 'duplicate' or r.deal_id is not null
+     or r.duplicate_of_deal_id is distinct from 'a044d000-0000-0000-0000-00000000000a' then
+    raise exception 'U should be declined (duplicate) pointing at DA, got % % % %', r.status, r.decline_reason, r.deal_id, r.duplicate_of_deal_id;
+  end if;
+  select * into h from referral_status_history where referral_id = r.id and to_status = 'declined';
+  if h.note is not null then raise exception 'an unflagged merge carries no note, got %', h.note; end if;
+  if exists (select 1 from referral_status_history where referral_id = r.id and to_status in ('accepted','working','won')) then
+    raise exception 'U must never pass through accepted, working or won';
+  end if;
+end $$;
+
+-- 11. A partner the rep cannot see is never named.
+do $$ declare res jsonb; begin
+  perform _t_act('a0440000-0000-0000-0000-000000000002');
+  if public.can_see_partner('a044a000-0000-0000-0000-000000000003') then
+    raise exception 'fixture: rep1 must not see P3';
+  end if;
+  res := public.merge_referral('a044f000-0000-0000-0000-000000000013', 'a044d000-0000-0000-0000-00000000000c');
+  if res is distinct from jsonb_build_object('result', 'closed_duplicate', 'credited_partner_name', null) then
+    raise exception 'an unseen partner must not be named, got %', res;
+  end if;
+  if (select source_partner_id from deals where id = 'a044d000-0000-0000-0000-00000000000c') is distinct from 'a044a000-0000-0000-0000-000000000003' then
+    raise exception 'DH must keep P3';
   end if;
 end $$;
 

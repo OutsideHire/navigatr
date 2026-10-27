@@ -187,7 +187,7 @@ describe("ReviewFormSubmissionSheet", () => {
 
   it("a duplicate on accept moves to merge on the same referral, without attributing again", async () => {
     acceptReferral.mockResolvedValueOnce({ result: "duplicate", dealId: "d-1" });
-    mergeReferral.mockResolvedValueOnce(undefined);
+    mergeReferral.mockResolvedValueOnce({ result: "merged", creditedPartnerName: null });
     renderSheet();
     await pickExistingPartner();
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
@@ -263,7 +263,7 @@ describe("ReviewFormSubmissionSheet", () => {
 
   it("keeps the business and the referral id when the parent drops the row mid-flow", async () => {
     acceptReferral.mockResolvedValueOnce({ result: "duplicate", dealId: "d-1" });
-    mergeReferral.mockResolvedValueOnce(undefined);
+    mergeReferral.mockResolvedValueOnce({ result: "merged", creditedPartnerName: null });
     const onOpenChange = vi.fn();
     const { rerender } = render(<ReviewFormSubmissionSheet submission={submission} open onOpenChange={onOpenChange} />);
     await pickExistingPartner();
@@ -395,7 +395,7 @@ describe("ReviewFormSubmissionSheet", () => {
 
   it("first referral wins: merging a flagged attribution asks for a reason before merging (FR-PORT-47)", async () => {
     attribute.mockResolvedValueOnce(FLAGGED);
-    mergeReferral.mockResolvedValueOnce(undefined);
+    mergeReferral.mockResolvedValueOnce({ result: "merged", creditedPartnerName: null });
     const onOpenChange = renderSheet();
     await pickExistingPartner();
     await userEvent.click(screen.getByRole("button", { name: "Merge" }));
@@ -414,6 +414,18 @@ describe("ReviewFormSubmissionSheet", () => {
     expect(attribute).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(toastSuccess).toHaveBeenCalledWith("Merged into the existing deal");
+  });
+
+  it("a merge that closes as a duplicate says another partner keeps credit when the name is not visible", async () => {
+    mergeReferral.mockResolvedValueOnce({ result: "closed_duplicate", creditedPartnerName: null });
+    const onOpenChange = renderSheet();
+    await pickExistingPartner();
+    await userEvent.click(screen.getByRole("button", { name: "Merge" }));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Pick a deal…" }), "d-1");
+    await userEvent.click(screen.getByRole("button", { name: "Merge into deal" }));
+    expect(mergeReferral).toHaveBeenCalledWith({ referralId: "r-new", dealId: "d-1" });
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(toastSuccess).toHaveBeenCalledWith("Merged. Another partner keeps credit, so this referral closed as a duplicate.");
   });
 
   it("an unflagged attribution shows no first-referral warning", async () => {

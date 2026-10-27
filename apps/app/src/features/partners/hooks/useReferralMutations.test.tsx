@@ -92,19 +92,21 @@ describe("useDeclineReferral", () => {
 });
 
 describe("useMergeReferral", () => {
-  it("calls merge_referral", async () => {
-    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+  it("calls merge_referral and says it merged", async () => {
+    rpcMock.mockResolvedValueOnce({ data: { result: "merged", credited_partner_name: null }, error: null });
     const { wrapper } = setup();
     const { result } = renderHook(() => useMergeReferral(), { wrapper });
-    await result.current.mutateAsync({ referralId: "r-1", dealId: "d-7" });
+    await expect(result.current.mutateAsync({ referralId: "r-1", dealId: "d-7" }))
+      .resolves.toEqual({ result: "merged", creditedPartnerName: null });
     expect(rpcMock).toHaveBeenCalledWith("merge_referral", { p_referral_id: "r-1", p_deal_id: "d-7" });
   });
 
   it("merges a flagged referral with a written reason through merge_referral_override", async () => {
-    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    rpcMock.mockResolvedValueOnce({ data: { result: "closed_duplicate", credited_partner_name: "Jane CPA" }, error: null });
     const { wrapper } = setup();
     const { result } = renderHook(() => useMergeReferral(), { wrapper });
-    await result.current.mutateAsync({ referralId: "r-1", dealId: "d-7", overrideReason: "  Same owner " });
+    await expect(result.current.mutateAsync({ referralId: "r-1", dealId: "d-7", overrideReason: "  Same owner " }))
+      .resolves.toEqual({ result: "closed_duplicate", creditedPartnerName: "Jane CPA" });
     expect(rpcMock).toHaveBeenCalledWith("merge_referral_override", {
       p_referral_id: "r-1",
       p_deal_id: "d-7",

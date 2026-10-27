@@ -29,7 +29,7 @@ import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import type { QueueReferral } from "../hooks/useReferralQueue";
 import { useAcceptReferral, useDeclineReferral, useMergeReferral } from "../hooks/useReferralMutations";
 import { useAssigneeSeesPartner, useReassignReferral, useReferralAssignees } from "../hooks/useReassignReferral";
-import { DECLINE_REASON_OPTIONS, canReassignReferrals, icpFlagLabels, type DeclineReason } from "../lib/referrals";
+import { DECLINE_REASON_OPTIONS, canReassignReferrals, icpFlagLabels, mergeResultMessage, type DeclineReason } from "../lib/referrals";
 import { urgencyLabel } from "../../../../../../supabase/functions/_shared/portalSubmission";
 
 type Mode = "main" | "decline" | "merge" | "override" | "reassign";
@@ -151,12 +151,12 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
     if (!mergeDealId) return;
     const reasonText = overrideReason.trim();
     if (flagged && !reasonText) return;
-    await merge.mutateAsync(
+    const res = await merge.mutateAsync(
       flagged
         ? { referralId: referral.id, dealId: mergeDealId, overrideReason: reasonText }
         : { referralId: referral.id, dealId: mergeDealId },
     );
-    toast.success("Merged into the existing deal");
+    toast.success(mergeResultMessage(res));
     onOpenChange(false);
   });
 

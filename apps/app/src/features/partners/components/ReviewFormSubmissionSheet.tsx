@@ -45,6 +45,7 @@ import {
   canReassignReferrals,
   formSubmissionSourceLabel,
   icpFlagLabels,
+  mergeResultMessage,
   type DeclineReason,
 } from "../lib/referrals";
 
@@ -267,14 +268,15 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
       // A probable duplicate is merged only with a written reason. The merge
       // mode shows the reason field once flagged, so the reviewer sees it first.
       if (ref.flagged && !reasonText) return;
-      await mergeReferral.mutateAsync(
+      const res = await mergeReferral.mutateAsync(
         ref.flagged
           ? { referralId: ref.referralId, dealId: mergeDealId, overrideReason: reasonText }
           : { referralId: ref.referralId, dealId: mergeDealId },
       );
-    } else {
-      await mergeSubmission.mutateAsync({ submissionId: submission.id, dealId: mergeDealId });
+      done(live, mergeResultMessage(res));
+      return;
     }
+    await mergeSubmission.mutateAsync({ submissionId: submission.id, dealId: mergeDealId });
     done(live, "Merged into the existing deal");
   });
 

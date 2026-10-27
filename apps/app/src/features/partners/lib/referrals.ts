@@ -56,6 +56,20 @@ export function formSubmissionSourceLabel(linkType: "user" | "tenant", assignedT
   return assignedToViewer ? "From your referral form" : "From a rep's referral form";
 }
 
+/** What a merge did (merge_referral / merge_referral_override, 20261027000003). */
+export interface MergeResult {
+  result: "merged" | "closed_duplicate";
+  /** Only set when the rep can see the partner who keeps credit. */
+  creditedPartnerName: string | null;
+}
+
+/** The toast after a merge. Names the partner who keeps credit only when the server gave a name. */
+export function mergeResultMessage(res: MergeResult): string {
+  if (res.result !== "closed_duplicate") return "Merged into the existing deal";
+  const who = res.creditedPartnerName?.trim() || "Another partner";
+  return `Merged. ${who} keeps credit, so this referral closed as a duplicate.`;
+}
+
 export function isLiveLink(status: ReferralStatus): boolean {
   return status !== "declined" && status !== "withdrawn";
 }
