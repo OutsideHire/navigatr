@@ -18,7 +18,7 @@
 import { timingSafeEquals } from "./cronAuth.ts";
 import { shouldSend } from "./emailGuard.ts";
 import { renderEmail } from "./emailTemplate.ts";
-import { portalEmailBrand, portalFromAddress, portalPublicConfirmationEmail, portalUrl } from "./portalEmail.ts";
+import { portalEmailBrand, portalFromAddress, portalPublicConfirmationEmail } from "./portalEmail.ts";
 import type { ActionResult } from "./portalReferralApi.ts";
 import { PORTAL_FIELD_LIMITS, matchEmployeeCount, type EmployeeCount } from "./portalSubmission.ts";
 
@@ -292,7 +292,6 @@ export function isPublicFormAction(action: string): action is PublicFormAction {
 }
 
 export interface PublicFormEnv {
-  appBaseUrl: string;
   fromAddress: string;
   appEnv: string | null | undefined;
   emailAllowlist: string;
@@ -473,18 +472,18 @@ async function publicSubmit(
   const row = one<SubmitRow>(data);
   if (!row || !str(row.ref)) return err(404, "not_available");
   // FR-PORT-33 (controller ruling): only to the sender's own optional email, never the business contact.
-  if (s.referrerEmail) sendConfirmation(s.referrerEmail, str(row.org_name), str(row.ref), slug, row, deps);
+  if (s.referrerEmail) sendConfirmation(s.referrerEmail, str(row.org_name), str(row.ref), row, deps);
   return submitted(str(row.ref));
 }
 
 /** FR-PORT-33. Never fails the submit, and never delays the response. */
-function sendConfirmation(to: string, orgName: string, ref: string, slug: string, brandRow: SubmitRow, deps: PublicFormDeps): void {
+function sendConfirmation(to: string, orgName: string, ref: string, brandRow: SubmitRow, deps: PublicFormDeps): void {
   try {
     if (!shouldSend(deps.env.appEnv, deps.env.emailAllowlist, to)) {
       console.log(`[portal_api][emailGuard] dropped a public form confirmation in APP_ENV=${deps.env.appEnv ?? "(unset)"}`);
       return;
     }
-    const built = portalPublicConfirmationEmail({ orgName, ref, portalAddressUrl: portalUrl(deps.env.appBaseUrl, slug) });
+    const built = portalPublicConfirmationEmail({ orgName, ref });
     const { html, text } = renderEmail({ ...built, brand: portalEmailBrand(orgName, brandRow) });
     const sending = deps
       .sendEmail({ from: portalFromAddress(deps.env.fromAddress, orgName), to, subject: built.subject, html, text })

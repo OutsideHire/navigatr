@@ -121,7 +121,7 @@ export async function fetchPortalEmailBrand(rpc: PortalBrandRpc, slug: string, o
  * submitter wrote (the form must not become a way to send arbitrary text
  * through the ISO's name). No button: there is nothing for the reader to open.
  */
-export function portalPublicConfirmationEmail(args: { orgName: string; ref: string; portalAddressUrl?: string }): PortalEmail {
+export function portalPublicConfirmationEmail(args: { orgName: string; ref: string }): PortalEmail {
   return {
     subject: `${args.orgName} received your referral`,
     preheader: `Your reference is ${args.ref}.`,
@@ -131,6 +131,5 @@ export function portalPublicConfirmationEmail(args: { orgName: string; ref: stri
       `Your reference is ${args.ref}. Keep it in case you need to follow up.`,
     ],
     footnote: "If you didn't expect this email, you can ignore it.",
-    ...(args.portalAddressUrl ? { portalAddress: { url: args.portalAddressUrl } } : {}),
   };
 }

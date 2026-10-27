@@ -309,7 +309,6 @@ describe("handlePublicFormAction", () => {
       fetch: fetchFn,
       now: () => new Date(NOW),
       env: {
-        appBaseUrl: "https://app.getnavigatr.io",
         fromAddress: "navigatr <invites@send.getnavigatr.io>",
         appEnv: "production",
         emailAllowlist: "",
@@ -433,7 +432,6 @@ describe("handlePublicFormAction", () => {
       expect(msg.from).toBe('"Acme ISO" <invites@send.getnavigatr.io>');
       expect(msg.subject).toBe("Acme ISO received your referral");
       expect(msg.text).toContain("REF-1A2B3C4D");
-      expect(msg.text).toContain("Sign in to your partner portal any time: https://app.getnavigatr.io/p/acme\n");
       // The brand accent only paints a button, and this email has none, so the color is not asserted here.
       for (const typed of ["Fresh Bakery", "Ann Owner", "51-200", "ann@bakery.example", "Needs a new terminal.", "Joe at the bank", "555"]) {
         expect(msg.text).not.toContain(typed);

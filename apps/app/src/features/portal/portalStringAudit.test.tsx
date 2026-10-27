@@ -601,9 +601,8 @@ describe("public referral form: responses", () => {
     const msg = sendEmail.mock.calls[0][0];
     expect(msg.to).toBe("joe@bank.example");
     expect(`${msg.subject} ${msg.text} ${msg.html}`).not.toContain("ann@bakery.example");
-    // The portal sign-in address (FR-PORT-23) is a URL on the app's domain, so URLs are not word-checked.
     for (const part of [msg.subject, msg.text]) {
-      expect(part.replace(/https?:\/\/\S+/g, "").match(FORBIDDEN_WORDS)).toBeNull();
+      expect(part.match(FORBIDDEN_WORDS)).toBeNull();
       expect(part).not.toContain(SECRET);
       expect(part).not.toContain("Fresh Bakery");
       expect(part).not.toContain("Joe");
@@ -619,10 +618,8 @@ describe("public referral form: responses", () => {
       expect(msg.html).not.toContain(typed);
     }
     expect(msg.html).not.toContain(SECRET);
-    // Neither the credit line nor the portal address (a URL on the app's domain) counts.
-    const noUrls = (s: string) => s.replace(POWERED_BY, "").replace(/https?:\/\/[^\s"<]+/g, "");
-    expect(noUrls(msg.html)).not.toMatch(/navigatr/i);
-    expect(noUrls(msg.text)).not.toMatch(/navigatr/i);
+    expect(msg.html.replace(POWERED_BY, "")).not.toMatch(/navigatr/i);
+    expect(msg.text.replace(POWERED_BY, "")).not.toMatch(/navigatr/i);
   });
 });
 

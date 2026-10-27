@@ -355,11 +355,12 @@ async function requestCode(slug: string, email: string, ip: string | null, deps:
       console.log(`[portal_api][emailGuard] dropped a sign-in code in APP_ENV=${deps.env.appEnv ?? "(unset)"}`);
       return generic();
     }
+    const portalAddressUrl = portalUrl(deps.env.appBaseUrl, row.org_slug);
     const built = portalCodeEmail({
       orgName: row.org_name,
       code: row.code,
-      signInUrl: portalUrl(deps.env.appBaseUrl, row.org_slug),
-      portalAddressUrl: portalUrl(deps.env.appBaseUrl, row.org_slug),
+      signInUrl: portalAddressUrl,
+      portalAddressUrl,
     });
     const { html, text } = renderEmail({ ...built, brand: portalEmailBrand(row.org_name, row) });
     // Not awaited: response time must not depend on whether an email was sent.
