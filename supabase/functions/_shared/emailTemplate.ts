@@ -110,7 +110,7 @@ export function renderEmail(opts: EmailOptions): { html: string; text: string } 
     brand && opts.portalAddress
       ? `\n        <p style="margin:12px 0 0;font-size:11.5px;line-height:1.5;color:#8089A1;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${PORTAL_ADDRESS_LABEL} <a href="${escUrl(opts.portalAddress.url)}" style="color:${accent};word-break:break-all;">${escUrl(opts.portalAddress.url)}</a></p>`
       : "";
-  const showPoweredBy = brand !== undefined && brand.showPoweredBy !== false;
+  const showPoweredBy = brand != null && brand.showPoweredBy !== false;
   const poweredBy = showPoweredBy
     ? `\n        <p style="margin:12px 0 0;font-size:11px;line-height:1.4;color:#A0A7B8;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${POWERED_BY}</p>`
     : "";

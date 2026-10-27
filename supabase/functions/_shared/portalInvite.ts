@@ -106,7 +106,6 @@ export async function handlePortalInvite(req: Request, deps: PortalInviteDeps): 
       orgName: row.org_name,
       partnerName: row.partner_name,
       inviteUrl: portalUrl(deps.env.appBaseUrl, row.org_slug, `/invite?token=${encodeURIComponent(row.invite_token)}`),
-      portalAddressUrl: portalUrl(deps.env.appBaseUrl, row.org_slug),
     });
     // Phase 1C: the ISO's logo and color. Never throws; a failed lookup sends it name-only.
     const brand = await fetchPortalEmailBrand(deps.rpc, row.org_slug, row.org_name);

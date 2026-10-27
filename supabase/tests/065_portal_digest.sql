@@ -431,11 +431,14 @@ do $$ declare n int; before_list timestamptz; after_list timestamptz; before_csv
    where id = 'a065e000-0000-0000-0000-000000000001';
   select last_activity_at into before_csv from public.portal_export_referrals('00000000-0000-0000-0000-000000001065', 'a065a000-0000-0000-0000-000000000001', null)
    where ref = public._portal_referral_ref('a065e000-0000-0000-0000-000000000001');
+  if before_list is null or before_csv is null then
+    raise exception 'baseline last_activity_at must exist on the list and the CSV';
+  end if;
   insert into referral_status_history (org_id, referral_id, from_status, to_status, actor_type, actor_id, note, created_at)
   values ('00000000-0000-0000-0000-000000001065', 'a065e000-0000-0000-0000-000000000001', 'accepted', 'accepted', 'user',
-          'a0650000-0000-0000-0000-000000000002', 'Reassigned to Rita Rep', '2030-01-04 12:00Z');
+          'a0650000-0000-0000-0000-000000000002', 'Reassigned to Rita Rep', '2030-01-09 12:00Z');
   select count(*) into n from public._portal_digest_events('00000000-0000-0000-0000-000000001065', 'a065a000-0000-0000-0000-000000000001',
-         '2030-01-04 00:00Z', '2030-01-05 00:00Z') where referral_id = 'a065e000-0000-0000-0000-000000000001';
+         '2030-01-09 00:00Z', '2030-01-10 00:00Z') where referral_id = 'a065e000-0000-0000-0000-000000000001';
   if n <> 0 then raise exception 'a reassignment must not appear in the digest, got % events', n; end if;
   select last_activity_at into after_list from public.portal_list_referrals('00000000-0000-0000-0000-000000001065', 'a065a000-0000-0000-0000-000000000001', null)
    where id = 'a065e000-0000-0000-0000-000000000001';

@@ -586,8 +586,9 @@ describe("portal sign-in address (FR-PORT-23)", () => {
   it("every partner kind carries it, built with portalUrl", () => {
     for (const kind of PARTNER_NOTIFY_KINDS) {
       const label = KIND_LABEL[kind as keyof typeof KIND_LABEL];
-      const payload = kind === "partner_update" ? withLabel("Update", { updateBody: "Hello" }) : withLabel(label);
+      const payload = kind === "partner_update" ? withLabel("Accepted", { updateBody: "Hello" }) : withLabel(label);
       const e = buildPortalNotifyEmail(kind, payload, CTX);
+      expect(e).not.toBeNull();
       if (e) expect(e.portalAddress).toEqual(ADDR);
     }
     expect(buildPortalNotifyEmail("partner_received", withLabel(KIND_LABEL.partner_received), CTX)!.portalAddress).toEqual(ADDR);
@@ -602,6 +603,7 @@ describe("portal sign-in address (FR-PORT-23)", () => {
   it("no internal kind carries it", () => {
     for (const kind of INTERNAL_NOTIFY_KINDS) {
       const e = buildPortalNotifyEmail(kind, { appUrlPath: "/partners", companyNames: ["Fresh Bakery"], count: 1 }, CTX);
+      expect(e).not.toBeNull();
       if (e) {
         expect(e.audience).toBe("internal");
         expect(e.portalAddress).toBeUndefined();

@@ -56,7 +56,13 @@ describe("BrandSettingsCard", () => {
     brandData = undefined;
     render(<BrandSettingsCard />);
     expect(screen.queryByRole("button", { name: /save branding/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reset to defaults/i })).not.toBeInTheDocument();
     expect(screen.getByText(/loading your branding/i)).toBeInTheDocument();
+  });
+
+  it("enables Reset to defaults once branding has loaded", () => {
+    render(<BrandSettingsCard />);
+    expect(screen.getByRole("button", { name: /reset to defaults/i })).toBeEnabled();
   });
 
   it("shows an error (and no form) when branding fails to load", () => {

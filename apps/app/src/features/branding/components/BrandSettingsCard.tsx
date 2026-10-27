@@ -238,7 +238,7 @@ export function BrandSettingsCard() {
           <Button type="submit" variant="primary" size="md" disabled={!isDirty || busy || !loaded} loading={update.isPending}>
             Save branding
           </Button>
-          <Button type="button" variant="tertiary" size="md" onClick={resetToDefaults} disabled={busy}>
+          <Button type="button" variant="tertiary" size="md" onClick={resetToDefaults} disabled={busy || !loaded}>
             Reset to defaults
           </Button>
         </div>

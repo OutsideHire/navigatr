@@ -155,6 +155,7 @@ async function deliver(
 
   if (pace.sentAny) await deps.sleep(PORTAL_NOTIFY_PACE_MS);
   pace.sentAny = true;
+  const replyTo = built.noReply ? noReplyAddress(deps.env.noReplyAddress) : built.replyTo;
   try {
     await deps.sendEmail({
       from,
@@ -164,11 +165,7 @@ async function deliver(
       text,
       // Weekly summaries reply to the no-reply address; status and "sent to you" emails reply to the rep;
       // internal emails set none.
-      ...(built.noReply
-        ? { replyTo: noReplyAddress(deps.env.noReplyAddress) }
-        : built.replyTo
-          ? { replyTo: built.replyTo }
-          : {}),
+      ...(replyTo ? { replyTo } : {}),
       ...(built.headers ? { headers: built.headers } : {}),
     });
   } catch (e) {

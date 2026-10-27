@@ -59,8 +59,6 @@ export function portalInviteEmail(args: {
   orgName: string;
   partnerName: string;
   inviteUrl: string;
-  /** The partner's portal sign-in address (FR-PORT-23), shown in the footer. */
-  portalAddressUrl?: string;
 }): PortalEmail {
   return {
     subject: `${args.orgName} invited you to their referral portal`,
@@ -74,7 +72,6 @@ export function portalInviteEmail(args: {
     ctaLabel: "Accept invite",
     ctaUrl: args.inviteUrl,
     footnote: "If you weren't expecting this, you can ignore this email.",
-    ...(args.portalAddressUrl ? { portalAddress: { url: args.portalAddressUrl } } : {}),
   };
 }
 

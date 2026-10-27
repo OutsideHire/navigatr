@@ -17,7 +17,7 @@ alter table portal_email_outbox add constraint portal_email_outbox_kind_check ch
   'internal_assigned'));
 
 -- 2. reassign_referral ----------------------------------------------------------------------
--- Identical to 20261029000002 plus the email to the new assignee.
+-- Identical to 20261029000002 plus the email to the new assignee and a same-assignee early return.
 create or replace function public.reassign_referral(p_referral_id uuid, p_user_id uuid)
 returns boolean language plpgsql security definer set search_path = public as $$
 declare
@@ -37,6 +37,11 @@ begin
   end if;
   if not public.user_can_see_owner(p_user_id) then
     raise exception 'not_authorized' using errcode = '42501';
+  end if;
+  -- Same assignee: nothing changes, so no history row, no nudge restart and no email.
+  if p_user_id is not distinct from r.assigned_user_id then
+    select owner_id into v_owner from partners where id = r.partner_id;
+    return public.profile_can_see_owner(p_user_id, v_owner);
   end if;
   update referrals
      set assigned_user_id = p_user_id,
@@ -67,7 +72,7 @@ begin
 end $$;
 
 -- 3. reassign_form_submission -----------------------------------------------------------------
--- Identical to 20261029000002 plus the email to the new assignee.
+-- Identical to 20261029000002 plus the email to the new assignee and a same-assignee early return.
 create or replace function public.reassign_form_submission(p_submission_id uuid, p_user_id uuid)
 returns void language plpgsql security definer set search_path = public, extensions as $$
 declare
@@ -82,6 +87,10 @@ begin
   end if;
   if not public.user_can_see_owner(p_user_id) then
     raise exception 'not_authorized' using errcode = '42501';
+  end if;
+  -- Same assignee: nothing changes, so no nudge restart and no email.
+  if p_user_id is not distinct from s.assigned_user_id then
+    return;
   end if;
   update referral_form_submissions x
      set assigned_user_id = p_user_id,

@@ -108,7 +108,7 @@ do $$ declare s record; begin
   perform public.reassign_form_submission('a074e000-0000-0000-0000-000000000001', 'a0740000-0000-0000-0000-000000000003');
   perform set_config('role', 'postgres', true);
   select * into s from referral_form_submissions where id = 'a074e000-0000-0000-0000-000000000001';
-  if s.assigned_user_id <> 'a0740000-0000-0000-0000-000000000003' or s.nudge_from_at is null or s.nudged_at is not null then
+  if s.assigned_user_id <> 'a0740000-0000-0000-0000-000000000003' or s.nudge_from_at is null or s.nudge_from_at < now() - interval '1 minute' or s.nudged_at is not null then
     raise exception 'reassign should move, stamp nudge_from_at and clear nudged_at: %', row_to_json(s);
   end if;
   if exists (select 1 from form_submission_nudges where submission_id = s.id) then

@@ -82,6 +82,23 @@ do $$ begin
   end if;
 end $$;
 
+-- 2b. Reassigning to the current assignee is a no-op: no history row, nudge clock untouched.
+do $$ declare h int; f timestamptz; begin
+  perform set_config('role', 'postgres', true);
+  select count(*) into h from referral_status_history where referral_id = 'a075f000-0000-0000-0000-000000000001';
+  update referrals set nudge_from_at = '2026-01-01 00:00+00' where id = 'a075f000-0000-0000-0000-000000000001';
+  f := '2026-01-01 00:00+00';
+  perform _t_act('a0750000-0000-0000-0000-000000000001');
+  perform public.reassign_referral('a075f000-0000-0000-0000-000000000001', 'a0750000-0000-0000-0000-000000000003');
+  perform set_config('role', 'postgres', true);
+  if (select count(*) from referral_status_history where referral_id = 'a075f000-0000-0000-0000-000000000001') <> h then
+    raise exception 'same-assignee reassign must not write a history row';
+  end if;
+  if (select nudge_from_at from referrals where id = 'a075f000-0000-0000-0000-000000000001') is distinct from f then
+    raise exception 'same-assignee reassign must not restart the nudge clock';
+  end if;
+end $$;
+
 -- 3. The caller assigning to themselves queues nothing.
 do $$ begin
   perform _t_act('a0750000-0000-0000-0000-000000000001');
@@ -95,7 +112,7 @@ end $$;
 do $$ declare r referrals; begin
   perform set_config('role', 'postgres', true);
   select * into r from referrals where id = 'a075f000-0000-0000-0000-000000000001';
-  if r.assigned_user_id <> 'a0750000-0000-0000-0000-000000000001' or r.nudge_from_at is null then
+  if r.assigned_user_id <> 'a0750000-0000-0000-0000-000000000001' or r.nudge_from_at is null or r.nudge_from_at < now() - interval '1 minute' then
     raise exception 'reassign lost its earlier behaviour: %', row_to_json(r);
   end if;
   if not exists (select 1 from referral_status_history
@@ -117,6 +134,18 @@ do $$ declare o record; n integer; begin
      or o.payload <> jsonb_build_object('appUrlPath', '/partners', 'companyNames', jsonb_build_array('Form Assign Co'), 'count', 1)
      or o.dedupe_key !~ '^internal_assigned:a075e000-0000-0000-0000-000000000001:a0750000-0000-0000-0000-000000000003:[0-9]+$' then
     raise exception 'wrong submission row: %', row_to_json(o);
+  end if;
+end $$;
+
+-- 5b. Submission reassigned to its current assignee: nudge clock untouched.
+do $$ begin
+  perform set_config('role', 'postgres', true);
+  update referral_form_submissions set nudge_from_at = '2026-01-01 00:00+00' where id = 'a075e000-0000-0000-0000-000000000001';
+  perform _t_act('a0750000-0000-0000-0000-000000000001');
+  perform public.reassign_form_submission('a075e000-0000-0000-0000-000000000001', 'a0750000-0000-0000-0000-000000000003');
+  perform set_config('role', 'postgres', true);
+  if (select nudge_from_at from referral_form_submissions where id = 'a075e000-0000-0000-0000-000000000001') is distinct from '2026-01-01 00:00+00'::timestamptz then
+    raise exception 'same-assignee reassign of a submission must not restart the nudge clock';
   end if;
 end $$;
 

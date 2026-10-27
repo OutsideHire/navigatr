@@ -176,18 +176,21 @@ describe("edge sources build portal links through portalUrl only", () => {
 
 describe("portal sign-in address on partner emails (FR-PORT-23)", () => {
   const url = "https://app.getnavigatr.io/p/acme";
-  it("the invite and code builders carry the address when given", () => {
-    const invite = portalInviteEmail({ orgName: "Acme ISO", partnerName: "Jane", inviteUrl: "https://x.test/i", portalAddressUrl: url });
-    const code = portalCodeEmail({ orgName: "Acme ISO", code: "042917", signInUrl: url, portalAddressUrl: url });
-    for (const e of [invite, code]) {
-      expect(e.portalAddress).toEqual({ url });
-      const { html, text } = renderEmail({ ...e, brand: portalEmailBrand("Acme ISO", null) });
-      expect(html).toContain("Sign in to your partner portal any time:");
-      expect(text).toContain(`Sign in to your partner portal any time: ${url}`);
-    }
+  it("the code builder carries the address when given", () => {
+    const e = portalCodeEmail({ orgName: "Acme ISO", code: "042917", signInUrl: url, portalAddressUrl: url });
+    expect(e.portalAddress).toEqual({ url });
+    const { html, text } = renderEmail({ ...e, brand: portalEmailBrand("Acme ISO", null) });
+    expect(html).toContain("Sign in to your partner portal any time:");
+    expect(text).toContain(`Sign in to your partner portal any time: ${url}`);
+  });
+  it("the invite never carries it (the invitee cannot sign in until they accept)", () => {
+    const e = portalInviteEmail({ orgName: "Acme ISO", partnerName: "Jane", inviteUrl: "https://x.test/i" });
+    expect(e.portalAddress).toBeUndefined();
+    const { html, text } = renderEmail({ ...e, brand: portalEmailBrand("Acme ISO", null) });
+    expect(html).not.toContain("partner portal any time");
+    expect(text).not.toContain("partner portal any time");
   });
   it("omits it when no address is given", () => {
-    expect(portalInviteEmail({ orgName: "A", partnerName: "J", inviteUrl: "https://x.test/i" }).portalAddress).toBeUndefined();
     expect(portalCodeEmail({ orgName: "A", code: "1", signInUrl: url }).portalAddress).toBeUndefined();
   });
   it("the public-form confirmation never carries it (the reader may have no portal account)", () => {

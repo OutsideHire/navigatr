@@ -172,6 +172,7 @@ do $$ begin
   perform public.reassign_referral('a048f000-0000-0000-0000-000000000001', 'a0480000-0000-0000-0000-000000000004');
   perform set_config('role', 'postgres', true);
   if (select nudge_from_at from referrals where id = 'a048f000-0000-0000-0000-000000000001') is null
+     or (select nudge_from_at from referrals where id = 'a048f000-0000-0000-0000-000000000001') < now() - interval '1 minute'
      or (select nudged_at from referrals where id = 'a048f000-0000-0000-0000-000000000001') is not null
      or exists (select 1 from referral_nudges where referral_id = 'a048f000-0000-0000-0000-000000000001') then
     raise exception 'reassign should restart the reminder';

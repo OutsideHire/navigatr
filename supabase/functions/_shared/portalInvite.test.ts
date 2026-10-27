@@ -91,7 +91,7 @@ describe("handlePortalInvite", () => {
     expect(msg.subject).toBe("Acme ISO invited you to their referral portal");
     expect(msg.replyTo).toBe("rita@acme.example");
     expect(msg.html).toContain(`https://app.getnavigatr.io/p/acme/invite?token=${TOKEN}`);
-    expect(msg.text).toContain("Sign in to your partner portal any time: https://app.getnavigatr.io/p/acme\n");
+    expect(msg.text).not.toContain("partner portal any time");
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(JSON.parse(text)).toEqual({ ok: true, emailed: true });
@@ -204,6 +204,18 @@ describe("handlePortalInvite", () => {
     expect(msg.html).toContain('src="https://cdn.example/acme.png"');
     expect(msg.html).toContain("Powered by navigatr");
     expect(msg.text).toContain("Powered by navigatr");
+  });
+
+  it("does not carry the portal sign-in line (the invitee cannot sign in until they accept)", async () => {
+    const rpc = vi.fn(async (name: string, _args: Record<string, unknown>) =>
+      name === "portal_brand" ? ok([{ logo_url: null, primary_color: null }]) : ok([ROW]),
+    );
+    const sendEmail = vi.fn(async (_msg: PortalEmailMessage) => {});
+    const res = await handlePortalInvite(post({ partnerId: PARTNER }), { getUserId: async () => "user-1", rpc, sendEmail, env: ENV });
+    expect(res.status).toBe(200);
+    const msg = sendEmail.mock.calls[0][0];
+    expect(msg.html).not.toContain("partner portal any time");
+    expect(msg.text).not.toContain("partner portal any time");
   });
 
   it("still sends the invite, name-only, when the brand lookup fails", async () => {
