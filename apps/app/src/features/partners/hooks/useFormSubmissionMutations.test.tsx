@@ -48,6 +48,17 @@ describe("form submission mutations", () => {
     await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ["referrals"] }));
   });
 
+  it("reads a plain referral id from an older database as an unflagged referral", async () => {
+    // Deploy skew: before 20261027000002 attribute_form_submission returned a uuid.
+    rpcMock.mockResolvedValueOnce({ data: "r-old", error: null });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useAttributeFormSubmission(), { wrapper });
+    await expect(result.current.mutateAsync({ submissionId: "s-1", partnerId: "p-1" })).resolves.toEqual({
+      referralId: "r-old", duplicateOfReferralId: null, duplicateOfDealId: null,
+      assignedUserId: null, assignedUserName: null,
+    });
+  });
+
   it("attribute fails loudly when no row comes back", async () => {
     rpcMock.mockResolvedValueOnce({ data: [], error: null });
     const { wrapper } = setup();

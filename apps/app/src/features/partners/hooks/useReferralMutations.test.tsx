@@ -114,6 +114,18 @@ describe("useMergeReferral", () => {
     });
   });
 
+  it("treats a void result from an older database as a plain merge", async () => {
+    // Deploy skew: before 20261027000003 merge_referral returned void.
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    rpcMock.mockResolvedValueOnce({ data: "", error: null });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useMergeReferral(), { wrapper });
+    await expect(result.current.mutateAsync({ referralId: "r-1", dealId: "d-7" }))
+      .resolves.toEqual({ result: "merged", creditedPartnerName: null });
+    await expect(result.current.mutateAsync({ referralId: "r-1", dealId: "d-7" }))
+      .resolves.toEqual({ result: "merged", creditedPartnerName: null });
+  });
+
   it("explains a missing merge reason", async () => {
     rpcMock.mockResolvedValueOnce({ data: null, error: { message: "override_reason_required" } });
     const { wrapper } = setup();

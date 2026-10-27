@@ -132,6 +132,8 @@ export function useMergeReferral() {
             p_deal_id: input.dealId,
           });
       if (error) throw new Error(referralErrorMessage(error, "Couldn't merge the referral"));
+      // An older database (before 20261027000003) returns void: a plain merge.
+      if (!data || typeof data !== "object") return { result: "merged", creditedPartnerName: null };
       const raw = data as { result: MergeResult["result"]; credited_partner_name: string | null };
       return { result: raw.result, creditedPartnerName: raw.credited_partner_name ?? null };
     },

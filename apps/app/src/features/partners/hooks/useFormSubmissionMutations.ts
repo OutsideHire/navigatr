@@ -56,6 +56,16 @@ export function useAttributeFormSubmission() {
         p_partner_id: input.partnerId,
       });
       if (error) throw new Error(referralErrorMessage(error, "Couldn't save who sent it"));
+      // An older database (before 20261027000002) returns the referral id alone.
+      if (typeof data === "string" && data) {
+        return {
+          referralId: data,
+          duplicateOfReferralId: null,
+          duplicateOfDealId: null,
+          assignedUserId: null,
+          assignedUserName: null,
+        };
+      }
       // A table-returning RPC comes back as an array of one row.
       const row = (data as AttributeRow[] | null)?.[0];
       if (!row?.referral_id) throw new Error("Couldn't save who sent it");
