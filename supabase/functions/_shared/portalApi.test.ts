@@ -236,6 +236,19 @@ describe("request_code", () => {
     expect(msg.html).not.toContain("icons/icon-192x192.png");
   });
 
+  it("omits Powered by from the code email when the issued row says the org turned it off", async () => {
+    const white = ok([
+      { code: "123456", recipient: "jane@example.com", org_name: "Acme ISO", org_slug: "acme", logo_url: null, primary_color: null, show_powered_by: false },
+    ]);
+    const { deps, sendEmail } = setup(() => white);
+    await handlePortalRequest(post("request_code", { slug: "acme", email: "jane@example.com" }), deps);
+    const msg = sendEmail.mock.calls[0][0];
+    expect(msg.html).not.toContain("Powered by navigatr");
+    expect(msg.text).not.toContain("Powered by navigatr");
+    // The sign-in address row is separate and stays.
+    expect(msg.html).toContain("Sign in to your partner portal any time:");
+  });
+
   it("shows the ISO name in the header when the org has no branding", async () => {
     const { deps, sendEmail } = setup(() => ISSUED);
     await handlePortalRequest(post("request_code", { slug: "acme", email: "jane@example.com" }), deps);

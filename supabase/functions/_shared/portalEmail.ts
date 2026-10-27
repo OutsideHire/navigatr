@@ -101,7 +101,7 @@ export function portalCodeEmail(args: { orgName: string; code: string; signInUrl
  */
 export function portalEmailBrand(
   orgName: string,
-  row: { logo_url?: unknown; primary_color?: unknown } | null | undefined,
+  row: { logo_url?: unknown; primary_color?: unknown; show_powered_by?: unknown } | null | undefined,
 ): EmailBrand {
   const logo = row?.logo_url;
   const color = row?.primary_color;
@@ -109,6 +109,8 @@ export function portalEmailBrand(
     name: orgName,
     logoUrl: typeof logo === "string" && logo !== "" ? logo : null,
     primaryColor: typeof color === "string" && color !== "" ? color : null,
+    // Only an explicit false hides the credit (FR-PORT-82): a missing row or field keeps it.
+    showPoweredBy: row?.show_powered_by !== false,
   };
 }
 

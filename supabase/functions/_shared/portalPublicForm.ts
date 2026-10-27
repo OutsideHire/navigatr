@@ -324,6 +324,7 @@ interface SubmitRow {
   org_name: unknown;
   logo_url?: unknown;
   primary_color?: unknown;
+  show_powered_by?: unknown;
 }
 
 function ok(body: unknown): ActionResult {

@@ -9,8 +9,10 @@
  *                      (a "paste a link" escape hatch stays tucked away)
  *   - dark_logo_url  : an OPTIONAL purpose-made dark-mode logo
  *
- * "Powered by navigatr" is intentionally NOT configurable here. The credit
- * always shows (AppLayout footer). The old toggle was removed.
+ * "Powered by navigatr" is intentionally NOT configurable here. The in-app
+ * credit always shows (AppLayout footer). The partner-email switch lives on
+ * Settings > Partner portal; every save here passes the current value through
+ * because the RPC sets it directly.
  *
  * Logo uploads write straight to storage (admin-scoped by the bucket policy)
  * and stash the resulting public URL in the form; Save persists it via the
@@ -117,6 +119,8 @@ export function BrandSettingsCard() {
         primaryColor: blankToNull(values.primaryColor)?.toLowerCase() ?? null,
         logoUrl: blankToNull(values.logoUrl),
         darkLogoUrl: blankToNull(values.darkLogoUrl),
+        // The RPC sets this directly, so omitting it would switch Powered by back on.
+        showPoweredBy: brand.data?.showPoweredBy ?? true,
       });
       toast.success("Branding updated");
     } catch (err) {
@@ -131,6 +135,8 @@ export function BrandSettingsCard() {
         primaryColor: null,
         logoUrl: null,
         darkLogoUrl: null,
+        // Reset covers logo, color and name only. The Powered by choice lives on the Partner portal tab.
+        showPoweredBy: brand.data?.showPoweredBy ?? true,
       });
       toast.success("Reset to default branding");
     } catch (err) {

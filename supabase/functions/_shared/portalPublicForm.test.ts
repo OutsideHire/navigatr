@@ -440,6 +440,20 @@ describe("handlePublicFormAction", () => {
       }
     });
 
+    it("leaves Powered by out of the confirmation when the org turned it off", async () => {
+      const { deps, sendEmail } = setup(routes(0, { data: [{ ...SUBMIT_ROW, show_powered_by: false }], error: null }));
+      await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", deps);
+      const msg = sendEmail.mock.calls[0][0];
+      expect(msg.html).not.toContain("Powered by navigatr");
+      expect(msg.text).not.toContain("Powered by navigatr");
+    });
+
+    it("keeps Powered by in the confirmation by default", async () => {
+      const { deps, sendEmail } = setup(routes(0));
+      await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", deps);
+      expect(sendEmail.mock.calls[0][0].html).toContain("Powered by navigatr");
+    });
+
     it("sends no confirmation without a referrer email, and never to the business contact", async () => {
       const { deps, rpc, sendEmail } = setup(routes(0));
       const res = await handlePublicFormAction("public_submit", "acme", "tok123", await body({ referrerEmail: "" }), "203.0.113.5", deps);

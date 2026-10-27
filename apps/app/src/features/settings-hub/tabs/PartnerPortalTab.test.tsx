@@ -7,6 +7,19 @@ const rpcMock = vi.fn();
 vi.mock("@/lib/supabase", () => ({ supabase: { rpc: (...a: unknown[]) => rpcMock(...a) } }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+let roleLevel = "administrator";
+let brandData:
+  | { productName: string; primaryColor: string | null; logoUrl: string | null; darkLogoUrl: string | null; showPoweredBy: boolean }
+  | undefined;
+vi.mock("@/features/auth/useProfile", () => ({
+  useProfile: () => ({ data: { org_id: "o-1", role_level: roleLevel } }),
+}));
+// Not importing the real module: it pulls in the auth store, which needs a full supabase client.
+vi.mock("@/features/branding/useBrand", () => ({
+  ORG_BRANDING_QUERY_KEY: (orgId: string | undefined) => ["org-branding", orgId ?? "none"],
+  useBrand: () => ({ data: brandData }),
+}));
+
 import { toast } from "sonner";
 import { PartnerPortalTab } from "./PartnerPortalTab";
 
@@ -41,6 +54,14 @@ function renderTab() {
 
 beforeEach(() => {
   rpcMock.mockReset();
+  roleLevel = "administrator";
+  brandData = {
+    productName: "Acme Portal",
+    primaryColor: "#0f766e",
+    logoUrl: "https://cdn.example/logo.png",
+    darkLogoUrl: "https://cdn.example/dark.png",
+    showPoweredBy: true,
+  };
   vi.mocked(toast.success).mockReset();
   vi.mocked(toast.error).mockReset();
 });
@@ -229,5 +250,71 @@ describe("PartnerPortalTab", () => {
     renderTab();
     await user.click(await screen.findByRole("switch", { name: "Public referral form" }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Couldn't change the public referral form. Try again."));
+  });
+  describe("Powered by navigatr switch (FR-PORT-82)", () => {
+    const LABEL = "Show 'Powered by navigatr' to partners";
+
+    it("is shown to administrators, on by default", async () => {
+      rpcMock.mockResolvedValueOnce({ data: [SEEDED], error: null });
+      renderTab();
+      expect(await screen.findByRole("switch", { name: LABEL })).toBeChecked();
+    });
+
+    it("is hidden from anyone who is not an administrator", async () => {
+      roleLevel = "sales_manager";
+      rpcMock.mockResolvedValueOnce({ data: [SEEDED], error: null });
+      renderTab();
+      await screen.findByRole("switch", { name: "Turn on the partner portal" });
+      expect(screen.queryByRole("switch", { name: LABEL })).not.toBeInTheDocument();
+    });
+
+    it("reflects a saved off state", async () => {
+      brandData = { ...brandData!, showPoweredBy: false };
+      rpcMock.mockResolvedValueOnce({ data: [SEEDED], error: null });
+      renderTab();
+      expect(await screen.findByRole("switch", { name: LABEL })).not.toBeChecked();
+    });
+
+    it("sends the existing logo, color and name with the flipped value, so nothing is cleared", async () => {
+      const user = userEvent.setup();
+      rpcMock
+        .mockResolvedValueOnce({ data: [SEEDED], error: null })
+        .mockResolvedValueOnce({
+          data: {
+            product_name: "Acme Portal",
+            primary_color: "#0f766e",
+            logo_url: "https://cdn.example/logo.png",
+            dark_logo_url: "https://cdn.example/dark.png",
+            show_powered_by: false,
+          },
+          error: null,
+        });
+      renderTab();
+      await user.click(await screen.findByRole("switch", { name: LABEL }));
+      expect(rpcMock).toHaveBeenLastCalledWith("update_org_branding", {
+        p_product_name: "Acme Portal",
+        p_primary_color: "#0f766e",
+        p_logo_url: "https://cdn.example/logo.png",
+        p_dark_logo_url: "https://cdn.example/dark.png",
+        p_show_powered_by: false,
+      });
+      await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    });
+
+    it("says so when the change fails", async () => {
+      const user = userEvent.setup();
+      rpcMock.mockResolvedValueOnce({ data: [SEEDED], error: null }).mockResolvedValueOnce({ data: null, error: { message: "boom" } });
+      renderTab();
+      await user.click(await screen.findByRole("switch", { name: LABEL }));
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Couldn't change this setting. Try again."));
+    });
+
+    it("is not offered until the current branding has loaded (a blank save would clear it)", async () => {
+      brandData = undefined;
+      rpcMock.mockResolvedValueOnce({ data: [SEEDED], error: null });
+      renderTab();
+      await screen.findByRole("switch", { name: "Turn on the partner portal" });
+      expect(screen.queryByRole("switch", { name: LABEL })).not.toBeInTheDocument();
+    });
   });
 });

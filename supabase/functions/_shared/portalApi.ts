@@ -120,6 +120,7 @@ interface IssuedCodeRow {
   /** Phase 1C: the ISO's brand rides along so the send needs no second lookup. */
   logo_url?: string | null;
   primary_color?: string | null;
+  show_powered_by?: boolean | null;
 }
 
 interface SessionRow {

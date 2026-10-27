@@ -82,13 +82,22 @@ describe("portalEmailBrand", () => {
       name: "Acme ISO",
       logoUrl: "https://cdn.example/a.png",
       primaryColor: "#0A7C45",
+      showPoweredBy: true,
     });
   });
 
   it("is name-only for a missing row or empty fields", () => {
-    const none = { name: "Acme ISO", logoUrl: null, primaryColor: null };
+    const none = { name: "Acme ISO", logoUrl: null, primaryColor: null, showPoweredBy: true };
     expect(portalEmailBrand("Acme ISO", null)).toEqual(none);
     expect(portalEmailBrand("Acme ISO", { logo_url: "", primary_color: 7 })).toEqual(none);
+  });
+
+  it("carries show_powered_by only when it is exactly false (missing means shown)", () => {
+    expect(portalEmailBrand("Acme ISO", { show_powered_by: false }).showPoweredBy).toBe(false);
+    expect(portalEmailBrand("Acme ISO", { show_powered_by: true }).showPoweredBy).toBe(true);
+    expect(portalEmailBrand("Acme ISO", { logo_url: "https://cdn.example/a.png" }).showPoweredBy).toBe(true);
+    expect(portalEmailBrand("Acme ISO", null).showPoweredBy).toBe(true);
+    expect(portalEmailBrand("Acme ISO", { show_powered_by: null }).showPoweredBy).toBe(true);
   });
 });
 
@@ -99,15 +108,22 @@ describe("fetchPortalEmailBrand", () => {
       name: "Acme ISO",
       logoUrl: "https://cdn.example/a.png",
       primaryColor: "#0A7C45",
+      showPoweredBy: true,
     });
     expect(rpc).toHaveBeenCalledWith("portal_brand", { p_slug: "acme" });
   });
 
   it("falls back to the name when the lookup errors, throws, or finds nothing", async () => {
-    const none = { name: "Acme ISO", logoUrl: null, primaryColor: null };
+    const none = { name: "Acme ISO", logoUrl: null, primaryColor: null, showPoweredBy: true };
     await expect(fetchPortalEmailBrand(async () => ({ data: null, error: { message: "boom" } }), "acme", "Acme ISO")).resolves.toEqual(none);
     await expect(fetchPortalEmailBrand(async () => { throw new Error("down"); }, "acme", "Acme ISO")).resolves.toEqual(none);
     await expect(fetchPortalEmailBrand(async () => ({ data: [], error: null }), "acme", "Acme ISO")).resolves.toEqual(none);
+  });
+
+  it("passes show_powered_by=false through from portal_brand", async () => {
+    const rpc = vi.fn(async () => ({ data: [{ logo_url: null, primary_color: null, show_powered_by: false }], error: null }));
+    const brand = await fetchPortalEmailBrand(rpc, "acme", "Acme ISO");
+    expect(brand.showPoweredBy).toBe(false);
   });
 });
 

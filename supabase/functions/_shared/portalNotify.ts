@@ -43,6 +43,8 @@ export interface PortalNotifyMessage {
 export interface PortalNotifyBrand {
   logoUrl: string | null;
   primaryColor: string | null;
+  /** org_branding.show_powered_by. Missing means shown. */
+  showPoweredBy?: boolean;
 }
 
 export interface PortalNotifyEnv {
@@ -141,7 +143,12 @@ async function deliver(
   let brand: EmailBrand | undefined;
   if (built.audience === "partner" && built.orgName) {
     const found = await brandFor(row.org_id);
-    brand = { name: built.orgName, logoUrl: found?.logoUrl ?? null, primaryColor: found?.primaryColor ?? null };
+    brand = {
+      name: built.orgName,
+      logoUrl: found?.logoUrl ?? null,
+      primaryColor: found?.primaryColor ?? null,
+      showPoweredBy: found?.showPoweredBy !== false,
+    };
     from = portalFromAddress(deps.env.fromAddress, built.orgName);
   }
   const { html, text } = renderEmail({ ...built, brand });

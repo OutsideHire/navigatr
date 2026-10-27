@@ -150,6 +150,25 @@ describe("drainPortalEmails", () => {
     expect(loadBrand).not.toHaveBeenCalled();
   });
 
+  it("omits Powered by from a partner email when the org turned it off", async () => {
+    const { deps, sendEmail } = setup([partnerRow("e-1")], {
+      loadBrand: vi.fn(async () => ({ logoUrl: null, primaryColor: null, showPoweredBy: false })),
+    });
+    await drainPortalEmails(deps);
+    const msg = sendEmail.mock.calls[0][0];
+    expect(msg.html).not.toContain("Powered by navigatr");
+    expect(msg.text).not.toContain("Powered by navigatr");
+    expect(msg.html).toContain("Acme ISO</span>");
+  });
+
+  it("keeps Powered by when the brand does not say (older brand shape)", async () => {
+    const { deps, sendEmail } = setup([partnerRow("e-1")], {
+      loadBrand: vi.fn(async () => ({ logoUrl: null, primaryColor: null })),
+    });
+    await drainPortalEmails(deps);
+    expect(sendEmail.mock.calls[0][0].html).toContain("Powered by navigatr");
+  });
+
   it("loads each org's brand once per run", async () => {
     const { deps, loadBrand, sendEmail } = setup([partnerRow("e-1"), partnerRow("e-2")]);
     await drainPortalEmails(deps);
