@@ -194,9 +194,14 @@ end $$;
 -- 5. Attribution makes a referral that keeps the original time (FR-PORT-49), the
 --    reviewer keeps it, the partner gets no "Received" email; then the EXISTING
 --    accept_referral finishes it.
-do $$ declare v uuid; begin
+do $$ declare a record; v uuid; begin
   perform _t_act('a0600000-0000-0000-0000-000000000003');
-  v := public.attribute_form_submission('a060e000-0000-0000-0000-000000000001', 'a060a000-0000-0000-0000-000000000001');
+  select * into a from public.attribute_form_submission('a060e000-0000-0000-0000-000000000001', 'a060a000-0000-0000-0000-000000000001');
+  v := a.referral_id;
+  if v is null or a.duplicate_of_referral_id is not null or a.duplicate_of_deal_id is not null
+     or a.assigned_user_id is distinct from 'a0600000-0000-0000-0000-000000000003'::uuid then
+    raise exception 'S1 is not a duplicate and rita keeps it, got %', row_to_json(a);
+  end if;
   perform set_config('t.ref', v::text, true);
   perform _t_raises('select public.attribute_form_submission(''a060e000-0000-0000-0000-000000000001'', ''a060a000-0000-0000-0000-000000000001'')', 'submission_handled');
   perform set_config('role', 'postgres', true);
@@ -245,6 +250,42 @@ do $$ declare res jsonb; v uuid := current_setting('t.ref')::uuid; d deals; begi
   -- Deviation 16: same as a rep-logged referral, the partner hears Accepted.
   if not exists (select 1 from portal_email_outbox where referral_id = v and kind = 'partner_accepted') then
     raise exception 'the partner with portal access hears Accepted';
+  end if;
+end $$;
+
+-- 5b. First referral wins (FR-PORT-46, 47): attributing a submission whose phone matches
+--     an earlier open referral from another partner stores the duplicate flags, so the
+--     existing accept_referral needs a written reason (accept_referral_override).
+--     Fixtures: partner P4 Kim CPA (owner rita) with open referral R4 Lou Bistro
+--     (phone 5550600018); submission S8 Lou Bistro LLC (rita, same phone), attributed to P1.
+insert into partners (id, org_id, created_by, owner_id, name, company, type, email) values
+  ('a060a000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000001060', 'a0600000-0000-0000-0000-000000000003', 'a0600000-0000-0000-0000-000000000003', 'Kim CPA', 'Kim & Co', 'cpa', 'kim@tri.example');
+insert into referrals (id, partner_id, direction, source, status, company_name, contact_phone, assigned_user_id, submitted_at) values
+  ('a060f000-0000-0000-0000-000000000004', 'a060a000-0000-0000-0000-000000000004', 'inbound', 'rep_entered', 'submitted', 'Lou Bistro', '5550600018', 'a0600000-0000-0000-0000-000000000003', '2026-09-01 15:00+00');
+insert into referral_form_submissions (
+  id, org_id, link_type, assigned_user_id, company_name, contact_name, contact_email, contact_phone,
+  notes, referred_by_text, referrer_email, consent_version, consent_text_snapshot, submitter_ip, submitted_at
+) values
+  ('a060e000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000001060', 'user', 'a0600000-0000-0000-0000-000000000003', 'Lou Bistro LLC', 'Lou', 'lou@bistro.example', '555-060-0018', 'Two registers', null, null, 1, 'I may share this.', '198.51.100.60', '2026-10-02 15:00+00');
+
+do $$ declare a record; r referrals; res jsonb; begin
+  perform _t_act('a0600000-0000-0000-0000-000000000003');
+  select * into a from public.attribute_form_submission('a060e000-0000-0000-0000-000000000008', 'a060a000-0000-0000-0000-000000000001');
+  if a.duplicate_of_referral_id is distinct from 'a060f000-0000-0000-0000-000000000004'::uuid
+     or a.duplicate_of_deal_id is not null
+     or a.assigned_user_id is distinct from 'a0600000-0000-0000-0000-000000000003'::uuid then
+    raise exception 'S8 is flagged as a duplicate of R4, got %', row_to_json(a);
+  end if;
+  perform _t_raises(format('select public.accept_referral(%L)', a.referral_id), 'override_reason_required');
+  res := public.accept_referral_override(a.referral_id, 'Different owner, second location');
+  perform set_config('role', 'postgres', true);
+  select * into r from referrals where id = a.referral_id;
+  if r.duplicate_of_referral_id is distinct from 'a060f000-0000-0000-0000-000000000004'::uuid
+     or r.duplicate_of_deal_id is not null then
+    raise exception 'the stored referral keeps the flag: %', row_to_json(r);
+  end if;
+  if res->>'result' <> 'accepted' or r.status <> 'accepted' then
+    raise exception 'accept with a reason goes through, got %', res;
   end if;
 end $$;
 

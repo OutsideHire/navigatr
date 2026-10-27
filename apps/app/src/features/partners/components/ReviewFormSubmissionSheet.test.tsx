@@ -70,6 +70,9 @@ vi.mock("@/components/navigatr", async (orig) => {
   };
 });
 
+const ATTRIBUTED = { referralId: "r-new", duplicateOfReferralId: null, duplicateOfDealId: null, assignedUserId: "user-1" };
+const FLAGGED = { ...ATTRIBUTED, duplicateOfReferralId: "r-9" };
+
 const submission: QueueSubmission = {
   id: "s-1", linkType: "user", assignedUserId: "user-1", companyName: "Fresh Bakery",
   contactName: "Ann", contactEmail: "ann@fresh.example", contactPhone: "512-555-0100",
@@ -94,7 +97,7 @@ beforeEach(() => {
   adviceState.data = undefined;
   profileState.data = { role: "rep", role_level: "sales_professional" };
   assigneesState.data = [{ id: "user-1", name: "Rita Rep" }, { id: "u-2", name: "Rob Rep" }];
-  attribute.mockResolvedValue("r-new");
+  attribute.mockResolvedValue(ATTRIBUTED);
   acceptReferral.mockResolvedValue({ result: "accepted", dealId: "d-9" });
   createPartner.mockResolvedValue({ id: "p-new" });
 });
@@ -199,7 +202,7 @@ describe("ReviewFormSubmissionSheet", () => {
 
   it("a failed step keeps the new partner, so a retry never creates it twice", async () => {
     attribute.mockReset();
-    attribute.mockRejectedValueOnce(new Error("Couldn't save who sent it")).mockResolvedValueOnce("r-new");
+    attribute.mockRejectedValueOnce(new Error("Couldn't save who sent it")).mockResolvedValueOnce(ATTRIBUTED);
     const onOpenChange = renderSheet();
     await userEvent.click(screen.getByRole("button", { name: "New partner" }));
     await userEvent.type(screen.getByRole("textbox", { name: "Partner name" }), "Pat");
@@ -324,14 +327,14 @@ describe("ReviewFormSubmissionSheet", () => {
   });
 
   it("disables the partner picker while an action is running", async () => {
-    let resolveAttr: (v: string) => void = () => {};
+    let resolveAttr: (v: typeof ATTRIBUTED) => void = () => {};
     attribute.mockReset();
-    attribute.mockReturnValueOnce(new Promise<string>((r) => { resolveAttr = r; }));
+    attribute.mockReturnValueOnce(new Promise<typeof ATTRIBUTED>((r) => { resolveAttr = r; }));
     renderSheet();
     await pickExistingPartner();
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
     expect(screen.getByRole("combobox", { name: "Pick a partner…" })).toBeDisabled();
-    resolveAttr("r-new");
+    resolveAttr(ATTRIBUTED);
     await waitFor(() => expect(acceptReferral).toHaveBeenCalled());
   });
 
@@ -350,5 +353,51 @@ describe("ReviewFormSubmissionSheet", () => {
     expect(onOpenChange).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "No partner" }));
     expect(screen.getByRole("button", { name: "Accept" })).toBeEnabled();
+  });
+  it("first referral wins: a flagged attribution asks for a reason before accepting (FR-PORT-47)", async () => {
+    attribute.mockResolvedValueOnce(FLAGGED);
+    const onOpenChange = renderSheet();
+    await pickExistingPartner();
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(await screen.findByText(
+      "Possible duplicate of an earlier referral. Decline (duplicate) is preselected; you can still accept or merge.",
+    )).toBeInTheDocument();
+    expect(acceptReferral).not.toHaveBeenCalled();
+    const acceptAnyway = screen.getByRole("button", { name: "Accept anyway" });
+    expect(acceptAnyway).toBeDisabled();
+    await userEvent.type(screen.getByPlaceholderText("Why accept it anyway?"), "  Second location  ");
+    expect(acceptAnyway).toBeEnabled();
+    await userEvent.click(acceptAnyway);
+    expect(acceptReferral).toHaveBeenCalledWith({ referralId: "r-new", overrideReason: "Second location" });
+    expect(attribute).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(toastSuccess).toHaveBeenCalledWith("Accepted. Deal created.");
+  });
+
+  it("first referral wins: once flagged, Decline (duplicate) is preselected and Accept goes back to the reason", async () => {
+    attribute.mockResolvedValueOnce({ ...ATTRIBUTED, duplicateOfDealId: "d-1" });
+    declineReferral.mockResolvedValueOnce(undefined);
+    renderSheet();
+    await pickExistingPartner();
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await screen.findByRole("button", { name: "Accept anyway" });
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(screen.getByRole("button", { name: "Accept anyway" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    await userEvent.click(screen.getByRole("button", { name: "Decline" }));
+    expect(screen.getByRole("combobox", { name: "Pick a reason…" })).toHaveValue("duplicate");
+    await userEvent.click(screen.getByRole("button", { name: "Decline referral" }));
+    expect(declineReferral).toHaveBeenCalledWith({ referralId: "r-new", reason: "duplicate", note: "" });
+    expect(attribute).toHaveBeenCalledTimes(1);
+    expect(acceptReferral).not.toHaveBeenCalled();
+  });
+
+  it("an unflagged attribution shows no first-referral warning", async () => {
+    renderSheet();
+    await pickExistingPartner();
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(acceptReferral).toHaveBeenCalledWith("r-new"));
+    expect(screen.queryByText(/Possible duplicate of an earlier referral/)).toBeNull();
   });
 });

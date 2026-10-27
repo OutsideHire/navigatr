@@ -25,16 +25,43 @@ function useRefresh(opts: { deals?: boolean; tasks?: boolean } = {}) {
   };
 }
 
+/**
+ * The referral a submission became (migration 20261027000002). First referral
+ * wins (FR-PORT-46, 47): when an earlier open referral or active deal matches,
+ * a duplicate id is set and accepting needs a written reason.
+ */
+export interface AttributedReferral {
+  referralId: string;
+  duplicateOfReferralId: string | null;
+  duplicateOfDealId: string | null;
+  assignedUserId: string | null;
+}
+
+interface AttributeRow {
+  referral_id: string;
+  duplicate_of_referral_id: string | null;
+  duplicate_of_deal_id: string | null;
+  assigned_user_id: string | null;
+}
+
 export function useAttributeFormSubmission() {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: async (input: { submissionId: string; partnerId: string }): Promise<string> => {
+    mutationFn: async (input: { submissionId: string; partnerId: string }): Promise<AttributedReferral> => {
       const { data, error } = await supabase.rpc("attribute_form_submission", {
         p_submission_id: input.submissionId,
         p_partner_id: input.partnerId,
       });
       if (error) throw new Error(referralErrorMessage(error, "Couldn't save who sent it"));
-      return data as string;
+      // A table-returning RPC comes back as an array of one row.
+      const row = (data as AttributeRow[] | null)?.[0];
+      if (!row?.referral_id) throw new Error("Couldn't save who sent it");
+      return {
+        referralId: row.referral_id,
+        duplicateOfReferralId: row.duplicate_of_referral_id ?? null,
+        duplicateOfDealId: row.duplicate_of_deal_id ?? null,
+        assignedUserId: row.assigned_user_id ?? null,
+      };
     },
     onSuccess: refresh,
   });
