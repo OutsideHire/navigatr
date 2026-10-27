@@ -28,7 +28,7 @@ export function portalFromAddress(fromEnv: string, orgName: string): string {
   return name ? `"${name}" <${address}>` : address;
 }
 
-/** FR-PORT-81: the default NO_REPLY_ADDRESS for sign-in codes, weekly summaries and form confirmations. */
+/** FR-PORT-81: the no-reply Reply-To for sign-in codes, weekly summaries and form confirmations. */
 export const DEFAULT_NO_REPLY_ADDRESS = "no-reply@send.getnavigatr.io";
 
 const REPLY_TO_RE = /^[^\s@<>",]+@[^\s@<>",]+\.[^\s@<>",]+$/;
@@ -39,7 +39,7 @@ export function safeReplyTo(address: string | null | undefined): string | null {
   return REPLY_TO_RE.test(value) ? value : null;
 }
 
-/** The no-reply Reply-To: the configured NO_REPLY_ADDRESS when it is a plain address, else the default. */
+/** The no-reply Reply-To: an override when it is a plain address, else the default. */
 export function noReplyAddress(configured: string | null | undefined): string {
   return safeReplyTo(configured) ?? DEFAULT_NO_REPLY_ADDRESS;
 }

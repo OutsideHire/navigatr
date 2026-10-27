@@ -123,7 +123,7 @@ export interface PortalNotifyEmail extends EmailOptions {
   orgName: string | null;
   /** The assigned rep's business email on partner emails (spec 5.8); otherwise null. */
   replyTo: string | null;
-  /** FR-PORT-81: reply to the configured NO_REPLY_ADDRESS instead of a rep; only the weekly summary sets it. */
+  /** FR-PORT-81: reply to the no-reply address instead of a rep; only the weekly summary sets it. */
   noReply?: boolean;
   /** Extra mail headers; only the weekly summary sets them (List-Unsubscribe, FR-PORT-84). */
   headers?: Record<string, string>;

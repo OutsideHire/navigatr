@@ -30,7 +30,6 @@ const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 const APP_ENV = Deno.env.get("APP_ENV");
 const EMAIL_ALLOWLIST = Deno.env.get("EMAIL_ALLOWLIST") ?? "";
 const FROM_ADDRESS = Deno.env.get("FROM_ADDRESS") ?? "navigatr <invites@send.getnavigatr.io>";
-const NO_REPLY_ADDRESS = Deno.env.get("NO_REPLY_ADDRESS") ?? "no-reply@send.getnavigatr.io";
 const APP_BASE_URL = Deno.env.get("APP_BASE_URL") ?? "https://app.getnavigatr.io";
 
 const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
@@ -66,7 +65,6 @@ const deps: PortalNotifyDeps = {
     fromAddress: FROM_ADDRESS,
     appEnv: APP_ENV,
     emailAllowlist: EMAIL_ALLOWLIST,
-    noReplyAddress: NO_REPLY_ADDRESS,
     // The weekly summary's List-Unsubscribe target (2B-3). No new secret.
     portalApiUrl: `${SUPABASE_URL}/functions/v1/portal_api`,
   },

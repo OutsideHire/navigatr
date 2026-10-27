@@ -295,7 +295,7 @@ export interface PublicFormEnv {
   fromAddress: string;
   appEnv: string | null | undefined;
   emailAllowlist: string;
-  /** NO_REPLY_ADDRESS (FR-PORT-81). Unset or not a plain address: no-reply@send.getnavigatr.io. */
+  /** No-reply override for tests (FR-PORT-81); the edge functions leave it unset. Unset or not a plain address: no-reply@send.getnavigatr.io. */
   noReplyAddress?: string | null;
   /** PUBLIC_FORM_SIGNING_SECRET. Unset: the form answers not_available (fail closed). */
   publicFormSigningSecret?: string | null;
