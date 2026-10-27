@@ -158,6 +158,7 @@ describe("submit_referral", () => {
     address: "5 Oak St",
     industry: "restaurant",
     urgency: "this_week",
+    employeeCount: "1-10",
     notes: "Wants a demo",
     consent: true,
     consentVersion: 3,
@@ -179,6 +180,7 @@ describe("submit_referral", () => {
       p_address: "5 Oak St",
       p_industry: "restaurant",
       p_urgency: "this_week",
+      p_employee_count: "1-10",
       p_notes: "Wants a demo",
       p_consent: true,
       p_consent_version: 3,
@@ -198,6 +200,7 @@ describe("submit_referral", () => {
 
   it.each([
     ["invalid_input:notes", 400, { error: "invalid_body", field: "notes" }],
+    ["invalid_input:employeeCount", 400, { error: "invalid_body", field: "employeeCount" }],
     ["consent_required", 400, { error: "invalid_body", field: "consent" }],
     ["consent_changed", 409, { error: "consent_changed" }],
     ["rate_limited", 429, { error: "rate_limited" }],

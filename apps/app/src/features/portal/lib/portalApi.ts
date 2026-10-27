@@ -106,6 +106,7 @@ export type PortalSubmitInput = {
   address: string;
   industry: string;
   urgency: string;
+  employeeCount: string;
   notes: string;
   consent: boolean;
   consentVersion: number;

@@ -113,3 +113,17 @@ describe("AddDealSheet: a search-created deal keeps the website", () => {
     expect(payload.lng).toBe(-97.74);
   });
 });
+
+describe("AddDealSheet: employee count uses the referral form buckets (FR-PORT-35)", () => {
+  it("offers the four buckets and stores the bucket value", async () => {
+    renderSheet();
+    fireEvent.click(screen.getByRole("button", { name: /pick a business/i }));
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Employee count" }), { key: "Enter" });
+    const options = await screen.findAllByRole("option");
+    expect(options.map((o) => o.textContent)).toEqual(["1 to 10", "11 to 50", "51 to 200", "Over 200"]);
+    fireEvent.click(screen.getByRole("option", { name: "11 to 50" }));
+    fireEvent.click(screen.getByRole("button", { name: /Add deal/i }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    expect(mutateAsync.mock.calls[0][0].employeeCountRange).toBe("11-50");
+  });
+});

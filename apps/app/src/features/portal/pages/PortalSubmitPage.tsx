@@ -27,6 +27,7 @@ import {
 import { EMPTY_DRAFT, clearPortalDraft, readPortalDraft, writePortalDraft, type PortalDraft } from "../lib/portalDraft";
 import { usePortalSignedIn } from "../lib/portalSignedIn";
 import {
+  EMPLOYEE_COUNT_OPTIONS,
   PORTAL_FIELD_LIMITS,
   PORTAL_INDUSTRIES,
   PORTAL_URGENCIES,
@@ -44,6 +45,7 @@ const FIELD_MESSAGES: Record<PortalSubmissionField, string> = {
   address: "Shorten the address.",
   industry: "Pick an industry from the list.",
   urgency: "Pick a timing from the list.",
+  employeeCount: "Pick a size from the list.",
   notes: "Shorten the notes.",
   consent: "Check the box to confirm you have permission.",
 };
@@ -62,6 +64,7 @@ const FIELD_IDS: Record<PortalSubmissionField, string> = {
   address: "portal-address",
   industry: "portal-industry",
   urgency: "portal-urgency",
+  employeeCount: "portal-employees",
   notes: "portal-notes",
   consent: "portal-consent",
 };
@@ -357,6 +360,22 @@ export function PortalSubmitPage() {
             >
               <option value="">Choose one</option>
               {PORTAL_URGENCIES.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </FormField>
+
+          <FormField label="How many employees? (optional)" htmlFor="portal-employees" error={errorFor("employeeCount")}>
+            <select
+              id="portal-employees"
+              className={SELECT_CLASS}
+              value={draft.employeeCount}
+              onChange={(e) => update("employeeCount")(e.target.value)}
+            >
+              <option value="">Choose one</option>
+              {EMPLOYEE_COUNT_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>

@@ -273,6 +273,7 @@ async function submit(scope: ReferralScope, body: Body, ip: string | null, deps:
     p_address: s.address,
     p_industry: s.industry,
     p_urgency: s.urgency,
+    p_employee_count: s.employeeCount,
     p_notes: s.notes,
     p_consent: s.consent,
     p_consent_version: s.consentVersion,

@@ -158,11 +158,18 @@ do $$ declare res jsonb; h record; begin
   end if;
 end $$;
 
--- 3. An unflagged referral accepts exactly as before.
+-- 3. An unflagged referral accepts exactly as before, and its business size
+--    (FR-PORT-35) lands on the deal.
+select set_config('role', 'postgres', true);
+update referrals set employee_count_range = '51-200' where id = 'a044f000-0000-0000-0000-000000000002';
 do $$ declare res jsonb; begin
   perform _t_act('a0440000-0000-0000-0000-000000000002');
   res := public.accept_referral('a044f000-0000-0000-0000-000000000002');
   if res->>'result' is distinct from 'accepted' then raise exception 'plain accept should still work, got %', res; end if;
+  perform set_config('role', 'postgres', true);
+  if (select employee_count_range from deals where id = (res->>'deal_id')::uuid) is distinct from '51-200' then
+    raise exception 'the referral''s employee count should be carried to the deal';
+  end if;
 end $$;
 
 -- 4. Override can still hit the org-wide active-deal dedupe: duplicate, nothing created.

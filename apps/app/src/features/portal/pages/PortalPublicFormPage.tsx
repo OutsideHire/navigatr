@@ -35,6 +35,7 @@ import {
   validatePublicSubmission,
   type PublicFormField,
 } from "../../../../../../supabase/functions/_shared/portalPublicForm";
+import { EMPLOYEE_COUNT_OPTIONS } from "../../../../../../supabase/functions/_shared/portalSubmission";
 
 type Draft = {
   companyName: string;
@@ -44,6 +45,7 @@ type Draft = {
   notes: string;
   referredBy: string;
   referrerEmail: string;
+  employeeCount: string;
   website: string;
 };
 
@@ -55,6 +57,7 @@ const EMPTY: Draft = {
   notes: "",
   referredBy: "",
   referrerEmail: "",
+  employeeCount: "",
   website: "",
 };
 
@@ -66,6 +69,7 @@ const FIELD_MESSAGES: Record<PublicFormField, string> = {
   notes: "Add a note about what the business needs.",
   referredBy: "Shorten this to 160 characters or fewer.",
   referrerEmail: "Check your email address, or leave it blank.",
+  employeeCount: "Pick a size from the list.",
   consent: "Check the box to confirm you have permission.",
 };
 
@@ -77,8 +81,14 @@ const FIELD_IDS: Record<PublicFormField, string> = {
   notes: "pf-notes",
   referredBy: "pf-referred-by",
   referrerEmail: "pf-referrer-email",
+  employeeCount: "pf-employees",
   consent: "pf-consent",
 };
+
+// A native picker, as tall as the lg inputs (44px-or-larger targets).
+const SELECT_CLASS =
+  "h-12 w-full rounded-radius-md border border-border-default bg-surface-default px-3 text-body-md text-text-default " +
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary";
 
 const TOO_MANY = "Too many referrals from this connection right now. Try again later.";
 const CHECK_PROMPT = "One more step. Complete the check below and we'll send it.";
@@ -353,6 +363,27 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
             value={draft.notes}
             onChange={(e) => update("notes")(e.target.value)}
           />
+        </FormField>
+
+        <FormField
+          label="How many employees? (optional)"
+          key={keyFor("employeeCount")}
+          htmlFor={FIELD_IDS.employeeCount}
+          error={errorFor("employeeCount")}
+        >
+          <select
+            id={FIELD_IDS.employeeCount}
+            className={SELECT_CLASS}
+            value={draft.employeeCount}
+            onChange={(e) => update("employeeCount")(e.target.value)}
+          >
+            <option value="">Choose one</option>
+            {EMPLOYEE_COUNT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
         </FormField>
 
         <FormField

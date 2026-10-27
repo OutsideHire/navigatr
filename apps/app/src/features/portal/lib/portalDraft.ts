@@ -12,6 +12,7 @@ export interface PortalDraft {
   address: string;
   industry: string;
   urgency: string;
+  employeeCount: string;
   notes: string;
 }
 
@@ -23,6 +24,7 @@ export const EMPTY_DRAFT: PortalDraft = {
   address: "",
   industry: "",
   urgency: "",
+  employeeCount: "",
   notes: "",
 };
 

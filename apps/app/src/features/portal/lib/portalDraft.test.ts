@@ -41,6 +41,12 @@ afterEach(() => {
 });
 
 describe("portal draft", () => {
+  it("keeps the employee count (FR-PORT-35)", () => {
+    expect(EMPTY_DRAFT.employeeCount).toBe("");
+    writePortalDraft("acme", { ...EMPTY_DRAFT, employeeCount: "11-50" });
+    expect(readPortalDraft("acme")).toEqual({ ...EMPTY_DRAFT, employeeCount: "11-50" });
+  });
+
   it("round-trips per slug", () => {
     writePortalDraft("acme", { ...EMPTY_DRAFT, companyName: "Fresh Bakery", notes: "Busy at lunch" });
     expect(readPortalDraft("acme")).toEqual({ ...EMPTY_DRAFT, companyName: "Fresh Bakery", notes: "Busy at lunch" });

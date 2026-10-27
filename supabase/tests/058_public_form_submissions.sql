@@ -79,14 +79,14 @@ end $$;
 -- 1. Privileges (before any role switch).
 do $$ begin
   if not has_function_privilege('service_role', 'public.portal_public_form(text, text)', 'EXECUTE')
-     or not has_function_privilege('service_role', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean)', 'EXECUTE')
+     or not has_function_privilege('service_role', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean, text)', 'EXECUTE')
      or not has_function_privilege('service_role', 'public.portal_public_counts(text, text, text)', 'EXECUTE') then
     raise exception 'service_role should execute the public form functions';
   end if;
   if has_function_privilege('authenticated', 'public.portal_public_form(text, text)', 'EXECUTE')
      or has_function_privilege('anon', 'public.portal_public_form(text, text)', 'EXECUTE')
-     or has_function_privilege('authenticated', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean)', 'EXECUTE')
-     or has_function_privilege('anon', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean, text)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean, text)', 'EXECUTE')
      or has_function_privilege('service_role', 'public.portal_public_rate(text, integer)', 'EXECUTE')
      or has_function_privilege('authenticated', 'public.portal_public_rate(text, integer)', 'EXECUTE')
      or has_function_privilege('anon', 'public.portal_public_rate(text, integer)', 'EXECUTE')
@@ -403,6 +403,27 @@ do $$ declare v text; begin
   if v <> '' then raise exception 'an unplaced rep sees nobody else''s, got %', v; end if;
   v := _t_seen('a0580000-0000-0000-0000-000000000006');
   if v <> '' then raise exception 'another org sees nothing, got %', v; end if;
+end $$;
+
+-- FR-PORT-35 (Q10): an optional business size in four buckets, stored with the submission.
+do $$ declare v record; s referral_form_submissions; begin
+  perform set_config('role', 'postgres', true);
+  if (select employee_count_range from referral_form_submissions where id = current_setting('t.s_rita')::uuid) is not null then
+    raise exception 'a submission sent without a size stores null';
+  end if;
+  select * into v from public.portal_public_submit(
+    p_slug => 'pf-pub', p_token => 'tenantLinkToken00001', p_company => 'Size Co', p_contact_name => 'Sal',
+    p_contact_email => 'sal@size.example', p_contact_phone => '555 010 0177', p_notes => 'Growing fast.',
+    p_referred_by => null, p_referrer_email => null, p_consent_version => 2, p_ip => '198.51.100.177',
+    p_captcha_passed => true, p_employee_count => ' 201+ ');
+  select * into s from referral_form_submissions where id = v.id;
+  if s.employee_count_range is distinct from '201+' then
+    raise exception 'the size should be stored trimmed, got %', s.employee_count_range;
+  end if;
+  perform _t_raises($q$select * from public.portal_public_submit(p_slug => 'pf-pub', p_token => 'tenantLinkToken00001', p_company => 'Bad Co', p_contact_name => 'Sal', p_contact_email => 'sal@size.example', p_contact_phone => '555 010 0177', p_notes => 'x', p_referred_by => null, p_referrer_email => null, p_consent_version => 2, p_ip => '198.51.100.177', p_captcha_passed => true, p_employee_count => '250+')$q$,
+                    'invalid_input:employeeCount');
+  perform _t_raises($q$update referral_form_submissions set employee_count_range = '1-9' where id = '$q$ || v.id || $q$'$q$,
+                    'referral_form_submissions_employee_count_range_check');
 end $$;
 
 rollback;

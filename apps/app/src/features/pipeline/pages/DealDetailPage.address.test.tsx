@@ -69,6 +69,16 @@ describe("DealDetailPage / the address on the Contact information card", () => {
     expect(screen.queryByText(ADDRESS_UNAVAILABLE)).not.toBeInTheDocument();
   });
 
+  it("shows a known employee-count bucket by its label (FR-PORT-35)", () => {
+    renderDeal({ employeeCountRange: "201+" });
+    expect(screen.getByText("Over 200 employees")).toBeInTheDocument();
+  });
+
+  it("shows any other stored employee count as it is", () => {
+    renderDeal({ employeeCountRange: "about 30" });
+    expect(screen.getByText("about 30 employees")).toBeInTheDocument();
+  });
+
   it("does not render a bare ' employees' when the range is unset", () => {
     // Same class of defect, same card: an unset value rendered as though it
     // were one.

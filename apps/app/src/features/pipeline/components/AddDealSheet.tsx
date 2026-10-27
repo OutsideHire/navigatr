@@ -70,6 +70,7 @@ import { X } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
+import { EMPLOYEE_COUNT_OPTIONS as EMPLOYEE_COUNT_BUCKETS } from "@/lib/employeeCount";
 import { dateOnlyToNoonUtcIso } from "@/lib/calendarDate";
 import { useAuth, getProfession, type Profession } from "@/stores/auth";
 import {
@@ -143,12 +144,8 @@ interface PlaceMeta {
   place: ResolvedPlace;
 }
 
-const EMPLOYEE_COUNT_OPTIONS: SelectOption[] = [
-  { value: "1-9", label: "1-9" },
-  { value: "10-49", label: "10-49" },
-  { value: "50-249", label: "50-249" },
-  { value: "250+", label: "250+" },
-];
+// Same four buckets as the partner referral forms (FR-PORT-35, Q10).
+const EMPLOYEE_COUNT_OPTIONS: SelectOption[] = EMPLOYEE_COUNT_BUCKETS.map((o) => ({ value: o.value, label: o.label }));
 
 const PAY_FREQUENCY_OPTIONS: SelectOption[] = [
   { value: "weekly", label: "Weekly" },

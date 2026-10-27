@@ -100,6 +100,7 @@ import { ContactsTab } from "../components/ContactsTab";
 import { NotesAndFilesTab } from "../components/NotesAndFilesTab";
 import { FollowupSyncIndicator } from "../components/FollowupSyncIndicator";
 import { FollowupChip } from "../components/FollowupChip";
+import { employeeCountLabel } from "@/lib/employeeCount";
 
 // ───────────────────────────────────────────────────────────────────────
 // Not-found state
@@ -419,7 +420,7 @@ function ContactInfoCard({ deal }: { deal: Deal }) {
   const email = deal.email || null;
   const address = addressOf(deal);
   const website = websiteOf(deal);
-  const employees = deal.employeeCountRange || null;
+  const employees = employeeCountLabel(deal.employeeCountRange);
   const hasAnyDetail = Boolean(phone || email || address || website || employees);
 
   return (
