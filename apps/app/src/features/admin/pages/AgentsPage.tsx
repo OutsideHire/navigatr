@@ -23,6 +23,8 @@ import { AgentCard } from "../components/AgentCard";
 import { SeatUsageBadge } from "../components/SeatUsageBadge";
 import { InviteAgentModal } from "../components/InviteAgentModal";
 import { RevokeAgentDialog } from "../components/RevokeAgentDialog";
+import { NewReferralLinkDialog } from "../components/NewReferralLinkDialog";
+import { useMyReferralLink } from "@/features/partners/hooks/useReferralLinks";
 import { OrgChartTree } from "../components/OrgChartTree";
 import { AppointmentsAwaitingCard } from "@/features/appointments/components/AppointmentsAwaitingCard";
 import { LocationCaptureHealthCard } from "../components/LocationCaptureHealthCard";
@@ -103,7 +105,13 @@ export function AgentsPage() {
   // Only administrator / cso_cro can actually invite (the admin_bulk_invite /
   // per-agent-invite RPCs enforce this). Gate the affordances on the same
   // capability so a mid-tier manager doesn't click through to a raw "forbidden".
-  const canInvite = profileCan(useProfile().data, "inviteUsers");
+  const profile = useProfile().data;
+  const canInvite = profileCan(profile, "inviteUsers");
+  // New referral form links (FR-PORT-27): administrators only, and only while
+  // the org's public form is on (the same flag the Share button reads).
+  const myLink = useMyReferralLink();
+  const canRenewLinks = profile?.role_level === "administrator" && myLink.data?.enabled === true;
+  const [linkAgent, setLinkAgent] = React.useState<LeaderboardRow | null>(null);
   const soloTeam = !isLoading && hasNoReports(rows, userId);
   const callerRole = rows.find((r) => r.agent_id === userId)?.role as UserRole | undefined;
   const activeAdminCount = rows.filter((r) => r.role === "admin" && r.status === "active").length;
@@ -327,6 +335,7 @@ export function AgentsPage() {
                   callerRole={callerRole}
                   selfId={userId}
                   activeAdminCount={activeAdminCount}
+                  onNewReferralLink={canRenewLinks ? setLinkAgent : undefined}
                 />
               ))}
             </tbody>
@@ -350,6 +359,7 @@ export function AgentsPage() {
               callerRole={callerRole}
               selfId={userId}
               activeAdminCount={activeAdminCount}
+              onNewReferralLink={canRenewLinks ? setLinkAgent : undefined}
             />
           ))}
         </div>
@@ -373,6 +383,15 @@ export function AgentsPage() {
       </div>
 
       <InviteAgentModal open={inviteOpen} onOpenChange={setInviteOpen} />
+
+      {linkAgent && myLink.data && (
+        <NewReferralLinkDialog
+          open
+          onOpenChange={(o) => { if (!o) setLinkAgent(null); }}
+          row={linkAgent}
+          slug={myLink.data.slug}
+        />
+      )}
 
       {revokeDialogAgent && (
         <RevokeAgentDialog

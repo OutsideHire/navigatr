@@ -65,6 +65,12 @@ vi.mock("@/features/auth/useProfile", () => ({
   useProfile: () => ({ data: { role_level: profileRoleLevel.current } }),
 }));
 
+const referralLink = vi.hoisted(() => ({ data: { enabled: true, slug: "acme", token: "tok" } as { enabled: boolean; slug: string; token: string | null } | undefined }));
+vi.mock("@/features/partners/hooks/useReferralLinks", () => ({
+  useMyReferralLink: () => ({ data: referralLink.data }),
+  useRegenerateReferralLink: () => ({ mutateAsync: vi.fn().mockResolvedValue("newtok"), isPending: false }),
+}));
+
 describe("AgentsPage", () => {
   // Reset all mutable module-level state to its default after every test so
   // tests stay order-independent regardless of which custom fixtures they set.
@@ -72,6 +78,45 @@ describe("AgentsPage", () => {
     leaderboardRows = DEFAULT_ROWS;
     authUserId.current = "self";
     profileRoleLevel.current = "administrator";
+    referralLink.data = { enabled: true, slug: "acme", token: "tok" };
+  });
+
+  async function openRowMenu() {
+    const table = screen.getByRole("table");
+    await userEvent.click(within(table).getByRole("button", { name: "Row actions" }));
+  }
+
+  function renderPage() {
+    return render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <AgentsPage />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+  }
+
+  it("lets an administrator get a rep a new referral form link while the public form is on", async () => {
+    renderPage();
+    await openRowMenu();
+    await userEvent.click(await screen.findByRole("menuitem", { name: "New referral form link" }));
+    expect(await screen.findByText(/old link and any printed QR codes stop working/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Get new link" }));
+    expect(await screen.findByText(`${window.location.origin}/p/acme/refer/newtok`)).toBeInTheDocument();
+  });
+
+  it("hides the new link action from non-administrators", async () => {
+    profileRoleLevel.current = "sales_professional";
+    renderPage();
+    await openRowMenu();
+    expect(screen.queryByRole("menuitem", { name: "New referral form link" })).toBeNull();
+  });
+
+  it("hides the new link action while the public form is off", async () => {
+    referralLink.data = { enabled: false, slug: "acme", token: null };
+    renderPage();
+    await openRowMenu();
+    expect(screen.queryByRole("menuitem", { name: "New referral form link" })).toBeNull();
   });
 
   it("renders agent rows and seat usage", () => {

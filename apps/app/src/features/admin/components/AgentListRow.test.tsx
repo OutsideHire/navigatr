@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeAll, vi } from "vitest";
 import { AgentListRow } from "./AgentListRow";
 import type { LeaderboardRow } from "../hooks/useTeamLeaderboard";
 
@@ -11,12 +13,19 @@ const base: LeaderboardRow = {
   lost_deals_window: 0, lost_cents_window: 0, activities_window: 0, last_activity: null,
 } as LeaderboardRow;
 
-function renderRow(row: LeaderboardRow) {
+beforeAll(() => {
+  if (!Element.prototype.hasPointerCapture) Element.prototype.hasPointerCapture = () => false;
+  if (!Element.prototype.setPointerCapture) Element.prototype.setPointerCapture = () => {};
+  if (!Element.prototype.releasePointerCapture) Element.prototype.releasePointerCapture = () => {};
+  if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
+});
+
+function renderRow(row: LeaderboardRow, onNewReferralLink?: (r: LeaderboardRow) => void) {
   const noop = () => {};
   return render(
     <table><tbody>
       <AgentListRow row={row} onNameClick={noop} onViewPipeline={noop} onResend={noop}
-        onRevoke={noop} onSetRole={noop} callerRole="admin" selfId="admin" activeAdminCount={1} />
+        onRevoke={noop} onSetRole={noop} callerRole="admin" selfId="admin" activeAdminCount={1} onNewReferralLink={onNewReferralLink} />
     </tbody></table>,
   );
 }
@@ -50,5 +59,25 @@ describe("AgentListRow", () => {
     expect(screen.getByText(/\(2\)/)).toBeInTheDocument();
     const cell = screen.getByText("$50K").closest("td")!;
     expect(cell.className).not.toMatch(/text-text-subtle/);
+  });
+
+  it("offers a new referral form link on an active agent when the handler is given", async () => {
+    const onNew = vi.fn();
+    renderRow(base, onNew);
+    await userEvent.click(screen.getByRole("button", { name: "Row actions" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "New referral form link" }));
+    expect(onNew).toHaveBeenCalledWith(base);
+  });
+
+  it("hides it without a handler, and for agents who are not active", async () => {
+    renderRow(base);
+    await userEvent.click(screen.getByRole("button", { name: "Row actions" }));
+    expect(screen.queryByRole("menuitem", { name: "New referral form link" })).toBeNull();
+  });
+
+  it("hides it on an invited agent", async () => {
+    renderRow({ ...base, status: "invited" }, vi.fn());
+    await userEvent.click(screen.getByRole("button", { name: "Row actions" }));
+    expect(screen.queryByRole("menuitem", { name: "New referral form link" })).toBeNull();
   });
 });

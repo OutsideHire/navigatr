@@ -62,8 +62,12 @@ export function useTenantReferralLink(enabled: boolean) {
 export function useRegenerateReferralLink() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { linkType: ReferralLinkType }): Promise<string> => {
-      const { data, error } = await supabase.rpc("regenerate_referral_link", { p_link_type: input.linkType });
+    mutationFn: async (input: { linkType: ReferralLinkType; userId?: string }): Promise<string> => {
+      // userId is for an administrator renewing another user's link (FR-PORT-27).
+      const { data, error } = await supabase.rpc("regenerate_referral_link", {
+        p_link_type: input.linkType,
+        ...(input.userId ? { p_user_id: input.userId } : {}),
+      });
       if (error) {
         throw new Error(
           error.message.includes("not_authorized") ? "You don't have access to do that." : "Couldn't get a new link. Try again.",
