@@ -33,6 +33,12 @@ export function portalUrl(appBaseUrl: string, slug: string, suffix = ""): string
   return `${appBaseUrl.replace(/\/+$/, "")}/p/${encodeURIComponent(slug)}${suffix}`;
 }
 
+/** A portal_api action URL (e.g. the one-click unsubscribe), query values encoded. */
+export function portalApiUrl(apiBaseUrl: string, action: string, query: Record<string, string> = {}): string {
+  const qs = Object.entries(query).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+  return `${apiBaseUrl.trim().replace(/\/+$/, "")}/${action}${qs ? `?${qs}` : ""}`;
+}
+
 export function portalInviteEmail(args: {
   orgName: string;
   partnerName: string;

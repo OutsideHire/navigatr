@@ -22,6 +22,7 @@ import { onPortalTermsRequired, portalApi, type PortalBrand } from "../lib/porta
 import { clearPortalDraft } from "../lib/portalDraft";
 import { clearPortalSession, readPortalSession } from "../lib/portalSession";
 import type { PortalSignedInContext } from "../lib/portalSignedIn";
+import { portalPath } from "../lib/portalAddress";
 
 export function PortalSignedInLayout({ slug, brand }: { slug: string; brand: PortalBrand }) {
   const navigate = useNavigate();
@@ -41,7 +42,7 @@ export function PortalSignedInLayout({ slug, brand }: { slug: string; brand: Por
     // Nothing cached about this partner may outlive the session on this device.
     queryClient.removeQueries({ queryKey: ["portal", "me", slug] });
     queryClient.removeQueries({ queryKey: ["portal", "data", slug] });
-    navigate(`/p/${slug}`, { replace: true });
+    navigate(portalPath(slug), { replace: true });
   }, [slug, queryClient, navigate]);
 
   const expired = me.isSuccess && me.data === null;
@@ -58,7 +59,7 @@ export function PortalSignedInLayout({ slug, brand }: { slug: string; brand: Por
     void recheck();
   }, [queryClient, slug, recheck]);
 
-  if (!token) return <Navigate to={`/p/${slug}`} replace />;
+  if (!token) return <Navigate to={portalPath(slug)} replace />;
   const sessionToken: string = token;
 
   if (me.isPending || expired) {
@@ -97,7 +98,7 @@ export function PortalSignedInLayout({ slug, brand }: { slug: string; brand: Por
         <div className="flex shrink-0 items-center gap-1">
           {!needsTerms && (
             <Link
-              to={`/p/${slug}/profile`}
+              to={portalPath(slug, `/profile`)}
               className="inline-flex min-h-11 items-center gap-1 rounded-radius-sm px-2 text-body-sm font-medium text-brand-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
             >
               <User className="h-4 w-4" aria-hidden />

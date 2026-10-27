@@ -35,6 +35,7 @@ import {
   validateSubmission,
   type PortalSubmissionField,
 } from "../../../../../../supabase/functions/_shared/portalSubmission";
+import { portalPath } from "../lib/portalAddress";
 
 const FIELD_MESSAGES: Record<PortalSubmissionField, string> = {
   companyName: "Add the business name.",
@@ -215,13 +216,13 @@ export function PortalSubmitPage() {
             {brand.orgName} has {sent.companyName}. Your reference is {sent.ref}.
           </p>
         </div>
-        <Button variant="primary" size="lg" fullWidth onClick={() => navigate(`/p/${slug}/r/${sent.id}`)}>
+        <Button variant="primary" size="lg" fullWidth onClick={() => navigate(portalPath(slug, `/r/${sent.id}`))}>
           View this referral
         </Button>
         <Button variant="secondary" size="lg" fullWidth onClick={() => setSent(null)}>
           Send another
         </Button>
-        <Button variant="tertiary" size="lg" onClick={() => navigate(`/p/${slug}/home`)}>
+        <Button variant="tertiary" size="lg" onClick={() => navigate(portalPath(slug, `/home`))}>
           Back to your referrals
         </Button>
       </Card>
@@ -257,7 +258,7 @@ export function PortalSubmitPage() {
   return (
     <div className="flex flex-col gap-4">
       <Link
-        to={`/p/${slug}/home`}
+        to={portalPath(slug, `/home`)}
         className="inline-flex min-h-11 items-center gap-1 self-start text-body-sm text-brand-primary"
       >
         <ChevronLeft className="h-4 w-4" aria-hidden />

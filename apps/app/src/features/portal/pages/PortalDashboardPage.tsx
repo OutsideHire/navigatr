@@ -27,6 +27,7 @@ import { formatConversion, formatPortalDate, formatPortalMoney } from "../lib/po
 import { usePortalSignedIn } from "../lib/portalSignedIn";
 import { PORTAL_WINDOWS } from "../../../../../../supabase/functions/_shared/portalSubmission";
 import { PORTAL_LABELS, type PortalLabel } from "../../../../../../supabase/functions/_shared/portalLabels";
+import { portalPath } from "../lib/portalAddress";
 
 function Tile({ label, value, small = false }: { label: string; value: string; small?: boolean }) {
   return (
@@ -155,7 +156,7 @@ export function PortalDashboardPage() {
             {visible.map((r) => (
               <li key={r.id}>
                 <Link
-                  to={`/p/${slug}/r/${r.id}`}
+                  to={portalPath(slug, `/r/${r.id}`)}
                   className="flex min-h-14 items-center gap-3 px-3 py-3 hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary"
                 >
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -202,7 +203,7 @@ export function PortalDashboardPage() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-3">
         <h1 className="text-heading-lg text-text-default">Your referrals</h1>
-        <Button variant="primary" size="lg" fullWidth leadingIcon={Plus} onClick={() => navigate(`/p/${slug}/new`)}>
+        <Button variant="primary" size="lg" fullWidth leadingIcon={Plus} onClick={() => navigate(portalPath(slug, `/new`))}>
           Send a referral
         </Button>
       </div>

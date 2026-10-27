@@ -23,6 +23,7 @@ import {
 import { formatPortalDate, formatPortalMoney } from "../lib/portalFormat";
 import { usePortalSignedIn } from "../lib/portalSignedIn";
 import { industryLabel, urgencyLabel } from "../../../../../../supabase/functions/_shared/portalSubmission";
+import { portalPath } from "../lib/portalAddress";
 
 const NOT_WITHDRAWABLE = "This referral is already being worked on, so it can no longer be pulled back.";
 
@@ -48,7 +49,7 @@ export function PortalReferralPage() {
 
   const back = (
     <Link
-      to={`/p/${slug}/home`}
+      to={portalPath(slug, `/home`)}
       className="inline-flex min-h-11 items-center gap-1 self-start text-body-sm text-brand-primary"
     >
       <ChevronLeft className="h-4 w-4" aria-hidden />

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fetchPortalEmailBrand, portalCodeEmail, portalEmailBrand, portalFromAddress, portalInviteEmail, portalPublicConfirmationEmail, portalUrl } from "./portalEmail";
+import { fetchPortalEmailBrand, portalCodeEmail, portalEmailBrand, portalFromAddress, portalInviteEmail, portalPublicConfirmationEmail, portalUrl, portalApiUrl } from "./portalEmail";
 import { renderEmail } from "./emailTemplate";
 
 describe("portalFromAddress", () => {
@@ -135,5 +135,25 @@ describe("portalPublicConfirmationEmail", () => {
     expect(html).toMatch(/&quot;ISO&quot;|&#34;ISO&#34;|&#x22;ISO&#x22;/);
     // Plain text keeps the name as typed.
     expect(text).toContain(orgName);
+  });
+});
+
+describe("portalApiUrl", () => {
+  it("builds an action URL with encoded query values and no doubled slash", () => {
+    expect(portalApiUrl("https://x.supabase.co/functions/v1/portal_api/", "unsubscribe_digest", { slug: "acme co", t: "a/b" })).toBe(
+      "https://x.supabase.co/functions/v1/portal_api/unsubscribe_digest?slug=acme%20co&t=a%2Fb",
+    );
+  });
+});
+
+describe("edge sources build portal links through portalUrl only", () => {
+  it("no other shared source hand-builds a /p/ link", async () => {
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const dir = __dirname;
+    const offenders = readdirSync(dir).filter(
+      (n) => /\.ts$/.test(n) && !/\.test\.ts$/.test(n) && n !== "portalEmail.ts" && readFileSync(join(dir, n), "utf8").includes("/p/${"),
+    );
+    expect(offenders).toEqual([]);
   });
 });

@@ -10,6 +10,7 @@ import { Button, Card, FormField, Input } from "@/components/navigatr";
 import { PortalApiError, isPortalTransientError, portalApi, type PortalBrand } from "../lib/portalApi";
 import { portalReachMessage } from "../components/PortalRetry";
 import { readPortalSession, writePortalSession } from "../lib/portalSession";
+import { portalPath } from "../lib/portalAddress";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -24,7 +25,7 @@ export function PortalSignInPage({ slug, brand }: { slug: string; brand: PortalB
   // Set when the last attempt failed to reach the server; offers a Try again.
   const [retry, setRetry] = React.useState<(() => void) | null>(null);
 
-  if (existing) return <Navigate to={`/p/${slug}/home`} replace />;
+  if (existing) return <Navigate to={portalPath(slug, `/home`)} replace />;
 
   const doSendCode = async () => {
     const trimmed = email.trim();
@@ -58,7 +59,7 @@ export function PortalSignInPage({ slug, brand }: { slug: string; brand: PortalB
     try {
       const session = await portalApi.verifyCode(slug, email.trim(), code);
       writePortalSession(slug, session.sessionToken);
-      navigate(`/p/${slug}/home`, { replace: true });
+      navigate(portalPath(slug, `/home`), { replace: true });
     } catch (err) {
       if (isPortalTransientError(err)) {
         setError(portalReachMessage(brand.orgName));

@@ -19,7 +19,7 @@
  */
 import type { EmailOptions } from "./emailTemplate.ts";
 import { PORTAL_LABELS, type PortalLabel } from "./portalLabels.ts";
-import { portalUrl } from "./portalEmail.ts";
+import { portalApiUrl, portalUrl } from "./portalEmail.ts";
 
 export const PARTNER_NOTIFY_KINDS = [
   "partner_received",
@@ -414,7 +414,7 @@ function buildDigest(p: PartnerDigestPayload, ctx: NotifyContext): PortalNotifyE
   if (c.submitted + c.accepted + c.inProgress + c.closedWon + c.notMovingForward + c.sentToYou === 0) return null;
 
   const token = encodeURIComponent(p.unsubscribeToken);
-  const oneClick = `${api}/unsubscribe_digest?slug=${encodeURIComponent(p.slug)}&t=${token}`;
+  const oneClick = portalApiUrl(api, "unsubscribe_digest", { slug: p.slug, t: p.unsubscribeToken });
   const lines = [
     c.submitted > 0 ? `New referrals you sent: ${c.submitted}` : null,
     c.accepted > 0 ? `Accepted: ${c.accepted}` : null,

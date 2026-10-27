@@ -26,6 +26,7 @@ import {
   validateProfile,
   type PortalProfileField,
 } from "../../../../../../supabase/functions/_shared/portalProfile";
+import { portalPath } from "../lib/portalAddress";
 
 export function PortalProfilePage() {
   const { slug, token, brand, expire } = usePortalSignedIn();
@@ -106,7 +107,7 @@ function ProfileForm({ initial }: { initial: PortalProfile }) {
   return (
     <div className="flex flex-col gap-4">
       <Link
-        to={`/p/${slug}/home`}
+        to={portalPath(slug, `/home`)}
         className="inline-flex min-h-11 items-center gap-1 self-start text-body-sm text-brand-primary"
       >
         <ChevronLeft className="h-4 w-4" aria-hidden />
