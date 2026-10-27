@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 
 import { ReviewReferralSheet } from "./ReviewReferralSheet";
 import type { QueueReferral } from "../hooks/useReferralQueue";
@@ -85,7 +86,7 @@ const flagged: QueueReferral = {
 };
 
 function renderSheet(onOpenChange = vi.fn()) {
-  render(<ReviewReferralSheet referral={referral} open onOpenChange={onOpenChange} />);
+  render(<MemoryRouter><ReviewReferralSheet referral={referral} open onOpenChange={onOpenChange} /></MemoryRouter>);
   return onOpenChange;
 }
 
@@ -124,11 +125,13 @@ describe("ReviewReferralSheet", () => {
     expect(await screen.findByText(/Possible duplicate: Zed Cafe is already in your team's pipeline/)).toBeInTheDocument();
   });
 
-  it("says when the business is already a customer, linking to the won deal", () => {
+  it("says when the business is already a customer, linking to the won deal", async () => {
     customerState.data = { dealId: "d-77", companyName: "Fresh Bakery" };
-    renderSheet();
+    const onOpenChange = renderSheet();
     expect(screen.getByRole("link", { name: "Fresh Bakery" }).parentElement).toHaveTextContent("Already a customer: Fresh Bakery was closed won.");
     expect(screen.getByRole("link", { name: "Fresh Bakery" })).toHaveAttribute("href", "/pipeline/d-77");
+    await userEvent.click(screen.getByRole("link", { name: "Fresh Bakery" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(customerArgs[0]).toMatchObject({ company: "Fresh Bakery", phone: "+15550001", address: "5 Oak St" });
   });
 
@@ -179,9 +182,9 @@ describe("ReviewReferralSheet", () => {
 
   it("keeps state when the parent passes a new object for the same referral", async () => {
     const onOpenChange = vi.fn();
-    const { rerender } = render(<ReviewReferralSheet referral={referral} open onOpenChange={onOpenChange} />);
+    const { rerender } = render(<MemoryRouter><ReviewReferralSheet referral={referral} open onOpenChange={onOpenChange} /></MemoryRouter>);
     await userEvent.click(screen.getByRole("button", { name: "Decline" }));
-    rerender(<ReviewReferralSheet referral={{ ...referral }} open onOpenChange={onOpenChange} />);
+    rerender(<MemoryRouter><ReviewReferralSheet referral={{ ...referral }} open onOpenChange={onOpenChange} /></MemoryRouter>);
     expect(screen.getByRole("button", { name: "Decline referral" })).toBeInTheDocument();
   });
 
@@ -209,18 +212,18 @@ describe("ReviewReferralSheet", () => {
   });
 
   it("says when a referral came through the partner portal", () => {
-    render(<ReviewReferralSheet referral={{ ...referral, source: "portal_signed_in" }} open onOpenChange={vi.fn()} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={{ ...referral, source: "portal_signed_in" }} open onOpenChange={vi.fn()} /></MemoryRouter>);
     expect(screen.getByText("Sent through the partner portal")).toBeInTheDocument();
   });
 
   it("shows no portal or duplicate cue for a rep-logged referral", () => {
-    render(<ReviewReferralSheet referral={{ ...referral, source: "rep_entered" }} open onOpenChange={vi.fn()} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={{ ...referral, source: "rep_entered" }} open onOpenChange={vi.fn()} /></MemoryRouter>);
     expect(screen.queryByText("Sent through the partner portal")).toBeNull();
     expect(screen.queryByText(/Possible duplicate of an earlier referral/)).toBeNull();
   });
 
   it("flags a probable duplicate and preselects Decline (duplicate)", async () => {
-    render(<ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} /></MemoryRouter>);
     expect(screen.getByText(/Possible duplicate of an earlier referral/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Decline" }));
     expect(screen.getByLabelText("Pick a reason…")).toHaveValue("duplicate");
@@ -230,7 +233,7 @@ describe("ReviewReferralSheet", () => {
   it("needs a written reason to accept a flagged referral", async () => {
     accept.mockResolvedValueOnce({ result: "accepted", dealId: "d-9" });
     const onOpenChange = vi.fn();
-    render(<ReviewReferralSheet referral={flagged} open onOpenChange={onOpenChange} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={flagged} open onOpenChange={onOpenChange} /></MemoryRouter>);
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
     expect(accept).not.toHaveBeenCalled();
     const go = screen.getByRole("button", { name: "Accept anyway" });
@@ -242,21 +245,21 @@ describe("ReviewReferralSheet", () => {
   });
 
   it("caps the written override reason at 500 characters", async () => {
-    render(<ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} /></MemoryRouter>);
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
     expect(screen.getByPlaceholderText("Why accept it anyway?")).toHaveAttribute("maxLength", "500");
   });
 
   it("shows the urgency the partner picked", () => {
-    render(<ReviewReferralSheet referral={{ ...flagged, urgency: "this_week" }} open onOpenChange={vi.fn()} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={{ ...flagged, urgency: "this_week" }} open onOpenChange={vi.fn()} /></MemoryRouter>);
     expect(screen.getByText("Urgency")).toBeInTheDocument();
     expect(screen.getByText("This week")).toBeInTheDocument();
   });
 
   it("shows no urgency row when the partner left it blank or it is unknown", () => {
-    const { rerender } = render(<ReviewReferralSheet referral={{ ...flagged, urgency: null }} open onOpenChange={vi.fn()} />);
+    const { rerender } = render(<MemoryRouter><ReviewReferralSheet referral={{ ...flagged, urgency: null }} open onOpenChange={vi.fn()} /></MemoryRouter>);
     expect(screen.queryByText("Urgency")).toBeNull();
-    rerender(<ReviewReferralSheet referral={{ ...flagged, urgency: "someday" }} open onOpenChange={vi.fn()} />);
+    rerender(<MemoryRouter><ReviewReferralSheet referral={{ ...flagged, urgency: "someday" }} open onOpenChange={vi.fn()} /></MemoryRouter>);
     expect(screen.queryByText("Urgency")).toBeNull();
     expect(screen.queryByText("someday")).toBeNull();
   });
@@ -264,7 +267,7 @@ describe("ReviewReferralSheet", () => {
   it("requires a reason to merge a flagged referral", async () => {
     merge.mockResolvedValueOnce({ result: "merged", creditedPartnerName: null });
     const onOpenChange = vi.fn();
-    render(<ReviewReferralSheet referral={flagged} open onOpenChange={onOpenChange} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={flagged} open onOpenChange={onOpenChange} /></MemoryRouter>);
     await userEvent.click(screen.getByRole("button", { name: "Merge" }));
     await userEvent.selectOptions(screen.getByLabelText("Pick a deal…"), "d-1");
     const go = screen.getByRole("button", { name: "Merge into deal" });
@@ -280,7 +283,7 @@ describe("ReviewReferralSheet", () => {
 
   it("switches to Merge when the override finds the business already in the pipeline", async () => {
     accept.mockResolvedValueOnce({ result: "duplicate", dealId: "d-1" });
-    render(<ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} /></MemoryRouter>);
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
     await userEvent.type(screen.getByPlaceholderText("Why accept it anyway?"), "Different location");
     await userEvent.click(screen.getByRole("button", { name: "Accept anyway" }));
@@ -312,14 +315,14 @@ describe("ReviewReferralSheet", () => {
 
 describe("ReviewReferralSheet: chain advisory and reassign", () => {
   it("shows an advisory chain line, ignores unknown flags, and still allows accept", () => {
-    render(<ReviewReferralSheet referral={{ ...referral, icpFlags: ["chain:Subway", "mystery:x"] }} open onOpenChange={vi.fn()} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={{ ...referral, icpFlags: ["chain:Subway", "mystery:x"] }} open onOpenChange={vi.fn()} /></MemoryRouter>);
     expect(screen.getByText("Looks like a chain: Subway. Check before accepting.")).toBeInTheDocument();
     expect(screen.queryByText(/mystery/)).toBeNull();
     expect(screen.getByRole("button", { name: "Accept" })).toBeEnabled();
   });
 
   it("never doubles the period when the brand ends in one", () => {
-    render(<ReviewReferralSheet referral={{ ...referral, icpFlags: ["chain:Ace Hardware Inc."] }} open onOpenChange={vi.fn()} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={{ ...referral, icpFlags: ["chain:Ace Hardware Inc."] }} open onOpenChange={vi.fn()} /></MemoryRouter>);
     expect(screen.getByText("Looks like a chain: Ace Hardware Inc. Check before accepting.")).toBeInTheDocument();
     expect(screen.queryByText(/\.\. Check/)).toBeNull();
   });

@@ -25,6 +25,7 @@ import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { toast } from "sonner";
+import { Link } from "react-router-dom";
 import { Button, Select, NotesFieldWithMic } from "@/components/navigatr";
 import { useProfile } from "@/features/auth/useProfile";
 import { usePlaceDuplicateCheck } from "@/features/pipeline/hooks/usePlaceDuplicateCheck";
@@ -241,7 +242,7 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
           {customer.data && (
             <p className="rounded-radius-sm bg-status-warning-bg p-3 text-body-sm text-status-warning">
               Already a customer:{" "}
-              <a href={`/pipeline/${customer.data.dealId}`} className="underline">{customer.data.companyName}</a> was closed won.
+              <Link to={`/pipeline/${customer.data.dealId}`} className="underline" onClick={() => onOpenChange(false)}>{customer.data.companyName}</Link> was closed won.
             </p>
           )}
 

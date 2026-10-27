@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 
 import { ReviewFormSubmissionSheet } from "./ReviewFormSubmissionSheet";
 import type { QueueSubmission } from "../hooks/useFormSubmissionQueue";
@@ -87,7 +88,7 @@ const submission: QueueSubmission = {
 
 function renderSheet(s: QueueSubmission = submission) {
   const onOpenChange = vi.fn();
-  render(<ReviewFormSubmissionSheet submission={s} open onOpenChange={onOpenChange} />);
+  render(<MemoryRouter><ReviewFormSubmissionSheet submission={s} open onOpenChange={onOpenChange} /></MemoryRouter>);
   return onOpenChange;
 }
 
@@ -109,11 +110,13 @@ beforeEach(() => {
 });
 
 describe("ReviewFormSubmissionSheet", () => {
-  it("says when the business is already a customer, linking to the won deal", () => {
+  it("says when the business is already a customer, linking to the won deal", async () => {
     customerState.data = { dealId: "d-77", companyName: "Fresh Bakery" };
-    renderSheet();
+    const onOpenChange = renderSheet();
     expect(screen.getByRole("link", { name: "Fresh Bakery" }).parentElement).toHaveTextContent("Already a customer: Fresh Bakery was closed won.");
     expect(screen.getByRole("link", { name: "Fresh Bakery" })).toHaveAttribute("href", "/pipeline/d-77");
+    await userEvent.click(screen.getByRole("link", { name: "Fresh Bakery" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(customerArgs[0]).toMatchObject({ company: "Fresh Bakery", phone: "512-555-0100", address: null });
   });
 
@@ -284,11 +287,11 @@ describe("ReviewFormSubmissionSheet", () => {
     acceptReferral.mockResolvedValueOnce({ result: "duplicate", dealId: "d-1" });
     mergeReferral.mockResolvedValueOnce({ result: "merged", creditedPartnerName: null });
     const onOpenChange = vi.fn();
-    const { rerender } = render(<ReviewFormSubmissionSheet submission={submission} open onOpenChange={onOpenChange} />);
+    const { rerender } = render(<MemoryRouter><ReviewFormSubmissionSheet submission={submission} open onOpenChange={onOpenChange} /></MemoryRouter>);
     await pickExistingPartner();
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
     await screen.findByRole("button", { name: "Merge into deal" });
-    rerender(<ReviewFormSubmissionSheet submission={null} open onOpenChange={onOpenChange} />);
+    rerender(<MemoryRouter><ReviewFormSubmissionSheet submission={null} open onOpenChange={onOpenChange} /></MemoryRouter>);
     expect(screen.getByText("Fresh Bakery")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Merge into deal" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Merge into deal" }));
@@ -300,10 +303,10 @@ describe("ReviewFormSubmissionSheet", () => {
     let resolveAccept: (v: string) => void = () => {};
     acceptSubmission.mockReturnValueOnce(new Promise<string>((r) => { resolveAccept = r; }));
     const onOpenChange = vi.fn();
-    const { rerender } = render(<ReviewFormSubmissionSheet submission={submission} open onOpenChange={onOpenChange} />);
+    const { rerender } = render(<MemoryRouter><ReviewFormSubmissionSheet submission={submission} open onOpenChange={onOpenChange} /></MemoryRouter>);
     await userEvent.click(screen.getByRole("button", { name: "No partner" }));
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
-    rerender(<ReviewFormSubmissionSheet submission={{ ...submission, id: "s-2", companyName: "Other Co" }} open onOpenChange={onOpenChange} />);
+    rerender(<MemoryRouter><ReviewFormSubmissionSheet submission={{ ...submission, id: "s-2", companyName: "Other Co" }} open onOpenChange={onOpenChange} /></MemoryRouter>);
     resolveAccept("d-new");
     await new Promise((r) => setTimeout(r, 10));
     expect(toastSuccess).not.toHaveBeenCalled();
@@ -361,11 +364,11 @@ describe("ReviewFormSubmissionSheet", () => {
     let resolveAccept: (v: string) => void = () => {};
     acceptSubmission.mockReturnValueOnce(new Promise<string>((r) => { resolveAccept = r; }));
     const onOpenChange = vi.fn();
-    const { rerender } = render(<ReviewFormSubmissionSheet submission={submission} open onOpenChange={onOpenChange} />);
+    const { rerender } = render(<MemoryRouter><ReviewFormSubmissionSheet submission={submission} open onOpenChange={onOpenChange} /></MemoryRouter>);
     await userEvent.click(screen.getByRole("button", { name: "No partner" }));
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
-    rerender(<ReviewFormSubmissionSheet submission={submission} open={false} onOpenChange={onOpenChange} />);
-    rerender(<ReviewFormSubmissionSheet submission={submission} open onOpenChange={onOpenChange} />);
+    rerender(<MemoryRouter><ReviewFormSubmissionSheet submission={submission} open={false} onOpenChange={onOpenChange} /></MemoryRouter>);
+    rerender(<MemoryRouter><ReviewFormSubmissionSheet submission={submission} open onOpenChange={onOpenChange} /></MemoryRouter>);
     resolveAccept("d-new");
     await new Promise((r) => setTimeout(r, 10));
     expect(toastSuccess).not.toHaveBeenCalled();
