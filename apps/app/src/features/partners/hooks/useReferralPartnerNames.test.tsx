@@ -1,20 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
 
-import { fetchReferralPartnerNames, useReferralPartnerNames } from "./useReferralPartnerNames";
+import { fetchReferralPartnerNames } from "./useReferralPartnerNames";
 
 const rpcMock = vi.fn();
 vi.mock("@/lib/supabase", () => ({
   supabase: { rpc: (...a: unknown[]) => rpcMock(...a) },
 }));
+const captureMock = vi.fn();
+vi.mock("@/lib/observability", () => ({
+  captureException: (...a: unknown[]) => captureMock(...a),
+}));
 
-const wrapper = ({ children }: { children: ReactNode }) => (
-  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>
-);
-
-beforeEach(() => { rpcMock.mockReset(); });
+beforeEach(() => { rpcMock.mockReset(); captureMock.mockReset(); });
 
 describe("fetchReferralPartnerNames", () => {
   it("asks for every id in one call and keys the result by referral", async () => {
@@ -39,26 +36,11 @@ describe("fetchReferralPartnerNames", () => {
     expect(names.size).toBe(0);
   });
 
-  it("throws the RPC error", async () => {
-    rpcMock.mockResolvedValueOnce({ data: null, error: { message: "boom" } });
-    await expect(fetchReferralPartnerNames(["r-1"])).rejects.toEqual({ message: "boom" });
-  });
-});
-
-describe("useReferralPartnerNames", () => {
-  it("loads the names for a batch of referrals", async () => {
-    rpcMock.mockResolvedValueOnce({
-      data: [{ referral_id: "r-1", partner_id: "p-1", name: "Jane CPA", company: "Jane & Co", visible: false }],
-      error: null,
-    });
-    const { result } = renderHook(() => useReferralPartnerNames(["r-1"]), { wrapper });
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.get("r-1")?.name).toBe("Jane CPA");
-  });
-
-  it("does not run for an empty batch", () => {
-    const { result } = renderHook(() => useReferralPartnerNames([]), { wrapper });
-    expect(result.current.fetchStatus).toBe("idle");
-    expect(rpcMock).not.toHaveBeenCalled();
+  it("reports an RPC error and returns no names so screens fall back to the snapshot", async () => {
+    const err = { message: "function does not exist" };
+    rpcMock.mockResolvedValueOnce({ data: null, error: err });
+    const names = await fetchReferralPartnerNames(["r-1"]);
+    expect(names.size).toBe(0);
+    expect(captureMock).toHaveBeenCalledWith(err, { action: "referrals.partner-names" });
   });
 });

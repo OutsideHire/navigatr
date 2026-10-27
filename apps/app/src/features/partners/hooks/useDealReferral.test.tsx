@@ -66,6 +66,19 @@ describe("useDealReferral", () => {
     });
   });
 
+  it("keeps the referral with snapshot naming when the name lookup fails", async () => {
+    maybeSingleMock.mockResolvedValueOnce({
+      data: { id: "r-5", partner_id: "p-5", partner_company_snapshot: "Snap & Co", partner: null }, error: null,
+    });
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: "function does not exist" } });
+    const { result } = renderHook(() => useDealReferral("d-5"), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual({
+      referralId: "r-5", partnerId: "p-5", partnerVisible: false, partnerName: null,
+      partnerCompany: null, partnerCompanySnapshot: "Snap & Co",
+    });
+  });
+
   it("marks the partner not visible when the embed is hidden and no name comes back", async () => {
     maybeSingleMock.mockResolvedValueOnce({
       data: { id: "r-3", partner_id: "p-3", partner_company_snapshot: "Snap & Co", partner: null }, error: null,

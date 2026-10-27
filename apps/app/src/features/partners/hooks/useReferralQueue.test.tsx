@@ -92,6 +92,23 @@ describe("useReferralQueue", () => {
     expect(result.current.data?.[0]).toMatchObject({ partnerName: "", partnerCompany: "Snap & Co" });
   });
 
+  it("still lists hidden-partner referrals with snapshot naming when the name lookup fails", async () => {
+    orderMock.mockResolvedValueOnce({
+      data: [{
+        id: "r-8", partner_id: "p-8", company_name: "Hidden Co", contact_name: null,
+        contact_email: null, contact_phone: null, address: null, place_id: null,
+        notes: "", submitted_at: "2026-10-07T12:00:00Z", assigned_user_id: "user-1",
+        partner_company_snapshot: "Snap & Co", partner: null,
+      }],
+      error: null,
+    });
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: "function does not exist" } });
+    const { result } = renderHook(() => useReferralQueue(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toHaveLength(1);
+    expect(result.current.data?.[0]).toMatchObject({ id: "r-8", partnerName: "", partnerCompany: "Snap & Co" });
+  });
+
   it("names partners the viewer cannot open with one batched lookup (FR-PORT-55)", async () => {
     const hidden = (id: string) => ({
       id, partner_id: `p-${id}`, company_name: "Hidden Co", contact_name: null,
