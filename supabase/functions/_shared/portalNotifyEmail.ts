@@ -37,6 +37,7 @@ export const INTERNAL_NOTIFY_KINDS = [
   "internal_reinstate_available",
   "internal_new_submission",
   "internal_partner_note",
+  "internal_assigned",
 ] as const;
 export type InternalNotifyKind = (typeof INTERNAL_NOTIFY_KINDS)[number];
 
@@ -530,6 +531,21 @@ function buildInternal(kind: InternalNotifyKind, p: InternalNotifyPayload, ctx: 
       ctaLabel: "Open partner",
       ctaUrl: url,
       footnote: "You're getting this because partner referrals are routed to you.",
+      audience: "internal",
+      orgName: null,
+      replyTo: null,
+    };
+  }
+  if (kind === "internal_assigned") {
+    const name = p.companyNames[0];
+    return {
+      subject: `A referral was assigned to you: ${name}`,
+      preheader: `${name} was assigned to you in Referrals.`,
+      heading: "A referral was assigned to you",
+      bodyLines: [`${name} was assigned to you.`, "Open it to review and decide what to do next."],
+      ctaLabel: "Open referral",
+      ctaUrl: url,
+      footnote: "You're getting this because a teammate assigned a referral to you.",
       audience: "internal",
       orgName: null,
       replyTo: null,

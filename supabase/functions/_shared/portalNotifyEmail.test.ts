@@ -527,6 +527,40 @@ describe("internal_partner_note", () => {
   });
 });
 
+describe("internal_assigned", () => {
+  it("tells the new owner a referral was assigned to them", () => {
+    expect(INTERNAL_NOTIFY_KINDS).toContain("internal_assigned");
+    const e = buildPortalNotifyEmail(
+      "internal_assigned",
+      { appUrlPath: "/partners", companyNames: ["Fresh Bakery"], count: 1 },
+      CTX,
+    )!;
+    expect(e.subject).toBe("A referral was assigned to you: Fresh Bakery");
+    expect(e.ctaUrl).toBe(`${BASE}/partners`);
+    expect(e.audience).toBe("internal");
+    expect(e.headers).toBeUndefined();
+    expect(e.footerLink).toBeUndefined();
+    expect(e.bodyLines.join(" ")).toContain("Fresh Bakery");
+    // Not the end-of-day digest wording.
+    expect(e.subject).not.toMatch(/still waiting/);
+  });
+
+  it("keeps a name with HTML and line breaks to one line", () => {
+    const e = buildPortalNotifyEmail(
+      "internal_assigned",
+      { appUrlPath: "/partners", companyNames: ["<b>Evil</b> Co\r\nBcc: x@y.z"], count: 1 },
+      CTX,
+    )!;
+    expect(e.subject).not.toMatch(/[\r\n\t]/);
+    expect(renderEmail({ ...e, brand: undefined }).html).not.toContain("<b>Evil</b>");
+  });
+
+  it("drops a bad payload", () => {
+    expect(buildPortalNotifyEmail("internal_assigned", { appUrlPath: "https://evil.example/x", companyNames: ["A"], count: 1 }, CTX)).toBeNull();
+    expect(buildPortalNotifyEmail("internal_assigned", { appUrlPath: "/partners", companyNames: [], count: 1 }, CTX)).toBeNull();
+  });
+});
+
 describe("only the weekly summary can be unsubscribed from (FR-PORT-84)", () => {
   it("no other kind carries headers or a footer link", () => {
     for (const kind of PARTNER_NOTIFY_KINDS) {

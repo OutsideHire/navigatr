@@ -1235,6 +1235,22 @@ describe("Phase 2B-3 partner emails: copy audit", () => {
     }
   });
 
+  it("internal_assigned goes to the rep: no unsubscribe, no headers, escaped markup", () => {
+    const e = buildPortalNotifyEmail(
+      "internal_assigned",
+      { appUrlPath: "/partners", companyNames: [`Gold Gym ${XSS}`], count: 1 },
+      CTX,
+    );
+    expect(e).not.toBeNull();
+    expect(e!.audience).toBe("internal");
+    expect(e!.headers).toBeUndefined();
+    const { html, text } = renderEmail(e!);
+    expect(text).not.toMatch(/unsubscribe/i);
+    expect(html).not.toMatch(/unsubscribe/i);
+    expect(html).not.toContain("<script");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
   it("internal_partner_note goes to the rep: no partner note text, no unsubscribe, no headers, escaped markup", () => {
     const e = buildPortalNotifyEmail(
       "internal_partner_note",
