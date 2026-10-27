@@ -9,7 +9,7 @@
  *     The referral id (and a newly created partner's id) is kept, so a failed
  *     or duplicate accept never attributes twice or creates the partner twice;
  *   - with no partner, the submission RPCs act on it directly (accept makes a
- *     deal with lead source Inbound and the first follow-up task).
+ *     deal with lead source Referral form and the first follow-up task).
  * Advisory lines (possible duplicate, looks like a chain) never block.
  * Managers and administrators can reassign it before anyone says who sent it.
  * Same Radix Dialog shell and copy style as ReviewReferralSheet.

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Activity, ActivityType } from "@/features/activities/mockData";
 import type { Deal, DealStage } from "@/features/pipeline/mockData";
-import { computeLeadSourcePerformance, leadSourceDetail } from "./leadSourcePerformance";
+import { computeLeadSourcePerformance, leadSourceDetail, LEAD_SOURCE_BLURB } from "./leadSourcePerformance";
 
 const NOW = new Date("2026-07-01T00:00:00Z");
 
@@ -139,5 +139,12 @@ describe("leadSourceDetail (drawer)", () => {
 
   it("returns six trailing monthly cohorts", () => {
     expect(d.cohorts).toHaveLength(6);
+  });
+});
+
+describe("LEAD_SOURCE_BLURB referral wording", () => {
+  it("describes the referral form source and drops the partner form wording", () => {
+    expect(LEAD_SOURCE_BLURB.referral_form).toBe("Sent through your referral form with no partner credited.");
+    expect(LEAD_SOURCE_BLURB.partner_referral).not.toMatch(/partner form/i);
   });
 });

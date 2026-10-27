@@ -258,7 +258,7 @@ end $$;
 
 do $$ declare d deals; s referral_form_submissions; n integer; v uuid := current_setting('t.deal')::uuid; begin
   select * into d from deals where id = v;
-  if d.owner_id <> 'a0600000-0000-0000-0000-000000000003' or d.lead_source <> 'inbound' or d.stage <> 'new'
+  if d.owner_id <> 'a0600000-0000-0000-0000-000000000003' or d.lead_source <> 'referral_form' or d.stage <> 'new'
      or d.company_name <> 'Accept Co' or d.contact_name <> 'Bea' or d.contact_email <> 'bea@accept.example'
      or d.contact_phone <> '5550600012' or d.source_referral_id is not null or d.source_partner_id is not null then
     raise exception 'no-partner deal is wrong: %', row_to_json(d);
