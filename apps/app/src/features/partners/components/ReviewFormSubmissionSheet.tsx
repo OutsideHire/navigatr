@@ -10,7 +10,8 @@
  *     or duplicate accept never attributes twice or creates the partner twice;
  *   - with no partner, the submission RPCs act on it directly (accept makes a
  *     deal with lead source Referral form and the first follow-up task).
- * Advisory lines (possible duplicate, looks like a chain) never block.
+ * Advisory lines (possible duplicate, looks like a chain, already a customer
+ * with a link to the won deal, FR-PORT-44) never block.
  * First referral wins (FR-PORT-46, 47): when attributing finds an earlier open
  * referral or active deal, the referral is flagged like a partner's own portal
  * referral. Decline (duplicate) is preselected, and accepting or merging needs
@@ -26,6 +27,7 @@ import { toast } from "sonner";
 import { Button, Input, NotesFieldWithMic, PhoneWithClickToCall, Select } from "@/components/navigatr";
 import { useProfile } from "@/features/auth/useProfile";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
+import { useCustomerMatch } from "../hooks/useCustomerMatch";
 import { normalizeEmail, phoneToE164 } from "@/lib/contactValidation";
 import { useAuth } from "@/stores/auth";
 import { useCreatePartner } from "../hooks/useCreatePartner";
@@ -87,6 +89,12 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
   const { data: partners = [] } = usePartners();
   const { data: deals = [] } = useDeals();
   const advice = useFormSubmissionAdvice(open ? submission?.id ?? null : null);
+  const customer = useCustomerMatch({
+    company: submission?.companyName,
+    phone: submission?.contactPhone,
+    address: null,
+    enabled: open && Boolean(submission),
+  });
   const createPartner = useCreatePartner();
   const attribute = useAttributeFormSubmission();
   const acceptSubmission = useAcceptFormSubmission();
@@ -341,6 +349,12 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
               {f}. Check before accepting.
             </p>
           ))}
+          {customer.data && (
+            <p className="rounded-radius-sm bg-status-warning-bg p-3 text-body-sm text-status-warning">
+              Already a customer:{" "}
+              <a href={`/pipeline/${customer.data.dealId}`} className="underline">{customer.data.companyName}</a> was closed won.
+            </p>
+          )}
           {advice.data?.duplicateDeal && (
             <p className="rounded-radius-sm bg-status-warning-bg p-3 text-body-sm text-status-warning">
               Possible duplicate: {advice.data.duplicateDeal.companyName} is already in your team's pipeline.

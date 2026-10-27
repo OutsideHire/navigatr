@@ -46,6 +46,11 @@ vi.mock("../hooks/useReassignReferral", () => ({
   },
   useReassignReferral: () => ({ mutateAsync: reassignMutate, isPending: false }),
 }));
+const customerState: { data: { dealId: string; companyName: string } | null | undefined } = { data: null };
+const customerArgs: unknown[] = [];
+vi.mock("../hooks/useCustomerMatch", () => ({
+  useCustomerMatch: (a: unknown) => { customerArgs.push(a); return customerState; },
+}));
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
 vi.mock("@/components/navigatr", async (orig) => {
@@ -88,6 +93,7 @@ beforeEach(() => {
   acceptPending = false; accept.mockReset(); decline.mockReset(); merge.mockReset();
   checkPlaceDuplicate.mockReset().mockResolvedValue(null);
   toastSuccess.mockReset(); toastError.mockReset();
+  customerState.data = null; customerArgs.length = 0;
   profileState.data = { role: "rep", role_level: "sales_professional" };
   assigneesState.data = [
     { id: "user-1", name: "Rita Rep" },
@@ -116,6 +122,19 @@ describe("ReviewReferralSheet", () => {
     checkPlaceDuplicate.mockResolvedValueOnce({ tier: "phone", dealId: "d-1", companyName: "Zed Cafe", dealHasPlaceId: false });
     renderSheet();
     expect(await screen.findByText(/Possible duplicate: Zed Cafe is already in your team's pipeline/)).toBeInTheDocument();
+  });
+
+  it("says when the business is already a customer, linking to the won deal", () => {
+    customerState.data = { dealId: "d-77", companyName: "Fresh Bakery" };
+    renderSheet();
+    expect(screen.getByRole("link", { name: "Fresh Bakery" }).parentElement).toHaveTextContent("Already a customer: Fresh Bakery was closed won.");
+    expect(screen.getByRole("link", { name: "Fresh Bakery" })).toHaveAttribute("href", "/pipeline/d-77");
+    expect(customerArgs[0]).toMatchObject({ company: "Fresh Bakery", phone: "+15550001", address: "5 Oak St" });
+  });
+
+  it("shows no customer line when there is no match", () => {
+    renderSheet();
+    expect(screen.queryByText(/Already a customer/)).not.toBeInTheDocument();
   });
 
   it("disables Merge and Decline while an accept is in flight", () => {

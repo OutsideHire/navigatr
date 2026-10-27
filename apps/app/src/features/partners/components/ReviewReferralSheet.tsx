@@ -13,6 +13,9 @@
  * referral closes as a duplicate. The urgency the partner picked shows with the
  * details.
  *
+ * A business that is already a won customer the rep can see gets an "Already a
+ * customer" line linking to the deal (FR-PORT-44). Reps only, never the partner.
+ *
  * Phase 2A: a business that looks like a chain gets an advisory line
  * (FR-PORT-58); it never blocks anything. Managers and administrators can
  * reassign the referral to a teammate they can see, and are warned BEFORE
@@ -26,6 +29,7 @@ import { Button, Select, NotesFieldWithMic } from "@/components/navigatr";
 import { useProfile } from "@/features/auth/useProfile";
 import { usePlaceDuplicateCheck } from "@/features/pipeline/hooks/usePlaceDuplicateCheck";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
+import { useCustomerMatch } from "../hooks/useCustomerMatch";
 import type { QueueReferral } from "../hooks/useReferralQueue";
 import { useAcceptReferral, useDeclineReferral, useMergeReferral } from "../hooks/useReferralMutations";
 import { useAssigneeSeesPartner, useReassignReferral, useReferralAssignees } from "../hooks/useReassignReferral";
@@ -52,6 +56,12 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
   const { checkPlaceDuplicate } = usePlaceDuplicateCheck();
   const { data: deals = [] } = useDeals();
   const profile = useProfile();
+  const customer = useCustomerMatch({
+    company: referral?.companyName,
+    phone: referral?.contactPhone,
+    address: referral?.address,
+    enabled: open && Boolean(referral),
+  });
   const canReassign = canReassignReferrals(profile.data);
   const assignees = useReferralAssignees(open && canReassign);
 
@@ -225,6 +235,13 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
           {flagged && (
             <p className="rounded-radius-sm bg-status-warning-bg p-3 text-body-sm text-status-warning">
               Possible duplicate of an earlier referral. Decline (duplicate) is preselected; you can still accept or merge.
+            </p>
+          )}
+
+          {customer.data && (
+            <p className="rounded-radius-sm bg-status-warning-bg p-3 text-body-sm text-status-warning">
+              Already a customer:{" "}
+              <a href={`/pipeline/${customer.data.dealId}`} className="underline">{customer.data.companyName}</a> was closed won.
             </p>
           )}
 

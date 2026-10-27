@@ -25,6 +25,11 @@ vi.mock("../hooks/useReferralMutations", () => ({
   useDeclineReferral: () => ({ mutateAsync: declineReferral, isPending: false }),
   useMergeReferral: () => ({ mutateAsync: mergeReferral, isPending: false }),
 }));
+const customerState: { data: { dealId: string; companyName: string } | null | undefined } = { data: null };
+const customerArgs: unknown[] = [];
+vi.mock("../hooks/useCustomerMatch", () => ({
+  useCustomerMatch: (a: unknown) => { customerArgs.push(a); return customerState; },
+}));
 const adviceState: { data: unknown } = { data: undefined };
 vi.mock("../hooks/useFormSubmissionQueue", () => ({ useFormSubmissionAdvice: () => adviceState }));
 vi.mock("../hooks/usePartners", () => ({
@@ -95,6 +100,7 @@ beforeEach(() => {
   for (const f of [attribute, acceptSubmission, declineSubmission, mergeSubmission, reassignSubmission,
     acceptReferral, declineReferral, mergeReferral, createPartner, toastSuccess, toastError]) f.mockReset();
   adviceState.data = undefined;
+  customerState.data = null; customerArgs.length = 0;
   profileState.data = { role: "rep", role_level: "sales_professional" };
   assigneesState.data = [{ id: "user-1", name: "Rita Rep" }, { id: "u-2", name: "Rob Rep" }];
   attribute.mockResolvedValue(ATTRIBUTED);
@@ -103,6 +109,19 @@ beforeEach(() => {
 });
 
 describe("ReviewFormSubmissionSheet", () => {
+  it("says when the business is already a customer, linking to the won deal", () => {
+    customerState.data = { dealId: "d-77", companyName: "Fresh Bakery" };
+    renderSheet();
+    expect(screen.getByRole("link", { name: "Fresh Bakery" }).parentElement).toHaveTextContent("Already a customer: Fresh Bakery was closed won.");
+    expect(screen.getByRole("link", { name: "Fresh Bakery" })).toHaveAttribute("href", "/pipeline/d-77");
+    expect(customerArgs[0]).toMatchObject({ company: "Fresh Bakery", phone: "512-555-0100", address: null });
+  });
+
+  it("shows no customer line when there is no match", () => {
+    renderSheet();
+    expect(screen.queryByText(/Already a customer/)).not.toBeInTheDocument();
+  });
+
   it("shows what the sender typed, where it came from and the advice", () => {
     adviceState.data = {
       duplicateReferral: { id: "r-9", companyName: "Corner Cafe" },
