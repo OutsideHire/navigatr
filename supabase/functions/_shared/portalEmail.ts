@@ -43,6 +43,8 @@ export function portalInviteEmail(args: {
   orgName: string;
   partnerName: string;
   inviteUrl: string;
+  /** The partner's portal sign-in address (FR-PORT-23), shown in the footer. */
+  portalAddressUrl?: string;
 }): PortalEmail {
   return {
     subject: `${args.orgName} invited you to their referral portal`,
@@ -56,10 +58,11 @@ export function portalInviteEmail(args: {
     ctaLabel: "Accept invite",
     ctaUrl: args.inviteUrl,
     footnote: "If you weren't expecting this, you can ignore this email.",
+    ...(args.portalAddressUrl ? { portalAddress: { url: args.portalAddressUrl } } : {}),
   };
 }
 
-export function portalCodeEmail(args: { orgName: string; code: string; signInUrl: string }): PortalEmail {
+export function portalCodeEmail(args: { orgName: string; code: string; signInUrl: string; portalAddressUrl?: string }): PortalEmail {
   return {
     subject: `Your sign-in code for ${args.orgName}`,
     preheader: `Your code is ${args.code}. It expires in 15 minutes.`,
@@ -71,6 +74,7 @@ export function portalCodeEmail(args: { orgName: string; code: string; signInUrl
     ctaLabel: "Open the sign-in page",
     ctaUrl: args.signInUrl,
     footnote: "If you didn't ask for this code, you can ignore this email.",
+    ...(args.portalAddressUrl ? { portalAddress: { url: args.portalAddressUrl } } : {}),
   };
 }
 
@@ -117,7 +121,7 @@ export async function fetchPortalEmailBrand(rpc: PortalBrandRpc, slug: string, o
  * submitter wrote (the form must not become a way to send arbitrary text
  * through the ISO's name). No button: there is nothing for the reader to open.
  */
-export function portalPublicConfirmationEmail(args: { orgName: string; ref: string }): PortalEmail {
+export function portalPublicConfirmationEmail(args: { orgName: string; ref: string; portalAddressUrl?: string }): PortalEmail {
   return {
     subject: `${args.orgName} received your referral`,
     preheader: `Your reference is ${args.ref}.`,
@@ -127,5 +131,6 @@ export function portalPublicConfirmationEmail(args: { orgName: string; ref: stri
       `Your reference is ${args.ref}. Keep it in case you need to follow up.`,
     ],
     footnote: "If you didn't expect this email, you can ignore it.",
+    ...(args.portalAddressUrl ? { portalAddress: { url: args.portalAddressUrl } } : {}),
   };
 }

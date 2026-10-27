@@ -191,6 +191,7 @@ describe("request_code", () => {
     expect(msg.subject).toBe("Your sign-in code for Acme ISO");
     expect(msg.html).toContain("123456");
     expect(msg.text).toContain("https://app.getnavigatr.io/p/acme");
+    expect(msg.text).toContain("Sign in to your partner portal any time: https://app.getnavigatr.io/p/acme\n");
   });
 
   it("respects the non-production allowlist and still answers { ok: true }", async () => {

@@ -157,3 +157,23 @@ describe("edge sources build portal links through portalUrl only", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe("portal sign-in address on partner emails (FR-PORT-23)", () => {
+  const url = "https://app.getnavigatr.io/p/acme";
+  it("the invite, code and confirmation builders carry the address when given", () => {
+    const invite = portalInviteEmail({ orgName: "Acme ISO", partnerName: "Jane", inviteUrl: "https://x.test/i", portalAddressUrl: url });
+    const code = portalCodeEmail({ orgName: "Acme ISO", code: "042917", signInUrl: url, portalAddressUrl: url });
+    const conf = portalPublicConfirmationEmail({ orgName: "Acme ISO", ref: "REF-1", portalAddressUrl: url });
+    for (const e of [invite, code, conf]) {
+      expect(e.portalAddress).toEqual({ url });
+      const { html, text } = renderEmail({ ...e, brand: portalEmailBrand("Acme ISO", null) });
+      expect(html).toContain("Sign in to your partner portal any time:");
+      expect(text).toContain(`Sign in to your partner portal any time: ${url}`);
+    }
+  });
+  it("omits it when no address is given", () => {
+    expect(portalInviteEmail({ orgName: "A", partnerName: "J", inviteUrl: "https://x.test/i" }).portalAddress).toBeUndefined();
+    expect(portalCodeEmail({ orgName: "A", code: "1", signInUrl: url }).portalAddress).toBeUndefined();
+    expect(portalPublicConfirmationEmail({ orgName: "A", ref: "R" }).portalAddress).toBeUndefined();
+  });
+});

@@ -89,6 +89,7 @@ describe("handlePortalInvite", () => {
     expect(msg.from).toBe('"Acme ISO" <invites@send.getnavigatr.io>');
     expect(msg.subject).toBe("Acme ISO invited you to their referral portal");
     expect(msg.html).toContain(`https://app.getnavigatr.io/p/acme/invite?token=${TOKEN}`);
+    expect(msg.text).toContain("Sign in to your partner portal any time: https://app.getnavigatr.io/p/acme\n");
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(JSON.parse(text)).toEqual({ ok: true, emailed: true });
