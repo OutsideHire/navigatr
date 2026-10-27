@@ -268,7 +268,7 @@ describe("list_referrals", () => {
 });
 
 describe("dashboard", () => {
-  const STATS = { submitted: "5", active: "2", closed_won: "1", not_moving_forward: "1", won_value_cents: "500000" };
+  const STATS = { submitted: "5", active: "2", closed_won: "1", not_moving_forward: "1", won_value_cents: "500000", won_sent: "1" };
 
   it("computes conversion and hides the value when the ISO has not allowed it", async () => {
     const { deps } = setup({ portal_dashboard_stats: () => ok([{ ...STATS, value_visible: false }]) });
@@ -287,10 +287,20 @@ describe("dashboard", () => {
     });
   });
 
+  it("computes the conversion rate from won referrals sent in the window", async () => {
+    const { deps } = setup({
+      portal_dashboard_stats: () => ok([{ ...STATS, closed_won: "3", won_sent: "1", not_moving_forward: "1", value_visible: false }]),
+    });
+    const { json } = await call("dashboard", {}, deps);
+    const d = json.dashboard as Record<string, unknown>;
+    expect(d.closedWon).toBe(3);
+    expect(d.conversionRate).toBe(0.5);
+  });
+
   it("reports no conversion rate when nothing has closed", async () => {
     const { deps } = setup({
       portal_dashboard_stats: () =>
-        ok([{ submitted: 2, active: 2, closed_won: 0, not_moving_forward: 0, won_value_cents: 0, value_visible: false }]),
+        ok([{ submitted: 2, active: 2, closed_won: 0, not_moving_forward: 0, won_value_cents: 0, won_sent: 0, value_visible: false }]),
     });
     const { json } = await call("dashboard", {}, deps);
     expect((json.dashboard as Record<string, unknown>).conversionRate).toBeNull();

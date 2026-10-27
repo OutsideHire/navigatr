@@ -319,12 +319,15 @@ async function dashboard(scope: ReferralScope, body: Body, deps: ReferralDeps): 
   const row = rows<Record<string, unknown>>(data)[0];
   if (!row) return serverError("dashboard", "no stats row");
   const won = num(row.closed_won);
-  const closed = won + num(row.not_moving_forward);
+  // Closed Won counts by close date, so the rate uses the won referrals sent in
+  // the same window (won_sent) to stay inside 0 to 100 percent.
+  const wonSent = num(row.won_sent);
+  const closed = wonSent + num(row.not_moving_forward);
   const out: PortalDashboard = {
     submitted: num(row.submitted),
     active: num(row.active),
     closedWon: won,
-    conversionRate: closed > 0 ? won / closed : null,
+    conversionRate: closed > 0 ? wonSent / closed : null,
     valueVisible: row.value_visible === true,
   };
   // FR-PORT-70/71: the value leaves the server only when the ISO allows it.

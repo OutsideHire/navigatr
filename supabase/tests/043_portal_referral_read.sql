@@ -190,7 +190,10 @@ do $$ declare r record; begin
     raise exception 'all-time stats wrong: %', row_to_json(r);
   end if;
   select * into r from public.portal_dashboard_stats('00000000-0000-0000-0000-000000001043', 'a043a000-0000-0000-0000-000000000001', now() - interval '30 days');
-  if r.submitted <> 2 or r.active <> 2 or r.closed_won <> 0 or r.not_moving_forward <> 0 or r.won_value_cents <> 0 then
+  -- Closed Won counts by close date (FR-PORT-70): the old referral's deal closed
+  -- inside the window, so it counts there even though it was sent long ago.
+  if r.submitted <> 2 or r.active <> 2 or r.closed_won <> 1 or r.not_moving_forward <> 0
+     or r.won_value_cents <> 500000 or r.won_sent <> 0 then
     raise exception '30-day stats wrong: %', row_to_json(r);
   end if;
   update organizations set partner_value_visibility = true where id = '00000000-0000-0000-0000-000000001043';
