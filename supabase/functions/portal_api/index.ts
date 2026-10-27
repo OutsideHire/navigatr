@@ -27,6 +27,7 @@ const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
 const APP_ENV = Deno.env.get("APP_ENV");
 const EMAIL_ALLOWLIST = Deno.env.get("EMAIL_ALLOWLIST") ?? "";
 const FROM_ADDRESS = Deno.env.get("FROM_ADDRESS") ?? "navigatr <invites@send.getnavigatr.io>";
+const NO_REPLY_ADDRESS = Deno.env.get("NO_REPLY_ADDRESS") ?? "no-reply@send.getnavigatr.io";
 const APP_BASE_URL = Deno.env.get("APP_BASE_URL") ?? "https://app.getnavigatr.io";
 // Same secret and mock flag as the rep-facing transcribe function.
 const ASSEMBLYAI_API_KEY = Deno.env.get("ASSEMBLYAI_API_KEY") ?? "";
@@ -47,7 +48,7 @@ const deps: PortalApiDeps = {
     return { data, error: error ? { message: error.message } : null };
   },
   sendEmail: async (msg) => {
-    const res = await resend.emails.send(msg);
+    const res = await resend.emails.send({ ...msg, replyTo: msg.replyTo ?? undefined });
     if ((res as { error?: unknown }).error) {
       throw new Error(JSON.stringify((res as { error: unknown }).error));
     }
@@ -72,6 +73,7 @@ const deps: PortalApiDeps = {
     fromAddress: FROM_ADDRESS,
     appEnv: APP_ENV,
     emailAllowlist: EMAIL_ALLOWLIST,
+    noReplyAddress: NO_REPLY_ADDRESS,
     publicFormSigningSecret: PUBLIC_FORM_SIGNING_SECRET,
     turnstileSecretKey: TURNSTILE_SECRET_KEY,
   },

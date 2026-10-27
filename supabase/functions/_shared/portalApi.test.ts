@@ -189,6 +189,7 @@ describe("request_code", () => {
     expect(msg.to).toBe("jane@example.com");
     expect(msg.from).toBe('"Acme ISO" <invites@send.getnavigatr.io>');
     expect(msg.subject).toBe("Your sign-in code for Acme ISO");
+    expect(msg.replyTo).toBe("no-reply@send.getnavigatr.io");
     expect(msg.html).toContain("123456");
     expect(msg.text).toContain("https://app.getnavigatr.io/p/acme");
     expect(msg.text).toContain("Sign in to your partner portal any time: https://app.getnavigatr.io/p/acme\n");

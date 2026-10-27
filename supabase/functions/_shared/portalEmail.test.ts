@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fetchPortalEmailBrand, portalCodeEmail, portalEmailBrand, portalFromAddress, portalInviteEmail, portalPublicConfirmationEmail, portalUrl, portalApiUrl } from "./portalEmail";
+import { fetchPortalEmailBrand, portalCodeEmail, portalEmailBrand, portalFromAddress, portalInviteEmail, portalPublicConfirmationEmail, portalUrl, portalApiUrl, safeReplyTo, noReplyAddress } from "./portalEmail";
 import { renderEmail } from "./emailTemplate";
 
 describe("portalFromAddress", () => {
@@ -180,5 +180,21 @@ describe("portal sign-in address on partner emails (FR-PORT-23)", () => {
     const { html, text } = renderEmail({ ...e, brand: portalEmailBrand("Acme ISO", null) });
     expect(html).not.toContain("Sign in to your partner portal");
     expect(text).not.toContain("Sign in to your partner portal");
+  });
+});
+
+describe("Reply-To helpers (FR-PORT-81)", () => {
+  it("accepts a plain address and rejects anything that could inject a header", () => {
+    expect(safeReplyTo(" rita@acme.example ")).toBe("rita@acme.example");
+    expect(safeReplyTo("rita@acme.example\r\nBcc: x@evil.example")).toBeNull();
+    expect(safeReplyTo('"Rita" <rita@acme.example>')).toBeNull();
+    expect(safeReplyTo(null)).toBeNull();
+    expect(safeReplyTo("")).toBeNull();
+  });
+
+  it("falls back to the default no-reply address", () => {
+    expect(noReplyAddress(undefined)).toBe("no-reply@send.getnavigatr.io");
+    expect(noReplyAddress("bad value")).toBe("no-reply@send.getnavigatr.io");
+    expect(noReplyAddress("stop@send.example.com")).toBe("stop@send.example.com");
   });
 });

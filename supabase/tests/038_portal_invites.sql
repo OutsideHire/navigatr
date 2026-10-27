@@ -86,6 +86,7 @@ do $$ declare r record; begin
   if r.partner_name is distinct from 'Jane CPA' or r.org_name is distinct from 'Portal Invite Org' or r.org_slug is distinct from 'portal-inv' then
     raise exception 'invite metadata wrong: % % %', r.partner_name, r.org_name, r.org_slug;
   end if;
+  if r.inviter_email is distinct from 'rep1@pi.example' then raise exception 'inviter_email should be the inviting rep email, got %', r.inviter_email; end if;
   insert into _t values ('tok1', r.invite_token);
 end $$;
 
@@ -134,6 +135,7 @@ end $$;
 -- Resend (the admin, who sees everything) invalidates the first invite.
 do $$ declare r record; n int; begin
   select * into r from public.portal_create_invite('f81a0000-0000-0000-0000-000000000001', 'f8100000-0000-0000-0000-000000000001');
+  if r.inviter_email is distinct from 'boss@pi.example' then raise exception 'a resend by the admin should return the admin email, got %', r.inviter_email; end if;
   insert into _t values ('tok2', r.invite_token);
   select count(*) into n from public.portal_peek_invite('portal-inv', (select v from _t where k = 'tok1'));
   if n <> 0 then raise exception 'resending must invalidate the earlier invite'; end if;

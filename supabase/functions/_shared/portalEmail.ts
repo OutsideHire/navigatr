@@ -28,6 +28,22 @@ export function portalFromAddress(fromEnv: string, orgName: string): string {
   return name ? `"${name}" <${address}>` : address;
 }
 
+/** FR-PORT-81: the default NO_REPLY_ADDRESS for sign-in codes, weekly summaries and form confirmations. */
+export const DEFAULT_NO_REPLY_ADDRESS = "no-reply@send.getnavigatr.io";
+
+const REPLY_TO_RE = /^[^\s@<>",]+@[^\s@<>",]+\.[^\s@<>",]+$/;
+
+/** A Reply-To value that is a plain address (no spaces, quotes, angle brackets or line breaks), else null. */
+export function safeReplyTo(address: string | null | undefined): string | null {
+  const value = typeof address === "string" ? address.trim() : "";
+  return REPLY_TO_RE.test(value) ? value : null;
+}
+
+/** The no-reply Reply-To: the configured NO_REPLY_ADDRESS when it is a plain address, else the default. */
+export function noReplyAddress(configured: string | null | undefined): string {
+  return safeReplyTo(configured) ?? DEFAULT_NO_REPLY_ADDRESS;
+}
+
 /** The partner portal address for a tenant, optionally with a sub-path. */
 export function portalUrl(appBaseUrl: string, slug: string, suffix = ""): string {
   return `${appBaseUrl.replace(/\/+$/, "")}/p/${encodeURIComponent(slug)}${suffix}`;

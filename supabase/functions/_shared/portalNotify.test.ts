@@ -128,6 +128,16 @@ describe("drainPortalEmails", () => {
     expect(summary).toMatchObject({ claimed: 1, sent: 1 });
   });
 
+  it("uses a configured NO_REPLY_ADDRESS for the weekly summary and never lets a header break in", async () => {
+    const api = "https://proj.supabase.co/functions/v1/portal_api";
+    const custom = setup([digestRow("e-8")], { env: { ...ENV, portalApiUrl: api, noReplyAddress: "stop@send.example.com" } });
+    await drainPortalEmails(custom.deps);
+    expect(custom.sendEmail.mock.calls[0][0].replyTo).toBe("stop@send.example.com");
+    const bad = setup([digestRow("e-9")], { env: { ...ENV, portalApiUrl: api, noReplyAddress: "a@b.example\r\nBcc: x@evil.example" } });
+    await drainPortalEmails(bad.deps);
+    expect(bad.sendEmail.mock.calls[0][0].replyTo).toBe("no-reply@send.getnavigatr.io");
+  });
+
   it("sends an internal email from the shared sender with the default look and no Reply-To", async () => {
     const { deps, sendEmail, loadBrand } = setup([INTERNAL_ROW]);
     await drainPortalEmails(deps);
@@ -237,7 +247,7 @@ describe("drainPortalEmails", () => {
     expect(errorSpy).toHaveBeenCalled();
   });
 
-  it("sends the weekly summary with the one-click unsubscribe headers and no Reply-To", async () => {
+  it("sends the weekly summary with the one-click unsubscribe headers and the no-reply Reply-To", async () => {
     const api = "https://proj.supabase.co/functions/v1/portal_api";
     const { deps, sendEmail, marks } = setup([digestRow("e-7")], { env: { ...ENV, portalApiUrl: api } });
     await drainPortalEmails(deps);
@@ -246,7 +256,7 @@ describe("drainPortalEmails", () => {
       "List-Unsubscribe": `<${api}/unsubscribe_digest?slug=acme&t=AbCdEfGhIjKlMnOpQrStUv>`,
       "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
     });
-    expect("replyTo" in msg).toBe(false);
+    expect(msg.replyTo).toBe("no-reply@send.getnavigatr.io");
     expect(msg.from).toBe('"Acme ISO" <invites@send.getnavigatr.io>');
     expect(msg.text).toContain("Unsubscribe from the weekly summary: https://app.getnavigatr.io/p/acme/unsubscribe?t=AbCdEfGhIjKlMnOpQrStUv");
     expect(marks).toEqual([{ p_id: "e-7", p_outcome: "sent", p_error: null }]);

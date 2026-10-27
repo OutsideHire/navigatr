@@ -15,6 +15,7 @@ const ROW = {
   partner_name: "Jane",
   org_name: "Acme ISO",
   org_slug: "acme",
+  inviter_email: "rita@acme.example",
 };
 const PARTNER = "11111111-2222-3333-4444-555555555555";
 
@@ -88,12 +89,25 @@ describe("handlePortalInvite", () => {
     expect(msg.to).toBe("jane@example.com");
     expect(msg.from).toBe('"Acme ISO" <invites@send.getnavigatr.io>');
     expect(msg.subject).toBe("Acme ISO invited you to their referral portal");
+    expect(msg.replyTo).toBe("rita@acme.example");
     expect(msg.html).toContain(`https://app.getnavigatr.io/p/acme/invite?token=${TOKEN}`);
     expect(msg.text).toContain("Sign in to your partner portal any time: https://app.getnavigatr.io/p/acme\n");
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(JSON.parse(text)).toEqual({ ok: true, emailed: true });
     expect(text).not.toContain(TOKEN);
+  });
+
+  it("sends the invite with no Reply-To when the inviting rep has no email", async () => {
+    const { deps, sendEmail } = setup({ result: ok([{ ...ROW, inviter_email: null }]) });
+    await handlePortalInvite(post({ partnerId: PARTNER }), deps);
+    expect(sendEmail.mock.calls[0][0].replyTo).toBeNull();
+  });
+
+  it("drops an inviter email that could inject a header", async () => {
+    const { deps, sendEmail } = setup({ result: ok([{ ...ROW, inviter_email: "rita@acme.example\r\nBcc: x@evil.example" }]) });
+    await handlePortalInvite(post({ partnerId: PARTNER }), deps);
+    expect(sendEmail.mock.calls[0][0].replyTo).toBeNull();
   });
 
   it.each([

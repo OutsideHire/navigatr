@@ -14,7 +14,7 @@
  */
 import { shouldSend } from "./emailGuard.ts";
 import { renderEmail } from "./emailTemplate.ts";
-import { portalCodeEmail, portalEmailBrand, portalFromAddress, portalUrl } from "./portalEmail.ts";
+import { noReplyAddress, portalCodeEmail, portalEmailBrand, portalFromAddress, portalUrl } from "./portalEmail.ts";
 import { PUBLIC_FORM_ACTIONS, handlePublicFormAction, isPublicFormAction, type PublicFormAction } from "./portalPublicForm.ts";
 import { REFERRAL_ACTIONS, handleReferralAction, isReferralAction, type ReferralAction } from "./portalReferralApi.ts";
 
@@ -35,6 +35,8 @@ export interface PortalEmailMessage {
   subject: string;
   html: string;
   text: string;
+  /** FR-PORT-81: who a reply goes to; null sets no Reply-To header. */
+  replyTo: string | null;
 }
 
 export interface PortalEnv {
@@ -42,6 +44,8 @@ export interface PortalEnv {
   fromAddress: string;
   appEnv: string | null | undefined;
   emailAllowlist: string;
+  /** NO_REPLY_ADDRESS (FR-PORT-81). Unset or not a plain address: no-reply@send.getnavigatr.io. */
+  noReplyAddress?: string | null;
   /** Phase 2B-1: PUBLIC_FORM_SIGNING_SECRET. Unset means the public form answers not_available. */
   publicFormSigningSecret?: string | null;
   /** Phase 2B-1: TURNSTILE_SECRET_KEY. Unset means the Turnstile check always fails. */
@@ -371,6 +375,7 @@ async function requestCode(slug: string, email: string, ip: string | null, deps:
         subject: built.subject,
         html,
         text,
+        replyTo: noReplyAddress(deps.env.noReplyAddress),
       })
       .catch((e: unknown) => {
         console.error("[portal_api] sign-in code send failed:", e instanceof Error ? e.message : String(e));
