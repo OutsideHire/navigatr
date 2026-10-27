@@ -45,3 +45,130 @@ language sql stable security definer set search_path = public, extensions as $$
      and h.from_status is distinct from h.to_status
    order by h.created_at, h.to_status, h.id
 $$;
+
+-- 3. Every other partner-facing reader skips reassignment rows too ----------------------------
+-- A reassignment is internal. It must not make the partner's list or CSV look
+-- freshly active, add a line to the weekly summary, or restart the purge clock.
+create or replace function public.portal_list_referrals(p_org uuid, p_partner uuid, p_since timestamptz)
+returns table (
+  id uuid, ref text, company_name text, status referral_status,
+  submitted_at timestamptz, last_activity_at timestamptz
+)
+language sql stable security definer set search_path = public, extensions as $$
+  select r.id,
+         public._portal_referral_ref(r.id),
+         r.company_name,
+         r.status,
+         r.submitted_at,
+         greatest(r.submitted_at, coalesce(h.last_at, r.submitted_at)) as last_activity_at
+    from referrals r
+    left join lateral (
+      select max(x.created_at) as last_at
+        from referral_status_history x
+       where x.referral_id = r.id
+         and x.from_status is distinct from x.to_status
+    ) h on true
+   where r.org_id = p_org and r.partner_id = p_partner
+     and r.direction = 'inbound'
+     and (p_since is null or r.submitted_at >= p_since)
+   order by last_activity_at desc, r.id
+   limit 500
+$$;
+
+create or replace function public.portal_export_referrals(p_org uuid, p_partner uuid, p_since timestamptz)
+returns table (
+  ref text, company_name text, status referral_status, submitted_at timestamptz,
+  last_activity_at timestamptz, won_value_cents bigint, value_visible boolean
+)
+language sql stable security definer set search_path = public, extensions as $$
+  select public._portal_referral_ref(r.id),
+         r.company_name,
+         r.status,
+         r.submitted_at,
+         greatest(r.submitted_at, coalesce(h.last_at, r.submitted_at)),
+         case when r.status = 'won' and o.partner_value_visibility then d.value_cents::bigint end,
+         o.partner_value_visibility
+    from referrals r
+    join organizations o on o.id = r.org_id
+    left join deals d on d.id = r.deal_id
+    left join lateral (
+      select max(x.created_at) as last_at
+        from referral_status_history x
+       where x.referral_id = r.id
+         and x.from_status is distinct from x.to_status
+    ) h on true
+   where r.org_id = p_org and r.partner_id = p_partner
+     and r.direction = 'inbound'
+     and o.portal_enabled and not o.is_disabled
+     and (p_since is null or r.submitted_at >= p_since)
+   order by r.submitted_at desc, r.id
+   limit 5000
+$$;
+
+create or replace function public.portal_list_sent_referrals(p_org uuid, p_partner uuid, p_since timestamptz)
+returns table (
+  id uuid, ref text, company_name text, status referral_status,
+  sent_at timestamptz, last_activity_at timestamptz
+)
+language sql stable security definer set search_path = public, extensions as $$
+  select r.id,
+         public._portal_referral_ref(r.id),
+         r.company_name,
+         r.status,
+         r.shared_with_partner_at,
+         greatest(r.shared_with_partner_at, coalesce(h.last_at, r.shared_with_partner_at),
+                  coalesce(n.last_at, r.shared_with_partner_at)) as last_activity_at
+    from referrals r
+    join organizations o on o.id = r.org_id
+    left join lateral (
+      select max(x.created_at) as last_at from referral_status_history x
+       where x.referral_id = r.id and x.from_status is distinct from x.to_status
+    ) h on true
+    left join lateral (
+      select max(x.created_at) as last_at from referral_partner_notes x where x.referral_id = r.id
+    ) n on true
+   where r.org_id = p_org and r.partner_id = p_partner
+     and r.direction = 'outbound'
+     and r.shared_with_partner_at is not null and r.status <> 'withdrawn'
+     and o.portal_enabled and not o.is_disabled
+     and (p_since is null or r.shared_with_partner_at >= p_since)
+   order by last_activity_at desc, r.id
+   limit 500
+$$;
+
+create or replace function public._portal_digest_events(p_org uuid, p_partner uuid, p_from timestamptz, p_to timestamptz)
+returns table (referral_id uuid, company_name text, at timestamptz, kind text, rank integer, label text)
+language sql stable security definer set search_path = public, extensions as $$
+  select r.id, r.company_name, r.submitted_at, 'submitted'::text, 0, 'Received'::text
+    from referrals r
+   where r.org_id = p_org and r.partner_id = p_partner and r.direction = 'inbound'
+     and r.submitted_at >= p_from and r.submitted_at < p_to
+  union all
+  select r.id, r.company_name, h.created_at,
+         case h.to_status when 'accepted' then 'accepted'
+                          when 'working'  then 'in_progress'
+                          when 'won'      then 'closed_won'
+                          else 'not_moving_forward' end,
+         case h.to_status when 'accepted' then 1 when 'working' then 2 else 3 end,
+         public._portal_status_label(h.to_status)
+    from referral_status_history h
+    join referrals r on r.id = h.referral_id
+   where r.org_id = p_org and r.partner_id = p_partner and r.direction = 'inbound'
+     and h.to_status in ('accepted','working','won','lost','declined')
+     and h.from_status is distinct from h.to_status
+     and h.created_at >= p_from and h.created_at < p_to
+  union all
+  select r.id, r.company_name, r.shared_with_partner_at, 'sent_to_you'::text, 0, 'Sent to you'::text
+    from referrals r
+   where r.org_id = p_org and r.partner_id = p_partner and r.direction = 'outbound'
+     and r.shared_with_partner_at is not null and r.status <> 'withdrawn'
+     and r.shared_with_partner_at >= p_from and r.shared_with_partner_at < p_to
+$$;
+
+create or replace function public._referral_status_since(p_referral uuid, p_status referral_status)
+returns timestamptz language sql stable security definer set search_path = public, extensions as $$
+  select max(h.created_at)
+    from referral_status_history h
+   where h.referral_id = p_referral and h.to_status = p_status
+     and h.from_status is distinct from h.to_status
+$$;
