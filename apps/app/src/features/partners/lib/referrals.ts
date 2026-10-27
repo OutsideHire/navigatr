@@ -67,7 +67,7 @@ export interface MergeResult {
 export function mergeResultMessage(res: MergeResult): string {
   if (res.result !== "closed_duplicate") return "Merged into the existing deal";
   const who = res.creditedPartnerName?.trim() || "Another partner";
-  return `Merged. ${who} keeps credit, so this referral closed as a duplicate.`;
+  return `Closed as a duplicate. ${who} keeps credit for that deal.`;
 }
 
 export function isLiveLink(status: ReferralStatus): boolean {

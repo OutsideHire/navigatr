@@ -125,11 +125,11 @@ describe("mergeResultMessage", () => {
 
   it("names the partner who keeps credit when the rep can see them", () => {
     expect(mergeResultMessage({ result: "closed_duplicate", creditedPartnerName: "Jane CPA" }))
-      .toBe("Merged. Jane CPA keeps credit, so this referral closed as a duplicate.");
+      .toBe("Closed as a duplicate. Jane CPA keeps credit for that deal.");
   });
 
   it("falls back to Another partner when the name is missing or blank", () => {
-    const generic = "Merged. Another partner keeps credit, so this referral closed as a duplicate.";
+    const generic = "Closed as a duplicate. Another partner keeps credit for that deal.";
     expect(mergeResultMessage({ result: "closed_duplicate", creditedPartnerName: null })).toBe(generic);
     expect(mergeResultMessage({ result: "closed_duplicate", creditedPartnerName: "  " })).toBe(generic);
   });

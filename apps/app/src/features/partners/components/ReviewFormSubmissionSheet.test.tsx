@@ -534,7 +534,7 @@ describe("ReviewFormSubmissionSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "Merge into deal" }));
     expect(mergeReferral).toHaveBeenCalledWith({ referralId: "r-new", dealId: "d-1" });
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
-    expect(toastSuccess).toHaveBeenCalledWith("Merged. Another partner keeps credit, so this referral closed as a duplicate.");
+    expect(toastSuccess).toHaveBeenCalledWith("Closed as a duplicate. Another partner keeps credit for that deal.");
   });
 
   it("an unflagged attribution shows no first-referral warning", async () => {

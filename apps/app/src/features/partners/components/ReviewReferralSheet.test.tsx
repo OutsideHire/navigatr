@@ -303,7 +303,7 @@ describe("ReviewReferralSheet", () => {
     await userEvent.selectOptions(screen.getByLabelText("Pick a deal…"), "d-1");
     await userEvent.click(screen.getByRole("button", { name: "Merge into deal" }));
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
-    expect(toastSuccess).toHaveBeenCalledWith("Merged. Bob Broker keeps credit, so this referral closed as a duplicate.");
+    expect(toastSuccess).toHaveBeenCalledWith("Closed as a duplicate. Bob Broker keeps credit for that deal.");
     expect(toastSuccess).not.toHaveBeenCalledWith("Merged into the existing deal");
   });
 
