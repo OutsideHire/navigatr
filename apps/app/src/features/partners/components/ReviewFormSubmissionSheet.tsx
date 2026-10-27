@@ -18,8 +18,10 @@
  * a reason. A merge that only finds out on attributing stops at the reason
  * first, so the reviewer always sees the flag before anything is merged.
  * Company link (FR-PORT-51): crediting it to a partner sends it to that
- * partner's rep. When the referral lands with someone else, the sheet says who
- * and closes; it never goes on to accept, decline or merge for them.
+ * partner's rep, so with a partner picked the only action is "Send to the
+ * partner's rep". When the referral lands with someone else, the sheet says who
+ * and closes; it never accepts, declines or merges for them. When it comes back
+ * to the reviewer, the usual actions follow on the same referral.
  * Managers and administrators can reassign it before anyone says who sent it.
  * Same Radix Dialog shell and copy style as ReviewReferralSheet.
  */
@@ -174,6 +176,8 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
   const attributed = referralId !== null;
   const locked = attributed || createdPartnerId !== null;
   const viaPartner = attributed || who === "existing" || who === "new";
+  // A company-link submission with a partner picked is handed off first (FR-PORT-51).
+  const handOff = submission.linkType === "tenant" && !attributed && (who === "existing" || who === "new");
   const whoReady =
     attributed ||
     who === "none" ||
@@ -229,7 +233,9 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
     }
     const res = await attribute.mutateAsync({ submissionId: submission.id, partnerId: pid as string });
     const isDuplicate = Boolean(res.duplicateOfReferralId || res.duplicateOfDealId);
-    if (res.assignedUserId && res.assignedUserId !== viewerId) {
+    // Only when the viewer is known, so it never says "Sent to" the viewer themselves.
+    if (viewerId && res.assignedUserId && res.assignedUserId !== viewerId) {
+      // No referralId is kept: the sheet always closes on this result.
       return { referralId: res.referralId, flagged: isDuplicate, routedTo: res.assignedUserName ?? "their rep" };
     }
     if (live()) {
@@ -243,6 +249,13 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
   };
 
   const sentOn = (live: () => boolean, name: string) => done(live, `Sent to ${name}. They will review it.`);
+
+  // Company link: attribute only. Routed elsewhere, say who and close; back to
+  // the reviewer, referralId is set and the usual actions show.
+  const onSendOn = () => run(async (live) => {
+    const ref = await ensureReferral(live);
+    if (ref.routedTo) sentOn(live, ref.routedTo);
+  });
 
   const onAccept = (reasonText?: string) => run(async (live) => {
     if (!viaPartner) {
@@ -436,7 +449,23 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
             )}
           </fieldset>
 
-          {mode === "main" && (
+          {mode === "main" && handOff && (
+            <div className="flex flex-col gap-2 pt-1">
+              <p className="text-caption text-text-subtle">
+                Crediting a company-link referral sends it to the partner's rep to review.
+              </p>
+              <Button variant="primary" size="lg" loading={busy} disabled={!whoReady || busy} onClick={onSendOn}>
+                Send to the partner's rep
+              </Button>
+              {canReassign && (
+                <Button variant="tertiary" size="lg" disabled={busy} onClick={() => setMode("reassign")}>
+                  Reassign
+                </Button>
+              )}
+            </div>
+          )}
+
+          {mode === "main" && !handOff && (
             <div className="flex flex-col gap-2 pt-1">
               {!whoReady && <p className="text-caption text-text-subtle">Say who sent this to continue.</p>}
               <Button

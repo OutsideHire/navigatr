@@ -36,7 +36,8 @@ begin
   if not found or not public.can_see_partner(p_partner_id) then
     raise exception 'partner_not_visible' using errcode = '42501';
   end if;
-  -- Company link: the partner's rep reviews it (FR-PORT-51).
+  -- Company link: the partner's rep reviews it (FR-PORT-51). A reassigned
+  -- company-link submission still routes by link_type, on purpose.
   if s.link_type = 'tenant' then
     v_assignee := coalesce(public.referral_route_assignee(p_partner_id), auth.uid());
   end if;

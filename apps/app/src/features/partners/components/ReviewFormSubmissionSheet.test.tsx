@@ -54,8 +54,9 @@ const profileState: { data: { role: string; role_level: string } | null } = {
 vi.mock("@/features/auth/useProfile", () => ({ useProfile: () => profileState }));
 const assigneesState: { data: Array<{ id: string; name: string }> | undefined } = { data: undefined };
 vi.mock("../hooks/useReassignReferral", () => ({ useReferralAssignees: () => assigneesState }));
+const authState: { user: { id: string } | null } = { user: { id: "user-1" } };
 vi.mock("@/stores/auth", () => ({
-  useAuth: (selector: (s: { user: { id: string } | null }) => unknown) => selector({ user: { id: "user-1" } }),
+  useAuth: (selector: (s: { user: { id: string } | null }) => unknown) => selector(authState),
 }));
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
@@ -105,6 +106,7 @@ beforeEach(() => {
   for (const f of [attribute, acceptSubmission, declineSubmission, mergeSubmission, reassignSubmission,
     acceptReferral, declineReferral, mergeReferral, createPartner, toastSuccess, toastError]) f.mockReset();
   adviceState.data = undefined;
+  authState.user = { id: "user-1" };
   customerState.data = null; customerArgs.length = 0;
   profileState.data = { role: "rep", role_level: "sales_professional" };
   assigneesState.data = [{ id: "user-1", name: "Rita Rep" }, { id: "u-2", name: "Rob Rep" }];
@@ -380,50 +382,85 @@ describe("ReviewFormSubmissionSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "No partner" }));
     expect(screen.getByRole("button", { name: "Accept" })).toBeEnabled();
   });
-  it("company link: routed to the partner's rep, Accept stops after attributing and says who has it (FR-PORT-51)", async () => {
+  const tenant: QueueSubmission = { ...submission, linkType: "tenant", assignedUserId: null };
+
+  it("company link with a partner: one action that sends it to the partner's rep (FR-PORT-51)", async () => {
     attribute.mockResolvedValueOnce(ROUTED);
-    const onOpenChange = renderSheet({ ...submission, linkType: "tenant", assignedUserId: null });
+    const onOpenChange = renderSheet(tenant);
     await pickExistingPartner();
-    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(screen.getByText("Crediting a company-link referral sends it to the partner's rep to review.")).toBeInTheDocument();
+    for (const name of ["Accept", "Decline", "Merge"]) expect(screen.queryByRole("button", { name })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Send to the partner's rep" }));
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(toastSuccess).toHaveBeenCalledWith("Sent to Kim Rep. They will review it.");
+    expect(attribute).toHaveBeenCalledWith({ submissionId: "s-1", partnerId: "p-1" });
     expect(attribute).toHaveBeenCalledTimes(1);
     expect(acceptReferral).not.toHaveBeenCalled();
-  });
-
-  it("company link: a routed Decline never declines, even when flagged (FR-PORT-51)", async () => {
-    attribute.mockResolvedValueOnce({ ...ROUTED, duplicateOfReferralId: "r-9" });
-    const onOpenChange = renderSheet({ ...submission, linkType: "tenant", assignedUserId: null });
-    await pickExistingPartner();
-    await userEvent.click(screen.getByRole("button", { name: "Decline" }));
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Pick a reason…" }), "outside_icp");
-    await userEvent.click(screen.getByRole("button", { name: "Decline referral" }));
-    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
-    expect(toastSuccess).toHaveBeenCalledWith("Sent to Kim Rep. They will review it.");
     expect(declineReferral).not.toHaveBeenCalled();
-    expect(screen.queryByPlaceholderText("Why accept it anyway?")).toBeNull();
-  });
-
-  it("company link: a routed Merge stops before the reason step (FR-PORT-51)", async () => {
-    attribute.mockResolvedValueOnce({ ...ROUTED, duplicateOfDealId: "d-1" });
-    const onOpenChange = renderSheet({ ...submission, linkType: "tenant", assignedUserId: null });
-    await pickExistingPartner();
-    await userEvent.click(screen.getByRole("button", { name: "Merge" }));
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Pick a deal…" }), "d-1");
-    await userEvent.click(screen.getByRole("button", { name: "Merge into deal" }));
-    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
-    expect(toastSuccess).toHaveBeenCalledWith("Sent to Kim Rep. They will review it.");
     expect(mergeReferral).not.toHaveBeenCalled();
-    expect(screen.queryByPlaceholderText("Why merge it anyway?")).toBeNull();
   });
 
-  it("company link: a routed referral with no name still says it was sent on", async () => {
+  it("company link with a new partner: the same single action, and a routed referral with no name still says it was sent on", async () => {
     attribute.mockResolvedValueOnce({ ...ROUTED, assignedUserName: null });
-    renderSheet({ ...submission, linkType: "tenant", assignedUserId: null });
-    await pickExistingPartner();
-    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    renderSheet(tenant);
+    await userEvent.click(screen.getByRole("button", { name: "New partner" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Partner name" }), "Pat");
+    expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Send to the partner's rep" }));
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("Sent to their rep. They will review it."));
+    expect(attribute).toHaveBeenCalledWith({ submissionId: "s-1", partnerId: "p-new" });
+  });
+
+  it("company link: when it comes back to the reviewer, the usual actions follow on the same referral", async () => {
+    const onOpenChange = renderSheet(tenant);
+    await pickExistingPartner();
+    await userEvent.click(screen.getByRole("button", { name: "Send to the partner's rep" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Accept" }));
+    expect(onOpenChange).toHaveBeenCalledTimes(1);
+    expect(acceptReferral).toHaveBeenCalledWith("r-new");
+    expect(attribute).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Send to the partner's rep" })).toBeNull();
+    expect(toastSuccess).toHaveBeenCalledWith("Accepted. Deal created.");
+  });
+
+  it("company link: a flagged referral that comes back to the reviewer keeps the duplicate flag and asks for a reason", async () => {
+    attribute.mockResolvedValueOnce(FLAGGED);
+    renderSheet(tenant);
+    await pickExistingPartner();
+    await userEvent.click(screen.getByRole("button", { name: "Send to the partner's rep" }));
+    expect(await screen.findByText(/Possible duplicate of an earlier referral/)).toBeInTheDocument();
+    expect(toastSuccess).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(screen.getByRole("button", { name: "Accept anyway" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    await userEvent.click(screen.getByRole("button", { name: "Decline" }));
+    expect(screen.getByRole("combobox", { name: "Pick a reason…" })).toHaveValue("duplicate");
     expect(acceptReferral).not.toHaveBeenCalled();
+    expect(attribute).toHaveBeenCalledTimes(1);
+  });
+
+  it("company link: before the viewer is known, it never says it was sent to the viewer themselves", async () => {
+    authState.user = null;
+    renderSheet(tenant);
+    await pickExistingPartner();
+    await userEvent.click(screen.getByRole("button", { name: "Send to the partner's rep" }));
+    expect(await screen.findByRole("button", { name: "Accept" })).toBeInTheDocument();
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it("company link with no partner keeps the usual actions (an administrator can decline spam)", async () => {
+    renderSheet(tenant);
+    await userEvent.click(screen.getByRole("button", { name: "No partner" }));
+    expect(screen.queryByRole("button", { name: "Send to the partner's rep" })).toBeNull();
+    for (const name of ["Accept", "Decline", "Merge"]) expect(screen.getByRole("button", { name })).toBeEnabled();
+  });
+
+  it("a personal link with a partner keeps the usual actions", async () => {
+    renderSheet();
+    await pickExistingPartner();
+    expect(screen.queryByRole("button", { name: "Send to the partner's rep" })).toBeNull();
+    expect(screen.queryByText(/Crediting a company-link referral/)).toBeNull();
+    for (const name of ["Accept", "Decline", "Merge"]) expect(screen.getByRole("button", { name })).toBeEnabled();
   });
 
   it("first referral wins: a flagged attribution asks for a reason before accepting (FR-PORT-47)", async () => {
