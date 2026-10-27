@@ -77,7 +77,7 @@ describe("useAcceptReferral", () => {
     rpcMock.mockResolvedValueOnce({ data: null, error: { message: "override_reason_required" } });
     const { wrapper } = setup();
     const { result } = renderHook(() => useAcceptReferral(), { wrapper });
-    await expect(result.current.mutateAsync("r-1")).rejects.toThrow("Add a short reason to accept a possible duplicate.");
+    await expect(result.current.mutateAsync("r-1")).rejects.toThrow("Add a short reason to go ahead with a possible duplicate.");
   });
 });
 
@@ -98,6 +98,26 @@ describe("useMergeReferral", () => {
     const { result } = renderHook(() => useMergeReferral(), { wrapper });
     await result.current.mutateAsync({ referralId: "r-1", dealId: "d-7" });
     expect(rpcMock).toHaveBeenCalledWith("merge_referral", { p_referral_id: "r-1", p_deal_id: "d-7" });
+  });
+
+  it("merges a flagged referral with a written reason through merge_referral_override", async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useMergeReferral(), { wrapper });
+    await result.current.mutateAsync({ referralId: "r-1", dealId: "d-7", overrideReason: "  Same owner " });
+    expect(rpcMock).toHaveBeenCalledWith("merge_referral_override", {
+      p_referral_id: "r-1",
+      p_deal_id: "d-7",
+      p_reason: "Same owner",
+    });
+  });
+
+  it("explains a missing merge reason", async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: "override_reason_required" } });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useMergeReferral(), { wrapper });
+    await expect(result.current.mutateAsync({ referralId: "r-1", dealId: "d-7" }))
+      .rejects.toThrow("Add a short reason to go ahead with a possible duplicate.");
   });
 
   it("maps already_linked", async () => {

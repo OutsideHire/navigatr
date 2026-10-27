@@ -393,6 +393,29 @@ describe("ReviewFormSubmissionSheet", () => {
     expect(acceptReferral).not.toHaveBeenCalled();
   });
 
+  it("first referral wins: merging a flagged attribution asks for a reason before merging (FR-PORT-47)", async () => {
+    attribute.mockResolvedValueOnce(FLAGGED);
+    mergeReferral.mockResolvedValueOnce(undefined);
+    const onOpenChange = renderSheet();
+    await pickExistingPartner();
+    await userEvent.click(screen.getByRole("button", { name: "Merge" }));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Pick a deal…" }), "d-1");
+    expect(screen.queryByPlaceholderText("Why merge it anyway?")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Merge into deal" }));
+    // The flag shows first; nothing is merged until the reviewer writes a reason.
+    const box = await screen.findByPlaceholderText("Why merge it anyway?");
+    expect(screen.getByText(/Possible duplicate of an earlier referral/)).toBeInTheDocument();
+    expect(mergeReferral).not.toHaveBeenCalled();
+    const go = screen.getByRole("button", { name: "Merge into deal" });
+    expect(go).toBeDisabled();
+    await userEvent.type(box, "  Same owner  ");
+    await userEvent.click(go);
+    expect(mergeReferral).toHaveBeenCalledWith({ referralId: "r-new", dealId: "d-1", overrideReason: "Same owner" });
+    expect(attribute).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(toastSuccess).toHaveBeenCalledWith("Merged into the existing deal");
+  });
+
   it("an unflagged attribution shows no first-referral warning", async () => {
     renderSheet();
     await pickExistingPartner();

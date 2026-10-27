@@ -186,6 +186,7 @@ describe("ReviewReferralSheet", () => {
     expect(merge).toHaveBeenCalledWith({ referralId: "r-1", dealId: "d-1" });
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(toastSuccess).toHaveBeenCalledWith("Merged into the existing deal");
+    expect(screen.queryByPlaceholderText("Why merge it anyway?")).toBeNull();
   });
 
   it("says when a referral came through the partner portal", () => {
@@ -241,13 +242,21 @@ describe("ReviewReferralSheet", () => {
     expect(screen.queryByText("someday")).toBeNull();
   });
 
-  it("still lets the rep merge a flagged referral", async () => {
+  it("requires a reason to merge a flagged referral", async () => {
     merge.mockResolvedValueOnce(undefined);
-    render(<ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} />);
+    const onOpenChange = vi.fn();
+    render(<ReviewReferralSheet referral={flagged} open onOpenChange={onOpenChange} />);
     await userEvent.click(screen.getByRole("button", { name: "Merge" }));
     await userEvent.selectOptions(screen.getByLabelText("Pick a deal…"), "d-1");
-    await userEvent.click(screen.getByRole("button", { name: "Merge into deal" }));
-    expect(merge).toHaveBeenCalledWith({ referralId: "r-1", dealId: "d-1" });
+    const go = screen.getByRole("button", { name: "Merge into deal" });
+    expect(go).toBeDisabled();
+    expect(screen.getByText(/another partner already has that deal, they keep the credit/)).toBeInTheDocument();
+    const box = screen.getByPlaceholderText("Why merge it anyway?");
+    expect(box).toHaveAttribute("maxLength", "500");
+    await userEvent.type(box, "  Same owner  ");
+    await userEvent.click(go);
+    expect(merge).toHaveBeenCalledWith({ referralId: "r-1", dealId: "d-1", overrideReason: "Same owner" });
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 
   it("switches to Merge when the override finds the business already in the pipeline", async () => {
@@ -258,6 +267,9 @@ describe("ReviewReferralSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "Accept anyway" }));
     expect(await screen.findByRole("button", { name: "Merge into deal" })).toBeInTheDocument();
     expect(screen.getByLabelText("Pick a deal…")).toHaveValue("d-1");
+    // The reason already written carries over, so the merge can go ahead.
+    expect(screen.getByPlaceholderText("Why merge it anyway?")).toHaveValue("Different location");
+    expect(screen.getByRole("button", { name: "Merge into deal" })).toBeEnabled();
   });
 
   it("lists only open deals sorted by company name", async () => {

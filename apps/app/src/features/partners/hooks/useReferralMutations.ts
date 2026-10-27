@@ -105,14 +105,31 @@ export function useDeclineReferral() {
   });
 }
 
+/**
+ * Merge into a deal the rep can see. A flagged probable duplicate needs the
+ * rep's written reason (FR-PORT-47); when the deal already credits another
+ * partner, that partner keeps it and this referral closes as a duplicate.
+ */
+export interface MergeInput {
+  referralId: string;
+  dealId: string;
+  overrideReason?: string;
+}
+
 export function useMergeReferral() {
   const refresh = useRefresh(true);
   return useMutation({
-    mutationFn: async (input: { referralId: string; dealId: string }): Promise<void> => {
-      const { error } = await supabase.rpc("merge_referral", {
-        p_referral_id: input.referralId,
-        p_deal_id: input.dealId,
-      });
+    mutationFn: async (input: MergeInput): Promise<void> => {
+      const { error } = input.overrideReason
+        ? await supabase.rpc("merge_referral_override", {
+            p_referral_id: input.referralId,
+            p_deal_id: input.dealId,
+            p_reason: input.overrideReason.trim(),
+          })
+        : await supabase.rpc("merge_referral", {
+            p_referral_id: input.referralId,
+            p_deal_id: input.dealId,
+          });
       if (error) throw new Error(referralErrorMessage(error, "Couldn't merge the referral"));
     },
     onSuccess: refresh,

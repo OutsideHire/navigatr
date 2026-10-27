@@ -13,7 +13,9 @@
  * Advisory lines (possible duplicate, looks like a chain) never block.
  * First referral wins (FR-PORT-46, 47): when attributing finds an earlier open
  * referral or active deal, the referral is flagged like a partner's own portal
- * referral. Decline (duplicate) is preselected and accepting needs a reason.
+ * referral. Decline (duplicate) is preselected, and accepting or merging needs
+ * a reason. A merge that only finds out on attributing stops at the reason
+ * first, so the reviewer always sees the flag before anything is merged.
  * Managers and administrators can reassign it before anyone says who sent it.
  * Same Radix Dialog shell and copy style as ReviewReferralSheet.
  */
@@ -260,8 +262,16 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
   const onMerge = () => run(async (live) => {
     if (!mergeDealId) return;
     if (viaPartner) {
-      const { referralId: rid } = await ensureReferral(live);
-      await mergeReferral.mutateAsync({ referralId: rid, dealId: mergeDealId });
+      const ref = await ensureReferral(live);
+      const reasonText = overrideReason.trim();
+      // A probable duplicate is merged only with a written reason. The merge
+      // mode shows the reason field once flagged, so the reviewer sees it first.
+      if (ref.flagged && !reasonText) return;
+      await mergeReferral.mutateAsync(
+        ref.flagged
+          ? { referralId: ref.referralId, dealId: mergeDealId, overrideReason: reasonText }
+          : { referralId: ref.referralId, dealId: mergeDealId },
+      );
     } else {
       await mergeSubmission.mutateAsync({ submissionId: submission.id, dealId: mergeDealId });
     }
@@ -473,9 +483,30 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
                 <span className="text-caption font-medium text-text-muted">Existing deal</span>
                 <Select value={mergeDealId} onValueChange={setMergeDealId} placeholder="Pick a deal…" options={openDeals} />
               </label>
+              {flagged && (
+                <>
+                  <p className="text-body-sm text-text-muted">
+                    Say why you are merging a possible duplicate. The reason is saved in the referral's history.
+                    If another partner already has that deal, they keep the credit and this referral closes as a duplicate.
+                  </p>
+                  <NotesFieldWithMic
+                    value={overrideReason}
+                    onChange={setOverrideReason}
+                    placeholder="Why merge it anyway?"
+                    maxLength={500}
+                  />
+                </>
+              )}
               <div className="flex gap-2">
                 <Button variant="secondary" size="lg" className="flex-1" disabled={busy} onClick={() => setMode("main")}>Back</Button>
-                <Button variant="primary" size="lg" className="flex-1" disabled={!mergeDealId || !whoReady || busy} loading={busy} onClick={onMerge}>
+                <Button
+                  variant="primary"
+                  size="lg"
+                  className="flex-1"
+                  disabled={!mergeDealId || !whoReady || (flagged && !overrideReason.trim()) || busy}
+                  loading={busy}
+                  onClick={onMerge}
+                >
                   Merge into deal
                 </Button>
               </div>

@@ -8,8 +8,10 @@
  * Phase 1B: a referral sent through the partner portal says so, and one the
  * portal flagged as a probable duplicate arrives with Decline (duplicate)
  * preselected. Accepting it anyway needs a short written reason, which lands in
- * the referral's history (FR-PORT-47). Merge stays available. The urgency the
- * partner picked shows with the details.
+ * the referral's history (FR-PORT-47). Merging it needs a reason too; when the
+ * deal already credits another partner, that partner keeps the credit and this
+ * referral closes as a duplicate. The urgency the partner picked shows with the
+ * details.
  *
  * Phase 2A: a business that looks like a chain gets an advisory line
  * (FR-PORT-58); it never blocks anything. Managers and administrators can
@@ -147,7 +149,13 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
 
   const onMerge = () => run(async () => {
     if (!mergeDealId) return;
-    await merge.mutateAsync({ referralId: referral.id, dealId: mergeDealId });
+    const reasonText = overrideReason.trim();
+    if (flagged && !reasonText) return;
+    await merge.mutateAsync(
+      flagged
+        ? { referralId: referral.id, dealId: mergeDealId, overrideReason: reasonText }
+        : { referralId: referral.id, dealId: mergeDealId },
+    );
     toast.success("Merged into the existing deal");
     onOpenChange(false);
   });
@@ -312,12 +320,26 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
                   options={openDeals}
                 />
               </label>
+              {flagged && (
+                <>
+                  <p className="text-body-sm text-text-muted">
+                    Say why you are merging a possible duplicate. The reason is saved in the referral's history.
+                    If another partner already has that deal, they keep the credit and this referral closes as a duplicate.
+                  </p>
+                  <NotesFieldWithMic
+                    value={overrideReason}
+                    onChange={setOverrideReason}
+                    placeholder="Why merge it anyway?"
+                    maxLength={500}
+                  />
+                </>
+              )}
               <div className="flex gap-2">
                 <Button variant="secondary" className="flex-1" onClick={() => setMode("main")}>Back</Button>
                 <Button
                   variant="primary"
                   className="flex-1"
-                  disabled={!mergeDealId || merge.isPending}
+                  disabled={!mergeDealId || (flagged && !overrideReason.trim()) || merge.isPending}
                   loading={merge.isPending}
                   onClick={onMerge}
                 >
