@@ -76,7 +76,8 @@ begin
     if new.status = 'declined' and v_msg is not null then
       update portal_email_outbox
          set payload = payload || jsonb_build_object('message', v_msg)
-       where dedupe_key = v_key and referral_id = new.id and kind = v_kind;
+       where dedupe_key = v_key and referral_id = new.id and kind = v_kind
+         and sent_at is null and dropped_at is null and failed_at is null;
     end if;
   end if;
   exception when others then

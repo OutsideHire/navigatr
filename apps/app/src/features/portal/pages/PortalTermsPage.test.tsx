@@ -14,15 +14,16 @@ vi.mock("../lib/portalApi", async (importOriginal) => {
 });
 
 import { PortalTermsPage } from "./PortalTermsPage";
-import { PortalApiError } from "../lib/portalApi";
+import { PortalApiError, portalDataKey } from "../lib/portalApi";
 
 const BRAND = { orgName: "Acme ISO", productName: "navigatr", primaryColor: null, logoUrl: null, darkLogoUrl: null };
 const TERMS = { termsText: "Terms two.", termsVersion: 2, termsCurrent: false };
 
-function renderPage() {
+function renderPage(prime?: (client: QueryClient) => void) {
   const onAccepted = vi.fn();
   const onExpired = vi.fn();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  prime?.(client);
   render(
     <QueryClientProvider client={client}>
       <PortalTermsPage slug="acme" token="sess" brand={BRAND} onAccepted={onAccepted} onExpired={onExpired} />
@@ -54,6 +55,28 @@ describe("PortalTermsPage", () => {
 
     expect(api.acceptTerms).toHaveBeenCalledWith("acme", "sess", 2);
     expect(onAccepted).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops spinning after a successful accept even if the page stays up (the me() re-check failed)", async () => {
+    const user = userEvent.setup();
+    api.getTerms.mockResolvedValue(TERMS);
+    api.acceptTerms.mockResolvedValue(undefined);
+    const { onAccepted } = renderPage();
+
+    await user.click(await screen.findByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(screen.getByRole("button", { name: "Accept and continue" }));
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(screen.getByRole("button", { name: "Accept and continue" })).toBeEnabled());
+  });
+
+  it("does not trust a cached 'current' answer from an earlier visit when the terms changed again", async () => {
+    api.getTerms.mockResolvedValue(TERMS);
+    const { onAccepted } = renderPage((client) =>
+      client.setQueryData(portalDataKey("acme", "sess", "terms"), { ...TERMS, termsVersion: 1, termsCurrent: true }),
+    );
+    expect(await screen.findByText("Terms two.")).toBeInTheDocument();
+    expect(api.getTerms).toHaveBeenCalledTimes(1);
+    expect(onAccepted).not.toHaveBeenCalled();
   });
 
   it("reloads the terms and asks again when they changed while the partner was reading", async () => {

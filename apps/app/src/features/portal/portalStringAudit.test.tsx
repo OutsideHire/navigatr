@@ -209,7 +209,7 @@ describe("portal_api responses", () => {
           };
         case "portal_dashboard_stats":
           return {
-            data: [{ submitted: 7, active: 3, closed_won: 1, not_moving_forward: 2, won_value_cents: 123456, value_visible: false, ...hostile }],
+            data: [{ submitted: 7, active: 3, closed_won: 1, not_moving_forward: 2, won_value_cents: 123456, value_visible: false, won_sent: 1, ...hostile }],
             error: null,
           };
         case "portal_export_referrals":
@@ -330,6 +330,17 @@ describe("portal_api responses", () => {
     const dash = await call("dashboard", {}, "submitted");
     auditJson(dash);
     expect(JSON.stringify(dash)).not.toContain("123456");
+    // won_sent only feeds the conversion rate; it never reaches the partner.
+    expect(JSON.stringify(dash)).not.toMatch(/won_?sent/i);
+    expect(JSON.stringify(list)).not.toMatch(/won_?sent/i);
+  });
+
+  it.each(INTERNAL_STATUSES)("the closed value is attached only when the referral is Closed Won (%s)", async (status) => {
+    const body = await call("get_referral", { referralId: "3f9a21c0-1111-4222-8333-444455556666" }, status);
+    auditJson(body);
+    const referral = body.referral as { label: string; closedWonValueCents: number | null };
+    if (referral.label === "Closed Won") expect(referral.closedWonValueCents).toBe(700000);
+    else expect(referral.closedWonValueCents).toBeNull();
   });
 
   it.each(INTERNAL_STATUSES)("never passes erased details through for a purged referral that is %s", async (status) => {
@@ -678,6 +689,7 @@ describe("rendered portal pages: UI copy audit", () => {
       label,
       submittedAt: "2026-10-01T12:00:00Z",
       canWithdraw: label === "Received",
+      closedWonValueCents: label === "Closed Won" ? 700000 : null,
       rep: label === "Received" ? null : { name: "Rita Rep", email: "rita@acme.example" },
       history: HISTORY,
       updates: [
@@ -687,6 +699,9 @@ describe("rendered portal pages: UI copy audit", () => {
     renderAt("/p/acme/r/r-1");
     await screen.findByRole("heading", { name: "Fresh Bakery" });
     expectCleanScreen();
+    // The closed value shows on the referral's own page only for Closed Won.
+    if (label === "Closed Won") expect(screen.getByText("Closed value: $7,000")).toBeInTheDocument();
+    else expect(screen.queryByText(/Closed value/)).not.toBeInTheDocument();
   });
 
   it("withdraw confirmation and the too-late message", async () => {
@@ -1074,6 +1089,42 @@ describe("partner emails: copy audit", () => {
       ]) {
         expect(buildPortalNotifyEmail(kind, { ...payload(label), ...extra }, CTX)).toBeNull();
       }
+    }
+  });
+
+  it("Not Moving Forward with the rep's message: refuses a payload that also carries a decline reason", () => {
+    const withMessage = { ...payload("Not Moving Forward"), message: "Thanks, we are not a fit right now." };
+    expect(buildPortalNotifyEmail("partner_not_moving_forward", withMessage, CTX)).not.toBeNull();
+    for (const extra of [
+      { decline_reason: "outside_icp" },
+      { decline_reason: `${SECRET} internal reason` },
+      { declineNote: SECRET },
+    ]) {
+      expect(buildPortalNotifyEmail("partner_not_moving_forward", { ...withMessage, ...extra }, CTX)).toBeNull();
+    }
+  });
+
+  it("Not Moving Forward with only the rep's message: shown, and no internal word anywhere", () => {
+    const built = buildPortalNotifyEmail(
+      "partner_not_moving_forward",
+      { ...payload("Not Moving Forward"), message: "Thanks, we are not a fit right now." },
+      CTX,
+    );
+    expect(built).not.toBeNull();
+    const e = built!;
+    const { html, text } = renderEmail({ ...e, brand: { name: "Acme ISO", logoUrl: null, primaryColor: null } });
+    expect(text).toContain("Thanks, we are not a fit right now.");
+    expect(html).toContain("Thanks, we are not a fit right now.");
+    const visibleHtml = html
+      .replace(/<style[\s\S]*?<\/style>/g, "")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/https?:\/\/\S+/g, "")
+      .replace(TEMPLATE_FALLBACK, "");
+    const visibleText = text.replace(/https?:\/\/\S+/g, "").replace(TEMPLATE_FALLBACK, "");
+    for (const [name, s] of [["subject", e.subject], ["text", visibleText], ["html", visibleHtml]] as const) {
+      expect(s.match(TOKEN_RE), `status or stage token in ${name}`).toBeNull();
+      expect(s.match(FORBIDDEN_WORDS), `forbidden word in ${name}`).toBeNull();
+      expect(s.match(REASON_RE), `reason code in ${name}`).toBeNull();
     }
   });
 

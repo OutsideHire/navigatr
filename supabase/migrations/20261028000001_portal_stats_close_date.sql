@@ -10,6 +10,7 @@
 -- closed_won_at is set once when a deal is won and is not cleared on reopen,
 -- so a won count also requires the referral itself to be won. A null p_since
 -- is "all time" and counts every won referral.
+-- A won referral whose deal has no close date counts only in the all-time totals.
 -- Purged referrals stay counted, exactly as in 20261016000003.
 --
 -- The return type changes, so the function is dropped and created again.

@@ -43,11 +43,15 @@ export function PortalTermsPage({
     queryKey: portalDataKey(slug, token, "terms"),
     queryFn: () => portalApi.getTerms(slug, token),
     retry: false,
+    // Always ask the server on mount: terms can change twice in one session, and
+    // a cached "current" answer from the earlier visit must not count as current.
+    staleTime: 0,
+    gcTime: 0,
   });
 
   const expired = (terms.isSuccess && !terms.data) || isPortalUnauthorized(terms.error);
   // Already current, for example accepted on another device: nothing to ask.
-  const alreadyCurrent = terms.isSuccess && terms.data?.termsCurrent === true;
+  const alreadyCurrent = terms.isSuccess && !terms.isFetching && terms.data?.termsCurrent === true;
   React.useEffect(() => {
     if (expired) onExpired();
   }, [expired, onExpired]);
@@ -88,6 +92,8 @@ export function PortalTermsPage({
         setNotice(portalReachMessage(brand.orgName));
         setCanRetryAccept(isPortalTransientError(err));
       }
+    } finally {
+      // The follow-up me() re-check can fail and leave this page showing.
       setBusy(false);
     }
   };
