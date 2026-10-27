@@ -20,8 +20,9 @@
  * Company link (FR-PORT-51): crediting it to a partner sends it to that
  * partner's rep, so with a partner picked the only action is "Send to the
  * partner's rep". When the referral lands with someone else, the sheet says who
- * and closes; it never accepts, declines or merges for them. When it comes back
- * to the reviewer, the usual actions follow on the same referral.
+ * and closes; it never accepts, declines or merges for them (nor before the
+ * viewer is known, since it may be someone else's). When it comes back to the
+ * reviewer, the sheet says so and the usual actions follow on the same referral.
  * Managers and administrators can reassign it before anyone says who sent it.
  * Same Radix Dialog shell and copy style as ReviewReferralSheet.
  */
@@ -125,6 +126,10 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
   const [mergeDealId, setMergeDealId] = React.useState("");
   const [assigneeId, setAssigneeId] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  // The company-link hand-off came back to the reviewer (FR-PORT-51).
+  const [handedBack, setHandedBack] = React.useState(false);
+  // A merge stopped because attributing found a probable duplicate.
+  const [mergeNeedsReason, setMergeNeedsReason] = React.useState(false);
 
   const submissionId = submission?.id;
   React.useEffect(() => {
@@ -142,6 +147,8 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
     setMergeDealId("");
     setAssigneeId("");
     setBusy(false);
+    setHandedBack(false);
+    setMergeNeedsReason(false);
     sessionRef.current += 1;
     // Keyed on the submission id so a refetch with a new object does not reset the sheet.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -233,8 +240,9 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
     }
     const res = await attribute.mutateAsync({ submissionId: submission.id, partnerId: pid as string });
     const isDuplicate = Boolean(res.duplicateOfReferralId || res.duplicateOfDealId);
-    // Only when the viewer is known, so it never says "Sent to" the viewer themselves.
-    if (viewerId && res.assignedUserId && res.assignedUserId !== viewerId) {
+    // Routed when it went to someone else. Before the viewer is known an
+    // assigned referral may be someone else's, so it is treated as sent on too.
+    if (res.assignedUserId && res.assignedUserId !== viewerId) {
       // No referralId is kept: the sheet always closes on this result.
       return { referralId: res.referralId, flagged: isDuplicate, routedTo: res.assignedUserName ?? "their rep" };
     }
@@ -255,6 +263,7 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
   const onSendOn = () => run(async (live) => {
     const ref = await ensureReferral(live);
     if (ref.routedTo) sentOn(live, ref.routedTo);
+    else if (live()) setHandedBack(true);
   });
 
   const onAccept = (reasonText?: string) => run(async (live) => {
@@ -303,7 +312,10 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
       const reasonText = overrideReason.trim();
       // A probable duplicate is merged only with a written reason. The merge
       // mode shows the reason field once flagged, so the reviewer sees it first.
-      if (ref.flagged && !reasonText) return;
+      if (ref.flagged && !reasonText) {
+        if (live()) setMergeNeedsReason(true);
+        return;
+      }
       const res = await mergeReferral.mutateAsync(
         ref.flagged
           ? { referralId: ref.referralId, dealId: mergeDealId, overrideReason: reasonText }
@@ -467,6 +479,7 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
 
           {mode === "main" && !handOff && (
             <div className="flex flex-col gap-2 pt-1">
+              {handedBack && <p className="text-body-sm text-text-muted">This one is yours to review.</p>}
               {!whoReady && <p className="text-caption text-text-subtle">Say who sent this to continue.</p>}
               <Button
                 variant="primary"
@@ -543,12 +556,17 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
                 <span className="text-caption font-medium text-text-muted">Existing deal</span>
                 <Select value={mergeDealId} onValueChange={setMergeDealId} placeholder="Pick a deal…" options={openDeals} />
               </label>
+              {viaPartner && (
+                <p className="text-body-sm text-text-muted">
+                  {flagged && "Say why you are merging a possible duplicate. The reason is saved in the referral's history. "}
+                  If another partner already has that deal, they keep the credit and this referral closes as a duplicate.
+                </p>
+              )}
               {flagged && (
                 <>
-                  <p className="text-body-sm text-text-muted">
-                    Say why you are merging a possible duplicate. The reason is saved in the referral's history.
-                    If another partner already has that deal, they keep the credit and this referral closes as a duplicate.
-                  </p>
+                  {mergeNeedsReason && !overrideReason.trim() && (
+                    <p className="text-body-sm text-status-warning">Possible duplicate. Add a reason to merge.</p>
+                  )}
                   <NotesFieldWithMic
                     value={overrideReason}
                     onChange={setOverrideReason}

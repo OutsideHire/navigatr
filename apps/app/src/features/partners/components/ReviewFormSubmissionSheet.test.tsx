@@ -264,6 +264,8 @@ describe("ReviewFormSubmissionSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "Merge" }));
     const deals = screen.getByRole("combobox", { name: "Pick a deal…" });
     expect(within(deals).queryByText("Closed Co")).toBeNull();
+    // No partner, so no partner credit to keep.
+    expect(screen.queryByText(/another partner already has that deal/)).toBeNull();
     await userEvent.selectOptions(deals, "d-2");
     await userEvent.click(screen.getByRole("button", { name: "Merge into deal" }));
     expect(mergeSubmission).toHaveBeenCalledWith({ submissionId: "s-1", dealId: "d-2" });
@@ -415,6 +417,7 @@ describe("ReviewFormSubmissionSheet", () => {
     const onOpenChange = renderSheet(tenant);
     await pickExistingPartner();
     await userEvent.click(screen.getByRole("button", { name: "Send to the partner's rep" }));
+    expect(await screen.findByText("This one is yours to review.")).toBeInTheDocument();
     await userEvent.click(await screen.findByRole("button", { name: "Accept" }));
     expect(onOpenChange).toHaveBeenCalledTimes(1);
     expect(acceptReferral).toHaveBeenCalledWith("r-new");
@@ -439,8 +442,20 @@ describe("ReviewFormSubmissionSheet", () => {
     expect(attribute).toHaveBeenCalledTimes(1);
   });
 
-  it("company link: before the viewer is known, it never says it was sent to the viewer themselves", async () => {
+  it("company link: before the viewer is known, an assigned referral is treated as sent on and the sheet closes", async () => {
+    // It may be someone else's referral, so the sheet never offers Accept, Merge or Decline on it.
     authState.user = null;
+    const onOpenChange = renderSheet(tenant);
+    await pickExistingPartner();
+    await userEvent.click(screen.getByRole("button", { name: "Send to the partner's rep" }));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(toastSuccess).toHaveBeenCalledWith("Sent to Rita Rep. They will review it.");
+    expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
+  });
+
+  it("company link: before the viewer is known, a referral with no assignee keeps the usual actions", async () => {
+    authState.user = null;
+    attribute.mockResolvedValueOnce({ ...ATTRIBUTED, assignedUserId: null, assignedUserName: null });
     renderSheet(tenant);
     await pickExistingPartner();
     await userEvent.click(screen.getByRole("button", { name: "Send to the partner's rep" }));
@@ -460,6 +475,7 @@ describe("ReviewFormSubmissionSheet", () => {
     await pickExistingPartner();
     expect(screen.queryByRole("button", { name: "Send to the partner's rep" })).toBeNull();
     expect(screen.queryByText(/Crediting a company-link referral/)).toBeNull();
+    expect(screen.queryByText("This one is yours to review.")).toBeNull();
     for (const name of ["Accept", "Decline", "Merge"]) expect(screen.getByRole("button", { name })).toBeEnabled();
   });
 
@@ -514,10 +530,13 @@ describe("ReviewFormSubmissionSheet", () => {
     // The flag shows first; nothing is merged until the reviewer writes a reason.
     const box = await screen.findByPlaceholderText("Why merge it anyway?");
     expect(screen.getByText(/Possible duplicate of an earlier referral/)).toBeInTheDocument();
+    // Said again next to the reason field, so it is seen without scrolling to the banner.
+    expect(screen.getByText("Possible duplicate. Add a reason to merge.")).toBeInTheDocument();
     expect(mergeReferral).not.toHaveBeenCalled();
     const go = screen.getByRole("button", { name: "Merge into deal" });
     expect(go).toBeDisabled();
     await userEvent.type(box, "  Same owner  ");
+    expect(screen.queryByText("Possible duplicate. Add a reason to merge.")).toBeNull();
     await userEvent.click(go);
     expect(mergeReferral).toHaveBeenCalledWith({ referralId: "r-new", dealId: "d-1", overrideReason: "Same owner" });
     expect(attribute).toHaveBeenCalledTimes(1);
@@ -530,6 +549,8 @@ describe("ReviewFormSubmissionSheet", () => {
     const onOpenChange = renderSheet();
     await pickExistingPartner();
     await userEvent.click(screen.getByRole("button", { name: "Merge" }));
+    // The credit rule applies to every partner merge, flagged or not.
+    expect(screen.getByText(/another partner already has that deal, they keep the credit/)).toBeInTheDocument();
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Pick a deal…" }), "d-1");
     await userEvent.click(screen.getByRole("button", { name: "Merge into deal" }));
     expect(mergeReferral).toHaveBeenCalledWith({ referralId: "r-new", dealId: "d-1" });

@@ -300,6 +300,9 @@ describe("ReviewReferralSheet", () => {
     merge.mockResolvedValueOnce({ result: "closed_duplicate", creditedPartnerName: "Bob Broker" });
     const onOpenChange = renderSheet();
     await userEvent.click(screen.getByRole("button", { name: "Merge" }));
+    // The credit rule applies to every merge, so an unflagged referral says it too.
+    expect(screen.getByText(/another partner already has that deal, they keep the credit/)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Why merge it anyway?")).toBeNull();
     await userEvent.selectOptions(screen.getByLabelText("Pick a deal…"), "d-1");
     await userEvent.click(screen.getByRole("button", { name: "Merge into deal" }));
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));

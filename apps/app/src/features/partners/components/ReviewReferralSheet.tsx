@@ -350,19 +350,17 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
                   options={openDeals}
                 />
               </label>
+              <p className="text-body-sm text-text-muted">
+                {flagged && "Say why you are merging a possible duplicate. The reason is saved in the referral's history. "}
+                If another partner already has that deal, they keep the credit and this referral closes as a duplicate.
+              </p>
               {flagged && (
-                <>
-                  <p className="text-body-sm text-text-muted">
-                    Say why you are merging a possible duplicate. The reason is saved in the referral's history.
-                    If another partner already has that deal, they keep the credit and this referral closes as a duplicate.
-                  </p>
-                  <NotesFieldWithMic
-                    value={overrideReason}
-                    onChange={setOverrideReason}
-                    placeholder="Why merge it anyway?"
-                    maxLength={500}
-                  />
-                </>
+                <NotesFieldWithMic
+                  value={overrideReason}
+                  onChange={setOverrideReason}
+                  placeholder="Why merge it anyway?"
+                  maxLength={500}
+                />
               )}
               <div className="flex gap-2">
                 <Button variant="secondary" className="flex-1" onClick={() => setMode("main")}>Back</Button>
