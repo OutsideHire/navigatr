@@ -26,6 +26,7 @@ import { buildReferralsCsv, downloadCsv, referralsCsvFilename } from "../lib/por
 import { formatConversion, formatPortalDate, formatPortalMoney } from "../lib/portalFormat";
 import { usePortalSignedIn } from "../lib/portalSignedIn";
 import { PORTAL_WINDOWS } from "../../../../../../supabase/functions/_shared/portalSubmission";
+import { PORTAL_LABELS, type PortalLabel } from "../../../../../../supabase/functions/_shared/portalLabels";
 
 function Tile({ label, value, small = false }: { label: string; value: string; small?: boolean }) {
   return (
@@ -40,6 +41,9 @@ export function PortalDashboardPage() {
   const { slug, token, brand, expire } = usePortalSignedIn();
   const navigate = useNavigate();
   const [period, setPeriod] = React.useState<PortalWindow>("all");
+  // Narrows the rendered list by partner label (FR-PORT-75). Client-side only: the
+  // query and the CSV export stay period-scoped.
+  const [statusFilter, setStatusFilter] = React.useState<PortalLabel | "all">("all");
 
   const stats = useQuery({
     queryKey: portalDataKey(slug, token, "dashboard", period),
@@ -104,6 +108,7 @@ export function PortalDashboardPage() {
   } else {
     const s = stats.data;
     const referrals = list.data;
+    const visible = statusFilter === "all" ? referrals : referrals.filter((r) => r.label === statusFilter);
     content = (
       <>
         <section aria-label="Summary" className="grid grid-cols-2 gap-2">
@@ -123,8 +128,31 @@ export function PortalDashboardPage() {
             </p>
           </Card>
         ) : (
+          <>
+            <div role="group" aria-label="Status filter" className="flex flex-wrap gap-1">
+              {(["all", ...PORTAL_LABELS] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  aria-pressed={statusFilter === f}
+                  onClick={() => setStatusFilter(f)}
+                  className={cn(
+                    "min-h-11 rounded-radius-sm px-3 text-caption font-medium",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary",
+                    statusFilter === f ? "bg-surface-default text-text-default shadow-card" : "bg-surface-sunken text-text-muted",
+                  )}
+                >
+                  {f === "all" ? "All" : f}
+                </button>
+              ))}
+            </div>
+            {visible.length === 0 ? (
+              <Card padding="lg">
+                <p className="text-body-md text-text-muted">Nothing marked {statusFilter}.</p>
+              </Card>
+            ) : (
           <ul className="flex flex-col divide-y divide-border-subtle overflow-hidden rounded-radius-md border border-border-subtle bg-surface-default">
-            {referrals.map((r) => (
+            {visible.map((r) => (
               <li key={r.id}>
                 <Link
                   to={`/p/${slug}/r/${r.id}`}
@@ -142,6 +170,8 @@ export function PortalDashboardPage() {
               </li>
             ))}
           </ul>
+            )}
+          </>
         )}
 
         {referrals.length > 0 && (
