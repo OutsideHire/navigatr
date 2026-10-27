@@ -47,6 +47,7 @@ const DETAIL = {
   label: "Received",
   submittedAt: "2026-10-01T12:00:00Z",
   canWithdraw: true,
+  closedWonValueCents: null as number | null,
   rep: { name: "Rita Rep", email: "rita@acme.example" },
   history: [{ label: "Received", at: "2026-10-01T12:00:00Z" }],
   updates: [] as Array<{ body: string; publishedAt: string; authorName: string | null }>,
@@ -132,6 +133,19 @@ describe("PortalReferralPage", () => {
     expect(within(sent).getByText("Restaurant")).toBeInTheDocument();
     expect(within(sent).getByText("This week")).toBeInTheDocument();
     expect(within(sent).getByText("Wants a demo")).toBeInTheDocument();
+  });
+
+  it("shows the closed value for a Closed Won referral when the ISO allows it", async () => {
+    api.getReferral.mockResolvedValue({ ...DETAIL, label: "Closed Won", canWithdraw: false, closedWonValueCents: 700000 });
+    renderAt("/p/acme/r/r-1");
+    expect(await screen.findByText("Closed value: $7,000")).toBeInTheDocument();
+  });
+
+  it("shows no closed value when the server sends none", async () => {
+    api.getReferral.mockResolvedValue({ ...DETAIL, label: "Closed Won", canWithdraw: false, closedWonValueCents: null });
+    renderAt("/p/acme/r/r-1");
+    await screen.findByRole("heading", { name: "Fresh Bakery" });
+    expect(screen.queryByText(/Closed value/)).not.toBeInTheDocument();
   });
 
   it("opens from a row on the dashboard", async () => {

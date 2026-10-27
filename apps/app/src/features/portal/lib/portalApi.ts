@@ -96,6 +96,15 @@ export interface PortalMe {
   partnerName: string;
   email: string;
   orgName: string;
+  /** FR-PORT-18: false once the ISO changed its terms, until the partner accepts them. */
+  termsCurrent: boolean;
+}
+
+/** The terms a signed-in partner is asked to accept (FR-PORT-18). */
+export interface PortalTerms {
+  termsText: string;
+  termsVersion: number;
+  termsCurrent: boolean;
 }
 
 export type PortalSubmitInput = {
@@ -106,6 +115,7 @@ export type PortalSubmitInput = {
   address: string;
   industry: string;
   urgency: string;
+  employeeCount: string;
   notes: string;
   consent: boolean;
   consentVersion: number;
@@ -138,6 +148,8 @@ type PortalAction =
   | "peek_invite"
   | "accept_invite"
   | "me"
+  | "get_terms"
+  | "accept_terms"
   | "sign_out"
   | "form"
   | "dup_check"
@@ -156,6 +168,25 @@ type PortalAction =
   | "get_sent_referral"
   | "post_note"
   | "unsubscribe_digest";
+
+/**
+ * FR-PORT-18: every signed-in data action answers 403 terms_required while the
+ * partner has not accepted the ISO's current terms. The signed-in layout listens
+ * here so whichever request hits it first (a poll, a submit) brings up the terms
+ * page, without every page handling the case itself.
+ */
+const termsRequiredListeners = new Set<() => void>();
+
+export function onPortalTermsRequired(listener: () => void): () => void {
+  termsRequiredListeners.add(listener);
+  return () => {
+    termsRequiredListeners.delete(listener);
+  };
+}
+
+export function notifyPortalTermsRequired(): void {
+  termsRequiredListeners.forEach((listener) => listener());
+}
 
 async function portalRequest<T>(
   action: PortalAction,
@@ -191,6 +222,7 @@ async function portalRequest<T>(
     const obj = payload !== null && typeof payload === "object" ? (payload as { error?: unknown; field?: unknown }) : {};
     const code = typeof obj.error === "string" ? obj.error : "request_failed";
     const field = typeof obj.field === "string" ? obj.field : null;
+    if (res.status === 403 && code === "terms_required") notifyPortalTermsRequired();
     throw new PortalApiError(res.status, code, field);
   }
   return payload as T;
@@ -241,6 +273,16 @@ export const portalApi = {
 
   me(slug: string, sessionToken: string): Promise<PortalMe | null> {
     return portalRequest<{ me: PortalMe }>("me", { slug }, sessionToken).then((r) => r.me, nullOn(401));
+  },
+
+  /** FR-PORT-18. Null when the session is gone (401). */
+  getTerms(slug: string, sessionToken: string): Promise<PortalTerms | null> {
+    return portalRequest<{ terms: PortalTerms }>("get_terms", { slug }, sessionToken).then((r) => r.terms, nullOn(401));
+  },
+
+  /** Throws PortalApiError: 409 terms_changed (read them again), 401 unauthorized. */
+  async acceptTerms(slug: string, sessionToken: string, termsVersion: number): Promise<void> {
+    await portalRequest<{ ok: boolean }>("accept_terms", { slug, termsVersion }, sessionToken);
   },
 
   async signOut(sessionToken: string): Promise<void> {

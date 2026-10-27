@@ -90,15 +90,37 @@ export function useAcceptReferral() {
   });
 }
 
+/**
+ * Decline with a reason and an internal note, neither shown to the partner.
+ * A non-blank partner message (FR-PORT-65) goes through
+ * decline_referral_with_message: it rides on the Not Moving Forward email and
+ * is published as a referral update (so the ["referrals"] refresh covers it).
+ */
+export interface DeclineInput {
+  referralId: string;
+  reason: DeclineReason;
+  note?: string;
+  partnerMessage?: string;
+}
+
 export function useDeclineReferral() {
   const refresh = useRefresh(false);
   return useMutation({
-    mutationFn: async (input: { referralId: string; reason: DeclineReason; note?: string }): Promise<void> => {
-      const { error } = await supabase.rpc("decline_referral", {
-        p_referral_id: input.referralId,
-        p_reason: input.reason,
-        p_note: input.note?.trim() || null,
-      });
+    mutationFn: async (input: DeclineInput): Promise<void> => {
+      const note = input.note?.trim() || null;
+      const message = input.partnerMessage?.trim() ?? "";
+      const { error } = message
+        ? await supabase.rpc("decline_referral_with_message", {
+            p_referral_id: input.referralId,
+            p_reason: input.reason,
+            p_note: note,
+            p_partner_message: message,
+          })
+        : await supabase.rpc("decline_referral", {
+            p_referral_id: input.referralId,
+            p_reason: input.reason,
+            p_note: note,
+          });
       if (error) throw new Error(referralErrorMessage(error, "Couldn't decline the referral"));
     },
     onSuccess: refresh,

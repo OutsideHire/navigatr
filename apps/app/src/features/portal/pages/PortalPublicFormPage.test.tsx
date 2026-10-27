@@ -64,6 +64,7 @@ const SENT = {
   notes: "Needs a new terminal.",
   referredBy: "",
   referrerEmail: "",
+  employeeCount: "",
   website: "",
   consent: true,
   consentVersion: 2,
@@ -248,6 +249,36 @@ describe("PortalPublicFormPage", () => {
     await user.click(screen.getByRole("button", { name: "Send referral" }));
     expect(await screen.findByText("The wording changed. Please review it and tick the box again.")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: FORM.consentText })).not.toBeChecked();
+  });
+
+  it("asks how many employees, optionally, and sends the bucket (FR-PORT-35)", async () => {
+    const user = userEvent.setup();
+    api.publicSubmit.mockResolvedValue({ ref: "REF-1A2B3C4D" });
+    renderAt();
+    const select = await screen.findByLabelText("How many employees? (optional)");
+    expect(select).not.toHaveAttribute("aria-required");
+    expect(Array.from(select.querySelectorAll("option")).map((o) => [o.value, o.textContent])).toEqual([
+      ["", "Choose one"],
+      ["1-10", "1 to 10"],
+      ["11-50", "11 to 50"],
+      ["51-200", "51 to 200"],
+      ["201+", "Over 200"],
+    ]);
+    expect(select).toHaveClass("h-12");
+    await fill(user);
+    await user.selectOptions(select, "51 to 200");
+    await user.click(screen.getByRole("button", { name: "Send referral" }));
+    expect(await screen.findByRole("heading", { name: "Thanks for the referral" })).toBeInTheDocument();
+    expect(api.publicSubmit).toHaveBeenCalledWith("acme", "tok123", { ...SENT, employeeCount: "51-200" });
+  });
+
+  it("points at the employee count when the server refuses it", async () => {
+    const user = userEvent.setup();
+    api.publicSubmit.mockRejectedValue(new PortalApiError(400, "invalid_body", "employeeCount"));
+    renderAt();
+    await fill(user);
+    await user.click(screen.getByRole("button", { name: "Send referral" }));
+    expect(await screen.findByText("Pick a size from the list.")).toBeInTheDocument();
   });
 
   it("points at the field the server named", async () => {

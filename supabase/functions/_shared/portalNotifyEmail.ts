@@ -19,7 +19,7 @@
  */
 import type { EmailOptions } from "./emailTemplate.ts";
 import { PORTAL_LABELS, type PortalLabel } from "./portalLabels.ts";
-import { portalUrl } from "./portalEmail.ts";
+import { portalApiUrl, portalUrl } from "./portalEmail.ts";
 
 export const PARTNER_NOTIFY_KINDS = [
   "partner_received",
@@ -105,6 +105,8 @@ export interface PartnerNotifyPayload {
   repName: string | null;
   repEmail: string | null;
   updateBody: string | null;
+  /** The rep's message on a decline (FR-PORT-65); only Not Moving Forward may carry one. */
+  message: string | null;
 }
 
 export interface InternalNotifyPayload {
@@ -144,6 +146,8 @@ const PARTNER_KEYS = [
   "slug", "orgName", "partnerName", "companyName", "ref", "label",
   "valueCents", "repName", "repEmail", "updateBody",
 ];
+/** The one optional partner key: a decline message the rep wrote for the partner. */
+const PARTNER_MESSAGE_KEY = "message";
 const INTERNAL_KEYS = ["appUrlPath", "companyNames", "count"];
 
 /** The payload carries exactly the keys SQL builds: no more (nothing smuggled in), none missing. */
@@ -166,7 +170,8 @@ function isLabel(v: unknown): v is PortalLabel {
 }
 
 export function parsePartnerPayload(raw: unknown): PartnerNotifyPayload | null {
-  if (!isRecord(raw) || !hasExactKeys(raw, PARTNER_KEYS)) return null;
+  if (!isRecord(raw)) return null;
+  if (!hasExactKeys(raw, PARTNER_KEYS) && !hasExactKeys(raw, [...PARTNER_KEYS, PARTNER_MESSAGE_KEY])) return null;
   const slug = line(raw.slug);
   const orgName = line(raw.orgName);
   const partnerName = line(raw.partnerName);
@@ -186,6 +191,7 @@ export function parsePartnerPayload(raw: unknown): PartnerNotifyPayload | null {
     repName: line(raw.repName),
     repEmail: repEmail && EMAIL_RE.test(repEmail) ? repEmail : null,
     updateBody: text(raw.updateBody),
+    message: text(raw.message),
   };
 }
 
@@ -305,6 +311,7 @@ function buildPartner(kind: PartnerNotifyKind, p: PartnerNotifyPayload, ctx: Not
   const iso = p.orgName;
   const co = p.companyName;
   if (kind !== "partner_update" && p.label !== KIND_LABEL[kind]) return null;
+  if (p.message && kind !== "partner_not_moving_forward") return null;
   switch (kind) {
     case "partner_received":
       return partnerEmail(p, ctx, {
@@ -325,7 +332,10 @@ function buildPartner(kind: PartnerNotifyKind, p: PartnerNotifyPayload, ctx: Not
         subject: `${co}: Not Moving Forward`,
         preheader: `An update from ${iso} on ${co}.`,
         heading: `${co}: Not Moving Forward`,
-        lines: [`${iso} is not moving forward with ${co}. Thank you for thinking of them.`],
+        lines: [
+          `${iso} is not moving forward with ${co}. Thank you for thinking of them.`,
+          ...(p.message ? [`A note from ${iso}:`, ...noteLines(p.message)] : []),
+        ],
       });
     case "partner_closed_won":
       return partnerEmail(p, ctx, {
@@ -404,7 +414,7 @@ function buildDigest(p: PartnerDigestPayload, ctx: NotifyContext): PortalNotifyE
   if (c.submitted + c.accepted + c.inProgress + c.closedWon + c.notMovingForward + c.sentToYou === 0) return null;
 
   const token = encodeURIComponent(p.unsubscribeToken);
-  const oneClick = `${api}/unsubscribe_digest?slug=${encodeURIComponent(p.slug)}&t=${token}`;
+  const oneClick = portalApiUrl(api, "unsubscribe_digest", { slug: p.slug, t: p.unsubscribeToken });
   const lines = [
     c.submitted > 0 ? `New referrals you sent: ${c.submitted}` : null,
     c.accepted > 0 ? `Accepted: ${c.accepted}` : null,

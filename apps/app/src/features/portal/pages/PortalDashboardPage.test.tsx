@@ -243,6 +243,42 @@ describe("PortalDashboardPage", () => {
     );
   });
 
+  it("filters the list by partner label, client-side, with All as the default", async () => {
+    const user = userEvent.setup();
+    renderHome();
+    await screen.findByRole("link", { name: /Fresh Bakery/ });
+    const filter = screen.getByRole("group", { name: "Status filter" });
+    const names = ["All", "Received", "Accepted", "In Progress", "Closed Won", "Not Moving Forward", "Withdrawn"];
+    expect(within(filter).getAllByRole("button").map((b) => b.textContent)).toEqual(names);
+    expect(within(filter).getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("link", { name: /Corner Cafe/ })).toBeInTheDocument();
+
+    await user.click(within(filter).getByRole("button", { name: "Received" }));
+    expect(within(filter).getByRole("button", { name: "Received" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("link", { name: /Corner Cafe/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Fresh Bakery/ })).toBeNull();
+
+    // A chip with no rows still renders, and says so.
+    await user.click(within(filter).getByRole("button", { name: "Withdrawn" }));
+    expect(screen.queryByRole("link", { name: /Corner Cafe/ })).toBeNull();
+    expect(screen.getByText("Nothing marked Withdrawn.")).toBeInTheDocument();
+
+    await user.click(within(filter).getByRole("button", { name: "All" }));
+    expect(screen.getByRole("link", { name: /Fresh Bakery/ })).toBeInTheDocument();
+    // Filtering never refetches.
+    expect(api.listReferrals).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the CSV export period-only while a status filter is on", async () => {
+    const user = userEvent.setup();
+    api.exportReferrals.mockResolvedValue({ valueVisible: false, rows: [] });
+    renderHome();
+    await screen.findByRole("link", { name: /Fresh Bakery/ });
+    await user.click(within(screen.getByRole("group", { name: "Status filter" })).getByRole("button", { name: "Received" }));
+    await user.click(screen.getByRole("button", { name: "Download CSV" }));
+    expect(api.exportReferrals).toHaveBeenCalledWith("acme", "live", "all");
+  });
+
   it("offers no download when there are no referrals", async () => {
     api.listReferrals.mockResolvedValue([]);
     renderHome();

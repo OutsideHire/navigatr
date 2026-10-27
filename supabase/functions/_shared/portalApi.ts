@@ -78,6 +78,8 @@ export type PortalAction =
   | "peek_invite"
   | "accept_invite"
   | "me"
+  | "get_terms"
+  | "accept_terms"
   | "sign_out"
   | "unsubscribe_digest"
   | ReferralAction
@@ -90,6 +92,8 @@ const ACTIONS: ReadonlySet<string> = new Set<PortalAction>([
   "peek_invite",
   "accept_invite",
   "me",
+  "get_terms",
+  "accept_terms",
   "sign_out",
   "unsubscribe_digest",
   ...REFERRAL_ACTIONS,
@@ -133,6 +137,14 @@ interface LookupRow {
   partner_name: string;
   user_email: string;
   org_name: string;
+  /** FR-PORT-18: false once the ISO edits its terms, until the partner accepts them. */
+  terms_current?: boolean | null;
+}
+
+interface SessionTermsRow {
+  terms_text: string | null;
+  terms_version: number;
+  terms_current: boolean | null;
 }
 
 /** Input caps, checked before any rpc so oversized input never reaches SQL. */
@@ -266,6 +278,16 @@ export async function handlePortalRequest(req: Request, deps: PortalApiDeps): Pr
         const token = sessionTokenFrom(req.headers);
         if (slugTooLong || tooLong(token, PORTAL_LIMITS.token)) return jsonResponse({ error: "unauthorized" }, 401);
         return await me(slug, token, deps);
+      }
+      case "get_terms": {
+        const token = sessionTokenFrom(req.headers);
+        if (slugTooLong || tooLong(token, PORTAL_LIMITS.token)) return jsonResponse({ error: "unauthorized" }, 401);
+        return await getTerms(slug, token, deps);
+      }
+      case "accept_terms": {
+        const token = sessionTokenFrom(req.headers);
+        if (slugTooLong || tooLong(token, PORTAL_LIMITS.token)) return jsonResponse({ error: "unauthorized" }, 401);
+        return await acceptTerms(slug, token, body.termsVersion, ip, deps);
       }
       case "sign_out": {
         const token = sessionTokenFrom(req.headers);
@@ -441,7 +463,60 @@ async function me(slug: string, token: string, deps: PortalApiDeps): Promise<Res
   }
   const row = firstRow<LookupRow>(data);
   if (!row?.portal_user_id) return unauthorized();
-  return jsonResponse({ me: { partnerName: row.partner_name, email: row.user_email, orgName: row.org_name } });
+  return jsonResponse({
+    me: {
+      partnerName: row.partner_name,
+      email: row.user_email,
+      orgName: row.org_name,
+      termsCurrent: row.terms_current === true,
+    },
+  });
+}
+
+/** FR-PORT-18: the terms a signed-in partner is asked to accept after the ISO changed them. */
+async function getTerms(slug: string, token: string, deps: PortalApiDeps): Promise<Response> {
+  const unauthorized = () => jsonResponse({ error: "unauthorized" }, 401);
+  if (!token) return unauthorized();
+  const { data, error } = await deps.rpc("portal_get_terms", { p_slug: slug, p_token: token });
+  if (error) {
+    console.error("[portal_api] get terms failed:", error.message);
+    return jsonResponse({ error: "server_error" }, 500);
+  }
+  const row = firstRow<SessionTermsRow>(data);
+  if (!row) return unauthorized();
+  return jsonResponse({
+    terms: { termsText: row.terms_text ?? "", termsVersion: row.terms_version, termsCurrent: row.terms_current === true },
+  });
+}
+
+/**
+ * FR-PORT-18: accept the version the partner read. A 409 terms_changed means the
+ * ISO edited the terms again in the meantime, so the page shows the new text.
+ */
+async function acceptTerms(
+  slug: string,
+  token: string,
+  termsVersion: unknown,
+  ip: string | null,
+  deps: PortalApiDeps,
+): Promise<Response> {
+  if (!token) return jsonResponse({ error: "unauthorized" }, 401);
+  if (typeof termsVersion !== "number" || !Number.isInteger(termsVersion)) {
+    return jsonResponse({ error: "invalid_body" }, 400);
+  }
+  const { error } = await deps.rpc("portal_accept_terms", {
+    p_slug: slug,
+    p_token: token,
+    p_terms_version: termsVersion,
+    p_ip: ip,
+  });
+  if (error) {
+    if (error.message.includes("terms_changed")) return jsonResponse({ error: "terms_changed" }, 409);
+    if (error.message.includes("invalid_session")) return jsonResponse({ error: "unauthorized" }, 401);
+    console.error("[portal_api] accept terms failed:", error.message);
+    return jsonResponse({ error: "server_error" }, 500);
+  }
+  return jsonResponse({ ok: true });
 }
 
 async function signOut(token: string, deps: PortalApiDeps): Promise<Response> {
@@ -506,7 +581,10 @@ async function unsubscribeDigest(req: Request, deps: PortalApiDeps): Promise<Res
  * Phase 1B signed-in actions. The session is looked up on every request, and the
  * org, partner and portal user it returns are the only scope the referral
  * functions ever see. A database error during the lookup is a 500 (retry), not a
- * 401, so a transient failure never signs the partner out.
+ * 401, so a transient failure never signs the partner out. Until the partner has
+ * accepted the ISO's current terms (FR-PORT-18) every one of these actions is a
+ * 403 terms_required; a lookup that does not say the terms are current counts as
+ * not current.
  */
 async function referral(
   action: ReferralAction,
@@ -524,6 +602,7 @@ async function referral(
   }
   const row = firstRow<LookupRow>(data);
   if (!row?.portal_user_id) return jsonResponse({ error: "unauthorized" }, 401);
+  if (row.terms_current !== true) return jsonResponse({ error: "terms_required" }, 403);
   const result = await handleReferralAction(
     action,
     { portalUserId: row.portal_user_id, orgId: row.org_id, partnerId: row.partner_id },

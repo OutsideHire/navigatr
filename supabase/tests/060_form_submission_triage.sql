@@ -66,6 +66,10 @@ insert into referral_form_submissions (
   ('a060e000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-000000001060', 'user',   'a0600000-0000-0000-0000-000000000003', 'Subway #42',       'Gus', 'gus@sub.example',     '5550600016',     'Franchise',       null,                null,                  1, 'I may share this.', '198.51.100.60', now()),
   ('a060e000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000001060', 'user',   'a0600000-0000-0000-0000-000000000004', 'Rob Co',           'Hal', 'hal@rob.example',     '5550600017',     'Busy mornings',   null,                null,                  1, 'I may share this.', '198.51.100.60', now());
 
+-- FR-PORT-35: S1 and S2 carry a business size, which follows them to the referral and the deal.
+update referral_form_submissions set employee_count_range = '11-50' where id = 'a060e000-0000-0000-0000-000000000001';
+update referral_form_submissions set employee_count_range = '201+'  where id = 'a060e000-0000-0000-0000-000000000002';
+
 create or replace function _t_act(p_user uuid) returns void language plpgsql as $$
 begin
   perform set_config('request.jwt.claim.sub', p_user::text, true);
@@ -216,7 +220,8 @@ do $$ declare r referrals; s referral_form_submissions; h referral_status_histor
      or r.company_name <> 'Attr Co' or r.contact_name <> 'Ann' or r.contact_email <> 'ann@attr.example'
      or r.contact_phone <> '5550600011' or r.notes <> 'Wants a demo'
      or r.partner_company_snapshot <> 'Jane & Co'
-     or r.consent_text_version <> '1' or r.consent_text_snapshot <> 'I may share this.' then
+     or r.consent_text_version <> '1' or r.consent_text_snapshot <> 'I may share this.'
+     or r.employee_count_range is distinct from '11-50' then
     raise exception 'attributed referral is wrong: %', row_to_json(r);
   end if;
   select * into h from referral_status_history where referral_id = v;
@@ -244,7 +249,8 @@ do $$ declare res jsonb; v uuid := current_setting('t.ref')::uuid; d deals; begi
   if res->>'result' <> 'accepted' then raise exception 'accept_referral should accept, got %', res; end if;
   select * into d from deals where id = (res->>'deal_id')::uuid;
   if d.lead_source <> 'partner_referral' or d.owner_id <> 'a0600000-0000-0000-0000-000000000003'
-     or d.source_partner_id <> 'a060a000-0000-0000-0000-000000000001' then
+     or d.source_partner_id <> 'a060a000-0000-0000-0000-000000000001'
+     or d.employee_count_range is distinct from '11-50' then
     raise exception 'deal from the attributed referral is wrong: %', row_to_json(d);
   end if;
   -- Deviation 16: same as a rep-logged referral, the partner hears Accepted.
@@ -359,7 +365,8 @@ do $$ declare d deals; s referral_form_submissions; n integer; v uuid := current
   select * into d from deals where id = v;
   if d.owner_id <> 'a0600000-0000-0000-0000-000000000003' or d.lead_source <> 'referral_form' or d.stage <> 'new'
      or d.company_name <> 'Accept Co' or d.contact_name <> 'Bea' or d.contact_email <> 'bea@accept.example'
-     or d.contact_phone <> '5550600012' or d.source_referral_id is not null or d.source_partner_id is not null then
+     or d.contact_phone <> '5550600012' or d.source_referral_id is not null or d.source_partner_id is not null
+     or d.employee_count_range is distinct from '201+' then
     raise exception 'no-partner deal is wrong: %', row_to_json(d);
   end if;
   select count(*) into n from task

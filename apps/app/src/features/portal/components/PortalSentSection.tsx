@@ -13,6 +13,7 @@ import { PortalLabelChip } from "./PortalLabelChip";
 import { PORTAL_POLL_MS, isPortalUnauthorized, portalApi, portalDataKey, type PortalWindow } from "../lib/portalApi";
 import { formatPortalDate } from "../lib/portalFormat";
 import { usePortalSignedIn } from "../lib/portalSignedIn";
+import { portalPath } from "../lib/portalAddress";
 
 export function PortalSentSection({ period }: { period: PortalWindow }) {
   const { slug, token, brand, expire } = usePortalSignedIn();
@@ -43,7 +44,7 @@ export function PortalSentSection({ period }: { period: PortalWindow }) {
         {q.data.map((r) => (
           <li key={r.id}>
             <Link
-              to={`/p/${slug}/s/${r.id}`}
+              to={portalPath(slug, `/s/${r.id}`)}
               className="flex min-h-14 items-center gap-3 px-3 py-3 hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary"
             >
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">

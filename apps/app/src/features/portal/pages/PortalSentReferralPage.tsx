@@ -23,6 +23,7 @@ import {
 import { formatPortalDate } from "../lib/portalFormat";
 import { usePortalSignedIn } from "../lib/portalSignedIn";
 import { PORTAL_NOTE_MAX, validateNoteBody } from "../../../../../../supabase/functions/_shared/portalSentApi";
+import { portalPath } from "../lib/portalAddress";
 
 const RATE_LIMITED = "You've added a lot of notes in the last hour. Try again later.";
 const GONE = "This referral is no longer available.";
@@ -59,7 +60,7 @@ export function PortalSentReferralPage() {
 
   const back = (
     <Link
-      to={`/p/${slug}/home`}
+      to={portalPath(slug, `/home`)}
       className="inline-flex min-h-11 items-center gap-1 self-start text-body-sm text-brand-primary"
     >
       <ChevronLeft className="h-4 w-4" aria-hidden />

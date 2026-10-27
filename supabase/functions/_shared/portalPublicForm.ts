@@ -20,7 +20,7 @@ import { shouldSend } from "./emailGuard.ts";
 import { renderEmail } from "./emailTemplate.ts";
 import { portalEmailBrand, portalFromAddress, portalPublicConfirmationEmail } from "./portalEmail.ts";
 import type { ActionResult } from "./portalReferralApi.ts";
-import { PORTAL_FIELD_LIMITS } from "./portalSubmission.ts";
+import { PORTAL_FIELD_LIMITS, matchEmployeeCount, type EmployeeCount } from "./portalSubmission.ts";
 
 export const PUBLIC_FORM_LIMITS = {
   companyName: PORTAL_FIELD_LIMITS.companyName,
@@ -57,6 +57,7 @@ export type PublicFormField =
   | "notes"
   | "referredBy"
   | "referrerEmail"
+  | "employeeCount"
   | "consent";
 
 export const PUBLIC_FORM_FIELDS: readonly PublicFormField[] = [
@@ -67,6 +68,7 @@ export const PUBLIC_FORM_FIELDS: readonly PublicFormField[] = [
   "notes",
   "referredBy",
   "referrerEmail",
+  "employeeCount",
   "consent",
 ];
 
@@ -83,6 +85,8 @@ export interface PublicSubmission {
   referredBy: string | null;
   /** The sender's own email: the only address the confirmation goes to (FR-PORT-33). */
   referrerEmail: string | null;
+  /** Optional business size (FR-PORT-35). */
+  employeeCount: EmployeeCount | null;
   consentVersion: number;
 }
 
@@ -109,6 +113,8 @@ export type PortalPublicSubmitInput = {
   referredBy: string;
   /** Optional "Your email": "" for none. */
   referrerEmail: string;
+  /** Optional "How many employees?": "" for none. */
+  employeeCount: string;
   consent: boolean;
   consentVersion: number;
   formToken: string;
@@ -127,7 +133,7 @@ const CONTROL_RE = /[\u0000-\u001f\u007f]/;
 /** Notes are free text and may keep line breaks and tabs, nothing else from the control range. */
 const NOTES_CONTROL_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 
-/** Required: company, contact name, email, phone, notes (FR-PORT-29). Optional: who referred, the sender's own email. */
+/** Required: company, contact name, email, phone, notes (FR-PORT-29). Optional: who referred, the sender's own email, employee count. */
 export function validatePublicSubmission(input: Readonly<Record<string, unknown>>): PublicSubmissionCheck {
   const text = (key: string): string => {
     const v = input[key];
@@ -154,6 +160,8 @@ export function validatePublicSubmission(input: Readonly<Record<string, unknown>
   if (referrerEmail && (referrerEmail.length > PUBLIC_FORM_LIMITS.referrerEmail || !EMAIL_RE.test(referrerEmail) || !clean(referrerEmail))) {
     return fail("referrerEmail");
   }
+  const employeeCount = matchEmployeeCount(text("employeeCount"));
+  if (employeeCount === undefined) return fail("employeeCount");
 
   if (input.consent !== true) return fail("consent");
   const consentVersion = input.consentVersion;
@@ -169,6 +177,7 @@ export function validatePublicSubmission(input: Readonly<Record<string, unknown>
       notes,
       referredBy: referredBy || null,
       referrerEmail: referrerEmail || null,
+      employeeCount,
       consentVersion,
     },
   };
@@ -449,6 +458,7 @@ async function publicSubmit(
     p_consent_version: s.consentVersion,
     p_ip: ip,
     p_captcha_passed: captchaPassed,
+    p_employee_count: s.employeeCount,
   });
   if (error) {
     const message = error.message;

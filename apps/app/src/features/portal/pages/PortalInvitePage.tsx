@@ -11,8 +11,10 @@ import { Loader2 } from "lucide-react";
 import { Button, Card, Checkbox } from "@/components/navigatr";
 import { PortalApiError, isPortalTransientError, portalApi, type PortalBrand } from "../lib/portalApi";
 import { PortalRetry, portalReachMessage } from "../components/PortalRetry";
+import { PortalTermsText } from "../components/PortalTermsText";
 import { writePortalSession } from "../lib/portalSession";
 import { clearInviteToken, readInviteToken, writeInviteToken } from "../lib/portalInviteToken";
+import { portalPath } from "../lib/portalAddress";
 
 function InviteUnavailable({ slug, orgName }: { slug: string; orgName: string }) {
   const navigate = useNavigate();
@@ -22,7 +24,7 @@ function InviteUnavailable({ slug, orgName }: { slug: string; orgName: string })
       <p className="text-body-md text-text-muted">
         Ask your contact at {orgName} to send a new one. If you already accepted, sign in instead.
       </p>
-      <Button variant="secondary" size="md" onClick={() => navigate(`/p/${slug}`)}>
+      <Button variant="secondary" size="md" onClick={() => navigate(portalPath(slug))}>
         Go to sign in
       </Button>
     </Card>
@@ -46,7 +48,7 @@ export function PortalInvitePage({ slug, brand }: { slug: string; brand: PortalB
   });
   const urlHasToken = params.has("token");
   React.useEffect(() => {
-    if (urlHasToken) navigate(`/p/${slug}/invite`, { replace: true });
+    if (urlHasToken) navigate(portalPath(slug, `/invite`), { replace: true });
   }, [urlHasToken, slug, navigate]);
   const [agreed, setAgreed] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
@@ -90,7 +92,7 @@ export function PortalInvitePage({ slug, brand }: { slug: string; brand: PortalB
       const session = await portalApi.acceptInvite(slug, token, data.termsVersion);
       writePortalSession(slug, session.sessionToken);
       clearInviteToken(slug);
-      navigate(`/p/${slug}/home`, { replace: true });
+      navigate(portalPath(slug, `/home`), { replace: true });
     } catch (err) {
       if (err instanceof PortalApiError && err.code === "terms_changed") {
         setAgreed(false);
@@ -115,17 +117,7 @@ export function PortalInvitePage({ slug, brand }: { slug: string; brand: PortalB
         </p>
       </div>
 
-      <section aria-labelledby="portal-terms-heading" className="flex flex-col gap-2">
-        <h2 id="portal-terms-heading" className="text-body-strong text-text-default">
-          Partner terms
-        </h2>
-        <div
-          tabIndex={0}
-          className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-radius-md border border-border-default bg-surface-sunken p-3 text-body-md text-text-default"
-        >
-          {data.termsText}
-        </div>
-      </section>
+      <PortalTermsText text={data.termsText} />
 
       {notice && (
         <p role="alert" className="text-body-sm text-status-danger">

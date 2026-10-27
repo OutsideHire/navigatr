@@ -24,6 +24,7 @@ const GOOD = {
   notes: " Needs a new terminal. ",
   referredBy: " Joe at the bank ",
   referrerEmail: " Joe@Bank.Example ",
+  employeeCount: " 51-200 ",
   consent: true,
   consentVersion: 2,
 };
@@ -40,9 +41,18 @@ describe("validatePublicSubmission", () => {
         notes: "Needs a new terminal.",
         referredBy: "Joe at the bank",
         referrerEmail: "joe@bank.example",
+        employeeCount: "51-200",
         consentVersion: 2,
       },
     });
+  });
+
+  it("keeps the employee count optional (FR-PORT-35)", () => {
+    const blank = validatePublicSubmission({ ...GOOD, employeeCount: "" });
+    expect(blank.ok && blank.value.employeeCount).toBeNull();
+    const { employeeCount: _omit, ...rest } = GOOD;
+    const missing = validatePublicSubmission(rest);
+    expect(missing.ok && missing.value.employeeCount).toBeNull();
   });
 
   it("turns a blank or missing 'who referred' into null", () => {
@@ -78,6 +88,8 @@ describe("validatePublicSubmission", () => {
     ["referrerEmail", { referrerEmail: "not-an-email" }],
     ["referrerEmail", { referrerEmail: `${"a".repeat(250)}@b.co` }],
     ["referrerEmail", { referrerEmail: 42 }],
+    ["employeeCount", { employeeCount: "50-249" }],
+    ["employeeCount", { employeeCount: "many" }],
     ["consent", { consent: false }],
     ["consent", { consent: "true" }],
     ["consent", { consentVersion: "2" }],
@@ -328,6 +340,7 @@ describe("handlePublicFormAction", () => {
       notes: "Needs a new terminal.",
       referredBy: "Joe at the bank",
       referrerEmail: "joe@bank.example",
+      employeeCount: "51-200",
       consent: true,
       consentVersion: 2,
       formToken: await signFormToken(SECRET, "acme", "tok123", NOW - ageMs),
@@ -410,6 +423,7 @@ describe("handlePublicFormAction", () => {
         p_consent_version: 2,
         p_ip: "203.0.113.5",
         p_captcha_passed: false,
+        p_employee_count: "51-200",
       });
       expect(sendEmail).toHaveBeenCalledTimes(1);
       expect(background).toHaveBeenCalledTimes(1);
@@ -419,7 +433,7 @@ describe("handlePublicFormAction", () => {
       expect(msg.subject).toBe("Acme ISO received your referral");
       expect(msg.text).toContain("REF-1A2B3C4D");
       // The brand accent only paints a button, and this email has none, so the color is not asserted here.
-      for (const typed of ["Fresh Bakery", "Ann Owner", "ann@bakery.example", "Needs a new terminal.", "Joe at the bank", "555"]) {
+      for (const typed of ["Fresh Bakery", "Ann Owner", "51-200", "ann@bakery.example", "Needs a new terminal.", "Joe at the bank", "555"]) {
         expect(msg.text).not.toContain(typed);
         expect(msg.html).not.toContain(typed);
       }

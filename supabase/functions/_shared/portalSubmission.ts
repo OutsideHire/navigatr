@@ -35,6 +35,26 @@ export const PORTAL_URGENCIES = [
 ] as const;
 export type PortalUrgency = (typeof PORTAL_URGENCIES)[number]["value"];
 
+/**
+ * Business size as an employee count (FR-PORT-35, Q10). One list for both
+ * referral forms and the app's Add/Edit Deal pickers (apps/app/src/lib/employeeCount.ts
+ * re-exports it). The SQL CHECKs on referrals and referral_form_submissions hold
+ * the same four values.
+ */
+export const EMPLOYEE_COUNT_OPTIONS = [
+  { value: "1-10", label: "1 to 10" },
+  { value: "11-50", label: "11 to 50" },
+  { value: "51-200", label: "51 to 200" },
+  { value: "201+", label: "Over 200" },
+] as const;
+export type EmployeeCount = (typeof EMPLOYEE_COUNT_OPTIONS)[number]["value"];
+
+/** The known bucket for a trimmed value, or null for blank. Undefined means "not one of ours". */
+export function matchEmployeeCount(value: string): EmployeeCount | null | undefined {
+  if (value === "") return null;
+  return EMPLOYEE_COUNT_OPTIONS.find((o) => o.value === value)?.value;
+}
+
 export function industryLabel(value: string | null): string | null {
   return PORTAL_INDUSTRIES.find((i) => i.value === value)?.label ?? null;
 }
@@ -77,6 +97,7 @@ export type PortalSubmissionField =
   | "address"
   | "industry"
   | "urgency"
+  | "employeeCount"
   | "notes"
   | "consent";
 
@@ -89,6 +110,7 @@ export const PORTAL_SUBMISSION_FIELDS: readonly PortalSubmissionField[] = [
   "address",
   "industry",
   "urgency",
+  "employeeCount",
   "notes",
   "consent",
 ];
@@ -105,6 +127,7 @@ export interface PortalSubmission {
   address: string | null;
   industry: PortalIndustry | null;
   urgency: PortalUrgency | null;
+  employeeCount: EmployeeCount | null;
   notes: string;
   consent: true;
   consentVersion: number;
@@ -143,6 +166,8 @@ export function validateSubmission(input: Readonly<Record<string, unknown>>): Su
   const urgency = text("urgency");
   const urgencyHit = PORTAL_URGENCIES.find((u) => u.value === urgency);
   if (urgency && !urgencyHit) return fail("urgency");
+  const employeeCount = matchEmployeeCount(text("employeeCount"));
+  if (employeeCount === undefined) return fail("employeeCount");
 
   const notes = text("notes");
   if (notes.length > PORTAL_FIELD_LIMITS.notes) return fail("notes");
@@ -161,6 +186,7 @@ export function validateSubmission(input: Readonly<Record<string, unknown>>): Su
       address: address || null,
       industry: industryHit ? industryHit.value : null,
       urgency: urgencyHit ? urgencyHit.value : null,
+      employeeCount,
       notes,
       consent: true,
       consentVersion,

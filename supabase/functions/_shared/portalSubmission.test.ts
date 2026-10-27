@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  EMPLOYEE_COUNT_OPTIONS,
   PORTAL_FIELD_LIMITS,
   PORTAL_INDUSTRIES,
   PORTAL_URGENCIES,
@@ -20,6 +21,7 @@ const VALID = {
   address: " 5 Oak St ",
   industry: "restaurant",
   urgency: "this_week",
+  employeeCount: "11-50",
   notes: " Wants a demo ",
   consent: true,
   consentVersion: 3,
@@ -37,6 +39,7 @@ describe("validateSubmission", () => {
         address: "5 Oak St",
         industry: "restaurant",
         urgency: "this_week",
+        employeeCount: "11-50",
         notes: "Wants a demo",
         consent: true,
         consentVersion: 3,
@@ -62,6 +65,7 @@ describe("validateSubmission", () => {
         address: null,
         industry: null,
         urgency: null,
+        employeeCount: null,
         notes: "",
         consent: true,
         consentVersion: 0,
@@ -82,6 +86,10 @@ describe("validateSubmission", () => {
     [{ address: "x".repeat(PORTAL_FIELD_LIMITS.address + 1) }, "address"],
     [{ industry: "casino" }, "industry"],
     [{ urgency: "asap" }, "urgency"],
+    // The old Add Deal picker values are not accepted (FR-PORT-35, Q10).
+    [{ employeeCount: "10-49" }, "employeeCount"],
+    [{ employeeCount: "250+" }, "employeeCount"],
+    [{ employeeCount: "lots" }, "employeeCount"],
     [{ notes: "x".repeat(PORTAL_FIELD_LIMITS.notes + 1) }, "notes"],
     [{ consent: false }, "consent"],
     [{ consent: "true" }, "consent"],
@@ -118,8 +126,18 @@ describe("lists and labels", () => {
     expect(urgencyLabel(null)).toBeNull();
   });
 
+  it("has four employee-count buckets (FR-PORT-35, Q10)", () => {
+    expect(EMPLOYEE_COUNT_OPTIONS).toEqual([
+      { value: "1-10", label: "1 to 10" },
+      { value: "11-50", label: "11 to 50" },
+      { value: "51-200", label: "51 to 200" },
+      { value: "201+", label: "Over 200" },
+    ]);
+  });
+
   it("knows the submission field names", () => {
     expect(isSubmissionField("emailOrPhone")).toBe(true);
+    expect(isSubmissionField("employeeCount")).toBe(true);
     expect(isSubmissionField("slug")).toBe(false);
     expect(isSubmissionField(undefined)).toBe(false);
   });

@@ -27,6 +27,7 @@ import {
 import { EMPTY_DRAFT, clearPortalDraft, readPortalDraft, writePortalDraft, type PortalDraft } from "../lib/portalDraft";
 import { usePortalSignedIn } from "../lib/portalSignedIn";
 import {
+  EMPLOYEE_COUNT_OPTIONS,
   PORTAL_FIELD_LIMITS,
   PORTAL_INDUSTRIES,
   PORTAL_URGENCIES,
@@ -34,6 +35,7 @@ import {
   validateSubmission,
   type PortalSubmissionField,
 } from "../../../../../../supabase/functions/_shared/portalSubmission";
+import { portalPath } from "../lib/portalAddress";
 
 const FIELD_MESSAGES: Record<PortalSubmissionField, string> = {
   companyName: "Add the business name.",
@@ -44,6 +46,7 @@ const FIELD_MESSAGES: Record<PortalSubmissionField, string> = {
   address: "Shorten the address.",
   industry: "Pick an industry from the list.",
   urgency: "Pick a timing from the list.",
+  employeeCount: "Pick a size from the list.",
   notes: "Shorten the notes.",
   consent: "Check the box to confirm you have permission.",
 };
@@ -62,6 +65,7 @@ const FIELD_IDS: Record<PortalSubmissionField, string> = {
   address: "portal-address",
   industry: "portal-industry",
   urgency: "portal-urgency",
+  employeeCount: "portal-employees",
   notes: "portal-notes",
   consent: "portal-consent",
 };
@@ -212,13 +216,13 @@ export function PortalSubmitPage() {
             {brand.orgName} has {sent.companyName}. Your reference is {sent.ref}.
           </p>
         </div>
-        <Button variant="primary" size="lg" fullWidth onClick={() => navigate(`/p/${slug}/r/${sent.id}`)}>
+        <Button variant="primary" size="lg" fullWidth onClick={() => navigate(portalPath(slug, `/r/${sent.id}`))}>
           View this referral
         </Button>
         <Button variant="secondary" size="lg" fullWidth onClick={() => setSent(null)}>
           Send another
         </Button>
-        <Button variant="tertiary" size="lg" onClick={() => navigate(`/p/${slug}/home`)}>
+        <Button variant="tertiary" size="lg" onClick={() => navigate(portalPath(slug, `/home`))}>
           Back to your referrals
         </Button>
       </Card>
@@ -254,7 +258,7 @@ export function PortalSubmitPage() {
   return (
     <div className="flex flex-col gap-4">
       <Link
-        to={`/p/${slug}/home`}
+        to={portalPath(slug, `/home`)}
         className="inline-flex min-h-11 items-center gap-1 self-start text-body-sm text-brand-primary"
       >
         <ChevronLeft className="h-4 w-4" aria-hidden />
@@ -357,6 +361,22 @@ export function PortalSubmitPage() {
             >
               <option value="">Choose one</option>
               {PORTAL_URGENCIES.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </FormField>
+
+          <FormField label="How many employees? (optional)" htmlFor="portal-employees" error={errorFor("employeeCount")}>
+            <select
+              id="portal-employees"
+              className={SELECT_CLASS}
+              value={draft.employeeCount}
+              onChange={(e) => update("employeeCount")(e.target.value)}
+            >
+              <option value="">Choose one</option>
+              {EMPLOYEE_COUNT_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>

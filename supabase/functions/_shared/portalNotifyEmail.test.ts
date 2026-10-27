@@ -38,7 +38,14 @@ function copyOf(e: PortalNotifyEmail): string {
 
 describe("parsePartnerPayload", () => {
   it("accepts the SQL allowlist shape", () => {
-    expect(parsePartnerPayload({ ...P, valueCents: 500000 })).toEqual({ ...P, valueCents: 500000 });
+    expect(parsePartnerPayload({ ...P, valueCents: 500000 })).toEqual({ ...P, valueCents: 500000, message: null });
+  });
+
+  it("accepts the optional decline message key and nothing else extra", () => {
+    expect(parsePartnerPayload({ ...P, message: "  Not a fit.  " })?.message).toBe("Not a fit.");
+    expect(parsePartnerPayload({ ...P, message: "   " })?.message).toBeNull();
+    expect(parsePartnerPayload({ ...P, reason: "outside_icp" })).toBeNull();
+    expect(parsePartnerPayload({ ...P, message: "Hi", reason: "outside_icp" })).toBeNull();
   });
 
   it("rejects a missing field, an internal status, or a non-object", () => {
@@ -142,6 +149,36 @@ describe("partner emails", () => {
     expect(e.subject).toBe(subject);
     expect(e.bodyLines[1]).toBe(line);
     expect(e.ctaUrl).toBe(`${BASE}/p/acme/r/${RID}`);
+  });
+
+  it("not moving forward: the rep's message under a note from the ISO", () => {
+    const e = buildPortalNotifyEmail(
+      "partner_not_moving_forward",
+      withLabel("Not Moving Forward", { message: "Thanks Jane.\n\n  They are too small for us right now. <b>hi</b>  " }),
+      CTX,
+    )!;
+    expect(e.bodyLines).toEqual([
+      "Hi Jane,",
+      "Acme ISO is not moving forward with Fresh Bakery. Thank you for thinking of them.",
+      "A note from Acme ISO:",
+      "Thanks Jane.",
+      "They are too small for us right now. <b>hi</b>",
+      "Rita Rep at Acme ISO is your contact. Reply to this email to reach them.",
+    ]);
+    // The template escapes body lines like any other user text.
+    const html = renderEmail({ ...e }).html;
+    expect(html).toContain("&lt;b&gt;hi&lt;/b&gt;");
+    expect(html).not.toContain("<b>hi</b>");
+    const plain = buildPortalNotifyEmail("partner_not_moving_forward", withLabel("Not Moving Forward"), CTX)!;
+    expect(plain.bodyLines.join(" ")).not.toContain("A note from");
+  });
+
+  it("refuses a message on any other kind", () => {
+    for (const kind of PARTNER_NOTIFY_KINDS) {
+      if (kind === "partner_not_moving_forward") continue;
+      const label = kind === "partner_update" ? "Accepted" : KIND_LABEL[kind];
+      expect(buildPortalNotifyEmail(kind, withLabel(label, { updateBody: "Hi", message: "Hello" }), CTX)).toBeNull();
+    }
   });
 
   it("refuses a status email whose label does not match its kind", () => {

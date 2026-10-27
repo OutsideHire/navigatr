@@ -125,6 +125,8 @@ export interface PortalReferralDetail {
   canWithdraw: boolean;
   /** The ISO's retention period passed and the partner's own typed contact details were erased (FR-PORT-92). Always false for a rep-logged referral. */
   detailsRemoved: boolean;
+  /** FR-PORT-71: the deal value in cents, only for Closed Won and only when the ISO shows values to partners. Otherwise null. */
+  closedWonValueCents: number | null;
   rep: PortalRepContact | null;
   history: PortalHistoryEntry[];
   /** Newest first. */
@@ -271,6 +273,7 @@ async function submit(scope: ReferralScope, body: Body, ip: string | null, deps:
     p_address: s.address,
     p_industry: s.industry,
     p_urgency: s.urgency,
+    p_employee_count: s.employeeCount,
     p_notes: s.notes,
     p_consent: s.consent,
     p_consent_version: s.consentVersion,
@@ -319,12 +322,15 @@ async function dashboard(scope: ReferralScope, body: Body, deps: ReferralDeps): 
   const row = rows<Record<string, unknown>>(data)[0];
   if (!row) return serverError("dashboard", "no stats row");
   const won = num(row.closed_won);
-  const closed = won + num(row.not_moving_forward);
+  // Closed Won counts by close date, so the rate uses the won referrals sent in
+  // the same window (won_sent) to stay inside 0 to 100 percent.
+  const wonSent = num(row.won_sent);
+  const closed = wonSent + num(row.not_moving_forward);
   const out: PortalDashboard = {
     submitted: num(row.submitted),
     active: num(row.active),
     closedWon: won,
-    conversionRate: closed > 0 ? won / closed : null,
+    conversionRate: closed > 0 ? wonSent / closed : null,
     valueVisible: row.value_visible === true,
   };
   // FR-PORT-70/71: the value leaves the server only when the ISO allows it.
@@ -368,6 +374,20 @@ async function getReferral(scope: ReferralScope, body: Body, ip: string | null, 
     }
   }
 
+  // FR-PORT-71: the SQL gate (won and the ISO shows values) is the authority;
+  // the label check keeps a stale value off any other state. A failed lookup
+  // degrades to no value (logged) rather than breaking the page.
+  let closedWonValueCents: number | null = null;
+  if (label === "Closed Won") {
+    const val = await deps.rpc("portal_referral_value", { ...scopeArgs(scope), p_referral: id });
+    if (val.error) {
+      console.error("[portal_api] referral_value failed:", val.error.message);
+    } else if (val.data !== null && val.data !== undefined) {
+      const cents = Number(val.data);
+      if (Number.isSafeInteger(cents) && cents >= 0) closedWonValueCents = cents;
+    }
+  }
+
   // Defense in depth: SQL already blanks these for a rep-logged referral and
   // for a purged one; never pass rep-written text or erased details through
   // even if a row carried them (spec 6, FR-PORT-92).
@@ -391,6 +411,7 @@ async function getReferral(scope: ReferralScope, body: Body, ip: string | null, 
     submittedAt: str(row.submitted_at),
     canWithdraw: personal && row.can_withdraw === true,
     detailsRemoved: typed && removed,
+    closedWonValueCents,
     rep: repName || repEmail ? { name: repName ?? "", email: repEmail } : null,
     history,
     updates,

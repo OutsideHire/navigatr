@@ -213,6 +213,38 @@ do $$ declare r uuid; src uuid; begin
   end if;
 end $$;
 
+-- 9c. withdrawing one referral keeps the deal credit while ANOTHER live inbound
+--     referral from the same partner is still on that deal. Own deal so later
+--     steps are unaffected.
+insert into deals (id, org_id, owner_id, company_name, address, contact_name, contact_email, contact_phone, value_cents, stage, lead_source) values
+  ('e4d00000-0000-0000-0000-0000000000c9', '00000000-0000-0000-0000-0000000000e4', 'e4000000-0000-0000-0000-000000000003', 'Twice Referred Co', '5 Main St', 'C', 'w10@rp.example', '+15550004098', 100, 'contacted', 'path');
+
+do $$ declare r1 uuid; r2 uuid := 'e4f00000-0000-0000-0000-0000000000c2'; src uuid; begin
+  perform _t_act('e4000000-0000-0000-0000-000000000003');
+  r1 := public.log_referral('e4a00000-0000-0000-0000-000000000001', 'Twice Referred Co');
+  perform public.merge_referral(r1, 'e4d00000-0000-0000-0000-0000000000c9');
+  -- The unique index normally forbids a second live link, so the guard is
+  -- defensive. Drop it for this transaction (rolled back) to build the scenario.
+  perform set_config('role', 'postgres', true);
+  drop index referrals_partner_deal_live_uidx;
+  insert into referrals (id, org_id, partner_id, company_name, assigned_user_id, status, deal_id)
+  values (r2, '00000000-0000-0000-0000-0000000000e4', 'e4a00000-0000-0000-0000-000000000001', 'Twice Referred Co',
+          'e4000000-0000-0000-0000-000000000003', 'working', 'e4d00000-0000-0000-0000-0000000000c9');
+  perform _t_act('e4000000-0000-0000-0000-000000000003');
+  perform public.withdraw_referral(r1, 'Partner asked');
+  select source_partner_id into src from deals where id = 'e4d00000-0000-0000-0000-0000000000c9';
+  if src is distinct from 'e4a00000-0000-0000-0000-000000000001'::uuid then
+    raise exception 'credit must stay while another live referral backs it, got %', src;
+  end if;
+  perform public.withdraw_referral(r2, 'Partner asked');
+  select source_partner_id into src from deals where id = 'e4d00000-0000-0000-0000-0000000000c9';
+  if src is not null then raise exception 'credit should clear once the last live referral is withdrawn, got %', src; end if;
+  perform set_config('role', 'postgres', true);
+  create unique index referrals_partner_deal_live_uidx
+    on referrals (partner_id, deal_id, direction)
+    where deal_id is not null and status not in ('declined','withdrawn');
+end $$;
+
 -- 10. rep2 cannot triage rep1's referral.
 do $$ declare r uuid; begin
   perform _t_act('e4000000-0000-0000-0000-000000000003');

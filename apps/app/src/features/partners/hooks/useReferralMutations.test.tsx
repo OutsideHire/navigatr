@@ -89,6 +89,34 @@ describe("useDeclineReferral", () => {
     await result.current.mutateAsync({ referralId: "r-1", reason: "outside_icp", note: "Too big" });
     expect(rpcMock).toHaveBeenCalledWith("decline_referral", { p_referral_id: "r-1", p_reason: "outside_icp", p_note: "Too big" });
   });
+
+  it("keeps the plain RPC when the partner message is blank", async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useDeclineReferral(), { wrapper });
+    await result.current.mutateAsync({ referralId: "r-1", reason: "duplicate", note: "", partnerMessage: "  \n " });
+    expect(rpcMock).toHaveBeenCalledWith("decline_referral", { p_referral_id: "r-1", p_reason: "duplicate", p_note: null });
+  });
+
+  it("calls decline_referral_with_message with the trimmed partner message", async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    const { wrapper, spy } = setup();
+    const { result } = renderHook(() => useDeclineReferral(), { wrapper });
+    await result.current.mutateAsync({ referralId: "r-1", reason: "outside_icp", note: " Too big ", partnerMessage: "  Not a fit. " });
+    expect(rpcMock).toHaveBeenCalledWith("decline_referral_with_message", {
+      p_referral_id: "r-1", p_reason: "outside_icp", p_note: "Too big", p_partner_message: "Not a fit.",
+    });
+    // The message becomes a referral update: the referrals refresh covers its list.
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["referrals"] });
+  });
+
+  it("names a message that is too long", async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: "partner_message_too_long" } });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useDeclineReferral(), { wrapper });
+    await expect(result.current.mutateAsync({ referralId: "r-1", reason: "outside_icp", partnerMessage: "x" }))
+      .rejects.toThrow("Keep the message to the partner under 1,000 characters.");
+  });
 });
 
 describe("useMergeReferral", () => {

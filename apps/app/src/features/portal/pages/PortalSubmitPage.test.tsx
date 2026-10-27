@@ -135,6 +135,7 @@ describe("PortalSubmitPage", () => {
     await user.type(screen.getByLabelText("Address (optional)"), "5 Oak St");
     await user.selectOptions(screen.getByLabelText("Industry (optional)"), "restaurant");
     await user.selectOptions(screen.getByLabelText("How soon? (optional)"), "this_week");
+    await user.selectOptions(screen.getByLabelText("How many employees? (optional)"), "11 to 50");
     await user.type(screen.getByLabelText("Notes (optional)"), "Wants a demo");
     await user.click(await screen.findByRole("checkbox", { name: "I may share these details." }));
     await user.click(screen.getByRole("button", { name: "Send referral" }));
@@ -147,6 +148,7 @@ describe("PortalSubmitPage", () => {
       address: "5 Oak St",
       industry: "restaurant",
       urgency: "this_week",
+      employeeCount: "11-50",
       notes: "Wants a demo",
       consent: true,
       consentVersion: 3,
@@ -176,6 +178,20 @@ describe("PortalSubmitPage", () => {
     await user.click(screen.getByRole("button", { name: "Send referral" }));
     expect(await screen.findByText("Check the box to confirm you have permission.")).toBeInTheDocument();
     expect(api.submitReferral).not.toHaveBeenCalled();
+  });
+
+  it("asks how many employees, optionally, in four buckets (FR-PORT-35)", async () => {
+    renderAt("/p/acme/new");
+    const select = await screen.findByLabelText("How many employees? (optional)");
+    const options = Array.from(select.querySelectorAll("option")).map((o) => [o.value, o.textContent]);
+    expect(options).toEqual([
+      ["", "Choose one"],
+      ["1-10", "1 to 10"],
+      ["11-50", "11 to 50"],
+      ["51-200", "51 to 200"],
+      ["201+", "Over 200"],
+    ]);
+    expect(select).toHaveValue("");
   });
 
   it("restores and keeps a draft per portal", async () => {
@@ -262,6 +278,7 @@ describe("PortalSubmitPage", () => {
   it.each([
     [new PortalApiError(429, "rate_limited"), "Too many referrals right now. Try again later."],
     [new PortalApiError(400, "invalid_body", "notes"), "Shorten the notes."],
+    [new PortalApiError(400, "invalid_body", "employeeCount"), "Pick a size from the list."],
     [new PortalApiError(0, "network_error"), "We couldn't reach Acme ISO. Check your connection and try again."],
   ])("explains a failed send (%s)", async (error, message) => {
     const user = userEvent.setup();

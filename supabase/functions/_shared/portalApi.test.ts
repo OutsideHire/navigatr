@@ -377,18 +377,131 @@ describe("me", () => {
           user_email: "jane@example.com",
           org_name: "Acme ISO",
           org_slug: "acme",
+          terms_current: true,
         },
       ]),
     );
     const res = await handlePortalRequest(post("me", { slug: "acme" }, { "x-portal-session": "tok" }), deps);
     expect(rpc).toHaveBeenCalledWith("portal_session_lookup", { p_slug: "acme", p_token: "tok" });
-    expect(await res.json()).toEqual({ me: { partnerName: "Jane", email: "jane@example.com", orgName: "Acme ISO" } });
+    expect(await res.json()).toEqual({
+      me: { partnerName: "Jane", email: "jane@example.com", orgName: "Acme ISO", termsCurrent: true },
+    });
+  });
+
+  it("reports termsCurrent=false after the ISO edits its terms (FR-PORT-18)", async () => {
+    const { deps } = setup(() => ok([{ ...LOOKUP_ROW, terms_current: false }]));
+    const res = await handlePortalRequest(post("me", { slug: "acme" }, { "x-portal-session": "tok" }), deps);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { me: { termsCurrent: boolean } }).me.termsCurrent).toBe(false);
   });
 
   it("401s a dead session", async () => {
     const { deps } = setup(() => ok([]));
     const res = await handlePortalRequest(post("me", { slug: "acme" }, { "x-portal-session": "old" }), deps);
     expect(res.status).toBe(401);
+  });
+});
+
+const LOOKUP_ROW = {
+  portal_user_id: "u-1",
+  org_id: "o-1",
+  partner_id: "p-1",
+  partner_name: "Jane",
+  user_email: "jane@example.com",
+  org_name: "Acme ISO",
+  org_slug: "acme",
+  terms_current: true,
+};
+
+describe("terms re-acceptance (FR-PORT-18)", () => {
+  const H = { "x-portal-session": "tok" };
+
+  it("get_terms returns only the terms text and version for the session", async () => {
+    const { deps, rpc } = setup((name) =>
+      name === "portal_get_terms"
+        ? ok([{ terms_text: "Terms two.", terms_version: 2, terms_current: false, extra: "x" }])
+        : ok([]),
+    );
+    const res = await handlePortalRequest(post("get_terms", { slug: "acme" }, H), deps);
+    expect(rpc).toHaveBeenCalledWith("portal_get_terms", { p_slug: "acme", p_token: "tok" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ terms: { termsText: "Terms two.", termsVersion: 2, termsCurrent: false } });
+  });
+
+  it("get_terms 401s a dead or missing session", async () => {
+    const { deps, rpc } = setup(() => ok([]));
+    expect((await handlePortalRequest(post("get_terms", { slug: "acme" }, H), deps)).status).toBe(401);
+    expect((await handlePortalRequest(post("get_terms", { slug: "acme" }), deps)).status).toBe(401);
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("accept_terms records the version the partner read, with the client IP", async () => {
+    const { deps, rpc } = setup(() => ok(null));
+    const res = await handlePortalRequest(
+      post("accept_terms", { slug: "acme", termsVersion: 2 }, { ...H, "x-forwarded-for": "203.0.113.5" }),
+      deps,
+    );
+    expect(rpc).toHaveBeenCalledWith("portal_accept_terms", {
+      p_slug: "acme",
+      p_token: "tok",
+      p_terms_version: 2,
+      p_ip: "203.0.113.5",
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it("accept_terms 409s when the terms changed again since the partner read them", async () => {
+    const { deps } = setup(() => fail("terms_changed"));
+    const res = await handlePortalRequest(post("accept_terms", { slug: "acme", termsVersion: 1 }, H), deps);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "terms_changed" });
+  });
+
+  it("accept_terms 401s a dead session and 500s any other failure", async () => {
+    const dead = setup(() => fail("invalid_session"));
+    expect((await handlePortalRequest(post("accept_terms", { slug: "acme", termsVersion: 2 }, H), dead.deps)).status).toBe(401);
+    const broken = setup(() => fail("connection reset"));
+    const res = await handlePortalRequest(post("accept_terms", { slug: "acme", termsVersion: 2 }, H), broken.deps);
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "server_error" });
+  });
+
+  it("accept_terms 400s a missing or non-integer version, and 401s no session, without the database", async () => {
+    const { deps, rpc } = setup(() => ok(null));
+    expect((await handlePortalRequest(post("accept_terms", { slug: "acme" }, H), deps)).status).toBe(400);
+    expect((await handlePortalRequest(post("accept_terms", { slug: "acme", termsVersion: "2" }, H), deps)).status).toBe(400);
+    expect((await handlePortalRequest(post("accept_terms", { slug: "acme", termsVersion: 2 }), deps)).status).toBe(401);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it.each(["dashboard", "list_referrals", "get_profile", "submit_referral", "list_sent_referrals", "post_note", "export_referrals"])(
+    "%s answers 403 terms_required while the terms are not current, before any data rpc",
+    async (action) => {
+      const { deps, rpc } = setup((name) =>
+        name === "portal_session_lookup" ? ok([{ ...LOOKUP_ROW, terms_current: false }]) : ok([]),
+      );
+      const res = await handlePortalRequest(post(action, { slug: "acme" }, H), deps);
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "terms_required" });
+      expect(rpc).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("fails closed when the lookup does not say the terms are current", async () => {
+    const { terms_current: _drop, ...noFlag } = LOOKUP_ROW;
+    const { deps } = setup((name) => (name === "portal_session_lookup" ? ok([noFlag]) : ok([])));
+    const res = await handlePortalRequest(post("dashboard", { slug: "acme" }, H), deps);
+    expect(res.status).toBe(403);
+  });
+
+  it("lets data actions through once the terms are current", async () => {
+    const { deps, rpc } = setup((name) =>
+      name === "portal_session_lookup" ? ok([LOOKUP_ROW]) : ok([{ submitted: 0, active: 0, closed_won: 0 }]),
+    );
+    const res = await handlePortalRequest(post("dashboard", { slug: "acme", window: "all" }, H), deps);
+    expect(res.status).not.toBe(403);
+    expect(rpc.mock.calls.length).toBeGreaterThan(1);
   });
 });
 
@@ -488,6 +601,8 @@ describe("rpc that throws or rejects", () => {
     ["peek_invite", { slug: "acme", token: "tok" }, {}],
     ["accept_invite", { slug: "acme", token: "tok", termsVersion: 1 }, {}],
     ["me", { slug: "acme" }, H],
+    ["get_terms", { slug: "acme" }, H],
+    ["accept_terms", { slug: "acme", termsVersion: 1 }, H],
     ["sign_out", {}, H],
   ])("%s answers 500 server_error with no detail", async (action, body, headers) => {
     const res = await handlePortalRequest(post(action, body, headers), throwing());

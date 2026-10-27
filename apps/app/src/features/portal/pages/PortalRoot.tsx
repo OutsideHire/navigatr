@@ -27,6 +27,7 @@ import { PortalSentReferralPage } from "./PortalSentReferralPage";
 import { PortalProfilePage } from "./PortalProfilePage";
 import { PortalPublicFormPage } from "./PortalPublicFormPage";
 import { PortalUnsubscribePage } from "./PortalUnsubscribePage";
+import { portalPath } from "../lib/portalAddress";
 
 export function PortalRoot() {
   const { slug: rawSlug = "" } = useParams<{ slug: string }>();
@@ -67,7 +68,7 @@ export function PortalRoot() {
             <Route path="s/:referralId" element={<PortalSentReferralPage />} />
             <Route path="profile" element={<PortalProfilePage />} />
           </Route>
-          <Route path="*" element={<Navigate to={`/p/${slug}`} replace />} />
+          <Route path="*" element={<Navigate to={portalPath(slug)} replace />} />
         </Routes>
       </PortalShell>
     </PortalBrandProvider>

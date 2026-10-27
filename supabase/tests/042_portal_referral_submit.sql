@@ -92,7 +92,7 @@ do $$ declare f text; begin
   foreach f in array array[
     'public.portal_form_context(uuid, uuid)',
     'public.portal_dup_check(uuid, uuid, uuid, text, text, text, text)',
-    'public.portal_submit_referral(uuid, uuid, uuid, text, text, text, text, text, text, text, text, boolean, integer, text)'
+    'public.portal_submit_referral(uuid, uuid, uuid, text, text, text, text, text, text, text, text, boolean, integer, text, text)'
   ] loop
     if has_function_privilege('authenticated', f, 'EXECUTE') then raise exception 'authenticated must not execute %', f; end if;
     if has_function_privilege('anon', f, 'EXECUTE') then raise exception 'anon must not execute %', f; end if;
@@ -348,6 +348,34 @@ begin
   select '00000000-0000-0000-0000-000000001042', 'a042b000-0000-0000-0000-000000000002', 'dup_check', now() - interval '5 minutes'
     from generate_series(1, 120);
   perform _t_raises($q$select public.portal_dup_check('00000000-0000-0000-0000-000000001042', 'a042a000-0000-0000-0000-000000000002', 'a042b000-0000-0000-0000-000000000002', 'Co', null, null, null)$q$, 'rate_limited');
+end $$;
+
+-- FR-PORT-35 (Q10): optional business size in four buckets, checked again in SQL.
+do $$
+declare
+  r record;
+  v referrals;
+  head text := $q$select * from public.portal_submit_referral(p_org => '00000000-0000-0000-0000-000000001042', p_partner => 'a042a000-0000-0000-0000-000000000001', p_portal_user => 'a042b000-0000-0000-0000-000000000001', p_company => 'Bad Size Co', p_contact_name => 'Ann', p_contact_email => null, p_contact_phone => '5550100778', p_address => null, p_industry => null, p_urgency => null, p_notes => '', p_consent => true, p_consent_version => 3, p_ip => null, p_employee_count => $q$;
+begin
+  if (select employee_count_range from referrals where id = (select i.v from _ids i where i.k = 's1')) is not null then
+    raise exception 'a referral sent without a size stores null';
+  end if;
+  select * into r from public.portal_submit_referral(
+    p_org => '00000000-0000-0000-0000-000000001042', p_partner => 'a042a000-0000-0000-0000-000000000001',
+    p_portal_user => 'a042b000-0000-0000-0000-000000000001', p_company => 'Size Co', p_contact_name => 'Ann',
+    p_contact_email => null, p_contact_phone => '5550100777', p_address => null, p_industry => null,
+    p_urgency => null, p_notes => '', p_consent => true, p_consent_version => 3, p_ip => null,
+    p_employee_count => ' 51-200 ');
+  select * into v from referrals where id = r.id;
+  if v.employee_count_range is distinct from '51-200' then
+    raise exception 'the size should be stored trimmed, got %', v.employee_count_range;
+  end if;
+  -- The old Add Deal picker values and anything else are refused.
+  perform _t_raises(head || $q$'50-249')$q$, 'invalid_input:employeeCount');
+  perform _t_raises(head || $q$'lots')$q$, 'invalid_input:employeeCount');
+  -- The column refuses them too, whoever writes it.
+  perform _t_raises($q$update referrals set employee_count_range = '10-49' where id = '$q$ || r.id || $q$'$q$,
+                    'referrals_employee_count_range_check');
 end $$;
 
 rollback;
