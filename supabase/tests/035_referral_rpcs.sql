@@ -273,6 +273,14 @@ do $$ declare ok boolean; begin
   if (select assigned_user_id from referrals where id = (select v from _ids where k = 'guarded')) <> 'e4000000-0000-0000-0000-000000000004' then
     raise exception 'reassign did not move the referral';
   end if;
+  -- The move is written to the history as a row where the status did not change.
+  if not exists (select 1 from referral_status_history h
+                  where h.referral_id = (select v from _ids where k = 'guarded')
+                    and h.from_status = h.to_status and h.actor_type = 'user'
+                    and h.actor_id = 'e4000000-0000-0000-0000-000000000002'
+                    and h.note = 'Reassigned to ' || (select full_name from profiles where id = 'e4000000-0000-0000-0000-000000000004')) then
+    raise exception 'reassign did not write a history row';
+  end if;
 end $$;
 
 -- 12. attribute / refer / remove keep the old partner page working.

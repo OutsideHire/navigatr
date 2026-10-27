@@ -36,6 +36,7 @@ import type { QueueReferral } from "../hooks/useReferralQueue";
 import { useAcceptReferral, useDeclineReferral, useMergeReferral } from "../hooks/useReferralMutations";
 import { REFERRAL_UPDATE_MAX } from "../hooks/useReferralUpdates";
 import { WithdrawReferralConfirm } from "./WithdrawReferralConfirm";
+import { ReferralHistory } from "./ReferralHistory";
 import { useAssigneeSeesPartner, useReassignReferral, useReferralAssignees } from "../hooks/useReassignReferral";
 import { DECLINE_REASON_OPTIONS, canReassignReferrals, icpFlagLabels, mergeResultMessage, type DeclineReason } from "../lib/referrals";
 import { urgencyLabel } from "../../../../../../supabase/functions/_shared/portalSubmission";
@@ -256,6 +257,8 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
               Possible duplicate: {dupName} is already in your team's pipeline.
             </p>
           )}
+
+          <ReferralHistory referralId={referral.id} />
 
           {mode === "main" && (
             <div className="flex flex-col gap-2 pt-1">

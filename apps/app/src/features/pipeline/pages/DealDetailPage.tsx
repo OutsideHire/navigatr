@@ -28,6 +28,7 @@ import { useDealReferral } from "@/features/partners/hooks/useDealReferral";
 import { PartnerNoteBacksPanel } from "@/features/partners/components/PartnerNoteBacksPanel";
 import { WithdrawReferralConfirm } from "@/features/partners/components/WithdrawReferralConfirm";
 import { ReferralUpdatesPanel } from "@/features/partners/components/ReferralUpdatesPanel";
+import { ReferralHistory } from "@/features/partners/components/ReferralHistory";
 import { toast } from "sonner";
 import * as Tabs from "@radix-ui/react-tabs";
 import {
@@ -582,6 +583,11 @@ function SourceCard({ deal }: { deal: Deal }) {
               Withdraw (partner asked)
             </Button>
           )}
+        </div>
+      )}
+      {referral && (
+        <div className="mt-3">
+          <ReferralHistory referralId={referral.referralId} />
         </div>
       )}
       <PartnerNoteBacksPanel dealId={deal.id} />
