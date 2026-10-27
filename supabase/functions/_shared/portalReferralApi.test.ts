@@ -381,6 +381,7 @@ describe("get_referral", () => {
         canWithdraw: false,
         detailsRemoved: false,
         rep: { name: "Rita Rep", email: "rita@acme.example" },
+        closedWonValueCents: null,
         history: [
           { label: "Received", at: "2026-10-01T12:00:00Z" },
           { label: "Accepted", at: "2026-10-02T12:00:00Z" },
@@ -826,5 +827,89 @@ describe("get_referral after a purge", () => {
     });
     const { json } = await call("get_referral", { referralId: RID }, deps);
     expect((json.referral as Record<string, unknown>).detailsRemoved).toBe(false);
+  });
+});
+
+describe("get_referral closed value (FR-PORT-71)", () => {
+  const DETAIL = {
+    id: RID,
+    ref: "REF-3F9A21C0",
+    company_name: "Fresh Bakery",
+    contact_name: "Ann",
+    contact_email: "ann@fresh.example",
+    contact_phone: "5550100100",
+    address: "5 Oak St",
+    industry: "restaurant",
+    urgency: "this_week",
+    notes: "Wants a demo",
+    status: "working",
+    source: "portal_signed_in",
+    submitted_at: "2026-10-01T12:00:00Z",
+    rep_name: "Rita Rep",
+    rep_email: "rita@acme.example",
+    can_withdraw: false,
+  };
+  const HISTORY = [{ status: "working", created_at: "2026-10-03T12:00:00Z" }];
+  const WON = { ...DETAIL, status: "won" };
+  const base = (value: PortalRpcResult) =>
+    setup({
+      portal_get_referral: () => ok([WON]),
+      portal_referral_history: () => ok([{ status: "won", created_at: "2026-10-06T12:00:00Z" }]),
+      portal_referral_updates: () => ok([]),
+      portal_referral_value: () => value,
+    });
+
+  it("returns the value for a Closed Won referral when the ISO shows values", async () => {
+    const { deps, rpc } = base(ok(700000));
+    const { json } = await call("get_referral", { referralId: RID }, deps);
+    expect(rpc).toHaveBeenCalledWith("portal_referral_value", { p_org: "o-1", p_partner: "p-1", p_referral: RID });
+    expect((json.referral as Record<string, unknown>).closedWonValueCents).toBe(700000);
+  });
+
+  it("is null when the ISO hides values (the RPC returns null)", async () => {
+    const { deps } = base(ok(null));
+    const { json } = await call("get_referral", { referralId: RID }, deps);
+    expect((json.referral as Record<string, unknown>).closedWonValueCents).toBeNull();
+  });
+
+  it("is null and never asks for a value unless the label is Closed Won", async () => {
+    const { deps, rpc } = setup({
+      portal_get_referral: () => ok([DETAIL]),
+      portal_referral_history: () => ok(HISTORY),
+      portal_referral_updates: () => ok([]),
+      portal_referral_value: () => ok(5),
+    });
+    const { json } = await call("get_referral", { referralId: RID }, deps);
+    expect((json.referral as Record<string, unknown>).closedWonValueCents).toBeNull();
+    expect(rpc).not.toHaveBeenCalledWith("portal_referral_value", expect.anything());
+  });
+
+  it("drops a malformed value instead of passing it on", async () => {
+    for (const bad of [-1, "abc", 1.5]) {
+      const { deps } = base(ok(bad));
+      const { json } = await call("get_referral", { referralId: RID }, deps);
+      expect((json.referral as Record<string, unknown>).closedWonValueCents).toBeNull();
+    }
+  });
+
+  it("a failed value lookup degrades to no value, logged, page still loads", async () => {
+    const { deps } = base(fail("boom"));
+    const { status, json } = await call("get_referral", { referralId: RID }, deps);
+    expect(status).toBe(200);
+    expect((json.referral as Record<string, unknown>).closedWonValueCents).toBeNull();
+    expect(console.error).toHaveBeenCalledWith("[portal_api] referral_value failed:", "boom");
+  });
+
+  it("still shows the value after a purge (the deal keeps its value)", async () => {
+    const { deps } = setup({
+      portal_get_referral: () => ok([{ ...WON, details_removed: true }]),
+      portal_referral_history: () => ok([{ status: "won", created_at: "2026-10-06T12:00:00Z" }]),
+      portal_referral_updates: () => ok([]),
+      portal_referral_value: () => ok(300000),
+    });
+    const { json } = await call("get_referral", { referralId: RID }, deps);
+    const detail = json.referral as Record<string, unknown>;
+    expect(detail.detailsRemoved).toBe(true);
+    expect(detail.closedWonValueCents).toBe(300000);
   });
 });

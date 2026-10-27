@@ -20,7 +20,7 @@ import {
   portalApi,
   portalDataKey,
 } from "../lib/portalApi";
-import { formatPortalDate } from "../lib/portalFormat";
+import { formatPortalDate, formatPortalMoney } from "../lib/portalFormat";
 import { usePortalSignedIn } from "../lib/portalSignedIn";
 import { industryLabel, urgencyLabel } from "../../../../../../supabase/functions/_shared/portalSubmission";
 
@@ -132,6 +132,9 @@ export function PortalReferralPage() {
         <p className="text-caption text-text-muted">
           {r.ref} · Sent {formatPortalDate(r.submittedAt)}
         </p>
+        {r.closedWonValueCents !== null && (
+          <p className="text-body-strong text-text-default">Closed value: {formatPortalMoney(r.closedWonValueCents)}</p>
+        )}
       </Card>
 
       {updates.length > 0 && (

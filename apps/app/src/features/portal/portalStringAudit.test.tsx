@@ -184,6 +184,8 @@ describe("portal_api responses", () => {
             }],
             error: null,
           };
+        case "portal_referral_value":
+          return { data: 700000, error: null };
         case "portal_referral_history":
           return {
             data: INTERNAL_STATUSES.map((s, i) => ({ status: s, created_at: `2026-10-0${i + 1}T12:00:00Z`, actor_type: "user", note: SECRET })),
