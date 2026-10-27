@@ -3,7 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
-import { useAcceptReferral, useDeclineReferral, useLogReferral, useMergeReferral } from "./useReferralMutations";
+import { useAcceptReferral, useDeclineReferral, useLogReferral, useMergeReferral, useWithdrawReferral } from "./useReferralMutations";
 
 const rpcMock = vi.fn();
 vi.mock("@/lib/supabase", () => ({ supabase: { rpc: (...a: unknown[]) => rpcMock(...a) } }));
@@ -127,5 +127,40 @@ describe("useMergeReferral", () => {
     const { wrapper } = setup();
     const { result } = renderHook(() => useMergeReferral(), { wrapper });
     await expect(result.current.mutateAsync({ referralId: "r-1", dealId: "d-7" })).rejects.toThrow("That deal is already linked to this partner.");
+  });
+});
+
+describe("useWithdrawReferral", () => {
+  it("calls withdraw_referral with a trimmed note and refreshes referrals, partners, deals", async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    const { wrapper, spy } = setup();
+    const { result } = renderHook(() => useWithdrawReferral(), { wrapper });
+    await result.current.mutateAsync({ referralId: "r-1", note: " Partner asked by phone " });
+    expect(rpcMock).toHaveBeenCalledWith("withdraw_referral", { p_referral_id: "r-1", p_note: "Partner asked by phone" });
+    await waitFor(() => expect(spy.mock.calls.map((x) => x[0]?.queryKey)).toEqual([
+      ["referrals"], ["partners", "list", "user-1"], ["deals", "list", "user-1"],
+    ]));
+  });
+
+  it("sends a null note when none is given", async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useWithdrawReferral(), { wrapper });
+    await result.current.mutateAsync({ referralId: "r-1", note: "  " });
+    expect(rpcMock).toHaveBeenCalledWith("withdraw_referral", { p_referral_id: "r-1", p_note: null });
+  });
+
+  it("maps errors", async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: "referral_closed" } });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useWithdrawReferral(), { wrapper });
+    await expect(result.current.mutateAsync({ referralId: "r-1" })).rejects.toThrow("This referral is already closed.");
+  });
+
+  it("falls back to generic copy on an unknown error", async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: "boom" } });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useWithdrawReferral(), { wrapper });
+    await expect(result.current.mutateAsync({ referralId: "r-1" })).rejects.toThrow("Couldn't withdraw the referral");
   });
 });

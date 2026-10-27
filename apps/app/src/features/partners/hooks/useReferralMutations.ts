@@ -138,3 +138,22 @@ export function useMergeReferral() {
     onSuccess: refresh,
   });
 }
+
+/**
+ * Withdraw a referral the partner asked to pull (FR-PORT-42). The note is
+ * internal only: it lands in the status history and is never shown to the
+ * partner, who just sees Withdrawn. Clears the deal's partner credit.
+ */
+export function useWithdrawReferral() {
+  const refresh = useRefresh(true);
+  return useMutation({
+    mutationFn: async (input: { referralId: string; note?: string }): Promise<void> => {
+      const { error } = await supabase.rpc("withdraw_referral", {
+        p_referral_id: input.referralId,
+        p_note: input.note?.trim() || null,
+      });
+      if (error) throw new Error(referralErrorMessage(error, "Couldn't withdraw the referral"));
+    },
+    onSuccess: refresh,
+  });
+}

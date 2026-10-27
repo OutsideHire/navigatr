@@ -2,7 +2,8 @@
  * Deal Detail shows who referred the deal, linking to the partner, and shows
  * nothing when the deal has no referral.
  */
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -17,11 +18,19 @@ let dealReferral: {
   partnerName: string | null;
   partnerCompany: string | null;
   partnerCompanySnapshot: string | null;
+  status?: string;
 } | null = null;
 
 vi.mock("@/features/partners/hooks/useDealReferral", () => ({
   useDealReferral: () => ({ data: dealReferral }),
 }));
+
+const withdrawMutate = vi.fn();
+vi.mock("@/features/partners/hooks/useReferralMutations", () => ({
+  useWithdrawReferral: () => ({ mutateAsync: withdrawMutate, isPending: false }),
+}));
+const toastSuccess = vi.fn();
+vi.mock("sonner", () => ({ toast: { success: (...a: unknown[]) => toastSuccess(...a), error: vi.fn() } }));
 
 vi.mock("@/features/partners/hooks/useReferralUpdates", () => ({
   REFERRAL_UPDATE_MAX: 1000,
@@ -65,6 +74,8 @@ function renderDealDetail() {
 beforeEach(() => {
   partnerNotes = [];
   portalEnabled = true;
+  withdrawMutate.mockReset();
+  toastSuccess.mockReset();
 });
 
 describe("DealDetailPage / referred by", () => {
@@ -126,5 +137,34 @@ describe("DealDetailPage / referred by", () => {
     renderDealDetail();
     const group = await screen.findByRole("region", { name: "Notes from Kim CPA" });
     expect(within(group).getByText("Signed today.")).toBeInTheDocument();
+  });
+
+  it("withdraws an accepted referral at the partner's request, with an optional internal note", async () => {
+    dealReferral = {
+      referralId: "r-5", partnerId: "p-1", partnerVisible: true, partnerName: "Jane",
+      partnerCompany: "Jane & Co", partnerCompanySnapshot: "Jane & Co", status: "accepted",
+    };
+    withdrawMutate.mockResolvedValueOnce(undefined);
+    renderDealDetail();
+    await userEvent.click(await screen.findByRole("button", { name: "Withdraw (partner asked)" }));
+    expect(withdrawMutate).not.toHaveBeenCalled();
+    await userEvent.type(screen.getByPlaceholderText("Internal note (optional)"), "Emailed us");
+    await userEvent.click(screen.getByRole("button", { name: "Withdraw referral" }));
+    await waitFor(() => expect(withdrawMutate).toHaveBeenCalledWith({ referralId: "r-5", note: "Emailed us" }));
+    expect(toastSuccess).toHaveBeenCalledWith("Referral withdrawn. The partner will see Withdrawn.");
+  });
+
+  it("offers withdraw on a working referral but not on a won or lost one", async () => {
+    dealReferral = {
+      referralId: "r-6", partnerId: "p-1", partnerVisible: true, partnerName: "Jane",
+      partnerCompany: "Jane & Co", partnerCompanySnapshot: "Jane & Co", status: "working",
+    };
+    const first = renderDealDetail();
+    expect(await screen.findByRole("button", { name: "Withdraw (partner asked)" })).toBeInTheDocument();
+    first.unmount();
+    dealReferral = { ...dealReferral, status: "won" };
+    renderDealDetail();
+    await screen.findByText(/Referred by/);
+    expect(screen.queryByRole("button", { name: "Withdraw (partner asked)" })).not.toBeInTheDocument();
   });
 });

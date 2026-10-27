@@ -179,6 +179,40 @@ do $$ begin
   end;
 end $$;
 
+-- 9b. withdrawing an accepted/working referral clears the deal's partner credit
+--     when it points at this referral's partner (FR-PORT-42), and keeps it when
+--     the deal is credited to a different partner. Uses its own deal so the later
+--     steps on 'Existing Co' are unaffected.
+insert into deals (id, org_id, owner_id, company_name, address, contact_name, contact_email, contact_phone, value_cents, stage, lead_source) values
+  ('e4d00000-0000-0000-0000-0000000000b9', '00000000-0000-0000-0000-0000000000e4', 'e4000000-0000-0000-0000-000000000003', 'Withdraw Co', '4 Main St', 'C', 'w9@rp.example', '+15550004099', 100, 'contacted', 'path');
+
+do $$ declare r uuid; src uuid; begin
+  perform _t_act('e4000000-0000-0000-0000-000000000003');
+  r := public.log_referral('e4a00000-0000-0000-0000-000000000001', 'Withdraw Co');
+  perform public.merge_referral(r, 'e4d00000-0000-0000-0000-0000000000b9');
+  select source_partner_id into src from deals where id = 'e4d00000-0000-0000-0000-0000000000b9';
+  if src is distinct from 'e4a00000-0000-0000-0000-000000000001'::uuid then
+    raise exception 'fixture: deal should be credited to P1, got %', src;
+  end if;
+  perform public.withdraw_referral(r, 'Partner asked');
+  select source_partner_id into src from deals where id = 'e4d00000-0000-0000-0000-0000000000b9';
+  if src is not null then raise exception 'withdraw must clear the deal credit, got %', src; end if;
+end $$;
+
+do $$ declare r uuid; src uuid; begin
+  perform _t_act('e4000000-0000-0000-0000-000000000003');
+  r := public.log_referral('e4a00000-0000-0000-0000-000000000001', 'Withdraw Co');
+  perform public.merge_referral(r, 'e4d00000-0000-0000-0000-0000000000b9');
+  perform set_config('role', 'postgres', true);
+  update deals set source_partner_id = 'e4a00000-0000-0000-0000-000000000002' where id = 'e4d00000-0000-0000-0000-0000000000b9';
+  perform _t_act('e4000000-0000-0000-0000-000000000003');
+  perform public.withdraw_referral(r);
+  select source_partner_id into src from deals where id = 'e4d00000-0000-0000-0000-0000000000b9';
+  if src is distinct from 'e4a00000-0000-0000-0000-000000000002'::uuid then
+    raise exception 'withdraw must keep another partner''s credit, got %', src;
+  end if;
+end $$;
+
 -- 10. rep2 cannot triage rep1's referral.
 do $$ declare r uuid; begin
   perform _t_act('e4000000-0000-0000-0000-000000000003');

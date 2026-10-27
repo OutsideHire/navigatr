@@ -33,11 +33,12 @@ import { useDeals } from "@/features/pipeline/hooks/useDeals";
 import { useCustomerMatch } from "../hooks/useCustomerMatch";
 import type { QueueReferral } from "../hooks/useReferralQueue";
 import { useAcceptReferral, useDeclineReferral, useMergeReferral } from "../hooks/useReferralMutations";
+import { WithdrawReferralConfirm } from "./WithdrawReferralConfirm";
 import { useAssigneeSeesPartner, useReassignReferral, useReferralAssignees } from "../hooks/useReassignReferral";
 import { DECLINE_REASON_OPTIONS, canReassignReferrals, icpFlagLabels, mergeResultMessage, type DeclineReason } from "../lib/referrals";
 import { urgencyLabel } from "../../../../../../supabase/functions/_shared/portalSubmission";
 
-type Mode = "main" | "decline" | "merge" | "override" | "reassign";
+type Mode = "main" | "decline" | "merge" | "override" | "reassign" | "withdraw";
 
 export interface ReviewReferralSheetProps {
   referral: QueueReferral | null;
@@ -271,7 +272,18 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
                   Reassign
                 </Button>
               )}
+              <Button variant="tertiary" disabled={accept.isPending} onClick={() => setMode("withdraw")}>
+                Withdraw (partner asked)
+              </Button>
             </div>
+          )}
+
+          {mode === "withdraw" && (
+            <WithdrawReferralConfirm
+              referralId={referral.id}
+              onBack={() => setMode("main")}
+              onDone={() => onOpenChange(false)}
+            />
           )}
 
           {mode === "override" && (

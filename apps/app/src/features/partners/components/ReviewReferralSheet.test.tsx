@@ -11,10 +11,12 @@ const accept = vi.fn();
 let acceptPending = false;
 const decline = vi.fn();
 const merge = vi.fn();
+const withdraw = vi.fn();
 vi.mock("../hooks/useReferralMutations", () => ({
   useAcceptReferral: () => ({ mutateAsync: accept, isPending: acceptPending }),
   useDeclineReferral: () => ({ mutateAsync: decline, isPending: false }),
   useMergeReferral: () => ({ mutateAsync: merge, isPending: false }),
+  useWithdrawReferral: () => ({ mutateAsync: withdraw, isPending: false }),
 }));
 const checkPlaceDuplicate = vi.fn();
 vi.mock("@/features/pipeline/hooks/usePlaceDuplicateCheck", () => ({
@@ -91,7 +93,7 @@ function renderSheet(onOpenChange = vi.fn()) {
 }
 
 beforeEach(() => {
-  acceptPending = false; accept.mockReset(); decline.mockReset(); merge.mockReset();
+  acceptPending = false; accept.mockReset(); decline.mockReset(); merge.mockReset(); withdraw.mockReset();
   checkPlaceDuplicate.mockReset().mockResolvedValue(null);
   toastSuccess.mockReset(); toastError.mockReset();
   customerState.data = null; customerArgs.length = 0;
@@ -403,5 +405,35 @@ describe("ReviewReferralSheet: chain advisory and reassign", () => {
     await userEvent.click(screen.getByRole("button", { name: "Reassign referral" }));
     await waitFor(() => expect(toastError).toHaveBeenCalledWith("You don't have access to do that."));
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it("withdraws a referral the partner asked to pull, with an optional internal note", async () => {
+    withdraw.mockResolvedValueOnce(undefined);
+    const onOpenChange = renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Withdraw (partner asked)" }));
+    expect(withdraw).not.toHaveBeenCalled();
+    expect(screen.getByText(/internal only/i)).toBeInTheDocument();
+    await userEvent.type(screen.getByPlaceholderText("Internal note (optional)"), "Called me");
+    await userEvent.click(screen.getByRole("button", { name: "Withdraw referral" }));
+    await waitFor(() => expect(withdraw).toHaveBeenCalledWith({ referralId: "r-1", note: "Called me" }));
+    expect(toastSuccess).toHaveBeenCalledWith("Referral withdrawn. The partner will see Withdrawn.");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("goes back from the withdraw confirm without calling anything", async () => {
+    renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Withdraw (partner asked)" }));
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("button", { name: "Accept" })).toBeInTheDocument();
+    expect(withdraw).not.toHaveBeenCalled();
+  });
+
+  it("shows the error and stays open when withdraw fails", async () => {
+    withdraw.mockRejectedValueOnce(new Error("This referral is already closed."));
+    const onOpenChange = renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Withdraw (partner asked)" }));
+    await userEvent.click(screen.getByRole("button", { name: "Withdraw referral" }));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("This referral is already closed."));
+    expect(onOpenChange).not.toHaveBeenCalled();
   });
 });
