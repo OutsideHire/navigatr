@@ -13,6 +13,10 @@
 -- Forward and gets that email, never Accepted. With no partner on the deal (or
 -- the same partner) the merge links the referral exactly as before.
 --
+-- A closed duplicate that was not flagged against a referral points at the
+-- crediting partner's earliest live inbound referral on that deal, so the
+-- existing reinstate flow (20261016000005) applies if that partner withdraws.
+--
 -- Both merges now say what happened: {result: 'merged' | 'closed_duplicate',
 -- credited_partner_name}. The name is only filled when the caller can see that
 -- partner, so the toast never names a partner the rep cannot see. The return
@@ -23,7 +27,7 @@ drop function if exists public.merge_referral_override(uuid, uuid, text);
 drop function if exists public.merge_referral(uuid, uuid);
 
 create function public.merge_referral(p_referral_id uuid, p_deal_id uuid)
-returns jsonb language plpgsql security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 declare
   r       referrals := public._referral_for_update(p_referral_id);
   v_deal  deals;
@@ -47,11 +51,23 @@ begin
     raise exception 'deal_not_visible' using errcode = '42501';
   end if;
   -- First partner keeps credit: the deal stays theirs and this referral closes
-  -- as a duplicate of it, whether or not it was flagged.
+  -- as a duplicate of it, whether or not it was flagged. When it was not
+  -- flagged against a referral, it points at that partner's earliest live
+  -- inbound referral on the deal (if any), so reinstate works if that partner
+  -- later withdraws.
   if v_deal.source_partner_id is not null and v_deal.source_partner_id <> r.partner_id then
     update referrals
        set status = 'declined', decline_reason = 'duplicate',
            duplicate_of_deal_id = p_deal_id,
+           duplicate_of_referral_id = coalesce(duplicate_of_referral_id, (
+             select h.id from referrals h
+              where h.deal_id = p_deal_id
+                and h.partner_id = v_deal.source_partner_id
+                and h.direction = 'inbound'
+                and h.status not in ('declined','withdrawn')
+                and h.purged_at is null
+              order by h.submitted_at, h.id
+              limit 1)),
            assigned_user_id = coalesce(assigned_user_id, auth.uid()),
            triaged_by = auth.uid(), triaged_at = now()
      where id = r.id;
@@ -93,7 +109,7 @@ begin
   return v_result;
 end $$;
 
-revoke execute on function public.merge_referral(uuid, uuid)                from public, anon;
+revoke execute on function public.merge_referral(uuid, uuid)                from public, anon, authenticated;
 revoke execute on function public.merge_referral_override(uuid, uuid, text) from public, anon, authenticated;
 grant  execute on function public.merge_referral(uuid, uuid)                to authenticated;
 grant  execute on function public.merge_referral_override(uuid, uuid, text) to authenticated;

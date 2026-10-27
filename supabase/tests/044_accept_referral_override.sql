@@ -61,6 +61,15 @@ insert into referrals (id, org_id, partner_id, source, company_name, address, co
   ('a044f000-0000-0000-0000-000000000012', '00000000-0000-0000-0000-000000001044', 'a044a000-0000-0000-0000-000000000002', 'rep_entered',      'Credit Spot', '2 Credit St', 'Uma', 'a0440000-0000-0000-0000-000000000002', null),
   ('a044f000-0000-0000-0000-000000000013', '00000000-0000-0000-0000-000000001044', 'a044a000-0000-0000-0000-000000000002', 'rep_entered',      'Hidden Spot', '5 Hidden St', 'Vi',  'a0440000-0000-0000-0000-000000000002', null);
 
+-- Unflagged-duplicate fixture: deal DR credited to P1 through P1's live inbound
+-- referral R (working, linked to DR). P2's unflagged referral W merges into DR.
+insert into deals (id, org_id, owner_id, company_name, address, contact_name, contact_email, contact_phone, value_cents, stage, lead_source, source_partner_id) values
+  ('a044d000-0000-0000-0000-00000000000d', '00000000-0000-0000-0000-000000001044', 'a0440000-0000-0000-0000-000000000002', 'Linked Spot', '6 Linked St', 'C', 'l@ao.example', '5550440006', 100, 'contacted', 'partner_referral', 'a044a000-0000-0000-0000-000000000001');
+
+insert into referrals (id, org_id, partner_id, source, company_name, address, contact_name, assigned_user_id, status, deal_id) values
+  ('a044f000-0000-0000-0000-000000000014', '00000000-0000-0000-0000-000000001044', 'a044a000-0000-0000-0000-000000000001', 'portal_signed_in', 'Linked Spot', '6 Linked St', 'Ro', 'a0440000-0000-0000-0000-000000000002', 'working', 'a044d000-0000-0000-0000-00000000000d'),
+  ('a044f000-0000-0000-0000-000000000015', '00000000-0000-0000-0000-000000001044', 'a044a000-0000-0000-0000-000000000002', 'rep_entered',      'Linked Spot', '6 Linked St', 'Wy', 'a0440000-0000-0000-0000-000000000002', 'submitted', null);
+
 create or replace function _t_act(p_user uuid) returns void language plpgsql as $$
 begin
   perform set_config('request.jwt.claim.sub', p_user::text, true);
@@ -105,6 +114,15 @@ do $$ begin
   end if;
   if has_function_privilege('anon', 'public.merge_referral(uuid, uuid)', 'EXECUTE') then
     raise exception 'anon must not execute merge_referral';
+  end if;
+  -- Same hardening as every new RPC: pinned search_path, authenticated only.
+  if not exists (select 1 from pg_proc
+                  where oid = 'public.merge_referral(uuid, uuid)'::regprocedure
+                    and proconfig @> array['search_path=public, extensions']) then
+    raise exception 'merge_referral should pin search_path = public, extensions';
+  end if;
+  if has_function_privilege('public', 'public.merge_referral(uuid, uuid)', 'EXECUTE') then
+    raise exception 'public must not execute merge_referral';
   end if;
 end $$;
 
@@ -304,6 +322,42 @@ do $$ declare res jsonb; begin
   end if;
   if (select source_partner_id from deals where id = 'a044d000-0000-0000-0000-00000000000c') is distinct from 'a044a000-0000-0000-0000-000000000003' then
     raise exception 'DH must keep P3';
+  end if;
+end $$;
+
+-- 12. An unflagged closed duplicate points at the crediting partner's live
+--     referral on that deal, so the existing reinstate flow works: once P1's
+--     R is withdrawn, P2's W can be reinstated.
+do $$ declare r referrals; res jsonb; begin
+  perform _t_act('a0440000-0000-0000-0000-000000000002');
+  res := public.merge_referral('a044f000-0000-0000-0000-000000000015', 'a044d000-0000-0000-0000-00000000000d');
+  if res->>'result' is distinct from 'closed_duplicate' then
+    raise exception 'W should close as a duplicate, got %', res;
+  end if;
+  select * into r from referrals where id = 'a044f000-0000-0000-0000-000000000015';
+  if r.duplicate_of_referral_id is distinct from 'a044f000-0000-0000-0000-000000000014' then
+    raise exception 'W should point at P1''s referral R, got %', r.duplicate_of_referral_id;
+  end if;
+  -- The eligibility helper is private; check it as the owner.
+  perform set_config('role', 'postgres', true);
+  if public._referral_reinstatable(r.id) then
+    raise exception 'W must not be reinstatable while R is live';
+  end if;
+  update referrals set status = 'withdrawn' where id = 'a044f000-0000-0000-0000-000000000014';
+  if not public._referral_reinstatable(r.id) then
+    raise exception 'W should be reinstatable once R is withdrawn';
+  end if;
+end $$;
+
+-- 13. H closed (test 6) before any P1 referral was linked to DA, so it has no
+--     holder to point at. U closed (test 10) after P1's S was merged into DA
+--     (test 8), so it points at S.
+do $$ begin
+  if (select duplicate_of_referral_id from referrals where id = 'a044f000-0000-0000-0000-00000000000e') is not null then
+    raise exception 'H had no live holder referral to point at';
+  end if;
+  if (select duplicate_of_referral_id from referrals where id = 'a044f000-0000-0000-0000-000000000012') is distinct from 'a044f000-0000-0000-0000-000000000011' then
+    raise exception 'U should point at P1''s live referral S on DA';
   end if;
 end $$;
 
