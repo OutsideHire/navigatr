@@ -28,13 +28,15 @@ function useRefresh(opts: { deals?: boolean; tasks?: boolean } = {}) {
 /**
  * The referral a submission became (migration 20261027000002). First referral
  * wins (FR-PORT-46, 47): when an earlier open referral or active deal matches,
- * a duplicate id is set and accepting needs a written reason.
+ * a duplicate id is set and accepting needs a written reason. A company-link
+ * submission goes to the partner's rep (FR-PORT-51); assignedUserName says who.
  */
 export interface AttributedReferral {
   referralId: string;
   duplicateOfReferralId: string | null;
   duplicateOfDealId: string | null;
   assignedUserId: string | null;
+  assignedUserName: string | null;
 }
 
 interface AttributeRow {
@@ -42,6 +44,7 @@ interface AttributeRow {
   duplicate_of_referral_id: string | null;
   duplicate_of_deal_id: string | null;
   assigned_user_id: string | null;
+  assigned_user_name: string | null;
 }
 
 export function useAttributeFormSubmission() {
@@ -61,6 +64,7 @@ export function useAttributeFormSubmission() {
         duplicateOfReferralId: row.duplicate_of_referral_id ?? null,
         duplicateOfDealId: row.duplicate_of_deal_id ?? null,
         assignedUserId: row.assigned_user_id ?? null,
+        assignedUserName: row.assigned_user_name?.trim() || null,
       };
     },
     onSuccess: refresh,

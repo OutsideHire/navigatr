@@ -32,13 +32,17 @@ beforeEach(() => rpcMock.mockReset());
 describe("form submission mutations", () => {
   it("attributes to a partner and returns the new referral id with its first-referral flags", async () => {
     rpcMock.mockResolvedValueOnce({
-      data: [{ referral_id: "r-new", duplicate_of_referral_id: "r-9", duplicate_of_deal_id: null, assigned_user_id: "user-1" }],
+      data: [{
+        referral_id: "r-new", duplicate_of_referral_id: "r-9", duplicate_of_deal_id: null,
+        assigned_user_id: "user-1", assigned_user_name: "Rita Rep",
+      }],
       error: null,
     });
     const { wrapper, spy } = setup();
     const { result } = renderHook(() => useAttributeFormSubmission(), { wrapper });
     await expect(result.current.mutateAsync({ submissionId: "s-1", partnerId: "p-1" })).resolves.toEqual({
-      referralId: "r-new", duplicateOfReferralId: "r-9", duplicateOfDealId: null, assignedUserId: "user-1",
+      referralId: "r-new", duplicateOfReferralId: "r-9", duplicateOfDealId: null,
+      assignedUserId: "user-1", assignedUserName: "Rita Rep",
     });
     expect(rpcMock).toHaveBeenCalledWith("attribute_form_submission", { p_submission_id: "s-1", p_partner_id: "p-1" });
     await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ["referrals"] }));

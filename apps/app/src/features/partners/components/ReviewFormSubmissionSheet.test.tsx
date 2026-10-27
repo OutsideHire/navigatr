@@ -76,7 +76,11 @@ vi.mock("@/components/navigatr", async (orig) => {
   };
 });
 
-const ATTRIBUTED = { referralId: "r-new", duplicateOfReferralId: null, duplicateOfDealId: null, assignedUserId: "user-1" };
+const ATTRIBUTED = {
+  referralId: "r-new", duplicateOfReferralId: null, duplicateOfDealId: null, assignedUserId: "user-1", assignedUserName: "Rita Rep",
+};
+// FR-PORT-51: a company-link submission credited to a partner goes to the partner's rep.
+const ROUTED = { ...ATTRIBUTED, assignedUserId: "u-7", assignedUserName: "Kim Rep" };
 const FLAGGED = { ...ATTRIBUTED, duplicateOfReferralId: "r-9" };
 
 const submission: QueueSubmission = {
@@ -376,6 +380,52 @@ describe("ReviewFormSubmissionSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "No partner" }));
     expect(screen.getByRole("button", { name: "Accept" })).toBeEnabled();
   });
+  it("company link: routed to the partner's rep, Accept stops after attributing and says who has it (FR-PORT-51)", async () => {
+    attribute.mockResolvedValueOnce(ROUTED);
+    const onOpenChange = renderSheet({ ...submission, linkType: "tenant", assignedUserId: null });
+    await pickExistingPartner();
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(toastSuccess).toHaveBeenCalledWith("Sent to Kim Rep. They will review it.");
+    expect(attribute).toHaveBeenCalledTimes(1);
+    expect(acceptReferral).not.toHaveBeenCalled();
+  });
+
+  it("company link: a routed Decline never declines, even when flagged (FR-PORT-51)", async () => {
+    attribute.mockResolvedValueOnce({ ...ROUTED, duplicateOfReferralId: "r-9" });
+    const onOpenChange = renderSheet({ ...submission, linkType: "tenant", assignedUserId: null });
+    await pickExistingPartner();
+    await userEvent.click(screen.getByRole("button", { name: "Decline" }));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Pick a reason…" }), "outside_icp");
+    await userEvent.click(screen.getByRole("button", { name: "Decline referral" }));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(toastSuccess).toHaveBeenCalledWith("Sent to Kim Rep. They will review it.");
+    expect(declineReferral).not.toHaveBeenCalled();
+    expect(screen.queryByPlaceholderText("Why accept it anyway?")).toBeNull();
+  });
+
+  it("company link: a routed Merge stops before the reason step (FR-PORT-51)", async () => {
+    attribute.mockResolvedValueOnce({ ...ROUTED, duplicateOfDealId: "d-1" });
+    const onOpenChange = renderSheet({ ...submission, linkType: "tenant", assignedUserId: null });
+    await pickExistingPartner();
+    await userEvent.click(screen.getByRole("button", { name: "Merge" }));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Pick a deal…" }), "d-1");
+    await userEvent.click(screen.getByRole("button", { name: "Merge into deal" }));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(toastSuccess).toHaveBeenCalledWith("Sent to Kim Rep. They will review it.");
+    expect(mergeReferral).not.toHaveBeenCalled();
+    expect(screen.queryByPlaceholderText("Why merge it anyway?")).toBeNull();
+  });
+
+  it("company link: a routed referral with no name still says it was sent on", async () => {
+    attribute.mockResolvedValueOnce({ ...ROUTED, assignedUserName: null });
+    renderSheet({ ...submission, linkType: "tenant", assignedUserId: null });
+    await pickExistingPartner();
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith("Sent to their rep. They will review it."));
+    expect(acceptReferral).not.toHaveBeenCalled();
+  });
+
   it("first referral wins: a flagged attribution asks for a reason before accepting (FR-PORT-47)", async () => {
     attribute.mockResolvedValueOnce(FLAGGED);
     const onOpenChange = renderSheet();

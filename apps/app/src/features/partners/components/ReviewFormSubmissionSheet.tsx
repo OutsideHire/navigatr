@@ -17,6 +17,9 @@
  * referral. Decline (duplicate) is preselected, and accepting or merging needs
  * a reason. A merge that only finds out on attributing stops at the reason
  * first, so the reviewer always sees the flag before anything is merged.
+ * Company link (FR-PORT-51): crediting it to a partner sends it to that
+ * partner's rep. When the referral lands with someone else, the sheet says who
+ * and closes; it never goes on to accept, decline or merge for them.
  * Managers and administrators can reassign it before anyone says who sent it.
  * Same Radix Dialog shell and copy style as ReviewReferralSheet.
  */
@@ -207,8 +210,11 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
   };
 
   // The referral this submission becomes. Made once; every later step reuses it.
-  const ensureReferral = async (live: () => boolean): Promise<{ referralId: string; flagged: boolean }> => {
-    if (referralId) return { referralId, flagged };
+  // routedTo is set when the referral went to someone else's queue (FR-PORT-51).
+  const ensureReferral = async (
+    live: () => boolean,
+  ): Promise<{ referralId: string; flagged: boolean; routedTo: string | null }> => {
+    if (referralId) return { referralId, flagged, routedTo: null };
     let pid = who === "new" ? createdPartnerId : partnerId;
     if (who === "new" && !pid) {
       const created = await createPartner.mutateAsync({
@@ -223,6 +229,9 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
     }
     const res = await attribute.mutateAsync({ submissionId: submission.id, partnerId: pid as string });
     const isDuplicate = Boolean(res.duplicateOfReferralId || res.duplicateOfDealId);
+    if (res.assignedUserId && res.assignedUserId !== viewerId) {
+      return { referralId: res.referralId, flagged: isDuplicate, routedTo: res.assignedUserName ?? "their rep" };
+    }
     if (live()) {
       setReferralId(res.referralId);
       if (isDuplicate) {
@@ -230,8 +239,10 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
         setReason((r) => r || "duplicate");
       }
     }
-    return { referralId: res.referralId, flagged: isDuplicate };
+    return { referralId: res.referralId, flagged: isDuplicate, routedTo: null };
   };
+
+  const sentOn = (live: () => boolean, name: string) => done(live, `Sent to ${name}. They will review it.`);
 
   const onAccept = (reasonText?: string) => run(async (live) => {
     if (!viaPartner) {
@@ -240,6 +251,7 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
       return;
     }
     const ref = await ensureReferral(live);
+    if (ref.routedTo) return sentOn(live, ref.routedTo);
     // A probable duplicate is accepted only with a written reason.
     if (ref.flagged && !reasonText) {
       if (live()) setMode("override");
@@ -261,8 +273,9 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
   const onDecline = () => run(async (live) => {
     if (!reason) return;
     if (viaPartner) {
-      const { referralId: rid } = await ensureReferral(live);
-      await declineReferral.mutateAsync({ referralId: rid, reason, note });
+      const ref = await ensureReferral(live);
+      if (ref.routedTo) return sentOn(live, ref.routedTo);
+      await declineReferral.mutateAsync({ referralId: ref.referralId, reason, note });
     } else {
       await declineSubmission.mutateAsync({ submissionId: submission.id, reason, note });
     }
@@ -273,6 +286,7 @@ export function ReviewFormSubmissionSheet({ submission: submissionProp, open, on
     if (!mergeDealId) return;
     if (viaPartner) {
       const ref = await ensureReferral(live);
+      if (ref.routedTo) return sentOn(live, ref.routedTo);
       const reasonText = overrideReason.trim();
       // A probable duplicate is merged only with a written reason. The merge
       // mode shows the reason field once flagged, so the reviewer sees it first.
