@@ -6,9 +6,11 @@ import type { ReactNode } from "react";
 import { useDealReferral } from "./useDealReferral";
 
 const maybeSingleMock = vi.fn();
+const rpcMock = vi.fn();
 const calls: unknown[][] = [];
 vi.mock("@/lib/supabase", () => ({
   supabase: {
+    rpc: (...a: unknown[]) => rpcMock(...a),
     from: () => {
       const chain = {
         select: (...a: unknown[]) => { calls.push(["select", ...a]); return chain; },
@@ -27,7 +29,7 @@ const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{children}</QueryClientProvider>
 );
 
-beforeEach(() => { maybeSingleMock.mockReset(); calls.length = 0; });
+beforeEach(() => { maybeSingleMock.mockReset(); rpcMock.mockReset(); calls.length = 0; });
 
 describe("useDealReferral", () => {
   it("returns the earliest live inbound referral for the deal", async () => {
@@ -43,12 +45,45 @@ describe("useDealReferral", () => {
     expect(calls).toContainEqual(["eq", "deal_id", "d-1"]);
     expect(calls).toContainEqual(["eq", "direction", "inbound"]);
     expect(calls).toContainEqual(["not", "status", "in", "(declined,withdrawn)"]);
+    // A visible partner comes through the embed; no extra lookup.
+    expect(rpcMock).not.toHaveBeenCalled();
   });
 
-  it("marks the partner not visible when the embed is hidden by RLS", async () => {
+  it("still names a partner the viewer cannot open, read-only (FR-PORT-55)", async () => {
+    maybeSingleMock.mockResolvedValueOnce({
+      data: { id: "r-4", partner_id: "p-4", partner_company_snapshot: "Old Snap", partner: null }, error: null,
+    });
+    rpcMock.mockResolvedValueOnce({
+      data: [{ referral_id: "r-4", partner_id: "p-4", name: "Jane CPA", company: "Jane & Co", visible: false }],
+      error: null,
+    });
+    const { result } = renderHook(() => useDealReferral("d-4"), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(rpcMock).toHaveBeenCalledWith("referral_partner_names", { p_referral_ids: ["r-4"] });
+    expect(result.current.data).toEqual({
+      referralId: "r-4", partnerId: "p-4", partnerVisible: false, partnerName: "Jane CPA",
+      partnerCompany: "Jane & Co", partnerCompanySnapshot: "Old Snap",
+    });
+  });
+
+  it("keeps the referral with snapshot naming when the name lookup fails", async () => {
+    maybeSingleMock.mockResolvedValueOnce({
+      data: { id: "r-5", partner_id: "p-5", partner_company_snapshot: "Snap & Co", partner: null }, error: null,
+    });
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: "function does not exist" } });
+    const { result } = renderHook(() => useDealReferral("d-5"), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual({
+      referralId: "r-5", partnerId: "p-5", partnerVisible: false, partnerName: null,
+      partnerCompany: null, partnerCompanySnapshot: "Snap & Co",
+    });
+  });
+
+  it("marks the partner not visible when the embed is hidden and no name comes back", async () => {
     maybeSingleMock.mockResolvedValueOnce({
       data: { id: "r-3", partner_id: "p-3", partner_company_snapshot: "Snap & Co", partner: null }, error: null,
     });
+    rpcMock.mockResolvedValueOnce({ data: [], error: null });
     const { result } = renderHook(() => useDealReferral("d-3"), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual({

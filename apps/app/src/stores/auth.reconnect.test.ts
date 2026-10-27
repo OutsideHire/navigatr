@@ -184,13 +184,28 @@ describe("a definitive sign-out stops the data layer first", () => {
   });
 
   it("tells the session guard to refuse anon table requests just after SIGNED_OUT, then stop", () => {
+    // Derived from the real clock (a day ahead of any earlier test's signedOutAt)
+    // so this can never expire the way a hard-coded calendar date did.
+    const t0 = Date.now() + 24 * 60 * 60 * 1000;
     vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-10-22T12:00:00Z"));
+    vi.setSystemTime(t0);
     const refuse = guardHooks.current!.refuseAnonTableRequests as () => boolean;
     expect(refuse()).toBe(false);
     watcher("SIGNED_OUT", null);
     expect(refuse()).toBe(true);
-    vi.setSystemTime(new Date("2026-10-22T12:01:00Z"));
+    vi.setSystemTime(t0 + 60 * 1000);
+    expect(refuse()).toBe(false);
+  });
+
+  it("does not refuse when the clock moved backwards past the sign-out time", () => {
+    const t0 = Date.now() + 2 * 24 * 60 * 60 * 1000;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(t0);
+    const refuse = guardHooks.current!.refuseAnonTableRequests as () => boolean;
+    watcher("SIGNED_OUT", null);
+    expect(refuse()).toBe(true);
+    // Clock jumps back: elapsed is negative, which must not mean "refuse forever".
+    vi.setSystemTime(t0 - 60 * 60 * 1000);
     expect(refuse()).toBe(false);
   });
 });

@@ -8,8 +8,13 @@
  * Phase 1B: a referral sent through the partner portal says so, and one the
  * portal flagged as a probable duplicate arrives with Decline (duplicate)
  * preselected. Accepting it anyway needs a short written reason, which lands in
- * the referral's history (FR-PORT-47). Merge stays available. The urgency the
- * partner picked shows with the details.
+ * the referral's history (FR-PORT-47). Merging it needs a reason too; when the
+ * deal already credits another partner, that partner keeps the credit and this
+ * referral closes as a duplicate. The urgency the partner picked shows with the
+ * details.
+ *
+ * A business that is already a won customer the rep can see gets an "Already a
+ * customer" line linking to the deal (FR-PORT-44). Reps only, never the partner.
  *
  * Phase 2A: a business that looks like a chain gets an advisory line
  * (FR-PORT-58); it never blocks anything. Managers and administrators can
@@ -20,17 +25,20 @@ import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { toast } from "sonner";
+import { Link } from "react-router-dom";
 import { Button, Select, NotesFieldWithMic } from "@/components/navigatr";
 import { useProfile } from "@/features/auth/useProfile";
 import { usePlaceDuplicateCheck } from "@/features/pipeline/hooks/usePlaceDuplicateCheck";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
+import { useCustomerMatch } from "../hooks/useCustomerMatch";
 import type { QueueReferral } from "../hooks/useReferralQueue";
 import { useAcceptReferral, useDeclineReferral, useMergeReferral } from "../hooks/useReferralMutations";
+import { WithdrawReferralConfirm } from "./WithdrawReferralConfirm";
 import { useAssigneeSeesPartner, useReassignReferral, useReferralAssignees } from "../hooks/useReassignReferral";
-import { DECLINE_REASON_OPTIONS, canReassignReferrals, icpFlagLabels, type DeclineReason } from "../lib/referrals";
+import { DECLINE_REASON_OPTIONS, canReassignReferrals, icpFlagLabels, mergeResultMessage, type DeclineReason } from "../lib/referrals";
 import { urgencyLabel } from "../../../../../../supabase/functions/_shared/portalSubmission";
 
-type Mode = "main" | "decline" | "merge" | "override" | "reassign";
+type Mode = "main" | "decline" | "merge" | "override" | "reassign" | "withdraw";
 
 export interface ReviewReferralSheetProps {
   referral: QueueReferral | null;
@@ -50,6 +58,12 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
   const { checkPlaceDuplicate } = usePlaceDuplicateCheck();
   const { data: deals = [] } = useDeals();
   const profile = useProfile();
+  const customer = useCustomerMatch({
+    company: referral?.companyName,
+    phone: referral?.contactPhone,
+    address: referral?.address,
+    enabled: open && Boolean(referral),
+  });
   const canReassign = canReassignReferrals(profile.data);
   const assignees = useReferralAssignees(open && canReassign);
 
@@ -147,8 +161,14 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
 
   const onMerge = () => run(async () => {
     if (!mergeDealId) return;
-    await merge.mutateAsync({ referralId: referral.id, dealId: mergeDealId });
-    toast.success("Merged into the existing deal");
+    const reasonText = overrideReason.trim();
+    if (flagged && !reasonText) return;
+    const res = await merge.mutateAsync(
+      flagged
+        ? { referralId: referral.id, dealId: mergeDealId, overrideReason: reasonText }
+        : { referralId: referral.id, dealId: mergeDealId },
+    );
+    toast.success(mergeResultMessage(res));
     onOpenChange(false);
   });
 
@@ -220,6 +240,13 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
             </p>
           )}
 
+          {customer.data && (
+            <p className="rounded-radius-sm bg-status-warning-bg p-3 text-body-sm text-status-warning">
+              Already a customer:{" "}
+              <Link to={`/pipeline/${customer.data.dealId}`} className="underline" onClick={() => onOpenChange(false)}>{customer.data.companyName}</Link> was closed won.
+            </p>
+          )}
+
           {dupName && (
             <p className="rounded-radius-sm bg-status-warning-bg p-3 text-body-sm text-status-warning">
               Possible duplicate: {dupName} is already in your team's pipeline.
@@ -245,7 +272,18 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
                   Reassign
                 </Button>
               )}
+              <Button variant="tertiary" disabled={accept.isPending} onClick={() => setMode("withdraw")}>
+                Withdraw (partner asked)
+              </Button>
             </div>
+          )}
+
+          {mode === "withdraw" && (
+            <WithdrawReferralConfirm
+              referralId={referral.id}
+              onBack={() => setMode("main")}
+              onDone={() => onOpenChange(false)}
+            />
           )}
 
           {mode === "override" && (
@@ -312,12 +350,24 @@ export function ReviewReferralSheet({ referral, open, onOpenChange }: ReviewRefe
                   options={openDeals}
                 />
               </label>
+              <p className="text-body-sm text-text-muted">
+                {flagged && "Say why you are merging a possible duplicate. The reason is saved in the referral's history. "}
+                If another partner already has that deal, they keep the credit and this referral closes as a duplicate.
+              </p>
+              {flagged && (
+                <NotesFieldWithMic
+                  value={overrideReason}
+                  onChange={setOverrideReason}
+                  placeholder="Why merge it anyway?"
+                  maxLength={500}
+                />
+              )}
               <div className="flex gap-2">
                 <Button variant="secondary" className="flex-1" onClick={() => setMode("main")}>Back</Button>
                 <Button
                   variant="primary"
                   className="flex-1"
-                  disabled={!mergeDealId || merge.isPending}
+                  disabled={!mergeDealId || (flagged && !overrideReason.trim()) || merge.isPending}
                   loading={merge.isPending}
                   onClick={onMerge}
                 >

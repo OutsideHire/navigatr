@@ -5,6 +5,7 @@ import {
   isKnownLeadSource,
   leadSourceLabel,
   leadSourceRequiresNote,
+  isRepSourcedSource,
   REP_PICKABLE_SOURCES,
   REP_SOURCE_OPTIONS,
 } from "./leadSources";
@@ -65,5 +66,18 @@ describe("labels + guards", () => {
     expect(values).not.toContain("unknown");
     expect(values).toContain("other");
     expect(REP_SOURCE_OPTIONS).toHaveLength(5);
+  });
+});
+
+describe("referral_form (FR-PORT-32)", () => {
+  it("is a known, system-set source labelled Referral form", () => {
+    expect(isKnownLeadSource("referral_form")).toBe(true);
+    expect(leadSourceLabel("referral_form")).toBe("Referral form");
+    expect(leadSourceSetBy("referral_form")).toBe("system");
+    expect(isLeadSourceEditable("referral_form")).toBe(false);
+  });
+  it("is not rep-pickable and not rep-sourced", () => {
+    expect(REP_PICKABLE_SOURCES).not.toContain("referral_form");
+    expect(isRepSourcedSource("referral_form")).toBe(false);
   });
 });

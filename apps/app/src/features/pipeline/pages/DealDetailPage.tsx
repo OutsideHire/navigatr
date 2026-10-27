@@ -26,6 +26,7 @@ import { ADDRESS_UNAVAILABLE } from "@/features/path/hooks/useMerchants";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useDealReferral } from "@/features/partners/hooks/useDealReferral";
 import { PartnerNoteBacksPanel } from "@/features/partners/components/PartnerNoteBacksPanel";
+import { WithdrawReferralConfirm } from "@/features/partners/components/WithdrawReferralConfirm";
 import { ReferralUpdatesPanel } from "@/features/partners/components/ReferralUpdatesPanel";
 import { toast } from "sonner";
 import * as Tabs from "@radix-ui/react-tabs";
@@ -509,6 +510,7 @@ function ContactInfoCard({ deal }: { deal: Deal }) {
 
 function SourceCard({ deal }: { deal: Deal }) {
   const { data: referral } = useDealReferral(deal.id);
+  const [withdrawing, setWithdrawing] = React.useState(false);
   // Real lead-source metadata (LS-1): source + who set it + when created.
   const setBy = leadSourceSetBy(deal.leadSource);
   const setByLabel = setBy === "system" ? "System set" : setBy === "rep" ? "Rep set" : "Not set";
@@ -550,6 +552,9 @@ function SourceCard({ deal }: { deal: Deal }) {
                 {referral.partnerName} ({referral.partnerCompany})
               </Link>
             </>
+          ) : referral.partnerName ? (
+            // FR-PORT-55: name the partner read-only when the viewer cannot open it.
+            `Referred by ${referral.partnerName}${referral.partnerCompany ? ` (${referral.partnerCompany})` : ""}`
           ) : referral.partnerCompanySnapshot ? (
             `Referred by a partner (${referral.partnerCompanySnapshot})`
           ) : (
@@ -560,8 +565,23 @@ function SourceCard({ deal }: { deal: Deal }) {
       {referral && (
         <ReferralUpdatesPanel
           referralId={referral.referralId}
-          partnerLabel={referral.partnerVisible && referral.partnerName ? referral.partnerName : "the partner"}
+          partnerLabel={referral.partnerName ?? "the partner"}
         />
+      )}
+      {referral && (referral.status === "accepted" || referral.status === "working") && (
+        <div className="mt-3">
+          {withdrawing ? (
+            <WithdrawReferralConfirm
+              referralId={referral.referralId}
+              onBack={() => setWithdrawing(false)}
+              onDone={() => setWithdrawing(false)}
+            />
+          ) : (
+            <Button variant="tertiary" size="sm" onClick={() => setWithdrawing(true)}>
+              Withdraw (partner asked)
+            </Button>
+          )}
+        </div>
       )}
       <PartnerNoteBacksPanel dealId={deal.id} />
       {showSourceNote && (

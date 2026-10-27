@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 
 import { ReviewReferralSheet } from "./ReviewReferralSheet";
 import type { QueueReferral } from "../hooks/useReferralQueue";
@@ -10,10 +11,12 @@ const accept = vi.fn();
 let acceptPending = false;
 const decline = vi.fn();
 const merge = vi.fn();
+const withdraw = vi.fn();
 vi.mock("../hooks/useReferralMutations", () => ({
   useAcceptReferral: () => ({ mutateAsync: accept, isPending: acceptPending }),
   useDeclineReferral: () => ({ mutateAsync: decline, isPending: false }),
   useMergeReferral: () => ({ mutateAsync: merge, isPending: false }),
+  useWithdrawReferral: () => ({ mutateAsync: withdraw, isPending: false }),
 }));
 const checkPlaceDuplicate = vi.fn();
 vi.mock("@/features/pipeline/hooks/usePlaceDuplicateCheck", () => ({
@@ -45,6 +48,11 @@ vi.mock("../hooks/useReassignReferral", () => ({
     return seesState;
   },
   useReassignReferral: () => ({ mutateAsync: reassignMutate, isPending: false }),
+}));
+const customerState: { data: { dealId: string; companyName: string } | null | undefined } = { data: null };
+const customerArgs: unknown[] = [];
+vi.mock("../hooks/useCustomerMatch", () => ({
+  useCustomerMatch: (a: unknown) => { customerArgs.push(a); return customerState; },
 }));
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
@@ -80,14 +88,15 @@ const flagged: QueueReferral = {
 };
 
 function renderSheet(onOpenChange = vi.fn()) {
-  render(<ReviewReferralSheet referral={referral} open onOpenChange={onOpenChange} />);
+  render(<MemoryRouter><ReviewReferralSheet referral={referral} open onOpenChange={onOpenChange} /></MemoryRouter>);
   return onOpenChange;
 }
 
 beforeEach(() => {
-  acceptPending = false; accept.mockReset(); decline.mockReset(); merge.mockReset();
+  acceptPending = false; accept.mockReset(); decline.mockReset(); merge.mockReset(); withdraw.mockReset();
   checkPlaceDuplicate.mockReset().mockResolvedValue(null);
   toastSuccess.mockReset(); toastError.mockReset();
+  customerState.data = null; customerArgs.length = 0;
   profileState.data = { role: "rep", role_level: "sales_professional" };
   assigneesState.data = [
     { id: "user-1", name: "Rita Rep" },
@@ -116,6 +125,21 @@ describe("ReviewReferralSheet", () => {
     checkPlaceDuplicate.mockResolvedValueOnce({ tier: "phone", dealId: "d-1", companyName: "Zed Cafe", dealHasPlaceId: false });
     renderSheet();
     expect(await screen.findByText(/Possible duplicate: Zed Cafe is already in your team's pipeline/)).toBeInTheDocument();
+  });
+
+  it("says when the business is already a customer, linking to the won deal", async () => {
+    customerState.data = { dealId: "d-77", companyName: "Fresh Bakery" };
+    const onOpenChange = renderSheet();
+    expect(screen.getByRole("link", { name: "Fresh Bakery" }).parentElement).toHaveTextContent("Already a customer: Fresh Bakery was closed won.");
+    expect(screen.getByRole("link", { name: "Fresh Bakery" })).toHaveAttribute("href", "/pipeline/d-77");
+    await userEvent.click(screen.getByRole("link", { name: "Fresh Bakery" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(customerArgs[0]).toMatchObject({ company: "Fresh Bakery", phone: "+15550001", address: "5 Oak St" });
+  });
+
+  it("shows no customer line when there is no match", () => {
+    renderSheet();
+    expect(screen.queryByText(/Already a customer/)).not.toBeInTheDocument();
   });
 
   it("disables Merge and Decline while an accept is in flight", () => {
@@ -160,9 +184,9 @@ describe("ReviewReferralSheet", () => {
 
   it("keeps state when the parent passes a new object for the same referral", async () => {
     const onOpenChange = vi.fn();
-    const { rerender } = render(<ReviewReferralSheet referral={referral} open onOpenChange={onOpenChange} />);
+    const { rerender } = render(<MemoryRouter><ReviewReferralSheet referral={referral} open onOpenChange={onOpenChange} /></MemoryRouter>);
     await userEvent.click(screen.getByRole("button", { name: "Decline" }));
-    rerender(<ReviewReferralSheet referral={{ ...referral }} open onOpenChange={onOpenChange} />);
+    rerender(<MemoryRouter><ReviewReferralSheet referral={{ ...referral }} open onOpenChange={onOpenChange} /></MemoryRouter>);
     expect(screen.getByRole("button", { name: "Decline referral" })).toBeInTheDocument();
   });
 
@@ -178,7 +202,7 @@ describe("ReviewReferralSheet", () => {
   });
 
   it("merges into the picked deal", async () => {
-    merge.mockResolvedValueOnce(undefined);
+    merge.mockResolvedValueOnce({ result: "merged", creditedPartnerName: null });
     const onOpenChange = renderSheet();
     await userEvent.click(screen.getByRole("button", { name: "Merge" }));
     await userEvent.selectOptions(screen.getByLabelText("Pick a deal…"), "d-1");
@@ -186,21 +210,22 @@ describe("ReviewReferralSheet", () => {
     expect(merge).toHaveBeenCalledWith({ referralId: "r-1", dealId: "d-1" });
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(toastSuccess).toHaveBeenCalledWith("Merged into the existing deal");
+    expect(screen.queryByPlaceholderText("Why merge it anyway?")).toBeNull();
   });
 
   it("says when a referral came through the partner portal", () => {
-    render(<ReviewReferralSheet referral={{ ...referral, source: "portal_signed_in" }} open onOpenChange={vi.fn()} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={{ ...referral, source: "portal_signed_in" }} open onOpenChange={vi.fn()} /></MemoryRouter>);
     expect(screen.getByText("Sent through the partner portal")).toBeInTheDocument();
   });
 
   it("shows no portal or duplicate cue for a rep-logged referral", () => {
-    render(<ReviewReferralSheet referral={{ ...referral, source: "rep_entered" }} open onOpenChange={vi.fn()} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={{ ...referral, source: "rep_entered" }} open onOpenChange={vi.fn()} /></MemoryRouter>);
     expect(screen.queryByText("Sent through the partner portal")).toBeNull();
     expect(screen.queryByText(/Possible duplicate of an earlier referral/)).toBeNull();
   });
 
   it("flags a probable duplicate and preselects Decline (duplicate)", async () => {
-    render(<ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} /></MemoryRouter>);
     expect(screen.getByText(/Possible duplicate of an earlier referral/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Decline" }));
     expect(screen.getByLabelText("Pick a reason…")).toHaveValue("duplicate");
@@ -210,7 +235,7 @@ describe("ReviewReferralSheet", () => {
   it("needs a written reason to accept a flagged referral", async () => {
     accept.mockResolvedValueOnce({ result: "accepted", dealId: "d-9" });
     const onOpenChange = vi.fn();
-    render(<ReviewReferralSheet referral={flagged} open onOpenChange={onOpenChange} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={flagged} open onOpenChange={onOpenChange} /></MemoryRouter>);
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
     expect(accept).not.toHaveBeenCalled();
     const go = screen.getByRole("button", { name: "Accept anyway" });
@@ -222,42 +247,67 @@ describe("ReviewReferralSheet", () => {
   });
 
   it("caps the written override reason at 500 characters", async () => {
-    render(<ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} /></MemoryRouter>);
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
     expect(screen.getByPlaceholderText("Why accept it anyway?")).toHaveAttribute("maxLength", "500");
   });
 
   it("shows the urgency the partner picked", () => {
-    render(<ReviewReferralSheet referral={{ ...flagged, urgency: "this_week" }} open onOpenChange={vi.fn()} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={{ ...flagged, urgency: "this_week" }} open onOpenChange={vi.fn()} /></MemoryRouter>);
     expect(screen.getByText("Urgency")).toBeInTheDocument();
     expect(screen.getByText("This week")).toBeInTheDocument();
   });
 
   it("shows no urgency row when the partner left it blank or it is unknown", () => {
-    const { rerender } = render(<ReviewReferralSheet referral={{ ...flagged, urgency: null }} open onOpenChange={vi.fn()} />);
+    const { rerender } = render(<MemoryRouter><ReviewReferralSheet referral={{ ...flagged, urgency: null }} open onOpenChange={vi.fn()} /></MemoryRouter>);
     expect(screen.queryByText("Urgency")).toBeNull();
-    rerender(<ReviewReferralSheet referral={{ ...flagged, urgency: "someday" }} open onOpenChange={vi.fn()} />);
+    rerender(<MemoryRouter><ReviewReferralSheet referral={{ ...flagged, urgency: "someday" }} open onOpenChange={vi.fn()} /></MemoryRouter>);
     expect(screen.queryByText("Urgency")).toBeNull();
     expect(screen.queryByText("someday")).toBeNull();
   });
 
-  it("still lets the rep merge a flagged referral", async () => {
-    merge.mockResolvedValueOnce(undefined);
-    render(<ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} />);
+  it("requires a reason to merge a flagged referral", async () => {
+    merge.mockResolvedValueOnce({ result: "merged", creditedPartnerName: null });
+    const onOpenChange = vi.fn();
+    render(<MemoryRouter><ReviewReferralSheet referral={flagged} open onOpenChange={onOpenChange} /></MemoryRouter>);
     await userEvent.click(screen.getByRole("button", { name: "Merge" }));
     await userEvent.selectOptions(screen.getByLabelText("Pick a deal…"), "d-1");
-    await userEvent.click(screen.getByRole("button", { name: "Merge into deal" }));
-    expect(merge).toHaveBeenCalledWith({ referralId: "r-1", dealId: "d-1" });
+    const go = screen.getByRole("button", { name: "Merge into deal" });
+    expect(go).toBeDisabled();
+    expect(screen.getByText(/another partner already has that deal, they keep the credit/)).toBeInTheDocument();
+    const box = screen.getByPlaceholderText("Why merge it anyway?");
+    expect(box).toHaveAttribute("maxLength", "500");
+    await userEvent.type(box, "  Same owner  ");
+    await userEvent.click(go);
+    expect(merge).toHaveBeenCalledWith({ referralId: "r-1", dealId: "d-1", overrideReason: "Same owner" });
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 
   it("switches to Merge when the override finds the business already in the pipeline", async () => {
     accept.mockResolvedValueOnce({ result: "duplicate", dealId: "d-1" });
-    render(<ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={flagged} open onOpenChange={vi.fn()} /></MemoryRouter>);
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
     await userEvent.type(screen.getByPlaceholderText("Why accept it anyway?"), "Different location");
     await userEvent.click(screen.getByRole("button", { name: "Accept anyway" }));
     expect(await screen.findByRole("button", { name: "Merge into deal" })).toBeInTheDocument();
     expect(screen.getByLabelText("Pick a deal…")).toHaveValue("d-1");
+    // The reason already written carries over, so the merge can go ahead.
+    expect(screen.getByPlaceholderText("Why merge it anyway?")).toHaveValue("Different location");
+    expect(screen.getByRole("button", { name: "Merge into deal" })).toBeEnabled();
+  });
+
+  it("says plainly when the other partner keeps credit and this referral closed as a duplicate", async () => {
+    merge.mockResolvedValueOnce({ result: "closed_duplicate", creditedPartnerName: "Bob Broker" });
+    const onOpenChange = renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Merge" }));
+    // The credit rule applies to every merge, so an unflagged referral says it too.
+    expect(screen.getByText(/another partner already has that deal, they keep the credit/)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Why merge it anyway?")).toBeNull();
+    await userEvent.selectOptions(screen.getByLabelText("Pick a deal…"), "d-1");
+    await userEvent.click(screen.getByRole("button", { name: "Merge into deal" }));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(toastSuccess).toHaveBeenCalledWith("Closed as a duplicate. Bob Broker keeps credit for that deal.");
+    expect(toastSuccess).not.toHaveBeenCalledWith("Merged into the existing deal");
   });
 
   it("lists only open deals sorted by company name", async () => {
@@ -270,14 +320,14 @@ describe("ReviewReferralSheet", () => {
 
 describe("ReviewReferralSheet: chain advisory and reassign", () => {
   it("shows an advisory chain line, ignores unknown flags, and still allows accept", () => {
-    render(<ReviewReferralSheet referral={{ ...referral, icpFlags: ["chain:Subway", "mystery:x"] }} open onOpenChange={vi.fn()} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={{ ...referral, icpFlags: ["chain:Subway", "mystery:x"] }} open onOpenChange={vi.fn()} /></MemoryRouter>);
     expect(screen.getByText("Looks like a chain: Subway. Check before accepting.")).toBeInTheDocument();
     expect(screen.queryByText(/mystery/)).toBeNull();
     expect(screen.getByRole("button", { name: "Accept" })).toBeEnabled();
   });
 
   it("never doubles the period when the brand ends in one", () => {
-    render(<ReviewReferralSheet referral={{ ...referral, icpFlags: ["chain:Ace Hardware Inc."] }} open onOpenChange={vi.fn()} />);
+    render(<MemoryRouter><ReviewReferralSheet referral={{ ...referral, icpFlags: ["chain:Ace Hardware Inc."] }} open onOpenChange={vi.fn()} /></MemoryRouter>);
     expect(screen.getByText("Looks like a chain: Ace Hardware Inc. Check before accepting.")).toBeInTheDocument();
     expect(screen.queryByText(/\.\. Check/)).toBeNull();
   });
@@ -358,5 +408,35 @@ describe("ReviewReferralSheet: chain advisory and reassign", () => {
     await userEvent.click(screen.getByRole("button", { name: "Reassign referral" }));
     await waitFor(() => expect(toastError).toHaveBeenCalledWith("You don't have access to do that."));
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it("withdraws a referral the partner asked to pull, with an optional internal note", async () => {
+    withdraw.mockResolvedValueOnce(undefined);
+    const onOpenChange = renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Withdraw (partner asked)" }));
+    expect(withdraw).not.toHaveBeenCalled();
+    expect(screen.getByText(/internal only/i)).toBeInTheDocument();
+    await userEvent.type(screen.getByPlaceholderText("Internal note (optional)"), "Called me");
+    await userEvent.click(screen.getByRole("button", { name: "Withdraw referral" }));
+    await waitFor(() => expect(withdraw).toHaveBeenCalledWith({ referralId: "r-1", note: "Called me" }));
+    expect(toastSuccess).toHaveBeenCalledWith("Referral withdrawn. The partner will see Withdrawn.");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("goes back from the withdraw confirm without calling anything", async () => {
+    renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Withdraw (partner asked)" }));
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("button", { name: "Accept" })).toBeInTheDocument();
+    expect(withdraw).not.toHaveBeenCalled();
+  });
+
+  it("shows the error and stays open when withdraw fails", async () => {
+    withdraw.mockRejectedValueOnce(new Error("This referral is already closed."));
+    const onOpenChange = renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Withdraw (partner asked)" }));
+    await userEvent.click(screen.getByRole("button", { name: "Withdraw referral" }));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("This referral is already closed."));
+    expect(onOpenChange).not.toHaveBeenCalled();
   });
 });

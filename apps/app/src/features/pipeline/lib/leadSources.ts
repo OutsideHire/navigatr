@@ -2,7 +2,7 @@
  * Canonical lead-source taxonomy (single source of truth). Replaces the old
  * free-text picklists that were duplicated across the deal sheets. Encodes the
  * "Report rules" from Robert's Lead Source spec:
- *   - System-set sources (Path, Partner Referral, Assigned, Import) are stamped
+ *   - System-set sources (Path, Partner Referral, Assigned, Import, Referral form) are stamped
  *     by the platform; reps never pick them.
  *   - Rep-set sources are the manual picklist; "Other" requires a note.
  *   - "Unknown" is the unset/legacy default.
@@ -16,6 +16,9 @@ export const LEAD_SOURCE_VALUES = [
   "partner_referral",
   "assigned",
   "import",
+  // Stamped when a reviewer accepts a public referral form submission with no
+  // partner credited. System-set, never a picklist option.
+  "referral_form",
   // Auto-stamped by the Business-Search (Google Places) create flow. Rep-directed
   // prospecting, so it counts as rep-sourced, but it is NOT a manual picklist
   // option (the create flow sets it).
@@ -37,6 +40,7 @@ export const LEAD_SOURCE_LABEL: Record<LeadSource, string> = {
   partner_referral: "Partner Referral",
   assigned: "Assigned",
   import: "Import",
+  referral_form: "Referral form",
   places: "Business Search",
   self_sourced_canvass: "Self-Sourced Canvass",
   customer_referral: "Customer Referral",
@@ -46,7 +50,13 @@ export const LEAD_SOURCE_LABEL: Record<LeadSource, string> = {
   unknown: "Unknown",
 };
 
-const SYSTEM_SET_SOURCES = new Set<LeadSource>(["path", "partner_referral", "assigned", "import"]);
+const SYSTEM_SET_SOURCES = new Set<LeadSource>([
+  "path",
+  "partner_referral",
+  "assigned",
+  "import",
+  "referral_form",
+]);
 
 export type LeadSourceSetBy = "system" | "rep" | "unknown";
 
@@ -96,11 +106,11 @@ export function leadSourceRequiresNote(v: string | null | undefined): boolean {
 
 /**
  * "Rep sourced" = prospecting channels. Excludes the non-prospecting system
- * sources (Assigned, Import) and the unset Unknown bucket, per the Lead Source
+ * sources (Assigned, Import, Referral form) and the unset Unknown bucket, per the Lead Source
  * report's default "Rep sourced only" scope.
  */
 export function isRepSourcedSource(v: string | null | undefined): boolean {
-  return isKnownLeadSource(v) && v !== "assigned" && v !== "import" && v !== "unknown";
+  return isKnownLeadSource(v) && v !== "assigned" && v !== "import" && v !== "referral_form" && v !== "unknown";
 }
 
 /**
@@ -118,6 +128,7 @@ export const LEAD_SOURCE_COLOR: Record<LeadSource, string> = {
   inbound: "#86AEF8",
   assigned: "#6B6E8F",
   import: "#4A4D68",
+  referral_form: "#3F8F9E",
   other: "#8E90A8",
   unknown: "#6E7191",
 };

@@ -56,6 +56,20 @@ export function formSubmissionSourceLabel(linkType: "user" | "tenant", assignedT
   return assignedToViewer ? "From your referral form" : "From a rep's referral form";
 }
 
+/** What a merge did (merge_referral / merge_referral_override, 20261027000003). */
+export interface MergeResult {
+  result: "merged" | "closed_duplicate";
+  /** Only set when the rep can see the partner who keeps credit. */
+  creditedPartnerName: string | null;
+}
+
+/** The toast after a merge. Names the partner who keeps credit only when the server gave a name. */
+export function mergeResultMessage(res: MergeResult): string {
+  if (res.result !== "closed_duplicate") return "Merged into the existing deal";
+  const who = res.creditedPartnerName?.trim() || "Another partner";
+  return `Closed as a duplicate. ${who} keeps credit for that deal.`;
+}
+
 export function isLiveLink(status: ReferralStatus): boolean {
   return status !== "declined" && status !== "withdrawn";
 }
@@ -70,7 +84,7 @@ const ERROR_COPY: Array<[token: string, copy: string]> = [
   ["assignee_invalid", "That teammate can't take this referral."],
   ["company_required", "Add the business name."],
   ["invalid_direction", "That link could not be removed."],
-  ["override_reason_required", "Add a short reason to accept a possible duplicate."],
+  ["override_reason_required", "Add a short reason to go ahead with a possible duplicate."],
   ["update_required", "Write the update first."],
   ["update_too_long", "Keep the update under 1,000 characters."],
   ["note_too_long", "Keep the note under 1,000 characters."],

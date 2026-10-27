@@ -13,7 +13,7 @@
 -- Org B pf-tri-b: bob administrator, partner P2, deal D2.
 -- Submissions (org A): S1 Attr Co, S2 Accept Co, S3 Decline Co, S4 Fresh Bakery LLC,
 --   S6 Subway #42 (all rita, personal link); S5 Corner Cafe (company link, administrator
---   queue); S7 Rob Co (rob).
+--   queue); S7 Rob Co (rob). Section 5c adds S9 Tenant Co and S10 Orphan Co (company link).
 
 begin;
 
@@ -194,9 +194,14 @@ end $$;
 -- 5. Attribution makes a referral that keeps the original time (FR-PORT-49), the
 --    reviewer keeps it, the partner gets no "Received" email; then the EXISTING
 --    accept_referral finishes it.
-do $$ declare v uuid; begin
+do $$ declare a record; v uuid; begin
   perform _t_act('a0600000-0000-0000-0000-000000000003');
-  v := public.attribute_form_submission('a060e000-0000-0000-0000-000000000001', 'a060a000-0000-0000-0000-000000000001');
+  select * into a from public.attribute_form_submission('a060e000-0000-0000-0000-000000000001', 'a060a000-0000-0000-0000-000000000001');
+  v := a.referral_id;
+  if v is null or a.duplicate_of_referral_id is not null or a.duplicate_of_deal_id is not null
+     or a.assigned_user_id is distinct from 'a0600000-0000-0000-0000-000000000003'::uuid then
+    raise exception 'S1 is not a duplicate and rita keeps it, got %', row_to_json(a);
+  end if;
   perform set_config('t.ref', v::text, true);
   perform _t_raises('select public.attribute_form_submission(''a060e000-0000-0000-0000-000000000001'', ''a060a000-0000-0000-0000-000000000001'')', 'submission_handled');
   perform set_config('role', 'postgres', true);
@@ -248,6 +253,100 @@ do $$ declare res jsonb; v uuid := current_setting('t.ref')::uuid; d deals; begi
   end if;
 end $$;
 
+-- 5b. First referral wins (FR-PORT-46, 47): attributing a submission whose phone matches
+--     an earlier open referral from another partner stores the duplicate flags, so the
+--     existing accept_referral needs a written reason (accept_referral_override).
+--     Fixtures: partner P4 Kim CPA (owner rita) with open referral R4 Lou Bistro
+--     (phone 5550600018); submission S8 Lou Bistro LLC (rita, same phone), attributed to P1.
+insert into partners (id, org_id, created_by, owner_id, name, company, type, email) values
+  ('a060a000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000001060', 'a0600000-0000-0000-0000-000000000003', 'a0600000-0000-0000-0000-000000000003', 'Kim CPA', 'Kim & Co', 'cpa', 'kim@tri.example');
+insert into referrals (id, partner_id, direction, source, status, company_name, contact_phone, assigned_user_id, submitted_at) values
+  ('a060f000-0000-0000-0000-000000000004', 'a060a000-0000-0000-0000-000000000004', 'inbound', 'rep_entered', 'submitted', 'Lou Bistro', '5550600018', 'a0600000-0000-0000-0000-000000000003', '2026-09-01 15:00+00');
+insert into referral_form_submissions (
+  id, org_id, link_type, assigned_user_id, company_name, contact_name, contact_email, contact_phone,
+  notes, referred_by_text, referrer_email, consent_version, consent_text_snapshot, submitter_ip, submitted_at
+) values
+  ('a060e000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000001060', 'user', 'a0600000-0000-0000-0000-000000000003', 'Lou Bistro LLC', 'Lou', 'lou@bistro.example', '555-060-0018', 'Two registers', null, null, 1, 'I may share this.', '198.51.100.60', '2026-10-02 15:00+00');
+
+do $$ declare a record; r referrals; res jsonb; begin
+  perform _t_act('a0600000-0000-0000-0000-000000000003');
+  select * into a from public.attribute_form_submission('a060e000-0000-0000-0000-000000000008', 'a060a000-0000-0000-0000-000000000001');
+  if a.duplicate_of_referral_id is distinct from 'a060f000-0000-0000-0000-000000000004'::uuid
+     or a.duplicate_of_deal_id is not null
+     or a.assigned_user_id is distinct from 'a0600000-0000-0000-0000-000000000003'::uuid then
+    raise exception 'S8 is flagged as a duplicate of R4, got %', row_to_json(a);
+  end if;
+  perform _t_raises(format('select public.accept_referral(%L)', a.referral_id), 'override_reason_required');
+  res := public.accept_referral_override(a.referral_id, 'Different owner, second location');
+  perform set_config('role', 'postgres', true);
+  select * into r from referrals where id = a.referral_id;
+  if r.duplicate_of_referral_id is distinct from 'a060f000-0000-0000-0000-000000000004'::uuid
+     or r.duplicate_of_deal_id is not null then
+    raise exception 'the stored referral keeps the flag: %', row_to_json(r);
+  end if;
+  if res->>'result' <> 'accepted' or r.status <> 'accepted' then
+    raise exception 'accept with a reason goes through, got %', res;
+  end if;
+end $$;
+
+-- 5c. Company link (FR-PORT-51): once an administrator credits a company-link
+--     submission to a partner, it goes to that partner's rep (referral_route_assignee)
+--     and the rep hears "New partner referral for you". When routing finds no one,
+--     the reviewer keeps it (and sends themselves nothing). A personal link keeps
+--     the reviewer either way (section 5).
+--     Fixtures: Dee (deactivated rep, no manager) owns partner P5 Dee CPA;
+--     S9 Tenant Co and S10 Orphan Co, both company link (administrator queue).
+insert into auth.users (id, email, aud, role, created_at, updated_at, email_confirmed_at) values
+  ('a0600000-0000-0000-0000-000000000006', 'dee@tri.example', 'authenticated', 'authenticated', now(), now(), now());
+insert into profiles (id, org_id, role, role_level, full_name, email, role_path, manager_id, deactivated_at) values
+  ('a0600000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-000000001060', 'rep', 'sales_professional', 'Dee Gone', 'dee@tri.example', 'triboss.dee'::ltree, null, now());
+insert into partners (id, org_id, created_by, owner_id, name, company, type, email) values
+  ('a060a000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000001060', 'a0600000-0000-0000-0000-000000000001', 'a0600000-0000-0000-0000-000000000006', 'Dee CPA', 'Dee & Co', 'cpa', 'dee@deeco.example');
+insert into referral_form_submissions (
+  id, org_id, link_type, assigned_user_id, company_name, contact_name, contact_email, contact_phone,
+  notes, referred_by_text, referrer_email, consent_version, consent_text_snapshot, submitter_ip, submitted_at
+) values
+  ('a060e000-0000-0000-0000-000000000009', '00000000-0000-0000-0000-000000001060', 'tenant', null, 'Tenant Co', 'Ike', 'ike@tenant.example', '5550600019', 'Front desk', null, null, 1, 'I may share this.', '198.51.100.60', now()),
+  ('a060e000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000001060', 'tenant', null, 'Orphan Co', 'Jo',  'jo@orphan.example',  '5550600020', 'Back office', null, null, 1, 'I may share this.', '198.51.100.60', now());
+
+do $$ declare a record; r referrals; n integer; begin
+  perform _t_act('a0600000-0000-0000-0000-000000000001');
+  select * into a from public.attribute_form_submission('a060e000-0000-0000-0000-000000000009', 'a060a000-0000-0000-0000-000000000001');
+  perform set_config('role', 'postgres', true);
+  if a.assigned_user_id is distinct from 'a0600000-0000-0000-0000-000000000003'::uuid then
+    raise exception 'a company-link submission credited to P1 goes to rita, got %', row_to_json(a);
+  end if;
+  select * into r from referrals where id = a.referral_id;
+  if r.assigned_user_id is distinct from 'a0600000-0000-0000-0000-000000000003'::uuid then
+    raise exception 'the stored referral is rita''s: %', row_to_json(r);
+  end if;
+  select count(*) into n from portal_email_outbox
+   where referral_id = a.referral_id and kind = 'internal_new_referral'
+     and recipient_user_id = 'a0600000-0000-0000-0000-000000000003'
+     and payload = jsonb_build_object('appUrlPath', '/partners', 'companyNames', jsonb_build_array('Tenant Co'), 'count', 1);
+  if n <> 1 then raise exception 'rita hears about the routed referral once, got %', n; end if;
+  select count(*) into n from portal_email_outbox
+   where referral_id = a.referral_id and (kind <> 'internal_new_referral' or recipient_user_id <> 'a0600000-0000-0000-0000-000000000003');
+  if n <> 0 then raise exception 'only rita is emailed (no partner Received, no administrator), got %', n; end if;
+  -- The administrator is not the triager any more: rita is.
+  perform _t_act('a0600000-0000-0000-0000-000000000003');
+  if (public.accept_referral(a.referral_id))->>'result' <> 'accepted' then
+    raise exception 'rita accepts her routed referral';
+  end if;
+  perform set_config('role', 'postgres', true);
+
+  -- Routing finds no one (owner deactivated, no manager): the administrator keeps it.
+  perform _t_act('a0600000-0000-0000-0000-000000000001');
+  select * into a from public.attribute_form_submission('a060e000-0000-0000-0000-000000000010', 'a060a000-0000-0000-0000-000000000005');
+  perform set_config('role', 'postgres', true);
+  if a.assigned_user_id is distinct from 'a0600000-0000-0000-0000-000000000001'::uuid then
+    raise exception 'no route: the reviewer keeps it, got %', row_to_json(a);
+  end if;
+  if exists (select 1 from portal_email_outbox where referral_id = a.referral_id and kind = 'internal_new_referral') then
+    raise exception 'the reviewer who keeps it is not emailed about it';
+  end if;
+end $$;
+
 -- 6. No partner: accept creates the reviewer's deal, the first follow-up and a deal note.
 do $$ declare v uuid; begin
   perform _t_act('a0600000-0000-0000-0000-000000000003');
@@ -258,7 +357,7 @@ end $$;
 
 do $$ declare d deals; s referral_form_submissions; n integer; v uuid := current_setting('t.deal')::uuid; begin
   select * into d from deals where id = v;
-  if d.owner_id <> 'a0600000-0000-0000-0000-000000000003' or d.lead_source <> 'inbound' or d.stage <> 'new'
+  if d.owner_id <> 'a0600000-0000-0000-0000-000000000003' or d.lead_source <> 'referral_form' or d.stage <> 'new'
      or d.company_name <> 'Accept Co' or d.contact_name <> 'Bea' or d.contact_email <> 'bea@accept.example'
      or d.contact_phone <> '5550600012' or d.source_referral_id is not null or d.source_partner_id is not null then
     raise exception 'no-partner deal is wrong: %', row_to_json(d);

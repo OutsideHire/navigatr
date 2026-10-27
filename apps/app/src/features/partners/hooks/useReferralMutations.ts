@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/stores/auth";
 import { DEALS_QUERY_KEY } from "@/features/pipeline/hooks/useDeals";
 import { PARTNERS_QUERY_KEY } from "./usePartners";
-import { referralErrorMessage, type DeclineReason } from "../lib/referrals";
+import { referralErrorMessage, type DeclineReason, type MergeResult } from "../lib/referrals";
 
 export type AcceptResult =
   | { result: "accepted"; dealId: string }
@@ -105,15 +105,56 @@ export function useDeclineReferral() {
   });
 }
 
+/**
+ * Merge into a deal the rep can see. A flagged probable duplicate needs the
+ * rep's written reason (FR-PORT-47). When the deal already credits another
+ * partner, that partner keeps it and this referral closes as a duplicate; the
+ * result says which happened.
+ */
+export interface MergeInput {
+  referralId: string;
+  dealId: string;
+  overrideReason?: string;
+}
+
 export function useMergeReferral() {
   const refresh = useRefresh(true);
   return useMutation({
-    mutationFn: async (input: { referralId: string; dealId: string }): Promise<void> => {
-      const { error } = await supabase.rpc("merge_referral", {
-        p_referral_id: input.referralId,
-        p_deal_id: input.dealId,
-      });
+    mutationFn: async (input: MergeInput): Promise<MergeResult> => {
+      const { data, error } = input.overrideReason
+        ? await supabase.rpc("merge_referral_override", {
+            p_referral_id: input.referralId,
+            p_deal_id: input.dealId,
+            p_reason: input.overrideReason.trim(),
+          })
+        : await supabase.rpc("merge_referral", {
+            p_referral_id: input.referralId,
+            p_deal_id: input.dealId,
+          });
       if (error) throw new Error(referralErrorMessage(error, "Couldn't merge the referral"));
+      // An older database (before 20261027000003) returns void: a plain merge.
+      if (!data || typeof data !== "object") return { result: "merged", creditedPartnerName: null };
+      const raw = data as { result: MergeResult["result"]; credited_partner_name: string | null };
+      return { result: raw.result, creditedPartnerName: raw.credited_partner_name ?? null };
+    },
+    onSuccess: refresh,
+  });
+}
+
+/**
+ * Withdraw a referral the partner asked to pull (FR-PORT-42). The note is
+ * internal only: it lands in the status history and is never shown to the
+ * partner, who just sees Withdrawn. Clears the deal's partner credit.
+ */
+export function useWithdrawReferral() {
+  const refresh = useRefresh(true);
+  return useMutation({
+    mutationFn: async (input: { referralId: string; note?: string }): Promise<void> => {
+      const { error } = await supabase.rpc("withdraw_referral", {
+        p_referral_id: input.referralId,
+        p_note: input.note?.trim() || null,
+      });
+      if (error) throw new Error(referralErrorMessage(error, "Couldn't withdraw the referral"));
     },
     onSuccess: refresh,
   });

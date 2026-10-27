@@ -25,16 +25,57 @@ function useRefresh(opts: { deals?: boolean; tasks?: boolean } = {}) {
   };
 }
 
+/**
+ * The referral a submission became (migration 20261027000002). First referral
+ * wins (FR-PORT-46, 47): when an earlier open referral or active deal matches,
+ * a duplicate id is set and accepting needs a written reason. A company-link
+ * submission goes to the partner's rep (FR-PORT-51); assignedUserName says who.
+ */
+export interface AttributedReferral {
+  referralId: string;
+  duplicateOfReferralId: string | null;
+  duplicateOfDealId: string | null;
+  assignedUserId: string | null;
+  assignedUserName: string | null;
+}
+
+interface AttributeRow {
+  referral_id: string;
+  duplicate_of_referral_id: string | null;
+  duplicate_of_deal_id: string | null;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
+}
+
 export function useAttributeFormSubmission() {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: async (input: { submissionId: string; partnerId: string }): Promise<string> => {
+    mutationFn: async (input: { submissionId: string; partnerId: string }): Promise<AttributedReferral> => {
       const { data, error } = await supabase.rpc("attribute_form_submission", {
         p_submission_id: input.submissionId,
         p_partner_id: input.partnerId,
       });
       if (error) throw new Error(referralErrorMessage(error, "Couldn't save who sent it"));
-      return data as string;
+      // An older database (before 20261027000002) returns the referral id alone.
+      if (typeof data === "string" && data) {
+        return {
+          referralId: data,
+          duplicateOfReferralId: null,
+          duplicateOfDealId: null,
+          assignedUserId: null,
+          assignedUserName: null,
+        };
+      }
+      // A table-returning RPC comes back as an array of one row.
+      const row = (data as AttributeRow[] | null)?.[0];
+      if (!row?.referral_id) throw new Error("Couldn't save who sent it");
+      return {
+        referralId: row.referral_id,
+        duplicateOfReferralId: row.duplicate_of_referral_id ?? null,
+        duplicateOfDealId: row.duplicate_of_deal_id ?? null,
+        assignedUserId: row.assigned_user_id ?? null,
+        assignedUserName: row.assigned_user_name?.trim() || null,
+      };
     },
     onSuccess: refresh,
   });
