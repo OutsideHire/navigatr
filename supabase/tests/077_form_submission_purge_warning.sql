@@ -15,29 +15,37 @@
 --   ATR triaged (declined), 80 days old         never (triaged)
 --   APG untriaged, 80 days old, already purged  never
 --   AOV untriaged, 91 days old                  never (the purge erases it next)
+-- Org C (90 day retention, portal on): rep rob only, no active administrator.
+--   C75 untriaged, exactly 75 days old          never (nobody to warn)
 -- Org B (30 day retention): admin bea.
 --   B15 untriaged, exactly 15 days old          warns
 --   B14 untriaged, 14 days old                  not yet
+--
+-- Assertions count only this fixture's orgs and rows, so the test also passes on a
+-- seeded dev DB that has other orgs with their own due submissions.
 
 begin;
 
 insert into organizations (id, name, slug, invite_code, portal_enabled, declined_retention_days) values
   ('00000000-0000-0000-0000-00000000077a', 'Warn Org A', 'portal-warn-a', 'portal-warn-a1', true, 90),
-  ('00000000-0000-0000-0000-00000000077b', 'Warn Org B', 'portal-warn-b', 'portal-warn-b1', true, 30);
+  ('00000000-0000-0000-0000-00000000077b', 'Warn Org B', 'portal-warn-b', 'portal-warn-b1', true, 30),
+  ('00000000-0000-0000-0000-00000000077c', 'Warn Org C', 'portal-warn-c', 'portal-warn-c1', true, 90);
 
 insert into auth.users (id, email, aud, role, created_at, updated_at, email_confirmed_at) values
   ('a0770000-0000-0000-0000-000000000001', 'ann@warn.example', 'authenticated', 'authenticated', now(), now(), now()),
   ('a0770000-0000-0000-0000-000000000002', 'al@warn.example',  'authenticated', 'authenticated', now(), now(), now()),
   ('a0770000-0000-0000-0000-000000000003', 'dee@warn.example', 'authenticated', 'authenticated', now(), now(), now()),
   ('a0770000-0000-0000-0000-000000000004', 'rex@warn.example', 'authenticated', 'authenticated', now(), now(), now()),
-  ('a0770000-0000-0000-0000-000000000005', 'bea@warn.example', 'authenticated', 'authenticated', now(), now(), now());
+  ('a0770000-0000-0000-0000-000000000005', 'bea@warn.example', 'authenticated', 'authenticated', now(), now(), now()),
+  ('a0770000-0000-0000-0000-000000000006', 'rob@warn.example', 'authenticated', 'authenticated', now(), now(), now());
 
 insert into profiles (id, org_id, role, role_level, full_name, email, role_path, manager_id, deactivated_at) values
   ('a0770000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000077a', 'admin', 'administrator',      'Ann', 'ann@warn.example', 'wann'::ltree,     null, null),
   ('a0770000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-00000000077a', 'admin', 'administrator',      'Al',  'al@warn.example',  'wal'::ltree,      null, null),
   ('a0770000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-00000000077a', 'admin', 'administrator',      'Dee', 'dee@warn.example', 'wdee'::ltree,     null, now()),
   ('a0770000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-00000000077a', 'rep',   'sales_professional', 'Rex', 'rex@warn.example', 'wann.rex'::ltree, 'a0770000-0000-0000-0000-000000000001', null),
-  ('a0770000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-00000000077b', 'admin', 'administrator',      'Bea', 'bea@warn.example', 'wbea'::ltree,     null, null);
+  ('a0770000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-00000000077b', 'admin', 'administrator',      'Bea', 'bea@warn.example', 'wbea'::ltree,     null, null),
+  ('a0770000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-00000000077c', 'rep',   'sales_professional', 'Rob', 'rob@warn.example', 'wrob'::ltree,     null, null);
 
 insert into path_preferences (user_id, timezone) values
   ('a0770000-0000-0000-0000-000000000001', 'America/New_York'),
@@ -62,7 +70,9 @@ insert into referral_form_submissions (
   ('a077e000-0000-0000-0000-0000000000b5', '00000000-0000-0000-0000-00000000077b', 'user', null,
    'Fifteen Co', 'C', 'c@x.example', '5550770015', 'n', 0, timestamptz '2026-10-30 15:00+00' - interval '15 days', null, null, null),
   ('a077e000-0000-0000-0000-0000000000b4', '00000000-0000-0000-0000-00000000077b', 'user', null,
-   'Fourteen Co', 'C', 'c@x.example', '5550770014', 'n', 0, timestamptz '2026-10-30 15:00+00' - interval '14 days', null, null, null);
+   'Fourteen Co', 'C', 'c@x.example', '5550770014', 'n', 0, timestamptz '2026-10-30 15:00+00' - interval '14 days', null, null, null),
+  ('a077e000-0000-0000-0000-0000000000c5', '00000000-0000-0000-0000-00000000077c', 'user', 'a0770000-0000-0000-0000-000000000006',
+   'No Admin Co', 'C', 'c@x.example', '5550770095', 'n', 0, timestamptz '2026-10-30 15:00+00' - interval '75 days', null, null, null);
 
 -- 0. The kind is allowed, the function is service_role only, and the column is not readable by the app.
 do $$ begin
@@ -85,9 +95,12 @@ do $$ begin
 end $$;
 
 -- 1. One run: ann and al (org A) and bea (org B) are warned. dee is deactivated, rex is not an admin.
-do $$ declare n integer; begin
-  n := public.enqueue_form_submission_purge_warnings('2026-10-30 15:00+00');
-  if n <> 3 then raise exception 'expected 3 warnings (ann, al, bea), got %', n; end if;
+do $$ begin
+  perform public.enqueue_form_submission_purge_warnings('2026-10-30 15:00+00');
+  if (select count(*) from portal_email_outbox where kind = 'internal_purge_warning'
+       and org_id in ('00000000-0000-0000-0000-00000000077a', '00000000-0000-0000-0000-00000000077b', '00000000-0000-0000-0000-00000000077c')) <> 3 then
+    raise exception 'expected 3 warnings (ann, al, bea) in the fixture orgs';
+  end if;
 
   if (select count(*) from portal_email_outbox where kind = 'internal_purge_warning'
        and recipient_user_id in ('a0770000-0000-0000-0000-000000000003', 'a0770000-0000-0000-0000-000000000004')) <> 0 then
@@ -115,8 +128,17 @@ do $$ declare n integer; begin
     raise exception 'bea''s warning should carry Fifteen Co only';
   end if;
 
-  if (select count(*) from referral_form_submissions where purge_warned_at is not null) <> 2 then
+  if (select count(*) from referral_form_submissions where purge_warned_at is not null
+       and org_id in ('00000000-0000-0000-0000-00000000077a', '00000000-0000-0000-0000-00000000077b', '00000000-0000-0000-0000-00000000077c')) <> 2 then
     raise exception 'only the two covered submissions are stamped';
+  end if;
+  -- An org with no active administrator queues nothing, and its submission stays unwarned.
+  if exists (select 1 from portal_email_outbox
+              where kind = 'internal_purge_warning' and org_id = '00000000-0000-0000-0000-00000000077c') then
+    raise exception 'an org with no active administrator is not warned';
+  end if;
+  if (select purge_warned_at from referral_form_submissions where id = 'a077e000-0000-0000-0000-0000000000c5') is not null then
+    raise exception 'a submission nobody could be warned about must stay unwarned';
   end if;
   if (select purge_warned_at from referral_form_submissions where id = 'a077e000-0000-0000-0000-000000000075')
      is distinct from '2026-10-30 15:00+00'::timestamptz then
@@ -126,20 +148,25 @@ end $$;
 
 -- 2. A second run the same day queues nothing.
 do $$ begin
-  if public.enqueue_form_submission_purge_warnings('2026-10-30 15:02+00') <> 0 then
+  perform public.enqueue_form_submission_purge_warnings('2026-10-30 15:02+00');
+  if (select count(*) from portal_email_outbox where kind = 'internal_purge_warning'
+       and org_id in ('00000000-0000-0000-0000-00000000077a', '00000000-0000-0000-0000-00000000077b', '00000000-0000-0000-0000-00000000077c')) <> 3 then
     raise exception 'a second run the same day should queue nothing';
   end if;
   -- Even when a new submission crosses the line later the same day: today's email
   -- is already queued, so it waits (unstamped) for tomorrow's.
   update referral_form_submissions set submitted_at = timestamptz '2026-10-30 18:00+00' - interval '75 days'
    where id = 'a077e000-0000-0000-0000-000000000074';
-  if public.enqueue_form_submission_purge_warnings('2026-10-30 18:00+00') <> 0 then
+  perform public.enqueue_form_submission_purge_warnings('2026-10-30 18:00+00');
+  if (select count(*) from portal_email_outbox where kind = 'internal_purge_warning'
+       and org_id in ('00000000-0000-0000-0000-00000000077a', '00000000-0000-0000-0000-00000000077b', '00000000-0000-0000-0000-00000000077c')) <> 3 then
     raise exception 'the same admin is warned once per local day';
   end if;
   if (select purge_warned_at from referral_form_submissions where id = 'a077e000-0000-0000-0000-000000000074') is not null then
     raise exception 'a submission whose email was not queued must stay unwarned';
   end if;
-  if (select count(*) from portal_email_outbox where kind = 'internal_purge_warning') <> 3 then
+  if (select count(*) from portal_email_outbox where kind = 'internal_purge_warning'
+       and org_id in ('00000000-0000-0000-0000-00000000077a', '00000000-0000-0000-0000-00000000077b', '00000000-0000-0000-0000-00000000077c')) <> 3 then
     raise exception 'still exactly three warnings';
   end if;
 end $$;
@@ -147,7 +174,9 @@ end $$;
 -- 3. The next local day the newly due ones are warned, once, and the already warned ones are not repeated.
 do $$ begin
   -- ann and al for Seventy Four Co; bea for Fourteen Co, which reached day 15 today.
-  if public.enqueue_form_submission_purge_warnings('2026-10-31 15:00+00') <> 3 then
+  perform public.enqueue_form_submission_purge_warnings('2026-10-31 15:00+00');
+  if (select count(*) from portal_email_outbox where kind = 'internal_purge_warning'
+       and org_id in ('00000000-0000-0000-0000-00000000077a', '00000000-0000-0000-0000-00000000077b', '00000000-0000-0000-0000-00000000077c')) <> 6 then
     raise exception 'ann and al (Seventy Four Co) and bea (Fourteen Co) should be warned the next day';
   end if;
   if (select payload from portal_email_outbox
@@ -155,7 +184,9 @@ do $$ begin
      <> '{"appUrlPath":"/partners","companyNames":["Seventy Four Co"],"count":1}'::jsonb then
     raise exception 'the next day''s warning carries only the newly due submission';
   end if;
-  if public.enqueue_form_submission_purge_warnings('2026-10-31 15:05+00') <> 0 then
+  perform public.enqueue_form_submission_purge_warnings('2026-10-31 15:05+00');
+  if (select count(*) from portal_email_outbox where kind = 'internal_purge_warning'
+       and org_id in ('00000000-0000-0000-0000-00000000077a', '00000000-0000-0000-0000-00000000077b', '00000000-0000-0000-0000-00000000077c')) <> 6 then
     raise exception 'nothing left to warn';
   end if;
 end $$;
@@ -165,7 +196,9 @@ do $$ begin
   update organizations set is_disabled = true where id = '00000000-0000-0000-0000-00000000077b';
   update referral_form_submissions set purge_warned_at = null
    where id = 'a077e000-0000-0000-0000-0000000000b4';
-  if public.enqueue_form_submission_purge_warnings('2026-11-01 15:00+00') <> 0 then
+  perform public.enqueue_form_submission_purge_warnings('2026-11-01 15:00+00');
+  if (select count(*) from portal_email_outbox where kind = 'internal_purge_warning'
+       and org_id = '00000000-0000-0000-0000-00000000077b') <> 2 then
     raise exception 'a disabled org is not warned';
   end if;
 end $$;
