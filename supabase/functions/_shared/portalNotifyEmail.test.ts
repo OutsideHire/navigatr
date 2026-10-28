@@ -561,6 +561,53 @@ describe("internal_assigned", () => {
   });
 });
 
+describe("internal_purge_warning", () => {
+  it("warns administrators that unreviewed form submissions will be erased in 15 days", () => {
+    expect(INTERNAL_NOTIFY_KINDS).toContain("internal_purge_warning");
+    const e = buildPortalNotifyEmail(
+      "internal_purge_warning",
+      { appUrlPath: "/partners", companyNames: ["Fresh Bakery", "Corner Cafe", "Main St Auto"], count: 3 },
+      CTX,
+    )!;
+    expect(e.subject).toBe("3 referral form submissions will be erased in 15 days");
+    expect(e.ctaUrl).toBe(`${BASE}/partners`);
+    expect(e.audience).toBe("internal");
+    expect(e.replyTo).toBeNull();
+    expect(e.headers).toBeUndefined();
+    expect(e.footerLink).toBeUndefined();
+    const body = e.bodyLines.join(" ");
+    expect(body).toContain("- Fresh Bakery");
+    expect(body).toContain("- Main St Auto");
+    expect(body).toMatch(/not been reviewed/);
+    expect(copyOf(e)).not.toMatch(/[\u2013\u2014]/);
+  });
+
+  it("uses the singular for one submission", () => {
+    const e = buildPortalNotifyEmail(
+      "internal_purge_warning",
+      { appUrlPath: "/partners", companyNames: ["Fresh Bakery"], count: 1 },
+      CTX,
+    )!;
+    expect(e.subject).toBe("1 referral form submission will be erased in 15 days");
+    expect(copyOf(e)).not.toMatch(/[\u2013\u2014]/);
+  });
+
+  it("lists ten names and counts the rest", () => {
+    const names = Array.from({ length: 20 }, (_, i) => `Biz ${i + 1}`);
+    const e = buildPortalNotifyEmail("internal_purge_warning", { appUrlPath: "/partners", companyNames: names, count: 25 }, CTX)!;
+    expect(e.subject).toBe("25 referral form submissions will be erased in 15 days");
+    expect(e.bodyLines).toContain("- Biz 10");
+    expect(e.bodyLines).not.toContain("- Biz 11");
+    expect(e.bodyLines).toContain("and 15 more");
+  });
+
+  it("drops a bad payload", () => {
+    expect(buildPortalNotifyEmail("internal_purge_warning", { appUrlPath: "https://evil.example/x", companyNames: ["A"], count: 1 }, CTX)).toBeNull();
+    expect(buildPortalNotifyEmail("internal_purge_warning", { appUrlPath: "/partners", companyNames: [], count: 1 }, CTX)).toBeNull();
+    expect(buildPortalNotifyEmail("internal_purge_warning", { appUrlPath: "/partners", companyNames: ["A"], count: 1, extra: 1 }, CTX)).toBeNull();
+  });
+});
+
 describe("only the weekly summary can be unsubscribed from (FR-PORT-84)", () => {
   it("no other kind carries headers or a footer link", () => {
     for (const kind of PARTNER_NOTIFY_KINDS) {

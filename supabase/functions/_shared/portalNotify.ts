@@ -1,8 +1,9 @@
 /**
  * The portal_notify drain (Partner Portal Phase 1C, spec 5.8 and 5.9, brief E4).
  *
- * Every run: queue the same-day nudges and the weekly partner summaries for
- * "now" (enqueue_portal_nudges, enqueue_portal_digests), claim
+ * Every run: queue the same-day nudges, the weekly partner summaries and the
+ * 15-day form submission erase warnings for "now" (enqueue_portal_nudges,
+ * enqueue_portal_digests, enqueue_form_submission_purge_warnings), claim
  * one batch (20 rows, paced 600 ms apart) from portal_email_outbox (claim_portal_emails, FOR UPDATE SKIP
  * LOCKED), build each email (portalNotifyEmail.ts), and settle each row with
  * mark_portal_email:
@@ -72,6 +73,7 @@ export interface PortalNotifyDeps {
 export interface PortalNotifySummary {
   nudgesQueued: number;
   digestsQueued: number;
+  purgeWarningsQueued: number;
   claimed: number;
   sent: number;
   dropped: number;
@@ -179,7 +181,15 @@ async function deliver(
 }
 
 export async function drainPortalEmails(deps: PortalNotifyDeps): Promise<PortalNotifySummary> {
-  const summary: PortalNotifySummary = { nudgesQueued: 0, digestsQueued: 0, claimed: 0, sent: 0, dropped: 0, failed: 0 };
+  const summary: PortalNotifySummary = {
+    nudgesQueued: 0,
+    digestsQueued: 0,
+    purgeWarningsQueued: 0,
+    claimed: 0,
+    sent: 0,
+    dropped: 0,
+    failed: 0,
+  };
   const now = deps.now ? deps.now() : new Date();
 
   // A failed nudge selection must not hold up emails already queued.
@@ -191,6 +201,11 @@ export async function drainPortalEmails(deps: PortalNotifyDeps): Promise<PortalN
   const digests = await deps.rpc("enqueue_portal_digests", { p_now: now.toISOString() });
   if (digests.error) console.error("[portal_notify] digest enqueue failed:", digests.error.message);
   else summary.digestsQueued = typeof digests.data === "number" ? digests.data : 0;
+
+  // Warnings 15 days before untriaged form submissions are erased. Same rule: a failure never holds up the drain.
+  const warnings = await deps.rpc("enqueue_form_submission_purge_warnings", { p_now: now.toISOString() });
+  if (warnings.error) console.error("[portal_notify] purge warning enqueue failed:", warnings.error.message);
+  else summary.purgeWarningsQueued = typeof warnings.data === "number" ? warnings.data : 0;
 
   const claim = await deps.rpc("claim_portal_emails", { p_limit: PORTAL_NOTIFY_BATCH });
   if (claim.error) throw new Error(`claim failed: ${claim.error.message}`);

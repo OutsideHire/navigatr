@@ -75,6 +75,7 @@ function setup(rows: unknown[], over: Partial<PortalNotifyDeps> = {}, handlers: 
     if (handlers[name]) return handlers[name](args);
     if (name === "enqueue_portal_nudges") return { data: 2, error: null };
     if (name === "enqueue_portal_digests") return { data: 1, error: null };
+    if (name === "enqueue_form_submission_purge_warnings") return { data: 3, error: null };
     if (name === "claim_portal_emails") return { data: rows, error: null };
     if (name === "mark_portal_email") {
       marks.push(args);
@@ -105,10 +106,11 @@ describe("drainPortalEmails", () => {
     const summary = await drainPortalEmails(deps);
     expect(rpc.mock.calls[0]).toEqual(["enqueue_portal_nudges", { p_now: "2026-10-14T22:30:00.000Z" }]);
     expect(rpc.mock.calls[1]).toEqual(["enqueue_portal_digests", { p_now: "2026-10-14T22:30:00.000Z" }]);
-    expect(rpc.mock.calls[2]).toEqual(["claim_portal_emails", { p_limit: PORTAL_NOTIFY_BATCH }]);
+    expect(rpc.mock.calls[2]).toEqual(["enqueue_form_submission_purge_warnings", { p_now: "2026-10-14T22:30:00.000Z" }]);
+    expect(rpc.mock.calls[3]).toEqual(["claim_portal_emails", { p_limit: PORTAL_NOTIFY_BATCH }]);
     expect(PORTAL_NOTIFY_PACE_MS).toBe(600);
     expect(PORTAL_NOTIFY_BATCH).toBe(20);
-    expect(summary).toEqual({ nudgesQueued: 2, digestsQueued: 1, claimed: 0, sent: 0, dropped: 0, failed: 0 });
+    expect(summary).toEqual({ nudgesQueued: 2, digestsQueued: 1, purgeWarningsQueued: 3, claimed: 0, sent: 0, dropped: 0, failed: 0 });
   });
 
   it("sends a partner email in the ISO's name and brand, replying to the rep", async () => {
@@ -266,6 +268,22 @@ describe("drainPortalEmails", () => {
     expect(errorSpy).toHaveBeenCalled();
   });
 
+  it("keeps draining when the purge warning step fails", async () => {
+    const { deps, sendEmail } = setup([INTERNAL_ROW], {}, {
+      enqueue_form_submission_purge_warnings: () => ({ data: null, error: { message: "lock timeout" } }),
+    });
+    const summary = await drainPortalEmails(deps);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(summary.purgeWarningsQueued).toBe(0);
+    expect(summary.sent).toBe(1);
+    expect(errorSpy).toHaveBeenCalledWith("[portal_notify] purge warning enqueue failed:", "lock timeout");
+  });
+
+  it("counts a non-number purge warning result as zero", async () => {
+    const { deps } = setup([], {}, { enqueue_form_submission_purge_warnings: () => ({ data: null, error: null }) });
+    expect((await drainPortalEmails(deps)).purgeWarningsQueued).toBe(0);
+  });
+
   it("sends the weekly summary with the one-click unsubscribe headers and the no-reply Reply-To", async () => {
     const api = "https://proj.supabase.co/functions/v1/portal_api";
     const { deps, sendEmail, marks } = setup([digestRow("e-7")], { env: { ...ENV, portalApiUrl: api } });
@@ -381,7 +399,7 @@ describe("handlePortalNotifyRequest", () => {
     const { deps } = setup([INTERNAL_ROW]);
     const res = await handlePortalNotifyRequest(req("Bearer s3cret"), "s3cret", deps);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ nudgesQueued: 2, digestsQueued: 1, claimed: 1, sent: 1, dropped: 0, failed: 0 });
+    expect(await res.json()).toEqual({ nudgesQueued: 2, digestsQueued: 1, purgeWarningsQueued: 3, claimed: 1, sent: 1, dropped: 0, failed: 0 });
   });
 
   it("answers 500 server_error when the claim fails", async () => {

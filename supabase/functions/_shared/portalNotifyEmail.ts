@@ -38,6 +38,7 @@ export const INTERNAL_NOTIFY_KINDS = [
   "internal_new_submission",
   "internal_partner_note",
   "internal_assigned",
+  "internal_purge_warning",
 ] as const;
 export type InternalNotifyKind = (typeof INTERNAL_NOTIFY_KINDS)[number];
 
@@ -552,6 +553,31 @@ function buildInternal(kind: InternalNotifyKind, p: InternalNotifyPayload, ctx: 
       ctaLabel: "Open referral",
       ctaUrl: url,
       footnote: "You're getting this because a teammate assigned a referral to you.",
+      audience: "internal",
+      orgName: null,
+      replyTo: null,
+    };
+  }
+  if (kind === "internal_purge_warning") {
+    const count = p.count;
+    const noun = count === 1 ? "referral form submission" : "referral form submissions";
+    const listed = p.companyNames.slice(0, 10).map((c) => `- ${c}`);
+    const rest = count > listed.length ? [`and ${count - listed.length} more`] : [];
+    return {
+      subject: `${count} ${noun} will be erased in 15 days`,
+      preheader: `Review ${count === 1 ? "it" : "them"} before the contact details are erased.`,
+      heading: count === 1 ? "A form submission will be erased soon" : "Form submissions will be erased soon",
+      bodyLines: [
+        count === 1
+          ? "This referral form submission has not been reviewed. In 15 days its contact details will be erased:"
+          : "These referral form submissions have not been reviewed. In 15 days their contact details will be erased:",
+        ...listed,
+        ...rest,
+        `Review ${count === 1 ? "it" : "them"} in Referrals to accept, merge or decline before then.`,
+      ],
+      ctaLabel: "Review submissions",
+      ctaUrl: url,
+      footnote: "You're getting this because you are an administrator and unreviewed form submissions are erased after your retention period.",
       audience: "internal",
       orgName: null,
       replyTo: null,
