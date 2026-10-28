@@ -13,6 +13,9 @@ import * as React from "react";
 import { toast } from "sonner";
 import { Copy, Loader2 } from "lucide-react";
 import { Button, Card, Checkbox, FormField, Input, Textarea } from "@/components/navigatr";
+import { useProfile } from "@/features/auth/useProfile";
+import { useBrand } from "@/features/branding/useBrand";
+import { useUpdateBrand } from "@/features/branding/useUpdateBrand";
 import { portalAddress } from "@/features/portal/lib/portalAddress";
 import { TabHeader } from "./TabHeader";
 import {
@@ -44,6 +47,7 @@ export function PartnerPortalTab() {
         <>
           <PartnerPortalForm key={formKey(settings.data)} initial={settings.data} />
           <PublicFormCard settings={settings.data} />
+          <PoweredByCard />
         </>
       )}
     </>
@@ -189,6 +193,47 @@ function PublicFormCard({ settings }: { settings: PortalSettings }) {
             : "Turn on the partner portal and save to use the public form."}
         </p>
       )}
+    </Card>
+  );
+}
+
+/**
+ * The white-label switch for partner emails (FR-PORT-82). Administrators only.
+ * It saves on flip through update_org_branding, which sets every column
+ * directly, so it sends the org's FULL saved brand (raw values, never display
+ * defaults) with only showPoweredBy changed. It waits for the brand to load so
+ * a flip can never blank the logo or color. The in-app credit is not affected.
+ */
+function PoweredByCard() {
+  const isAdmin = useProfile().data?.role_level === "administrator";
+  const brand = useBrand().data;
+  const update = useUpdateBrand();
+  if (!isAdmin || !brand) return null;
+  const toggle = async (next: boolean) => {
+    try {
+      await update.mutateAsync({
+        productName: brand.productName,
+        primaryColor: brand.primaryColor,
+        logoUrl: brand.logoUrl,
+        darkLogoUrl: brand.darkLogoUrl,
+        showPoweredBy: next,
+      });
+      toast.success(next ? "Partner emails show Powered by navigatr" : "Partner emails no longer show Powered by navigatr");
+    } catch {
+      toast.error("Couldn't change this setting. Try again.");
+    }
+  };
+  return (
+    <Card padding="lg" className="mt-6 flex flex-col gap-3">
+      <Checkbox
+        variant="toggle"
+        id="portal-powered-by"
+        checked={brand.showPoweredBy}
+        disabled={update.isPending}
+        onCheckedChange={(next) => void toggle(next)}
+        label="Show 'Powered by navigatr' to partners"
+        helper="Turn off to remove the line from emails partners receive. It stays on inside the app."
+      />
     </Card>
   );
 }

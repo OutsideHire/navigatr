@@ -141,6 +141,44 @@ describe("renderEmail with a tenant brand", () => {
   });
 });
 
+describe("showPoweredBy (FR-PORT-82)", () => {
+  const base = {
+    preheader: "Acme ISO has your referral.",
+    heading: "Acme ISO has your referral",
+    bodyLines: ["Thanks for sending Fresh Bakery."],
+    ctaLabel: "View referral",
+    ctaUrl: "https://app.getnavigatr.io/p/acme/r/r-1",
+    footnote: "You're getting this because you send referrals to Acme ISO.",
+  };
+  const brand = { name: "Acme ISO", logoUrl: null, primaryColor: null };
+
+  it("omits the Powered by line in html and text when showPoweredBy is false", () => {
+    const out = renderEmail({ ...base, brand: { ...brand, showPoweredBy: false } });
+    expect(out.html).not.toContain(POWERED_BY);
+    expect(out.text).not.toContain(POWERED_BY);
+    expect(out.text.endsWith("\n")).toBe(false);
+  });
+
+  it("keeps the line when showPoweredBy is true or missing", () => {
+    for (const b of [{ ...brand, showPoweredBy: true }, brand, { ...brand, showPoweredBy: undefined }]) {
+      const out = renderEmail({ ...base, brand: b });
+      expect(out.html).toContain(`>${POWERED_BY}</p>`);
+      expect(out.text.endsWith(`\n\n${POWERED_BY}`)).toBe(true);
+    }
+  });
+
+  it("keeps the portal sign-in footer row when Powered by is hidden", () => {
+    const portalAddress = { url: "https://app.getnavigatr.io/p/acme" };
+    const PORTAL_ADDRESS_LABEL = "Sign in to your partner portal any time:";
+    const out = renderEmail({ ...base, brand: { ...brand, showPoweredBy: false }, portalAddress });
+    expect(out.html).toContain(PORTAL_ADDRESS_LABEL);
+    expect(out.html).toContain("https://app.getnavigatr.io/p/acme");
+    expect(out.html).not.toContain(POWERED_BY);
+    expect(out.text.endsWith(`${PORTAL_ADDRESS_LABEL} ${portalAddress.url}`)).toBe(true);
+    expect(out.text).not.toContain(POWERED_BY);
+  });
+});
+
 describe("brandAccent and readableTextOn", () => {
   it("accepts only #rrggbb", () => {
     expect(brandAccent("#0a7c45")).toBe("#0a7c45");
@@ -215,5 +253,39 @@ describe("renderEmail footerLink", () => {
 
   it("changes nothing when absent", () => {
     expect(renderEmail({ ...BASE_OPTS, footerLink: undefined })).toEqual(renderEmail(BASE_OPTS));
+  });
+});
+
+describe("renderEmail portal sign-in address (FR-PORT-23)", () => {
+  const base = {
+    preheader: "p",
+    heading: "h",
+    bodyLines: ["b"],
+    footnote: "f",
+  };
+  const brand = { name: "Acme ISO", logoUrl: null, primaryColor: null };
+  const LINE = "Sign in to your partner portal any time:";
+
+  it("shows the line above Powered by, in html and text", () => {
+    const out = renderEmail({ ...base, brand, portalAddress: { url: "https://app.getnavigatr.io/p/acme" } });
+    expect(out.html).toContain(`${LINE} <a href="https://app.getnavigatr.io/p/acme"`);
+    expect(out.html.indexOf(LINE)).toBeLessThan(out.html.indexOf(POWERED_BY));
+    expect(out.text).toContain(`${LINE} https://app.getnavigatr.io/p/acme`);
+    expect(out.text.indexOf(LINE)).toBeLessThan(out.text.indexOf(POWERED_BY));
+  });
+
+  it("escapes the url in the html", () => {
+    const out = renderEmail({ ...base, brand, portalAddress: { url: 'https://x.test/p/a"><script>' } });
+    expect(out.html).not.toContain("<script>");
+  });
+
+  it("is ignored without a brand: unbranded output is unchanged", () => {
+    const plain = renderEmail(base);
+    const withAddr = renderEmail({ ...base, portalAddress: { url: "https://app.getnavigatr.io/p/acme" } });
+    expect(withAddr).toEqual(plain);
+  });
+
+  it("is absent when no portalAddress is given", () => {
+    expect(renderEmail({ ...base, brand }).html).not.toContain(LINE);
   });
 });

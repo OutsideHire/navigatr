@@ -43,17 +43,18 @@ const deps: PortalNotifyDeps = {
   loadBrand: async (orgId) => {
     const { data, error } = await db
       .from("org_branding")
-      .select("logo_url, primary_color")
+      .select("logo_url, primary_color, show_powered_by")
       .eq("org_id", orgId)
       .maybeSingle();
     if (error || !data) return null;
     return {
       logoUrl: typeof data.logo_url === "string" ? data.logo_url : null,
       primaryColor: typeof data.primary_color === "string" ? data.primary_color : null,
+      showPoweredBy: data.show_powered_by !== false,
     };
   },
   sendEmail: async (msg) => {
-    const res = await resend.emails.send(msg);
+    const res = await resend.emails.send({ ...msg, replyTo: msg.replyTo ?? undefined });
     if ((res as { error?: unknown }).error) {
       throw new Error(JSON.stringify((res as { error: unknown }).error));
     }

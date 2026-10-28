@@ -189,8 +189,10 @@ describe("request_code", () => {
     expect(msg.to).toBe("jane@example.com");
     expect(msg.from).toBe('"Acme ISO" <invites@send.getnavigatr.io>');
     expect(msg.subject).toBe("Your sign-in code for Acme ISO");
+    expect(msg.replyTo).toBe("no-reply@send.getnavigatr.io");
     expect(msg.html).toContain("123456");
     expect(msg.text).toContain("https://app.getnavigatr.io/p/acme");
+    expect(msg.text).toContain("Sign in to your partner portal any time: https://app.getnavigatr.io/p/acme\n");
   });
 
   it("respects the non-production allowlist and still answers { ok: true }", async () => {
@@ -232,6 +234,19 @@ describe("request_code", () => {
     expect(msg.html).toContain("background:#0A7C45;");
     expect(msg.html).toContain("Powered by navigatr");
     expect(msg.html).not.toContain("icons/icon-192x192.png");
+  });
+
+  it("omits Powered by from the code email when the issued row says the org turned it off", async () => {
+    const white = ok([
+      { code: "123456", recipient: "jane@example.com", org_name: "Acme ISO", org_slug: "acme", logo_url: null, primary_color: null, show_powered_by: false },
+    ]);
+    const { deps, sendEmail } = setup(() => white);
+    await handlePortalRequest(post("request_code", { slug: "acme", email: "jane@example.com" }), deps);
+    const msg = sendEmail.mock.calls[0][0];
+    expect(msg.html).not.toContain("Powered by navigatr");
+    expect(msg.text).not.toContain("Powered by navigatr");
+    // The sign-in address row is separate and stays.
+    expect(msg.html).toContain("Sign in to your partner portal any time:");
   });
 
   it("shows the ISO name in the header when the org has no branding", async () => {

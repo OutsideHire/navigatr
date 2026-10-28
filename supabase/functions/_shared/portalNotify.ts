@@ -22,7 +22,7 @@
 import { requireCronCaller, type HeaderBearingRequest } from "./cronAuth.ts";
 import { shouldSend } from "./emailGuard.ts";
 import { renderEmail, type EmailBrand } from "./emailTemplate.ts";
-import { portalFromAddress } from "./portalEmail.ts";
+import { noReplyAddress, portalFromAddress } from "./portalEmail.ts";
 import { buildPortalNotifyEmail } from "./portalNotifyEmail.ts";
 
 /** Rows per run. With the 2 minute cron and the pacing below, a run stays well under the function time limit. */
@@ -43,6 +43,8 @@ export interface PortalNotifyMessage {
 export interface PortalNotifyBrand {
   logoUrl: string | null;
   primaryColor: string | null;
+  /** org_branding.show_powered_by. Missing means shown. */
+  showPoweredBy?: boolean;
 }
 
 export interface PortalNotifyEnv {
@@ -50,6 +52,8 @@ export interface PortalNotifyEnv {
   fromAddress: string;
   appEnv: string | null | undefined;
   emailAllowlist: string;
+  /** No-reply override for tests (FR-PORT-81); the edge functions leave it unset. Unset or not a plain address: no-reply@send.getnavigatr.io. */
+  noReplyAddress?: string | null;
   /** The portal_api function URL (`${SUPABASE_URL}/functions/v1/portal_api`): the weekly summary's one-click unsubscribe target. */
   portalApiUrl?: string;
 }
@@ -139,13 +143,19 @@ async function deliver(
   let brand: EmailBrand | undefined;
   if (built.audience === "partner" && built.orgName) {
     const found = await brandFor(row.org_id);
-    brand = { name: built.orgName, logoUrl: found?.logoUrl ?? null, primaryColor: found?.primaryColor ?? null };
+    brand = {
+      name: built.orgName,
+      logoUrl: found?.logoUrl ?? null,
+      primaryColor: found?.primaryColor ?? null,
+      showPoweredBy: found?.showPoweredBy !== false,
+    };
     from = portalFromAddress(deps.env.fromAddress, built.orgName);
   }
   const { html, text } = renderEmail({ ...built, brand });
 
   if (pace.sentAny) await deps.sleep(PORTAL_NOTIFY_PACE_MS);
   pace.sentAny = true;
+  const replyTo = built.noReply ? noReplyAddress(deps.env.noReplyAddress) : built.replyTo;
   try {
     await deps.sendEmail({
       from,
@@ -153,7 +163,9 @@ async function deliver(
       subject: built.subject,
       html,
       text,
-      ...(built.replyTo ? { replyTo: built.replyTo } : {}),
+      // Weekly summaries reply to the no-reply address; status and "sent to you" emails reply to the rep;
+      // internal emails set none.
+      ...(replyTo ? { replyTo } : {}),
       ...(built.headers ? { headers: built.headers } : {}),
     });
   } catch (e) {

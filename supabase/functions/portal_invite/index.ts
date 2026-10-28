@@ -39,7 +39,7 @@ Deno.serve((req) =>
       return { data, error: error ? { message: error.message } : null };
     },
     sendEmail: async (msg) => {
-      const res = await resend.emails.send(msg);
+      const res = await resend.emails.send({ ...msg, replyTo: msg.replyTo ?? undefined });
       if ((res as { error?: unknown }).error) {
         throw new Error(JSON.stringify((res as { error: unknown }).error));
       }

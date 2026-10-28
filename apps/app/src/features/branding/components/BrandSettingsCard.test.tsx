@@ -56,7 +56,13 @@ describe("BrandSettingsCard", () => {
     brandData = undefined;
     render(<BrandSettingsCard />);
     expect(screen.queryByRole("button", { name: /save branding/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reset to defaults/i })).not.toBeInTheDocument();
     expect(screen.getByText(/loading your branding/i)).toBeInTheDocument();
+  });
+
+  it("enables Reset to defaults once branding has loaded", () => {
+    render(<BrandSettingsCard />);
+    expect(screen.getByRole("button", { name: /reset to defaults/i })).toBeEnabled();
   });
 
   it("shows an error (and no form) when branding fails to load", () => {
@@ -119,6 +125,39 @@ describe("BrandSettingsCard", () => {
       primaryColor: null,
       logoUrl: null,
       darkLogoUrl: null,
+      showPoweredBy: true,
+    });
+  });
+  it("Save keeps showPoweredBy off for a white-label tenant (the RPC sets it directly)", async () => {
+    brandData = { productName: "Acme", primaryColor: null, logoUrl: null, darkLogoUrl: null, showPoweredBy: false };
+    render(<BrandSettingsCard />);
+    fireEvent.change(document.getElementById("brand-logo") as HTMLInputElement, { target: { files: [pngFile()] } });
+    await waitFor(() => expect(uploadOrgLogo).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /save branding/i }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    expect(mutateAsync.mock.calls[0][0].showPoweredBy).toBe(false);
+  });
+
+  it("Save sends showPoweredBy true when it is on", async () => {
+    render(<BrandSettingsCard />);
+    fireEvent.change(document.getElementById("brand-logo") as HTMLInputElement, { target: { files: [pngFile()] } });
+    await waitFor(() => expect(uploadOrgLogo).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /save branding/i }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    expect(mutateAsync.mock.calls[0][0].showPoweredBy).toBe(true);
+  });
+
+  it("Reset to defaults keeps the Powered by choice (it lives on the Partner portal tab)", async () => {
+    brandData = { productName: "Acme", primaryColor: "#2456e6", logoUrl: "https://cdn/x.png", darkLogoUrl: null, showPoweredBy: false };
+    render(<BrandSettingsCard />);
+    fireEvent.click(screen.getByRole("button", { name: /reset to defaults/i }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    expect(mutateAsync.mock.calls[0][0]).toEqual({
+      productName: "navigatr",
+      primaryColor: null,
+      logoUrl: null,
+      darkLogoUrl: null,
+      showPoweredBy: false,
     });
   });
 });

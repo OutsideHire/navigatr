@@ -19,6 +19,8 @@ export interface EmailBrand {
   logoUrl: string | null;
   /** #rrggbb button and link color (org_branding.primary_color). */
   primaryColor: string | null;
+  /** The white-label switch (org_branding.show_powered_by). Missing or undefined means true. */
+  showPoweredBy?: boolean;
 }
 
 export interface EmailOptions {
@@ -38,6 +40,8 @@ export interface EmailOptions {
   brand?: EmailBrand;
   /** Optional link under the footnote (the weekly summary's unsubscribe link). Absent: output unchanged. */
   footerLink?: { label: string; url: string };
+  /** The partner's portal sign-in address (FR-PORT-23). Shown only with a brand, above the Powered by line. */
+  portalAddress?: { url: string };
 }
 
 const LOGO_URL = "https://app.getnavigatr.io/icons/icon-192x192.png";
@@ -47,6 +51,8 @@ const DARK_TEXT = "#0B1220";
 
 /** The locked credit line on every branded email. */
 export const POWERED_BY = "Powered by navigatr";
+
+const PORTAL_ADDRESS_LABEL = "Sign in to your partner portal any time:";
 
 const DEFAULT_HEADER = `<table role="presentation" cellpadding="0" cellspacing="0"><tr>
           <td style="vertical-align:middle;"><img src="${LOGO_URL}" width="30" height="30" alt="" style="display:block;border:0;border-radius:7px;"></td>
@@ -100,7 +106,12 @@ export function renderEmail(opts: EmailOptions): { html: string; text: string } 
   const header = brand ? brandHeader(brand) : DEFAULT_HEADER;
   const accent = brand ? brandAccent(brand.primaryColor) : DEFAULT_ACCENT;
   const accentText = brand ? readableTextOn(accent) : DEFAULT_ACCENT_TEXT;
-  const poweredBy = brand
+  const portalLine =
+    brand && opts.portalAddress
+      ? `\n        <p style="margin:12px 0 0;font-size:11.5px;line-height:1.5;color:#8089A1;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${PORTAL_ADDRESS_LABEL} <a href="${escUrl(opts.portalAddress.url)}" style="color:${accent};word-break:break-all;">${escUrl(opts.portalAddress.url)}</a></p>`
+      : "";
+  const showPoweredBy = brand != null && brand.showPoweredBy !== false;
+  const poweredBy = showPoweredBy
     ? `\n        <p style="margin:12px 0 0;font-size:11px;line-height:1.4;color:#A0A7B8;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${POWERED_BY}</p>`
     : "";
 
@@ -157,7 +168,7 @@ export function renderEmail(opts: EmailOptions): { html: string; text: string } 
       <tr><td style="padding:18px 28px 24px;">
         <p style="margin:16px 0 0;border-top:1px solid #F0F2F7;padding-top:14px;font-size:11.5px;line-height:1.5;color:#8089A1;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
           ${esc(opts.footnote)}${footerLinkHtml}${ctaFallback}
-        </p>${poweredBy}
+        </p>${portalLine}${poweredBy}
       </td></tr>
     </table>
   </td></tr>
@@ -173,7 +184,8 @@ export function renderEmail(opts: EmailOptions): { html: string; text: string } 
     "",
     opts.footnote,
     ...(opts.footerLink ? [`${opts.footerLink.label}: ${opts.footerLink.url}`] : []),
-    ...(brand ? ["", POWERED_BY] : []),
+    ...(brand && opts.portalAddress ? ["", `${PORTAL_ADDRESS_LABEL} ${opts.portalAddress.url}`] : []),
+    ...(showPoweredBy ? ["", POWERED_BY] : []),
   ].join("\n");
 
   return { html, text };

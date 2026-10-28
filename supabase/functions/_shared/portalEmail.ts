@@ -28,6 +28,22 @@ export function portalFromAddress(fromEnv: string, orgName: string): string {
   return name ? `"${name}" <${address}>` : address;
 }
 
+/** FR-PORT-81: the no-reply Reply-To for sign-in codes, weekly summaries and form confirmations. */
+export const DEFAULT_NO_REPLY_ADDRESS = "no-reply@send.getnavigatr.io";
+
+const REPLY_TO_RE = /^[^\s@<>",]+@[^\s@<>",]+\.[^\s@<>",]+$/;
+
+/** A Reply-To value that is a plain address (no spaces, quotes, angle brackets or line breaks), else null. */
+export function safeReplyTo(address: string | null | undefined): string | null {
+  const value = typeof address === "string" ? address.trim() : "";
+  return REPLY_TO_RE.test(value) ? value : null;
+}
+
+/** The no-reply Reply-To: an override when it is a plain address, else the default. */
+export function noReplyAddress(configured: string | null | undefined): string {
+  return safeReplyTo(configured) ?? DEFAULT_NO_REPLY_ADDRESS;
+}
+
 /** The partner portal address for a tenant, optionally with a sub-path. */
 export function portalUrl(appBaseUrl: string, slug: string, suffix = ""): string {
   return `${appBaseUrl.replace(/\/+$/, "")}/p/${encodeURIComponent(slug)}${suffix}`;
@@ -59,7 +75,7 @@ export function portalInviteEmail(args: {
   };
 }
 
-export function portalCodeEmail(args: { orgName: string; code: string; signInUrl: string }): PortalEmail {
+export function portalCodeEmail(args: { orgName: string; code: string; signInUrl: string; portalAddressUrl?: string }): PortalEmail {
   return {
     subject: `Your sign-in code for ${args.orgName}`,
     preheader: `Your code is ${args.code}. It expires in 15 minutes.`,
@@ -71,6 +87,7 @@ export function portalCodeEmail(args: { orgName: string; code: string; signInUrl
     ctaLabel: "Open the sign-in page",
     ctaUrl: args.signInUrl,
     footnote: "If you didn't ask for this code, you can ignore this email.",
+    ...(args.portalAddressUrl ? { portalAddress: { url: args.portalAddressUrl } } : {}),
   };
 }
 
@@ -81,7 +98,7 @@ export function portalCodeEmail(args: { orgName: string; code: string; signInUrl
  */
 export function portalEmailBrand(
   orgName: string,
-  row: { logo_url?: unknown; primary_color?: unknown } | null | undefined,
+  row: { logo_url?: unknown; primary_color?: unknown; show_powered_by?: unknown } | null | undefined,
 ): EmailBrand {
   const logo = row?.logo_url;
   const color = row?.primary_color;
@@ -89,6 +106,8 @@ export function portalEmailBrand(
     name: orgName,
     logoUrl: typeof logo === "string" && logo !== "" ? logo : null,
     primaryColor: typeof color === "string" && color !== "" ? color : null,
+    // Only an explicit false hides the credit (FR-PORT-82): a missing row or field keeps it.
+    showPoweredBy: row?.show_powered_by !== false,
   };
 }
 

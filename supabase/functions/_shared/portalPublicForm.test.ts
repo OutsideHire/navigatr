@@ -299,7 +299,7 @@ describe("handlePublicFormAction", () => {
 
   function setup(rpcImpl: Rpc, env: Partial<PublicFormDeps["env"]> = {}, fetchOk = true) {
     const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => rpcImpl(name, args));
-    const sendEmail = vi.fn(async (_m: { from: string; to: string; subject: string; html: string; text: string }) => {});
+    const sendEmail = vi.fn(async (_m: { from: string; to: string; subject: string; html: string; text: string; replyTo?: string | null }) => {});
     const background = vi.fn();
     const fetchFn = vi.fn(async (_u: string, _i: RequestInit) => new Response(JSON.stringify({ success: fetchOk })));
     const deps: PublicFormDeps = {
@@ -431,12 +431,27 @@ describe("handlePublicFormAction", () => {
       expect(msg.to).toBe("joe@bank.example");
       expect(msg.from).toBe('"Acme ISO" <invites@send.getnavigatr.io>');
       expect(msg.subject).toBe("Acme ISO received your referral");
+      expect(msg.replyTo).toBe("no-reply@send.getnavigatr.io");
       expect(msg.text).toContain("REF-1A2B3C4D");
       // The brand accent only paints a button, and this email has none, so the color is not asserted here.
       for (const typed of ["Fresh Bakery", "Ann Owner", "51-200", "ann@bakery.example", "Needs a new terminal.", "Joe at the bank", "555"]) {
         expect(msg.text).not.toContain(typed);
         expect(msg.html).not.toContain(typed);
       }
+    });
+
+    it("leaves Powered by out of the confirmation when the org turned it off", async () => {
+      const { deps, sendEmail } = setup(routes(0, { data: [{ ...SUBMIT_ROW, show_powered_by: false }], error: null }));
+      await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", deps);
+      const msg = sendEmail.mock.calls[0][0];
+      expect(msg.html).not.toContain("Powered by navigatr");
+      expect(msg.text).not.toContain("Powered by navigatr");
+    });
+
+    it("keeps Powered by in the confirmation by default", async () => {
+      const { deps, sendEmail } = setup(routes(0));
+      await handlePublicFormAction("public_submit", "acme", "tok123", await body(), "203.0.113.5", deps);
+      expect(sendEmail.mock.calls[0][0].html).toContain("Powered by navigatr");
     });
 
     it("sends no confirmation without a referrer email, and never to the business contact", async () => {

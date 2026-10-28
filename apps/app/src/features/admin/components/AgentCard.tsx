@@ -54,6 +54,7 @@ export function AgentCard({
   callerRole,
   selfId,
   activeAdminCount,
+  onNewReferralLink,
 }: {
   row: LeaderboardRow;
   onNameClick: (row: LeaderboardRow) => void;
@@ -64,6 +65,8 @@ export function AgentCard({
   callerRole: UserRole | undefined;
   selfId: string | undefined;
   activeAdminCount: number;
+  /** Administrators only, and only while the public form is on. */
+  onNewReferralLink?: (row: LeaderboardRow) => void;
 }) {
   const status = STATUS_BADGE[row.status];
   return (
@@ -103,6 +106,11 @@ export function AgentCard({
             {(row.status === "active" || row.status === "invited") && (
               <DropdownMenuItem onSelect={() => onRevoke(row)}>
                 {row.status === "invited" ? "Revoke invite" : "Deactivate agent"}
+              </DropdownMenuItem>
+            )}
+            {onNewReferralLink && row.status === "active" && (
+              <DropdownMenuItem onSelect={() => onNewReferralLink(row)}>
+                New referral form link
               </DropdownMenuItem>
             )}
             {settableRoles(callerRole, { id: row.agent_id, role: row.role, status: row.status }, { selfId, activeAdminCount }).map((r) => (

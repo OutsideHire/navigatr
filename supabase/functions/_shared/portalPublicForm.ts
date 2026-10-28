@@ -18,7 +18,7 @@
 import { timingSafeEquals } from "./cronAuth.ts";
 import { shouldSend } from "./emailGuard.ts";
 import { renderEmail } from "./emailTemplate.ts";
-import { portalEmailBrand, portalFromAddress, portalPublicConfirmationEmail } from "./portalEmail.ts";
+import { noReplyAddress, portalEmailBrand, portalFromAddress, portalPublicConfirmationEmail } from "./portalEmail.ts";
 import type { ActionResult } from "./portalReferralApi.ts";
 import { PORTAL_FIELD_LIMITS, matchEmployeeCount, type EmployeeCount } from "./portalSubmission.ts";
 
@@ -295,6 +295,8 @@ export interface PublicFormEnv {
   fromAddress: string;
   appEnv: string | null | undefined;
   emailAllowlist: string;
+  /** No-reply override for tests (FR-PORT-81); the edge functions leave it unset. Unset or not a plain address: no-reply@send.getnavigatr.io. */
+  noReplyAddress?: string | null;
   /** PUBLIC_FORM_SIGNING_SECRET. Unset: the form answers not_available (fail closed). */
   publicFormSigningSecret?: string | null;
   /** TURNSTILE_SECRET_KEY. Unset: nobody over the soft limit can pass the check (fail closed). */
@@ -303,7 +305,7 @@ export interface PublicFormEnv {
 
 export interface PublicFormDeps {
   rpc(name: string, args: Record<string, unknown>): Promise<{ data: unknown; error: { message: string } | null }>;
-  sendEmail(msg: { from: string; to: string; subject: string; html: string; text: string }): Promise<void>;
+  sendEmail(msg: { from: string; to: string; subject: string; html: string; text: string; replyTo?: string | null }): Promise<void>;
   background?(p: Promise<unknown>): void;
   fetch?: FetchLike;
   now?(): Date;
@@ -322,6 +324,7 @@ interface SubmitRow {
   org_name: unknown;
   logo_url?: unknown;
   primary_color?: unknown;
+  show_powered_by?: unknown;
 }
 
 function ok(body: unknown): ActionResult {
@@ -486,7 +489,14 @@ function sendConfirmation(to: string, orgName: string, ref: string, brandRow: Su
     const built = portalPublicConfirmationEmail({ orgName, ref });
     const { html, text } = renderEmail({ ...built, brand: portalEmailBrand(orgName, brandRow) });
     const sending = deps
-      .sendEmail({ from: portalFromAddress(deps.env.fromAddress, orgName), to, subject: built.subject, html, text })
+      .sendEmail({
+        from: portalFromAddress(deps.env.fromAddress, orgName),
+        to,
+        subject: built.subject,
+        html,
+        text,
+        replyTo: noReplyAddress(deps.env.noReplyAddress),
+      })
       .catch((e: unknown) => {
         console.error("[portal_api] public form confirmation failed:", e instanceof Error ? e.message : String(e));
       });

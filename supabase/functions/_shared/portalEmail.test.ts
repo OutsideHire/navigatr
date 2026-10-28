@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fetchPortalEmailBrand, portalCodeEmail, portalEmailBrand, portalFromAddress, portalInviteEmail, portalPublicConfirmationEmail, portalUrl, portalApiUrl } from "./portalEmail";
+import { fetchPortalEmailBrand, portalCodeEmail, portalEmailBrand, portalFromAddress, portalInviteEmail, portalPublicConfirmationEmail, portalUrl, portalApiUrl, safeReplyTo, noReplyAddress } from "./portalEmail";
 import { renderEmail } from "./emailTemplate";
 
 describe("portalFromAddress", () => {
@@ -82,13 +82,22 @@ describe("portalEmailBrand", () => {
       name: "Acme ISO",
       logoUrl: "https://cdn.example/a.png",
       primaryColor: "#0A7C45",
+      showPoweredBy: true,
     });
   });
 
   it("is name-only for a missing row or empty fields", () => {
-    const none = { name: "Acme ISO", logoUrl: null, primaryColor: null };
+    const none = { name: "Acme ISO", logoUrl: null, primaryColor: null, showPoweredBy: true };
     expect(portalEmailBrand("Acme ISO", null)).toEqual(none);
     expect(portalEmailBrand("Acme ISO", { logo_url: "", primary_color: 7 })).toEqual(none);
+  });
+
+  it("carries show_powered_by only when it is exactly false (missing means shown)", () => {
+    expect(portalEmailBrand("Acme ISO", { show_powered_by: false }).showPoweredBy).toBe(false);
+    expect(portalEmailBrand("Acme ISO", { show_powered_by: true }).showPoweredBy).toBe(true);
+    expect(portalEmailBrand("Acme ISO", { logo_url: "https://cdn.example/a.png" }).showPoweredBy).toBe(true);
+    expect(portalEmailBrand("Acme ISO", null).showPoweredBy).toBe(true);
+    expect(portalEmailBrand("Acme ISO", { show_powered_by: null }).showPoweredBy).toBe(true);
   });
 });
 
@@ -99,15 +108,22 @@ describe("fetchPortalEmailBrand", () => {
       name: "Acme ISO",
       logoUrl: "https://cdn.example/a.png",
       primaryColor: "#0A7C45",
+      showPoweredBy: true,
     });
     expect(rpc).toHaveBeenCalledWith("portal_brand", { p_slug: "acme" });
   });
 
   it("falls back to the name when the lookup errors, throws, or finds nothing", async () => {
-    const none = { name: "Acme ISO", logoUrl: null, primaryColor: null };
+    const none = { name: "Acme ISO", logoUrl: null, primaryColor: null, showPoweredBy: true };
     await expect(fetchPortalEmailBrand(async () => ({ data: null, error: { message: "boom" } }), "acme", "Acme ISO")).resolves.toEqual(none);
     await expect(fetchPortalEmailBrand(async () => { throw new Error("down"); }, "acme", "Acme ISO")).resolves.toEqual(none);
     await expect(fetchPortalEmailBrand(async () => ({ data: [], error: null }), "acme", "Acme ISO")).resolves.toEqual(none);
+  });
+
+  it("passes show_powered_by=false through from portal_brand", async () => {
+    const rpc = vi.fn(async () => ({ data: [{ logo_url: null, primary_color: null, show_powered_by: false }], error: null }));
+    const brand = await fetchPortalEmailBrand(rpc, "acme", "Acme ISO");
+    expect(brand.showPoweredBy).toBe(false);
   });
 });
 
@@ -155,5 +171,49 @@ describe("edge sources build portal links through portalUrl only", () => {
       (n) => /\.ts$/.test(n) && !/\.test\.ts$/.test(n) && n !== "portalEmail.ts" && readFileSync(join(dir, n), "utf8").includes("/p/${"),
     );
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("portal sign-in address on partner emails (FR-PORT-23)", () => {
+  const url = "https://app.getnavigatr.io/p/acme";
+  it("the code builder carries the address when given", () => {
+    const e = portalCodeEmail({ orgName: "Acme ISO", code: "042917", signInUrl: url, portalAddressUrl: url });
+    expect(e.portalAddress).toEqual({ url });
+    const { html, text } = renderEmail({ ...e, brand: portalEmailBrand("Acme ISO", null) });
+    expect(html).toContain("Sign in to your partner portal any time:");
+    expect(text).toContain(`Sign in to your partner portal any time: ${url}`);
+  });
+  it("the invite never carries it (the invitee cannot sign in until they accept)", () => {
+    const e = portalInviteEmail({ orgName: "Acme ISO", partnerName: "Jane", inviteUrl: "https://x.test/i" });
+    expect(e.portalAddress).toBeUndefined();
+    const { html, text } = renderEmail({ ...e, brand: portalEmailBrand("Acme ISO", null) });
+    expect(html).not.toContain("partner portal any time");
+    expect(text).not.toContain("partner portal any time");
+  });
+  it("omits it when no address is given", () => {
+    expect(portalCodeEmail({ orgName: "A", code: "1", signInUrl: url }).portalAddress).toBeUndefined();
+  });
+  it("the public-form confirmation never carries it (the reader may have no portal account)", () => {
+    const e = portalPublicConfirmationEmail({ orgName: "Acme ISO", ref: "REF-1" });
+    expect(e.portalAddress).toBeUndefined();
+    const { html, text } = renderEmail({ ...e, brand: portalEmailBrand("Acme ISO", null) });
+    expect(html).not.toContain("Sign in to your partner portal");
+    expect(text).not.toContain("Sign in to your partner portal");
+  });
+});
+
+describe("Reply-To helpers (FR-PORT-81)", () => {
+  it("accepts a plain address and rejects anything that could inject a header", () => {
+    expect(safeReplyTo(" rita@acme.example ")).toBe("rita@acme.example");
+    expect(safeReplyTo("rita@acme.example\r\nBcc: x@evil.example")).toBeNull();
+    expect(safeReplyTo('"Rita" <rita@acme.example>')).toBeNull();
+    expect(safeReplyTo(null)).toBeNull();
+    expect(safeReplyTo("")).toBeNull();
+  });
+
+  it("falls back to the default no-reply address", () => {
+    expect(noReplyAddress(undefined)).toBe("no-reply@send.getnavigatr.io");
+    expect(noReplyAddress("bad value")).toBe("no-reply@send.getnavigatr.io");
+    expect(noReplyAddress("stop@send.example.com")).toBe("stop@send.example.com");
   });
 });

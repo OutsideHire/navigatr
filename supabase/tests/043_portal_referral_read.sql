@@ -177,6 +177,14 @@ do $$ declare s text[]; n int; begin
                                         'a043f000-0000-0000-0000-000000000002')
          with ordinality as h(status, created_at, n);
   if s is distinct from array['won', 'won'] then raise exception 'history for R2 wrong: %', s; end if;
+  -- A reassignment row (status unchanged) is internal and must never reach the partner.
+  insert into referral_status_history (org_id, referral_id, from_status, to_status, actor_type, note)
+  values ('00000000-0000-0000-0000-000000001043', 'a043f000-0000-0000-0000-000000000002', 'won', 'won', 'user', 'Reassigned to Someone');
+  select array_agg(h.status::text order by h.n) into s
+    from public.portal_referral_history('00000000-0000-0000-0000-000000001043', 'a043a000-0000-0000-0000-000000000001',
+                                        'a043f000-0000-0000-0000-000000000002')
+         with ordinality as h(status, created_at, n);
+  if s is distinct from array['won', 'won'] then raise exception 'reassign row leaked to the partner: %', s; end if;
   select count(*) into n from public.portal_referral_history('00000000-0000-0000-0000-000000001043', 'a043a000-0000-0000-0000-000000000001',
                                                              'a043f000-0000-0000-0000-000000000005');
   if n <> 0 then raise exception 'another partner''s history must look missing'; end if;

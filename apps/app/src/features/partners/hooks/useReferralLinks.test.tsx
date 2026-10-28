@@ -98,6 +98,14 @@ describe("useRegenerateReferralLink", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: ["referral-links"] });
   });
 
+  it("sends p_user_id when an administrator renews another user's link", async () => {
+    rpcMock.mockResolvedValueOnce({ data: "newtok", error: null });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useRegenerateReferralLink(), { wrapper });
+    await expect(result.current.mutateAsync({ linkType: "user", userId: "rep-9" })).resolves.toBe("newtok");
+    expect(rpcMock).toHaveBeenCalledWith("regenerate_referral_link", { p_link_type: "user", p_user_id: "rep-9" });
+  });
+
   it("waits for the links to refresh before resolving", async () => {
     rpcMock.mockResolvedValueOnce({ data: "newtok", error: null });
     const { wrapper, spy } = setup();

@@ -12,7 +12,7 @@
  */
 import { shouldSend } from "./emailGuard.ts";
 import { renderEmail } from "./emailTemplate.ts";
-import { fetchPortalEmailBrand, portalFromAddress, portalInviteEmail, portalUrl } from "./portalEmail.ts";
+import { fetchPortalEmailBrand, portalFromAddress, portalInviteEmail, portalUrl, safeReplyTo } from "./portalEmail.ts";
 import {
   firstRow,
   jsonResponse,
@@ -49,6 +49,8 @@ interface CreatedInviteRow {
   partner_name: string;
   org_name: string;
   org_slug: string;
+  /** The inviting rep's email (FR-PORT-81): the invite's Reply-To. Null when the profile has none. */
+  inviter_email?: string | null;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -116,6 +118,7 @@ export async function handlePortalInvite(req: Request, deps: PortalInviteDeps): 
         subject: built.subject,
         html,
         text,
+        replyTo: safeReplyTo(row.inviter_email),
       });
     } catch (e) {
       console.error("[portal_invite] send failed:", e instanceof Error ? e.message : String(e));

@@ -49,6 +49,12 @@ vi.mock("../hooks/useReassignReferral", () => ({
   },
   useReassignReferral: () => ({ mutateAsync: reassignMutate, isPending: false }),
 }));
+vi.mock("../hooks/useReferralHistory", () => ({
+  useReferralHistory: () => ({
+    data: [{ id: "h-1", fromStatus: null, toStatus: "submitted", actorType: "partner", actorName: null, note: null, createdAt: "2026-10-07T12:00:00Z" }],
+    isError: false,
+  }),
+}));
 const customerState: { data: { dealId: string; companyName: string } | null | undefined } = { data: null };
 const customerArgs: unknown[] = [];
 vi.mock("../hooks/useCustomerMatch", () => ({
@@ -119,6 +125,14 @@ describe("ReviewReferralSheet", () => {
     await waitFor(() => expect(checkPlaceDuplicate).toHaveBeenCalledWith({
       placeId: null, name: "Fresh Bakery", phone: "+15550001", address: "5 Oak St",
     }));
+  });
+
+  it("offers the referral's history, collapsed to start", async () => {
+    renderSheet();
+    const toggle = screen.getByRole("button", { name: /history/i });
+    expect(screen.queryByText(/Oct 7 · Partner/)).not.toBeInTheDocument();
+    await userEvent.click(toggle);
+    expect(screen.getByText(/Oct 7 · Partner/)).toBeInTheDocument();
   });
 
   it("warns about a possible duplicate", async () => {

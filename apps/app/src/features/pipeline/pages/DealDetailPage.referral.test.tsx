@@ -38,6 +38,13 @@ vi.mock("@/features/partners/hooks/useReferralUpdates", () => ({
   usePublishReferralUpdate: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
+vi.mock("@/features/partners/hooks/useReferralHistory", () => ({
+  useReferralHistory: () => ({
+    data: [{ id: "h-1", fromStatus: "accepted", toStatus: "accepted", actorType: "user", actorName: "Mia Manager", note: "Reassigned to Sam Rep", createdAt: "2026-10-14T15:00:00Z" }],
+    isError: false,
+  }),
+}));
+
 let partnerNotes: unknown[] = [];
 vi.mock("@/features/partners/hooks/useReferralPartnerNotes", () => ({
   useDealPartnerNotes: () => ({ data: partnerNotes }),
@@ -100,6 +107,18 @@ describe("DealDetailPage / referred by", () => {
     expect(link).toHaveAttribute("href", "/partners/p-1");
     expect(screen.getByText(/Referred by/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Share update with partner" })).toBeInTheDocument();
+  });
+
+  it("shows a collapsible History for the referral, including reassignments", async () => {
+    dealReferral = {
+      referralId: "r-1", partnerId: "p-1", partnerVisible: true, partnerName: "Jane",
+      partnerCompany: "Jane & Co", partnerCompanySnapshot: "Jane & Co",
+    };
+    renderDealDetail();
+    const toggle = await screen.findByRole("button", { name: /history/i });
+    expect(screen.queryByText("Reassigned to Sam Rep")).not.toBeInTheDocument();
+    await userEvent.click(toggle);
+    expect(screen.getByText("Reassigned to Sam Rep")).toBeInTheDocument();
   });
 
   it("shows plain text, no link, when the partner is outside the viewer's subtree", async () => {

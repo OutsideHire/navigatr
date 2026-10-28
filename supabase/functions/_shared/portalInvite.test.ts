@@ -15,6 +15,7 @@ const ROW = {
   partner_name: "Jane",
   org_name: "Acme ISO",
   org_slug: "acme",
+  inviter_email: "rita@acme.example",
 };
 const PARTNER = "11111111-2222-3333-4444-555555555555";
 
@@ -88,11 +89,25 @@ describe("handlePortalInvite", () => {
     expect(msg.to).toBe("jane@example.com");
     expect(msg.from).toBe('"Acme ISO" <invites@send.getnavigatr.io>');
     expect(msg.subject).toBe("Acme ISO invited you to their referral portal");
+    expect(msg.replyTo).toBe("rita@acme.example");
     expect(msg.html).toContain(`https://app.getnavigatr.io/p/acme/invite?token=${TOKEN}`);
+    expect(msg.text).not.toContain("partner portal any time");
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(JSON.parse(text)).toEqual({ ok: true, emailed: true });
     expect(text).not.toContain(TOKEN);
+  });
+
+  it("sends the invite with no Reply-To when the inviting rep has no email", async () => {
+    const { deps, sendEmail } = setup({ result: ok([{ ...ROW, inviter_email: null }]) });
+    await handlePortalInvite(post({ partnerId: PARTNER }), deps);
+    expect(sendEmail.mock.calls[0][0].replyTo).toBeNull();
+  });
+
+  it("drops an inviter email that could inject a header", async () => {
+    const { deps, sendEmail } = setup({ result: ok([{ ...ROW, inviter_email: "rita@acme.example\r\nBcc: x@evil.example" }]) });
+    await handlePortalInvite(post({ partnerId: PARTNER }), deps);
+    expect(sendEmail.mock.calls[0][0].replyTo).toBeNull();
   });
 
   it.each([
@@ -189,6 +204,18 @@ describe("handlePortalInvite", () => {
     expect(msg.html).toContain('src="https://cdn.example/acme.png"');
     expect(msg.html).toContain("Powered by navigatr");
     expect(msg.text).toContain("Powered by navigatr");
+  });
+
+  it("does not carry the portal sign-in line (the invitee cannot sign in until they accept)", async () => {
+    const rpc = vi.fn(async (name: string, _args: Record<string, unknown>) =>
+      name === "portal_brand" ? ok([{ logo_url: null, primary_color: null }]) : ok([ROW]),
+    );
+    const sendEmail = vi.fn(async (_msg: PortalEmailMessage) => {});
+    const res = await handlePortalInvite(post({ partnerId: PARTNER }), { getUserId: async () => "user-1", rpc, sendEmail, env: ENV });
+    expect(res.status).toBe(200);
+    const msg = sendEmail.mock.calls[0][0];
+    expect(msg.html).not.toContain("partner portal any time");
+    expect(msg.text).not.toContain("partner portal any time");
   });
 
   it("still sends the invite, name-only, when the brand lookup fails", async () => {
