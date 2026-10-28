@@ -163,4 +163,15 @@ describe("PlanResultsStep", () => {
     expect(screen.getByText(/try a wider radius/i)).toBeInTheDocument();
     expect(screen.queryByText(/filtered out/i)).not.toBeInTheDocument();
   });
+
+  it("hides Log drop-in when no handler is given (adding to a saved path)", () => {
+    renderStep({ onLogDropIn: undefined });
+    expect(screen.queryByRole("button", { name: /log drop-in/i })).not.toBeInTheDocument();
+  });
+
+  it("uses a custom add label when given", () => {
+    renderStep({ addLabel: "Add to path" });
+    expect(screen.getAllByRole("button", { name: "Add to path" })).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /add to today's path/i })).not.toBeInTheDocument();
+  });
 });

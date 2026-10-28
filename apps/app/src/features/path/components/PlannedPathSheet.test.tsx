@@ -47,7 +47,30 @@ vi.mock("../hooks/usePaths", () => ({
   usePaths: () => ({ data: pathsData }),
 }));
 
-const { updatePath, removeStop, reorderStops, deletePlannedPath, syncPath } = vi.hoisted(() => ({
+// Discovery for "Add stops": record the origin it was asked for and hand back
+// whatever the test set.
+const merchantsSpy = vi.fn();
+let merchantsData: Array<Record<string, unknown>> = [];
+let merchantsLoading = false;
+let merchantsError = false;
+vi.mock("../hooks/useMerchants", () => ({
+  useMerchants: (origin: unknown, opts: unknown) => {
+    merchantsSpy(origin, opts);
+    return {
+      merchants: origin ? merchantsData : [],
+      hidden: { chains: 0, inPipeline: 0, homeBased: 0 },
+      isLoading: origin ? merchantsLoading : false,
+      isError: merchantsError,
+      refetch: vi.fn(),
+      effectiveRadiusM: 8047,
+      requestedRadiusM: 8047,
+      requestedLimit: 25,
+    };
+  },
+}));
+
+const { updatePath, removeStop, reorderStops, deletePlannedPath, syncPath, addStops } = vi.hoisted(() => ({
+  addStops: vi.fn(),
   updatePath: vi.fn(),
   removeStop: vi.fn(),
   reorderStops: vi.fn(),
@@ -63,6 +86,7 @@ vi.mock("../hooks/usePathMutations", async (orig) => {
       removeStop: { mutateAsync: removeStop, isPending: false },
       reorderStops: { mutateAsync: reorderStops, isPending: false },
       deletePlannedPath: { mutateAsync: deletePlannedPath, isPending: false },
+      addStops: { mutateAsync: addStops, isPending: false },
     }),
   };
 });
@@ -110,13 +134,17 @@ beforeEach(() => {
   stopsData = [stop("s1", "Alpha Cafe", 0), stop("s2", "Bravo Tire", 1), stop("s3", "Charlie Dental", 2)];
   pathsData = [];
   stopsFetching = false;
-  for (const f of [updatePath, removeStop, reorderStops, deletePlannedPath, syncPath, onOpenChange, onMovedToToday, activePathSpy]) {
+  merchantsData = [];
+  merchantsLoading = false;
+  merchantsError = false;
+  for (const f of [updatePath, removeStop, reorderStops, deletePlannedPath, syncPath, addStops, merchantsSpy, onOpenChange, onMovedToToday, activePathSpy]) {
     f.mockReset();
   }
   updatePath.mockResolvedValue(undefined);
   removeStop.mockResolvedValue(undefined);
   reorderStops.mockResolvedValue(undefined);
   deletePlannedPath.mockResolvedValue(undefined);
+  addStops.mockResolvedValue(undefined);
   toastMock.success.mockClear();
   toastMock.error.mockClear();
 });
@@ -381,5 +409,93 @@ describe("PlannedPathSheet: error paths", () => {
     await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith("Couldn't delete the path. Try again."));
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
     expect(screen.getByRole("button", { name: /^delete$/i })).toBeEnabled();
+  });
+});
+
+function nearby(id: string, name: string, lat: number): Record<string, unknown> {
+  return {
+    id, placeId: `place-${id}`, name, category: "retail", address: `${name} address`, lat, lng: -97.47,
+    phone: "4055550100", employeeCountRange: "", status: "untouched", lastActivity: null, primaryType: "store",
+  };
+}
+
+describe("PlannedPathSheet: add stops", () => {
+  it("does not search for businesses until the rep asks to add stops", () => {
+    renderSheet();
+    expect(merchantsSpy).not.toHaveBeenCalled();
+  });
+
+  it("lists nearby businesses around the path's area, minus the ones already on it", () => {
+    merchantsData = [nearby("pr-s1", "Alpha Cafe", 35.651), nearby("m1", "Delta Deli", 35.652), nearby("m2", "Echo Auto", 35.66)];
+    renderSheet();
+    fireEvent.click(screen.getByRole("button", { name: /^add stops$/i }));
+    const lastCall = merchantsSpy.mock.calls.at(-1)!;
+    expect(lastCall[0]).toEqual({ lat: 35.65, lng: -97.47 });
+    expect(lastCall[1]).toMatchObject({ includeChains: false, fillToLimit: true });
+    expect(screen.getByText("Delta Deli")).toBeInTheDocument();
+    expect(screen.getByText("Echo Auto")).toBeInTheDocument();
+    expect(screen.queryByText("Alpha Cafe")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /log drop-in/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^add$/i })).toBeDisabled();
+  });
+
+  it("appends the picked businesses after the current stops, re-syncs the calendar and returns to the stop list", async () => {
+    merchantsData = [nearby("m2", "Echo Auto", 35.66), nearby("m1", "Delta Deli", 35.652)];
+    renderSheet();
+    fireEvent.click(screen.getByRole("button", { name: /^add stops$/i }));
+    for (const b of screen.getAllByRole("button", { name: "Add to path" })) fireEvent.click(b);
+    fireEvent.click(screen.getByRole("button", { name: /^add 2 stops$/i }));
+    await waitFor(() => expect(addStops).toHaveBeenCalledTimes(1));
+    const arg = addStops.mock.calls[0]![0];
+    expect(arg.pathId).toBe("p1");
+    expect(arg.basePosition).toBe(3);
+    // Nearest to the area first.
+    expect(arg.stops.map((s: { prospectId: string }) => s.prospectId)).toEqual(["m1", "m2"]);
+    expect(arg.stops[0]).toEqual({
+      prospectId: "m1", placeId: "place-m1", name: "Delta Deli", address: "Delta Deli address",
+      phone: "4055550100", lat: 35.652, lng: -97.47, category: "retail", primaryType: "store",
+    });
+    expect(syncPath).toHaveBeenCalledWith("p1");
+    expect(toastMock.success).toHaveBeenCalledWith("Added 2 stops");
+    await waitFor(() => expect(screen.getByRole("list", { name: /stops/i })).toBeInTheDocument());
+  });
+
+  it("starts after the highest stop position when a removal left a gap", async () => {
+    stopsData = [stop("s1", "Alpha Cafe", 0), stop("s3", "Charlie Dental", 2)];
+    merchantsData = [nearby("m1", "Delta Deli", 35.652)];
+    renderSheet();
+    fireEvent.click(screen.getByRole("button", { name: /^add stops$/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to path" }));
+    fireEvent.click(screen.getByRole("button", { name: /^add 1 stop$/i }));
+    await waitFor(() => expect(addStops).toHaveBeenCalledTimes(1));
+    expect(addStops.mock.calls[0]![0].basePosition).toBe(3);
+  });
+
+  it("Back returns to the stop list without saving anything", () => {
+    merchantsData = [nearby("m1", "Delta Deli", 35.652)];
+    renderSheet();
+    fireEvent.click(screen.getByRole("button", { name: /^add stops$/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to path" }));
+    fireEvent.click(screen.getByRole("button", { name: /^back$/i }));
+    expect(addStops).not.toHaveBeenCalled();
+    expect(screen.getByRole("list", { name: /stops/i })).toBeInTheDocument();
+  });
+
+  it("a failed add shows an error toast and keeps the picks", async () => {
+    addStops.mockRejectedValueOnce(new Error("x"));
+    merchantsData = [nearby("m1", "Delta Deli", 35.652)];
+    renderSheet();
+    fireEvent.click(screen.getByRole("button", { name: /^add stops$/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to path" }));
+    fireEvent.click(screen.getByRole("button", { name: /^add 1 stop$/i }));
+    await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith("Couldn't add the stops. Try again."));
+    expect(syncPath).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /^add 1 stop$/i })).toBeEnabled();
+  });
+
+  it("uses the first stop as the area when the path has no saved center", () => {
+    renderSheet(makePath({ originLat: null, originLng: null }));
+    fireEvent.click(screen.getByRole("button", { name: /^add stops$/i }));
+    expect(merchantsSpy.mock.calls.at(-1)![0]).toEqual({ lat: 35.6, lng: -97.4 });
   });
 });
