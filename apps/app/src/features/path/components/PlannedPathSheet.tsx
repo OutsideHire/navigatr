@@ -368,7 +368,9 @@ function PlannedPathBody({
                 ))}
               </ol>
             )}
-            {mapCenter && (
+            {/* Only once the stops have loaded: the add list leaves them out and
+                appends after them. */}
+            {mapCenter && active && (
               <Button
                 variant="secondary"
                 size="lg"

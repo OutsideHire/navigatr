@@ -97,13 +97,13 @@ export function PlannedPathAddStops({ pathId, center, stops, onAdded, onBack }: 
     });
   }, []);
 
-  const count = picked.size;
+  // Only picks still in the list count: a filter change or refetch can drop one.
+  const pickedResults = React.useMemo(() => results.filter((m) => picked.has(m.id)), [results, picked]);
+  const count = pickedResults.length;
 
   const handleAdd = React.useCallback(async () => {
     if (count === 0 || saving) return;
-    const snapshots: StopSnapshot[] = results
-      .filter((m) => picked.has(m.id))
-      .map((m) => ({
+    const snapshots: StopSnapshot[] = pickedResults.map((m) => ({
         prospectId: m.id,
         placeId: m.placeId ?? null,
         name: m.name,
@@ -126,7 +126,7 @@ export function PlannedPathAddStops({ pathId, center, stops, onAdded, onBack }: 
     }
     toast.success(`Added ${snapshots.length} ${snapshots.length === 1 ? "stop" : "stops"}`);
     onAdded();
-  }, [count, saving, results, picked, addStops, pathId, stops, onAdded]);
+  }, [count, saving, pickedResults, addStops, pathId, stops, onAdded]);
 
   return (
     <>

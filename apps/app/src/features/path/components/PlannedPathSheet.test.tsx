@@ -34,11 +34,14 @@ vi.mock("./MerchantMap", () => ({
 
 let stopsData: PathStop[] = [];
 let stopsFetching = false;
+let stopsLoaded = true;
 const activePathSpy = vi.fn();
 vi.mock("../hooks/useActivePath", () => ({
   useActivePath: (date: string) => {
     activePathSpy(date);
-    return { data: { path: null, stops: stopsData }, isLoading: false, isFetching: stopsFetching };
+    return stopsLoaded
+      ? { data: { path: null, stops: stopsData }, isLoading: false, isFetching: stopsFetching }
+      : { data: undefined, isLoading: true, isFetching: true };
   },
 }));
 
@@ -134,6 +137,7 @@ beforeEach(() => {
   stopsData = [stop("s1", "Alpha Cafe", 0), stop("s2", "Bravo Tire", 1), stop("s3", "Charlie Dental", 2)];
   pathsData = [];
   stopsFetching = false;
+  stopsLoaded = true;
   merchantsData = [];
   merchantsLoading = false;
   merchantsError = false;
@@ -469,6 +473,25 @@ describe("PlannedPathSheet: add stops", () => {
     fireEvent.click(screen.getByRole("button", { name: /^add 1 stop$/i }));
     await waitFor(() => expect(addStops).toHaveBeenCalledTimes(1));
     expect(addStops.mock.calls[0]![0].basePosition).toBe(3);
+  });
+
+  it("offers Add stops only once the current stops have loaded", () => {
+    stopsLoaded = false;
+    renderSheet();
+    expect(screen.queryByRole("button", { name: /^add stops$/i })).not.toBeInTheDocument();
+  });
+
+  it("counts and adds only picks still in the list after the list changes", async () => {
+    merchantsData = [nearby("m1", "Delta Deli", 35.652), nearby("m2", "Echo Auto", 35.66)];
+    const { rerender } = renderSheet();
+    fireEvent.click(screen.getByRole("button", { name: /^add stops$/i }));
+    for (const b of screen.getAllByRole("button", { name: "Add to path" })) fireEvent.click(b);
+    expect(screen.getByRole("button", { name: /^add 2 stops$/i })).toBeInTheDocument();
+    merchantsData = [nearby("m1", "Delta Deli", 35.652)];
+    rerender(<PlannedPathSheet path={makePath()} open onOpenChange={onOpenChange} onMovedToToday={onMovedToToday} />);
+    fireEvent.click(screen.getByRole("button", { name: /^add 1 stop$/i }));
+    await waitFor(() => expect(addStops).toHaveBeenCalledTimes(1));
+    expect(addStops.mock.calls[0]![0].stops.map((s: { prospectId: string }) => s.prospectId)).toEqual(["m1"]);
   });
 
   it("Back returns to the stop list without saving anything", () => {
