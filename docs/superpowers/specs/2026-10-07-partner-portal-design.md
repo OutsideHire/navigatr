@@ -384,6 +384,13 @@ flags at triage (FR-PORT-58); email in the duplicate rule; plus the PRD's own de
 (partner accept/decline, territory/round-robin routing, tenant-domain email, per-tenant
 subdomains, commission visibility, cross-tenant SSO).
 
+Firms (FR-PORT-07 to 11). Deferred for beta per Robert 2026-10-27. Trigger: first tenant with a
+partner firm that has more than one referring person. Each referral stores the partner company as
+typed, which keeps the history needed for firm totals.
+
+FR-PORT-45 (duplicate visibility) moves to the hierarchy-aware duplicates project, decided
+2026-10-27 alongside the audit fix list.
+
 ## 10. Open items (do not block the build)
 
 - Portal web address (configuration only).
