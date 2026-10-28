@@ -37,7 +37,10 @@ export interface PlanResultsStepProps {
   /** IDs currently in the wizard's in-progress stop set. */
   addedIds: Set<string>;
   onToggleStop: (merchant: Merchant) => void;
-  onLogDropIn: (merchant: Merchant) => void;
+  /** Omit to hide "Log drop-in" (adding stops to a saved path for a later day). */
+  onLogDropIn?: (merchant: Merchant) => void;
+  /** Label for a card's add button. Defaults to "Add to today's path". */
+  addLabel?: string;
   /** Add every shown result to the path. */
   onAddAll: () => void;
   /** Remove every shown result from the path. */
@@ -62,6 +65,7 @@ export function PlanResultsStep({
   addedIds,
   onToggleStop,
   onLogDropIn,
+  addLabel = "Add to today's path",
   onAddAll,
   onRemoveAll,
   discoveryHint,
@@ -217,16 +221,18 @@ export function PlanResultsStep({
                 aria-pressed={added}
                 className={cn("flex-1", added && "text-status-success")}
               >
-                {added ? "Added" : "Add to today's path"}
+                {added ? "Added" : addLabel}
               </Button>
-              <Button
-                variant="tertiary"
-                size="sm"
-                leadingIcon={Radio}
-                onClick={() => onLogDropIn(m)}
-              >
-                Log drop-in
-              </Button>
+              {onLogDropIn && (
+                <Button
+                  variant="tertiary"
+                  size="sm"
+                  leadingIcon={Radio}
+                  onClick={() => onLogDropIn(m)}
+                >
+                  Log drop-in
+                </Button>
+              )}
             </div>
           </Card>
         );

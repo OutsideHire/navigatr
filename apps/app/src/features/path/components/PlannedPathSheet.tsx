@@ -5,6 +5,7 @@
  * pattern as PlanPathWizard (Radix Dialog). Shows the path's name, day, reminder,
  * a map of its stops and the ordered stop list, and lets the rep:
  *   - remove a stop or move it up / down (saved straight away),
+ *   - add stops from the businesses around the path's area (PlannedPathAddStops),
  *   - rename it, move it to another day (today or later) or change the reminder
  *     (saved with "Save changes", then the calendar block is re-synced, same as
  *     the Plan a Path save site),
@@ -23,7 +24,7 @@
  */
 import * as React from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { ArrowDown, ArrowUp, Loader2, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/navigatr";
@@ -37,6 +38,7 @@ import { todayISO, addDaysISO, formatPathDate } from "../lib/today";
 import { composeReminderAt, formatReminder, isTodayOrFuture, nextMondayISO } from "../lib/scheduleDate";
 import { PlanScheduleStep, type DateQuickPick } from "./plan/PlanScheduleStep";
 import { MerchantMap } from "./MerchantMap";
+import { PlannedPathAddStops } from "./PlannedPathAddStops";
 
 const DUPLICATE_DAY_MESSAGE = "You already have a path on that day.";
 const TODAY_HAS_ROUTE_MESSAGE = "Today already has a path. Add stops from there.";
@@ -130,6 +132,8 @@ function PlannedPathBody({
   const [error, setError] = React.useState<string | null>(null);
   const [confirm, setConfirm] = React.useState<Confirm>(null);
   const [busy, setBusy] = React.useState(false);
+  // "Add stops" swaps the body and footer for the nearby-business list.
+  const [adding, setAdding] = React.useState(false);
   // A remove / reorder is in flight (tracked locally so the whole sheet locks
   // even before the mutation's own pending flag settles).
   const [stopEditing, setStopEditing] = React.useState(false);
@@ -249,7 +253,7 @@ function PlannedPathBody({
     }
   }, [deletePlannedPath, path.id, onClose]);
 
-  return (
+  const header = (
     <>
       {/* Header */}
       <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border-default px-5 py-4">
@@ -273,6 +277,31 @@ function PlannedPathBody({
           </button>
         </Dialog.Close>
       </div>
+    </>
+  );
+
+  if (adding) {
+    return (
+      <>
+        {header}
+        <PlannedPathAddStops
+          pathId={path.id}
+          center={mapCenter}
+          stops={stops}
+          onAdded={() => {
+            // Fire-and-forget, like every other save in this sheet.
+            void syncPath(path.id);
+            setAdding(false);
+          }}
+          onBack={() => setAdding(false)}
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
+      {header}
 
       {/* Body */}
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
@@ -338,6 +367,20 @@ function PlannedPathBody({
                   </li>
                 ))}
               </ol>
+            )}
+            {/* Only once the stops have loaded: the add list leaves them out and
+                appends after them. */}
+            {mapCenter && active && (
+              <Button
+                variant="secondary"
+                size="lg"
+                leadingIcon={Plus}
+                onClick={() => setAdding(true)}
+                disabled={stopButtonsLocked}
+                className="self-start"
+              >
+                Add stops
+              </Button>
             )}
           </section>
 
