@@ -15,6 +15,7 @@ import {
   verifyTurnstile,
   type PublicFormDeps,
 } from "./portalPublicForm";
+import { NAVIGATR_PORTAL_TERMS_VERSION } from "./portalNavigatrTerms";
 
 const GOOD = {
   companyName: "  Fresh Bakery ",
@@ -424,6 +425,7 @@ describe("handlePublicFormAction", () => {
         p_ip: "203.0.113.5",
         p_captcha_passed: false,
         p_employee_count: "51-200",
+        p_navigatr_terms_version: NAVIGATR_PORTAL_TERMS_VERSION,
       });
       expect(sendEmail).toHaveBeenCalledTimes(1);
       expect(background).toHaveBeenCalledTimes(1);
@@ -438,6 +440,20 @@ describe("handlePublicFormAction", () => {
         expect(msg.text).not.toContain(typed);
         expect(msg.html).not.toContain(typed);
       }
+    });
+
+    it("records the server's navigatr terms version, never one the client sends", async () => {
+      const { deps, rpc } = setup(routes(0));
+      await handlePublicFormAction(
+        "public_submit", "acme", "tok123",
+        { ...(await body()), navigatrTermsVersion: "1999-01-01", p_navigatr_terms_version: "1999-01-01" },
+        "203.0.113.5", deps,
+      );
+      expect(rpc).toHaveBeenCalledWith(
+        "portal_public_submit",
+        expect.objectContaining({ p_navigatr_terms_version: NAVIGATR_PORTAL_TERMS_VERSION }),
+      );
+      expect(NAVIGATR_PORTAL_TERMS_VERSION).not.toBe("1999-01-01");
     });
 
     it("leaves Powered by out of the confirmation when the org turned it off", async () => {

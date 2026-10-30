@@ -76,7 +76,7 @@ do $$ declare f text; begin
   foreach f in array array[
     'public.portal_brand(text)',
     'public.portal_issue_code(text, text, text)',
-    'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean, text)'
+    'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean, text, text)'
   ] loop
     if has_function_privilege('authenticated', f, 'EXECUTE') or has_function_privilege('anon', f, 'EXECUTE') then
       raise exception 'only service_role may execute %', f;

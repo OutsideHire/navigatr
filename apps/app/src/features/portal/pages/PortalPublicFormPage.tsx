@@ -18,6 +18,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Loader2, Unlink } from "lucide-react";
 import { Button, Card, Checkbox, FormField, Input, Textarea } from "@/components/navigatr";
 import { PortalRetry, portalReachMessage } from "../components/PortalRetry";
+import { PublicFormNavigatrTerms } from "../components/PublicFormNavigatrTerms";
 import { TurnstileWidget } from "../components/TurnstileWidget";
 import {
   PortalApiError,
@@ -450,6 +451,8 @@ export function PortalPublicFormPage({ slug, brand }: { slug: string; brand: Por
             </p>
           )}
         </div>
+
+        <PublicFormNavigatrTerms />
 
         {captchaKey !== null && siteKey && (
           <TurnstileWidget

@@ -24,6 +24,10 @@ vi.mock("../lib/publicFormTiming", () => ({ waitForFormAge: (...a: unknown[]) =>
 
 import { PortalRoot } from "./PortalRoot";
 import { PortalApiError } from "../lib/portalApi";
+import {
+  NAVIGATR_PORTAL_TERMS_TEXT,
+  NAVIGATR_PORTAL_TERMS_TITLE,
+} from "../../../../../../supabase/functions/_shared/portalNavigatrTerms";
 
 const BRAND = { orgName: "Acme ISO", productName: "Acme", primaryColor: null, logoUrl: null, darkLogoUrl: null };
 const FORM = {
@@ -433,5 +437,59 @@ describe("PortalPublicFormPage", () => {
     const box = await screen.findByRole("checkbox", { name: "New wording: I may share this and be contacted." });
     expect(box).not.toBeChecked();
     expect(screen.queryByRole("checkbox", { name: FORM.consentText })).toBeNull();
+  });
+
+  describe("Navigatr Referral Portal Terms", () => {
+    const TERMS_LINE = "By sending, you agree to the Navigatr Referral Portal Terms.";
+    // A distinctive sentence from the attorney-approved module, so the full text is really shown.
+    const DISTINCTIVE = "does not guarantee referral acceptance, conversion, or resulting business opportunities";
+
+    it("says sending agrees to them, and the link expands and collapses the full text", async () => {
+      const user = userEvent.setup();
+      renderAt();
+      await screen.findByRole("heading", { name: "Refer a business to Acme ISO" });
+      const line = screen.getByText((_, el) => el?.tagName === "P" && el.textContent === TERMS_LINE);
+      expect(line).toBeInTheDocument();
+      const toggle = screen.getByRole("button", { name: NAVIGATR_PORTAL_TERMS_TITLE });
+      expect(line).toContainElement(toggle);
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByRole("region", { name: NAVIGATR_PORTAL_TERMS_TITLE })).toBeNull();
+      // One consent checkbox only: the terms line is not a second box.
+      expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+
+      await user.click(toggle);
+      expect(toggle).toHaveAttribute("aria-expanded", "true");
+      const box = screen.getByRole("region", { name: NAVIGATR_PORTAL_TERMS_TITLE });
+      expect(toggle).toHaveAttribute("aria-controls", box.id);
+      expect(box).toHaveAttribute("tabindex", "0");
+      expect(box).toHaveClass("overflow-y-auto", "overscroll-contain");
+      expect(NAVIGATR_PORTAL_TERMS_TEXT).toContain(DISTINCTIVE);
+      expect(box).toHaveTextContent(DISTINCTIVE);
+      expect(box.textContent).toBe(NAVIGATR_PORTAL_TERMS_TEXT);
+
+      await user.click(toggle);
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByRole("region", { name: NAVIGATR_PORTAL_TERMS_TITLE })).toBeNull();
+    });
+
+    it("still shows them when the ISO turned Powered by navigatr off (they are platform terms)", async () => {
+      const user = userEvent.setup();
+      api.brand.mockResolvedValue({ ...BRAND, showPoweredBy: false });
+      renderAt();
+      await screen.findByRole("heading", { name: "Refer a business to Acme ISO" });
+      const toggle = screen.getByRole("button", { name: NAVIGATR_PORTAL_TERMS_TITLE });
+      await user.click(toggle);
+      expect(screen.getByRole("region", { name: NAVIGATR_PORTAL_TERMS_TITLE })).toHaveTextContent(DISTINCTIVE);
+    });
+
+    it("does not send any terms field: the server records its own version", async () => {
+      const user = userEvent.setup();
+      api.publicSubmit.mockResolvedValue({ ref: "REF-1A2B3C4D" });
+      renderAt();
+      await fill(user);
+      await user.click(screen.getByRole("button", { name: "Send referral" }));
+      await screen.findByRole("heading", { name: "Thanks for the referral" });
+      expect(api.publicSubmit).toHaveBeenCalledWith("acme", "tok123", SENT);
+    });
   });
 });

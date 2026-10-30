@@ -79,14 +79,14 @@ end $$;
 -- 1. Privileges (before any role switch).
 do $$ begin
   if not has_function_privilege('service_role', 'public.portal_public_form(text, text)', 'EXECUTE')
-     or not has_function_privilege('service_role', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean, text)', 'EXECUTE')
+     or not has_function_privilege('service_role', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean, text, text)', 'EXECUTE')
      or not has_function_privilege('service_role', 'public.portal_public_counts(text, text, text)', 'EXECUTE') then
     raise exception 'service_role should execute the public form functions';
   end if;
   if has_function_privilege('authenticated', 'public.portal_public_form(text, text)', 'EXECUTE')
      or has_function_privilege('anon', 'public.portal_public_form(text, text)', 'EXECUTE')
-     or has_function_privilege('authenticated', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean, text)', 'EXECUTE')
-     or has_function_privilege('anon', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean, text)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean, text, text)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.portal_public_submit(text, text, text, text, text, text, text, text, text, integer, text, boolean, text, text)', 'EXECUTE')
      or has_function_privilege('service_role', 'public.portal_public_rate(text, integer)', 'EXECUTE')
      or has_function_privilege('authenticated', 'public.portal_public_rate(text, integer)', 'EXECUTE')
      or has_function_privilege('anon', 'public.portal_public_rate(text, integer)', 'EXECUTE')
