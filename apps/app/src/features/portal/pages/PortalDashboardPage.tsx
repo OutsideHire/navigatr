@@ -2,18 +2,20 @@
  * Partner dashboard (spec 5.6, FR-PORT-68..70): send a referral, see how the
  * partner's referrals are doing, open any one of them. Tiles and list share one
  * time period and refresh every 30 seconds. Value appears only when the ISO
- * allows it (the server omits it otherwise). Referrals the ISO sent to the
- * partner are listed separately under Sent to you (Phase 2B-3).
+ * allows it (the server omits it otherwise). Two tabs keep the partner's own
+ * referrals apart from the ones the ISO sent to them (Phase 2B-3, split into
+ * tabs 2026-10-30); `?tab=sent` opens the second, so Back from a sent referral
+ * lands there.
  */
 import * as React from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ChevronRight, Download, Loader2, Plus } from "lucide-react";
 import { Button, Card } from "@/components/navigatr";
 import { cn } from "@/lib/utils";
 import { PortalRetry, portalReachMessage } from "../components/PortalRetry";
 import { PortalLabelChip } from "../components/PortalLabelChip";
-import { PortalSentSection } from "../components/PortalSentSection";
+import { PortalSentSection, usePortalSentReferrals } from "../components/PortalSentSection";
 import {
   PORTAL_POLL_MS,
   isPortalTransientError,
@@ -38,10 +40,16 @@ function Tile({ label, value, small = false }: { label: string; value: string; s
   );
 }
 
+type DashboardTab = "mine" | "sent";
+
 export function PortalDashboardPage() {
   const { slug, token, brand, expire } = usePortalSignedIn();
   const navigate = useNavigate();
   const [period, setPeriod] = React.useState<PortalWindow>("all");
+  const [params, setParams] = useSearchParams();
+  const tab: DashboardTab = params.get("tab") === "sent" ? "sent" : "mine";
+  const selectTab = (next: DashboardTab) =>
+    setParams(next === "sent" ? { tab: "sent" } : {}, { replace: true });
   // Narrows the rendered list by partner label (FR-PORT-75). Client-side only: the
   // query and the CSV export stay period-scoped.
   const [statusFilter, setStatusFilter] = React.useState<PortalLabel | "all">("all");
@@ -60,6 +68,8 @@ export function PortalDashboardPage() {
     placeholderData: keepPreviousData,
     retry: false,
   });
+  // Same query as the Sent to you tab: one request feeds its count and its list.
+  const sent = usePortalSentReferrals(period);
 
   const unauthorized = isPortalUnauthorized(stats.error) || isPortalUnauthorized(list.error);
   React.useEffect(() => {
@@ -230,9 +240,41 @@ export function PortalDashboardPage() {
         ))}
       </div>
 
-      {content}
+      <div role="tablist" aria-label="Referrals" className="grid grid-cols-2 gap-1 border-b border-border-subtle">
+        {(
+          [
+            { key: "mine", label: "You sent", count: list.data?.length },
+            { key: "sent", label: "Sent to you", count: sent.data?.length },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            id={`portal-tab-${t.key}`}
+            aria-selected={tab === t.key}
+            aria-controls={`portal-panel-${t.key}`}
+            onClick={() => selectTab(t.key)}
+            className={cn(
+              "-mb-px min-h-11 border-b-2 px-2 text-body-sm font-medium",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary",
+              tab === t.key ? "border-brand-primary text-text-default" : "border-transparent text-text-muted",
+            )}
+          >
+            {t.label}
+            {typeof t.count === "number" && <span className="tabular-nums"> ({t.count})</span>}
+          </button>
+        ))}
+      </div>
 
-      <PortalSentSection period={period} />
+      <div
+        role="tabpanel"
+        id={`portal-panel-${tab}`}
+        aria-labelledby={`portal-tab-${tab}`}
+        className="flex flex-col gap-4"
+      >
+        {tab === "mine" ? content : <PortalSentSection period={period} />}
+      </div>
     </div>
   );
 }

@@ -60,11 +60,11 @@ export function PortalSentReferralPage() {
 
   const back = (
     <Link
-      to={portalPath(slug, `/home`)}
+      to={portalPath(slug, `/home?tab=sent`)}
       className="inline-flex min-h-11 items-center gap-1 self-start text-body-sm text-brand-primary"
     >
       <ChevronLeft className="h-4 w-4" aria-hidden />
-      Back to your referrals
+      Back to sent to you
     </Link>
   );
 

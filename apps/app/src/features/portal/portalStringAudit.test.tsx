@@ -863,7 +863,8 @@ describe("rendered portal pages: UI copy audit", () => {
         lastActivityAt: "2026-10-02T12:00:00Z",
       })),
     );
-    renderAt("/p/acme/home");
+    // Sent to you is the dashboard's second tab.
+    renderAt("/p/acme/home?tab=sent");
     await screen.findByRole("link", { name: /Sent 3/ });
     expectCleanScreen();
   });
