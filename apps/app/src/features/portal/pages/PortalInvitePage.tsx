@@ -1,6 +1,7 @@
 /**
- * Accept a portal invite (spec 5.3, FR-PORT-18): read the ISO's partner terms,
- * agree, continue. Accepting records the time, IP and terms version server-side
+ * Accept a portal invite (spec 5.3, FR-PORT-18): read navigatr's Referral Portal
+ * Terms and the ISO's partner terms, agree to both with one checkbox, continue.
+ * Accepting records the time, IP and both terms versions server-side
  * and signs the partner in. A partner who does not agree just leaves; nothing
  * changes.
  */
@@ -12,6 +13,7 @@ import { Button, Card, Checkbox } from "@/components/navigatr";
 import { PortalApiError, isPortalTransientError, portalApi, type PortalBrand } from "../lib/portalApi";
 import { PortalRetry, portalReachMessage } from "../components/PortalRetry";
 import { PortalTermsText } from "../components/PortalTermsText";
+import { portalTermsAgreeLabel } from "../lib/portalTermsLabel";
 import { writePortalSession } from "../lib/portalSession";
 import { clearInviteToken, readInviteToken, writeInviteToken } from "../lib/portalInviteToken";
 import { portalPath } from "../lib/portalAddress";
@@ -89,7 +91,7 @@ export function PortalInvitePage({ slug, brand }: { slug: string; brand: PortalB
     setNotice(null);
     setCanRetryAccept(false);
     try {
-      const session = await portalApi.acceptInvite(slug, token, data.termsVersion);
+      const session = await portalApi.acceptInvite(slug, token, data.termsVersion, data.navigatrTermsVersion);
       writePortalSession(slug, session.sessionToken);
       clearInviteToken(slug);
       navigate(portalPath(slug, `/home`), { replace: true });
@@ -117,7 +119,7 @@ export function PortalInvitePage({ slug, brand }: { slug: string; brand: PortalB
         </p>
       </div>
 
-      <PortalTermsText text={data.termsText} />
+      <PortalTermsText navigatrText={data.navigatrTermsText} isoText={data.termsText} />
 
       {notice && (
         <p role="alert" className="text-body-sm text-status-danger">
@@ -134,7 +136,7 @@ export function PortalInvitePage({ slug, brand }: { slug: string; brand: PortalB
         id="portal-terms-agree"
         checked={agreed}
         onCheckedChange={setAgreed}
-        label="I agree to these terms"
+        label={portalTermsAgreeLabel(data.orgName, data.termsText)}
       />
 
       <Button

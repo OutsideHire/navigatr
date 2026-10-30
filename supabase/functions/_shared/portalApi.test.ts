@@ -11,6 +11,9 @@ import {
   type PortalRpcResult,
 } from "./portalApi";
 import { signFormToken } from "./portalPublicForm";
+import { NAVIGATR_PORTAL_TERMS_TEXT, NAVIGATR_PORTAL_TERMS_VERSION } from "./portalNavigatrTerms";
+
+const NV = NAVIGATR_PORTAL_TERMS_VERSION;
 
 const ENV: PortalEnv = {
   appBaseUrl: "https://app.getnavigatr.io/",
@@ -313,7 +316,14 @@ describe("peek_invite", () => {
     const res = await handlePortalRequest(post("peek_invite", { slug: "acme", token: "tok" }), deps);
     expect(rpc).toHaveBeenCalledWith("portal_peek_invite", { p_slug: "acme", p_token: "tok" });
     expect(await res.json()).toEqual({
-      invite: { partnerName: "Jane", orgName: "Acme ISO", termsText: "Be fair.", termsVersion: 2 },
+      invite: {
+        partnerName: "Jane",
+        orgName: "Acme ISO",
+        termsText: "Be fair.",
+        termsVersion: 2,
+        navigatrTermsText: NAVIGATR_PORTAL_TERMS_TEXT,
+        navigatrTermsVersion: NV,
+      },
     });
   });
 
@@ -334,13 +344,18 @@ describe("accept_invite", () => {
   it("accepts with the terms version and returns a session", async () => {
     const { deps, rpc } = setup(() => ok([{ session_token: "s".repeat(64), session_expires_at: "2026-11-08T00:00:00Z" }]));
     const res = await handlePortalRequest(
-      post("accept_invite", { slug: "acme", token: "tok", termsVersion: 2 }, { "x-forwarded-for": "203.0.113.9", "user-agent": "UA" }),
+      post(
+        "accept_invite",
+        { slug: "acme", token: "tok", termsVersion: 2, navigatrTermsVersion: NV },
+        { "x-forwarded-for": "203.0.113.9", "user-agent": "UA" },
+      ),
       deps,
     );
     expect(rpc).toHaveBeenCalledWith("portal_accept_invite", {
       p_slug: "acme",
       p_token: "tok",
       p_terms_version: 2,
+      p_navigatr_terms_version: NV,
       p_ip: "203.0.113.9",
       p_user_agent: "UA",
     });
@@ -349,21 +364,35 @@ describe("accept_invite", () => {
 
   it("409s when the terms changed since the partner read them", async () => {
     const { deps } = setup(() => fail("terms_changed"));
-    const res = await handlePortalRequest(post("accept_invite", { slug: "acme", token: "tok", termsVersion: 1 }), deps);
+    const res = await handlePortalRequest(post("accept_invite", { slug: "acme", token: "tok", termsVersion: 1, navigatrTermsVersion: NV }), deps);
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "terms_changed" });
   });
 
   it("404s any other failure", async () => {
     const { deps } = setup(() => fail("invalid_invite"));
-    const res = await handlePortalRequest(post("accept_invite", { slug: "acme", token: "tok", termsVersion: 1 }), deps);
+    const res = await handlePortalRequest(post("accept_invite", { slug: "acme", token: "tok", termsVersion: 1, navigatrTermsVersion: NV }), deps);
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "invalid_invite" });
   });
 
+  it.each([undefined, null, "2026-01-01", 20261030])(
+    "answers 409 terms_changed for a navigatr version that is not current (%s), without the database",
+    async (navigatrTermsVersion) => {
+      const { deps, rpc } = setup(() => ok([{ session_token: "s".repeat(64), session_expires_at: "x" }]));
+      const res = await handlePortalRequest(
+        post("accept_invite", { slug: "acme", token: "tok", termsVersion: 2, navigatrTermsVersion }),
+        deps,
+      );
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "terms_changed" });
+      expect(rpc).not.toHaveBeenCalled();
+    },
+  );
+
   it("400s a missing terms version without calling the database", async () => {
     const { deps, rpc } = setup(() => ok([]));
-    const res = await handlePortalRequest(post("accept_invite", { slug: "acme", token: "tok" }), deps);
+    const res = await handlePortalRequest(post("accept_invite", { slug: "acme", token: "tok", navigatrTermsVersion: NV }), deps);
     expect(res.status).toBe(400);
     expect(rpc).not.toHaveBeenCalled();
   });
@@ -393,6 +422,7 @@ describe("me", () => {
           org_name: "Acme ISO",
           org_slug: "acme",
           terms_current: true,
+          navigatr_terms_version: NV,
         },
       ]),
     );
@@ -410,6 +440,16 @@ describe("me", () => {
     expect(((await res.json()) as { me: { termsCurrent: boolean } }).me.termsCurrent).toBe(false);
   });
 
+  it.each([null, "2026-01-01"])(
+    "reports termsCurrent=false when the accepted navigatr version is %s, even with current ISO terms",
+    async (navigatr_terms_version) => {
+      const { deps } = setup(() => ok([{ ...LOOKUP_ROW, navigatr_terms_version }]));
+      const res = await handlePortalRequest(post("me", { slug: "acme" }, { "x-portal-session": "tok" }), deps);
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { me: { termsCurrent: boolean } }).me.termsCurrent).toBe(false);
+    },
+  );
+
   it("401s a dead session", async () => {
     const { deps } = setup(() => ok([]));
     const res = await handlePortalRequest(post("me", { slug: "acme" }, { "x-portal-session": "old" }), deps);
@@ -426,21 +466,46 @@ const LOOKUP_ROW = {
   org_name: "Acme ISO",
   org_slug: "acme",
   terms_current: true,
+  navigatr_terms_version: NAVIGATR_PORTAL_TERMS_VERSION,
 };
 
 describe("terms re-acceptance (FR-PORT-18)", () => {
   const H = { "x-portal-session": "tok" };
 
-  it("get_terms returns only the terms text and version for the session", async () => {
+  it("get_terms returns only the ISO terms and the current navigatr terms for the session", async () => {
     const { deps, rpc } = setup((name) =>
       name === "portal_get_terms"
-        ? ok([{ terms_text: "Terms two.", terms_version: 2, terms_current: false, extra: "x" }])
+        ? ok([{ terms_text: "Terms two.", terms_version: 2, terms_current: false, navigatr_terms_version: NV, extra: "x" }])
         : ok([]),
     );
     const res = await handlePortalRequest(post("get_terms", { slug: "acme" }, H), deps);
     expect(rpc).toHaveBeenCalledWith("portal_get_terms", { p_slug: "acme", p_token: "tok" });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ terms: { termsText: "Terms two.", termsVersion: 2, termsCurrent: false } });
+    expect(await res.json()).toEqual({
+      terms: {
+        termsText: "Terms two.",
+        termsVersion: 2,
+        termsCurrent: false,
+        navigatrTermsText: NAVIGATR_PORTAL_TERMS_TEXT,
+        navigatrTermsVersion: NV,
+      },
+    });
+  });
+
+  it.each([
+    [null, 0, false],
+    ["2026-01-01", 0, false],
+    ["2026-01-01", 2, false],
+    [NAVIGATR_PORTAL_TERMS_VERSION, 0, true],
+    [NAVIGATR_PORTAL_TERMS_VERSION, 2, true],
+  ])("get_terms termsCurrent needs the current navigatr version (accepted %s, ISO v%s): %s", async (accepted, isoVersion, current) => {
+    const { deps } = setup(() =>
+      ok([{ terms_text: isoVersion ? "Terms." : null, terms_version: isoVersion, terms_current: true, navigatr_terms_version: accepted }]),
+    );
+    const res = await handlePortalRequest(post("get_terms", { slug: "acme" }, H), deps);
+    const body = (await res.json()) as { terms: { termsCurrent: boolean; navigatrTermsVersion: string } };
+    expect(body.terms.termsCurrent).toBe(current);
+    expect(body.terms.navigatrTermsVersion).toBe(NV);
   });
 
   it("get_terms 401s a dead or missing session", async () => {
@@ -453,13 +518,14 @@ describe("terms re-acceptance (FR-PORT-18)", () => {
   it("accept_terms records the version the partner read, with the client IP", async () => {
     const { deps, rpc } = setup(() => ok(null));
     const res = await handlePortalRequest(
-      post("accept_terms", { slug: "acme", termsVersion: 2 }, { ...H, "x-forwarded-for": "203.0.113.5" }),
+      post("accept_terms", { slug: "acme", termsVersion: 2, navigatrTermsVersion: NV }, { ...H, "x-forwarded-for": "203.0.113.5" }),
       deps,
     );
     expect(rpc).toHaveBeenCalledWith("portal_accept_terms", {
       p_slug: "acme",
       p_token: "tok",
       p_terms_version: 2,
+      p_navigatr_terms_version: NV,
       p_ip: "203.0.113.5",
     });
     expect(res.status).toBe(200);
@@ -468,19 +534,30 @@ describe("terms re-acceptance (FR-PORT-18)", () => {
 
   it("accept_terms 409s when the terms changed again since the partner read them", async () => {
     const { deps } = setup(() => fail("terms_changed"));
-    const res = await handlePortalRequest(post("accept_terms", { slug: "acme", termsVersion: 1 }, H), deps);
+    const res = await handlePortalRequest(post("accept_terms", { slug: "acme", termsVersion: 1, navigatrTermsVersion: NV }, H), deps);
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "terms_changed" });
   });
 
   it("accept_terms 401s a dead session and 500s any other failure", async () => {
     const dead = setup(() => fail("invalid_session"));
-    expect((await handlePortalRequest(post("accept_terms", { slug: "acme", termsVersion: 2 }, H), dead.deps)).status).toBe(401);
+    expect((await handlePortalRequest(post("accept_terms", { slug: "acme", termsVersion: 2, navigatrTermsVersion: NV }, H), dead.deps)).status).toBe(401);
     const broken = setup(() => fail("connection reset"));
-    const res = await handlePortalRequest(post("accept_terms", { slug: "acme", termsVersion: 2 }, H), broken.deps);
+    const res = await handlePortalRequest(post("accept_terms", { slug: "acme", termsVersion: 2, navigatrTermsVersion: NV }, H), broken.deps);
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: "server_error" });
   });
+
+  it.each([undefined, null, "", "2026-01-01"])(
+    "accept_terms answers 409 terms_changed for a navigatr version that is not current (%s), without the database",
+    async (navigatrTermsVersion) => {
+      const { deps, rpc } = setup(() => ok(null));
+      const res = await handlePortalRequest(post("accept_terms", { slug: "acme", termsVersion: 2, navigatrTermsVersion }, H), deps);
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "terms_changed" });
+      expect(rpc).not.toHaveBeenCalled();
+    },
+  );
 
   it("accept_terms 400s a missing or non-integer version, and 401s no session, without the database", async () => {
     const { deps, rpc } = setup(() => ok(null));
@@ -508,6 +585,30 @@ describe("terms re-acceptance (FR-PORT-18)", () => {
     const { deps } = setup((name) => (name === "portal_session_lookup" ? ok([noFlag]) : ok([])));
     const res = await handlePortalRequest(post("dashboard", { slug: "acme" }, H), deps);
     expect(res.status).toBe(403);
+  });
+
+  it.each([
+    ["null", { navigatr_terms_version: null }],
+    ["stale", { navigatr_terms_version: "2026-01-01" }],
+    ["missing", { navigatr_terms_version: undefined }],
+  ])("answers 403 terms_required when the navigatr version is %s, even with current ISO terms", async (_label, patch) => {
+    const { deps, rpc } = setup((name) =>
+      name === "portal_session_lookup" ? ok([{ ...LOOKUP_ROW, ...patch }]) : ok([]),
+    );
+    const res = await handlePortalRequest(post("dashboard", { slug: "acme" }, H), deps);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "terms_required" });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("an ISO that never set terms (version 0, terms current) still blocks a partner without the navigatr terms", async () => {
+    // portal_session_lookup reports terms_current=true for an org at version 0.
+    const { deps } = setup((name) =>
+      name === "portal_session_lookup" ? ok([{ ...LOOKUP_ROW, terms_current: true, navigatr_terms_version: null }]) : ok([]),
+    );
+    const res = await handlePortalRequest(post("list_referrals", { slug: "acme" }, H), deps);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "terms_required" });
   });
 
   it("lets data actions through once the terms are current", async () => {
@@ -614,10 +715,10 @@ describe("rpc that throws or rejects", () => {
   it.each([
     ["brand", { slug: "acme" }, {}],
     ["peek_invite", { slug: "acme", token: "tok" }, {}],
-    ["accept_invite", { slug: "acme", token: "tok", termsVersion: 1 }, {}],
+    ["accept_invite", { slug: "acme", token: "tok", termsVersion: 1, navigatrTermsVersion: NV }, {}],
     ["me", { slug: "acme" }, H],
     ["get_terms", { slug: "acme" }, H],
-    ["accept_terms", { slug: "acme", termsVersion: 1 }, H],
+    ["accept_terms", { slug: "acme", termsVersion: 1, navigatrTermsVersion: NV }, H],
     ["sign_out", {}, H],
   ])("%s answers 500 server_error with no detail", async (action, body, headers) => {
     const res = await handlePortalRequest(post(action, body, headers), throwing());

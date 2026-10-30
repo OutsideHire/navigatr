@@ -59,7 +59,7 @@ do $$ declare f text; begin
   foreach f in array array[
     'public.portal_create_invite(uuid, uuid)',
     'public.portal_peek_invite(text, text)',
-    'public.portal_accept_invite(text, text, integer, text, text)'
+    'public.portal_accept_invite(text, text, integer, text, text, text)'
   ] loop
     if has_function_privilege('authenticated', f, 'EXECUTE') then raise exception 'authenticated must not execute %', f; end if;
     if has_function_privilege('anon', f, 'EXECUTE') then raise exception 'anon must not execute %', f; end if;

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { handlePortalRequest, type PortalApiDeps, type PortalEnv, type PortalRpcResult } from "./portalApi";
 import { PORTAL_MAX_AUDIO_BASE64_CHARS, PORTAL_MAX_AUDIO_BYTES } from "./transcribe";
+import { NAVIGATR_PORTAL_TERMS_VERSION } from "./portalNavigatrTerms";
 
 const ENV: PortalEnv = {
   appBaseUrl: "https://app.getnavigatr.io",
@@ -22,6 +23,7 @@ const LOOKUP = [
     org_name: "Acme ISO",
     org_slug: "acme",
     terms_current: true,
+    navigatr_terms_version: NAVIGATR_PORTAL_TERMS_VERSION,
   },
 ];
 

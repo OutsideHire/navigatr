@@ -29,6 +29,11 @@ import {
 import { portalCodeEmail, portalInviteEmail } from "../../../../../supabase/functions/_shared/portalEmail";
 import { POWERED_BY, renderEmail } from "../../../../../supabase/functions/_shared/emailTemplate";
 import { PUBLIC_HONEYPOT_FIELD, signFormToken } from "../../../../../supabase/functions/_shared/portalPublicForm";
+import {
+  NAVIGATR_PORTAL_TERMS_TEXT,
+  NAVIGATR_PORTAL_TERMS_TITLE,
+  NAVIGATR_PORTAL_TERMS_VERSION,
+} from "../../../../../supabase/functions/_shared/portalNavigatrTerms";
 import { buildReferralsCsv } from "./lib/portalCsv";
 
 const api = vi.hoisted(() => ({
@@ -145,7 +150,7 @@ describe("portal_api responses", () => {
       switch (name) {
         case "portal_session_lookup":
           return {
-            data: [{ portal_user_id: "u-1", org_id: "o-1", partner_id: "p-1", partner_name: "Jane", user_email: "j@x.co", org_name: "Acme ISO", org_slug: "acme", terms_current: true }],
+            data: [{ portal_user_id: "u-1", org_id: "o-1", partner_id: "p-1", partner_name: "Jane", user_email: "j@x.co", org_name: "Acme ISO", org_slug: "acme", terms_current: true, navigatr_terms_version: NAVIGATR_PORTAL_TERMS_VERSION }],
             error: null,
           };
         case "portal_list_referrals":
@@ -435,11 +440,19 @@ function renderAt(path: string) {
   );
 }
 
-function expectCleanScreen() {
+/**
+ * navigatr is the platform's name, so the only places a partner may see it are
+ * navigatr's own Referral Portal Terms (title and text) and the one checkbox that
+ * accepts them; pass allowNavigatrTerms on the screens that show them.
+ */
+function expectCleanScreen({ allowNavigatrTerms = false }: { allowNavigatrTerms?: boolean } = {}) {
   const text = document.body.textContent ?? "";
   expect(text.match(FORBIDDEN_WORDS)).toBeNull();
   expect(text).not.toContain(SECRET);
-  expect(text).not.toMatch(/navigatr/i);
+  const rest = allowNavigatrTerms
+    ? text.split(NAVIGATR_PORTAL_TERMS_TEXT).join(" ").split(NAVIGATR_PORTAL_TERMS_TITLE).join(" ")
+    : text;
+  expect(rest).not.toMatch(/navigatr/i);
 }
 
 describe("public referral form: responses", () => {
@@ -660,10 +673,31 @@ describe("rendered portal pages: UI copy audit", () => {
 
   it("the updated-terms page a signed-in partner must accept (FR-PORT-18)", async () => {
     api.me.mockResolvedValue({ partnerName: "Jane", email: "jane@example.com", orgName: "Acme ISO", termsCurrent: false });
-    api.getTerms.mockResolvedValue({ termsText: "Terms two.", termsVersion: 2, termsCurrent: false });
+    api.getTerms.mockResolvedValue({
+      termsText: "Terms two.",
+      termsVersion: 2,
+      termsCurrent: false,
+      navigatrTermsText: NAVIGATR_PORTAL_TERMS_TEXT,
+      navigatrTermsVersion: NAVIGATR_PORTAL_TERMS_VERSION,
+    });
     renderAt("/p/acme/home");
     await screen.findByText("Terms two.");
-    expectCleanScreen();
+    expect(screen.getByText(/Authorized Use: The portal is intended for authorized participants/)).toBeInTheDocument();
+    expectCleanScreen({ allowNavigatrTerms: true });
+  });
+
+  it("the invite page: navigatr's terms are the only mention of navigatr", async () => {
+    api.peekInvite.mockResolvedValue({
+      partnerName: "Jane",
+      orgName: "Acme ISO",
+      termsText: "Be fair.",
+      termsVersion: 2,
+      navigatrTermsText: NAVIGATR_PORTAL_TERMS_TEXT,
+      navigatrTermsVersion: NAVIGATR_PORTAL_TERMS_VERSION,
+    });
+    renderAt("/p/acme/invite?token=tok");
+    await screen.findByText("Be fair.");
+    expectCleanScreen({ allowNavigatrTerms: true });
   });
 
   it("dashboard with nothing closed and no referrals", async () => {

@@ -310,7 +310,13 @@ describe("PortalRoot", () => {
     expect(client.getQueryCache().findAll({ queryKey: ["portal", "me", "acme"] })).toHaveLength(0);
   });
   describe("re-accepting changed terms (FR-PORT-18)", () => {
-    const NEW_TERMS = { termsText: "Terms two.", termsVersion: 2, termsCurrent: false };
+    const NEW_TERMS = {
+      termsText: "Terms two.",
+      termsVersion: 2,
+      termsCurrent: false,
+      navigatrTermsText: "Navigatr terms.",
+      navigatrTermsVersion: "2026-10-30",
+    };
 
     it("holds the portal behind the new terms at sign-in, and opens it once the partner accepts", async () => {
       const user = userEvent.setup();
@@ -321,7 +327,7 @@ describe("PortalRoot", () => {
       writePortalSession("acme", "live");
 
       renderAt("/p/acme/home");
-      expect(await screen.findByRole("heading", { name: "Acme ISO updated its partner terms" })).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "The portal terms were updated" })).toBeInTheDocument();
       expect(screen.getByText("Terms two.")).toBeInTheDocument();
       // Still signed in, with a way out, but no partner data is requested.
       expect(screen.getByText("Signed in as Jane at Acme ISO")).toBeInTheDocument();
@@ -329,12 +335,12 @@ describe("PortalRoot", () => {
       expect(api.dashboard).not.toHaveBeenCalled();
       expect(api.listReferrals).not.toHaveBeenCalled();
 
-      await user.click(screen.getByRole("checkbox", { name: "I agree to these terms" }));
+      await user.click(screen.getByRole("checkbox", { name: "I agree to the Navigatr Referral Portal Terms and the partner terms from Acme ISO" }));
       await user.click(screen.getByRole("button", { name: "Accept and continue" }));
-      expect(api.acceptTerms).toHaveBeenCalledWith("acme", "live", 2);
+      expect(api.acceptTerms).toHaveBeenCalledWith("acme", "live", 2, "2026-10-30");
 
       await vi.waitFor(() => expect(api.dashboard).toHaveBeenCalled());
-      expect(screen.queryByRole("heading", { name: "Acme ISO updated its partner terms" })).toBeNull();
+      expect(screen.queryByRole("heading", { name: "The portal terms were updated" })).toBeNull();
       expect(readPortalSession("acme")).toBe("live");
     });
 
@@ -349,7 +355,7 @@ describe("PortalRoot", () => {
       writePortalSession("acme", "live");
 
       renderAt("/p/acme/home");
-      expect(await screen.findByRole("heading", { name: "Acme ISO updated its partner terms" })).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "The portal terms were updated" })).toBeInTheDocument();
       expect(readPortalSession("acme")).toBe("live");
     });
 
@@ -362,7 +368,7 @@ describe("PortalRoot", () => {
       writePortalSession("acme", "live");
 
       renderAt("/p/acme/home");
-      await screen.findByRole("heading", { name: "Acme ISO updated its partner terms" });
+      await screen.findByRole("heading", { name: "The portal terms were updated" });
       await user.click(screen.getByRole("button", { name: "Sign out" }));
       expect(await screen.findByRole("heading", { name: "Sign in to Acme ISO" })).toBeInTheDocument();
       expect(api.acceptTerms).not.toHaveBeenCalled();

@@ -15,6 +15,7 @@
 import { shouldSend } from "./emailGuard.ts";
 import { renderEmail } from "./emailTemplate.ts";
 import { noReplyAddress, portalCodeEmail, portalEmailBrand, portalFromAddress, portalUrl } from "./portalEmail.ts";
+import { NAVIGATR_PORTAL_TERMS_TEXT, NAVIGATR_PORTAL_TERMS_VERSION, navigatrTermsCurrent } from "./portalNavigatrTerms.ts";
 import { PUBLIC_FORM_ACTIONS, handlePublicFormAction, isPublicFormAction, type PublicFormAction } from "./portalPublicForm.ts";
 import { REFERRAL_ACTIONS, handleReferralAction, isReferralAction, type ReferralAction } from "./portalReferralApi.ts";
 
@@ -144,13 +145,31 @@ interface LookupRow {
   org_name: string;
   /** FR-PORT-18: false once the ISO edits its terms, until the partner accepts them. */
   terms_current?: boolean | null;
+  /** The navigatr Referral Portal Terms version the partner accepted; null if none yet. */
+  navigatr_terms_version?: string | null;
 }
 
 interface SessionTermsRow {
   terms_text: string | null;
   terms_version: number;
   terms_current: boolean | null;
+  navigatr_terms_version?: string | null;
 }
+
+/**
+ * Both sets of terms a partner must have accepted: the ISO's current version
+ * (terms_current, from SQL) and navigatr's current Referral Portal Terms. A row
+ * that does not say either is current counts as not current.
+ */
+function allTermsCurrent(row: { terms_current?: boolean | null; navigatr_terms_version?: string | null }): boolean {
+  return row.terms_current === true && navigatrTermsCurrent(row.navigatr_terms_version);
+}
+
+/** The navigatr terms every portal response that asks for acceptance carries. */
+const NAVIGATR_TERMS_FIELDS = {
+  navigatrTermsText: NAVIGATR_PORTAL_TERMS_TEXT,
+  navigatrTermsVersion: NAVIGATR_PORTAL_TERMS_VERSION,
+} as const;
 
 /** Input caps, checked before any rpc so oversized input never reaches SQL. */
 export const PORTAL_LIMITS = {
@@ -277,7 +296,7 @@ export async function handlePortalRequest(req: Request, deps: PortalApiDeps): Pr
       case "accept_invite": {
         const token = str(body.token).trim();
         if (slugTooLong || tooLong(token, PORTAL_LIMITS.token)) return jsonResponse({ error: "invalid_body" }, 400);
-        return await acceptInvite(slug, token, body.termsVersion, ip, userAgent, deps);
+        return await acceptInvite(slug, token, body.termsVersion, body.navigatrTermsVersion, ip, userAgent, deps);
       }
       case "me": {
         const token = sessionTokenFrom(req.headers);
@@ -292,7 +311,7 @@ export async function handlePortalRequest(req: Request, deps: PortalApiDeps): Pr
       case "accept_terms": {
         const token = sessionTokenFrom(req.headers);
         if (slugTooLong || tooLong(token, PORTAL_LIMITS.token)) return jsonResponse({ error: "unauthorized" }, 401);
-        return await acceptTerms(slug, token, body.termsVersion, ip, deps);
+        return await acceptTerms(slug, token, body.termsVersion, body.navigatrTermsVersion, ip, deps);
       }
       case "sign_out": {
         const token = sessionTokenFrom(req.headers);
@@ -430,14 +449,22 @@ async function peekInvite(slug: string, token: string, deps: PortalApiDeps): Pro
       orgName: row.org_name,
       termsText: row.terms_text ?? "",
       termsVersion: row.terms_version,
+      ...NAVIGATR_TERMS_FIELDS,
     },
   });
 }
 
+/**
+ * The partner accepts the ISO's terms and navigatr's Referral Portal Terms with
+ * one checkbox. A navigatr version other than the current one (an old page, or
+ * text changed while they read) answers 409 terms_changed like a stale ISO
+ * version, so the page loads the new text.
+ */
 async function acceptInvite(
   slug: string,
   token: string,
   termsVersion: unknown,
+  navigatrTermsVersion: unknown,
   ip: string | null,
   userAgent: string | null,
   deps: PortalApiDeps,
@@ -445,10 +472,12 @@ async function acceptInvite(
   if (!token || typeof termsVersion !== "number" || !Number.isInteger(termsVersion)) {
     return jsonResponse({ error: "invalid_body" }, 400);
   }
+  if (!navigatrTermsCurrent(navigatrTermsVersion)) return jsonResponse({ error: "terms_changed" }, 409);
   const { data, error } = await deps.rpc("portal_accept_invite", {
     p_slug: slug,
     p_token: token,
     p_terms_version: termsVersion,
+    p_navigatr_terms_version: NAVIGATR_PORTAL_TERMS_VERSION,
     p_ip: ip,
     p_user_agent: userAgent,
   });
@@ -476,12 +505,16 @@ async function me(slug: string, token: string, deps: PortalApiDeps): Promise<Res
       partnerName: row.partner_name,
       email: row.user_email,
       orgName: row.org_name,
-      termsCurrent: row.terms_current === true,
+      termsCurrent: allTermsCurrent(row),
     },
   });
 }
 
-/** FR-PORT-18: the terms a signed-in partner is asked to accept after the ISO changed them. */
+/**
+ * FR-PORT-18: the terms a signed-in partner is asked to accept after the ISO
+ * changed them, or after navigatr's Referral Portal Terms changed (or were never
+ * accepted). Always carries both texts; the navigatr version is the current one.
+ */
 async function getTerms(slug: string, token: string, deps: PortalApiDeps): Promise<Response> {
   const unauthorized = () => jsonResponse({ error: "unauthorized" }, 401);
   if (!token) return unauthorized();
@@ -493,18 +526,25 @@ async function getTerms(slug: string, token: string, deps: PortalApiDeps): Promi
   const row = firstRow<SessionTermsRow>(data);
   if (!row) return unauthorized();
   return jsonResponse({
-    terms: { termsText: row.terms_text ?? "", termsVersion: row.terms_version, termsCurrent: row.terms_current === true },
+    terms: {
+      termsText: row.terms_text ?? "",
+      termsVersion: row.terms_version,
+      termsCurrent: allTermsCurrent(row),
+      ...NAVIGATR_TERMS_FIELDS,
+    },
   });
 }
 
 /**
- * FR-PORT-18: accept the version the partner read. A 409 terms_changed means the
- * ISO edited the terms again in the meantime, so the page shows the new text.
+ * FR-PORT-18: accept the versions the partner read. A 409 terms_changed means the
+ * ISO edited its terms, or navigatr's terms changed, in the meantime, so the page
+ * shows the new text.
  */
 async function acceptTerms(
   slug: string,
   token: string,
   termsVersion: unknown,
+  navigatrTermsVersion: unknown,
   ip: string | null,
   deps: PortalApiDeps,
 ): Promise<Response> {
@@ -512,10 +552,12 @@ async function acceptTerms(
   if (typeof termsVersion !== "number" || !Number.isInteger(termsVersion)) {
     return jsonResponse({ error: "invalid_body" }, 400);
   }
+  if (!navigatrTermsCurrent(navigatrTermsVersion)) return jsonResponse({ error: "terms_changed" }, 409);
   const { error } = await deps.rpc("portal_accept_terms", {
     p_slug: slug,
     p_token: token,
     p_terms_version: termsVersion,
+    p_navigatr_terms_version: NAVIGATR_PORTAL_TERMS_VERSION,
     p_ip: ip,
   });
   if (error) {
@@ -590,9 +632,9 @@ async function unsubscribeDigest(req: Request, deps: PortalApiDeps): Promise<Res
  * org, partner and portal user it returns are the only scope the referral
  * functions ever see. A database error during the lookup is a 500 (retry), not a
  * 401, so a transient failure never signs the partner out. Until the partner has
- * accepted the ISO's current terms (FR-PORT-18) every one of these actions is a
- * 403 terms_required; a lookup that does not say the terms are current counts as
- * not current.
+ * accepted the ISO's current terms (FR-PORT-18) and navigatr's current Referral
+ * Portal Terms, every one of these actions is a 403 terms_required; a lookup that
+ * does not say the terms are current counts as not current.
  */
 async function referral(
   action: ReferralAction,
@@ -610,7 +652,7 @@ async function referral(
   }
   const row = firstRow<LookupRow>(data);
   if (!row?.portal_user_id) return jsonResponse({ error: "unauthorized" }, 401);
-  if (row.terms_current !== true) return jsonResponse({ error: "terms_required" }, 403);
+  if (!allTermsCurrent(row)) return jsonResponse({ error: "terms_required" }, 403);
   const result = await handleReferralAction(
     action,
     { portalUserId: row.portal_user_id, orgId: row.org_id, partnerId: row.partner_id },

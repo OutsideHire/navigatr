@@ -1,8 +1,8 @@
 /**
- * Accept changed partner terms (FR-PORT-18, Q13). When the ISO edits its terms,
- * a signed-in partner sees this in place of the portal until they agree to the
- * new version; the signed-in layout shows it whenever me() reports the terms are
- * not current. Accepting records the time, IP and version server-side. A 409
+ * Accept changed portal terms (FR-PORT-18, Q13). When the ISO edits its terms, or
+ * navigatr's Referral Portal Terms change (or were never accepted), a signed-in
+ * partner sees this in place of the portal until they agree to both; the
+ * signed-in layout shows it whenever me() reports the terms are not current. Accepting records the time, IP and version server-side. A 409
  * means the ISO changed the terms again while the partner was reading, so the
  * new text loads and they agree again. A partner who does not agree can sign out.
  */
@@ -20,6 +20,7 @@ import {
 } from "../lib/portalApi";
 import { PortalRetry, portalReachMessage } from "../components/PortalRetry";
 import { PortalTermsText } from "../components/PortalTermsText";
+import { portalTermsAgreeLabel } from "../lib/portalTermsLabel";
 
 export function PortalTermsPage({
   slug,
@@ -77,7 +78,7 @@ export function PortalTermsPage({
     setNotice(null);
     setCanRetryAccept(false);
     try {
-      await portalApi.acceptTerms(slug, token, data.termsVersion);
+      await portalApi.acceptTerms(slug, token, data.termsVersion, data.navigatrTermsVersion);
       onAccepted();
     } catch (err) {
       if (isPortalUnauthorized(err)) {
@@ -101,11 +102,11 @@ export function PortalTermsPage({
   return (
     <Card padding="lg" className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <h1 className="text-heading-lg text-text-default">{brand.orgName} updated its partner terms</h1>
+        <h1 className="text-heading-lg text-text-default">The portal terms were updated</h1>
         <p className="text-body-md text-text-muted">Read and agree to the new terms to keep using the portal.</p>
       </div>
 
-      <PortalTermsText text={data.termsText} />
+      <PortalTermsText navigatrText={data.navigatrTermsText} isoText={data.termsText} />
 
       {notice && (
         <p role="alert" className="text-body-sm text-status-danger">
@@ -122,7 +123,7 @@ export function PortalTermsPage({
         id="portal-terms-agree"
         checked={agreed}
         onCheckedChange={setAgreed}
-        label="I agree to these terms"
+        label={portalTermsAgreeLabel(brand.orgName, data.termsText)}
       />
 
       <Button

@@ -69,7 +69,14 @@ describe("portalApi", () => {
   });
 
   it("peeks an invite and returns null when it is no longer valid", async () => {
-    const invite = { partnerName: "Jane", orgName: "Acme ISO", termsText: "Be fair.", termsVersion: 2 };
+    const invite = {
+      partnerName: "Jane",
+      orgName: "Acme ISO",
+      termsText: "Be fair.",
+      termsVersion: 2,
+      navigatrTermsText: "Navigatr terms.",
+      navigatrTermsVersion: "2026-10-30",
+    };
     fetchMock.mockResolvedValueOnce(respond(200, { invite }));
     await expect(portalApi.peekInvite("acme", "tok")).resolves.toEqual(invite);
     expect(lastCall().body).toEqual({ slug: "acme", token: "tok" });
@@ -77,12 +84,12 @@ describe("portalApi", () => {
     await expect(portalApi.peekInvite("acme", "old")).resolves.toBeNull();
   });
 
-  it("accepts an invite with the terms version and reports terms_changed", async () => {
+  it("accepts an invite with both terms versions and reports terms_changed", async () => {
     fetchMock.mockResolvedValueOnce(respond(200, { sessionToken: "t2", expiresAt: "x" }));
-    await portalApi.acceptInvite("acme", "tok", 2);
-    expect(lastCall().body).toEqual({ slug: "acme", token: "tok", termsVersion: 2 });
+    await portalApi.acceptInvite("acme", "tok", 2, "2026-10-30");
+    expect(lastCall().body).toEqual({ slug: "acme", token: "tok", termsVersion: 2, navigatrTermsVersion: "2026-10-30" });
     fetchMock.mockResolvedValueOnce(respond(409, { error: "terms_changed" }));
-    await expect(portalApi.acceptInvite("acme", "tok", 1)).rejects.toMatchObject({ status: 409, code: "terms_changed" });
+    await expect(portalApi.acceptInvite("acme", "tok", 1, "2026-10-30")).rejects.toMatchObject({ status: 409, code: "terms_changed" });
   });
 
   it("sends the session in x-portal-session for me and sign_out", async () => {
@@ -111,7 +118,13 @@ describe("portalApi", () => {
 
 describe("terms re-acceptance (FR-PORT-18)", () => {
   it("reads the terms for the session, null when the session is gone", async () => {
-    const terms = { termsText: "Terms two.", termsVersion: 2, termsCurrent: false };
+    const terms = {
+      termsText: "Terms two.",
+      termsVersion: 2,
+      termsCurrent: false,
+      navigatrTermsText: "Navigatr terms.",
+      navigatrTermsVersion: "2026-10-30",
+    };
     fetchMock.mockResolvedValueOnce(respond(200, { terms }));
     await expect(portalApi.getTerms("acme", "sess")).resolves.toEqual(terms);
     expect(lastCall().url).toBe(`${PORTAL_API_URL}/get_terms`);
@@ -121,14 +134,14 @@ describe("terms re-acceptance (FR-PORT-18)", () => {
     await expect(portalApi.getTerms("acme", "dead")).resolves.toBeNull();
   });
 
-  it("accepts a version with the session and reports terms_changed", async () => {
+  it("accepts both versions with the session and reports terms_changed", async () => {
     fetchMock.mockResolvedValueOnce(respond(200, { ok: true }));
-    await portalApi.acceptTerms("acme", "sess", 2);
+    await portalApi.acceptTerms("acme", "sess", 2, "2026-10-30");
     expect(lastCall().url).toBe(`${PORTAL_API_URL}/accept_terms`);
     expect(lastCall().headers["x-portal-session"]).toBe("sess");
-    expect(lastCall().body).toEqual({ slug: "acme", termsVersion: 2 });
+    expect(lastCall().body).toEqual({ slug: "acme", termsVersion: 2, navigatrTermsVersion: "2026-10-30" });
     fetchMock.mockResolvedValueOnce(respond(409, { error: "terms_changed" }));
-    await expect(portalApi.acceptTerms("acme", "sess", 1)).rejects.toMatchObject({ status: 409, code: "terms_changed" });
+    await expect(portalApi.acceptTerms("acme", "sess", 1, "2026-10-30")).rejects.toMatchObject({ status: 409, code: "terms_changed" });
   });
 
   it("tells listeners when any action answers 403 terms_required, and only then", async () => {

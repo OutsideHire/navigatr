@@ -142,6 +142,16 @@ describe("PartnerPortalTab", () => {
     expect(screen.queryByText(/accept again/i)).not.toBeInTheDocument();
   });
 
+  it("says partners also accept the Navigatr Referral Portal Terms, which the ISO cannot edit", async () => {
+    rpcMock.mockResolvedValueOnce({ data: [SEEDED], error: null });
+    renderTab();
+    expect(
+      await screen.findByText("Partners also accept the Navigatr Referral Portal Terms, shown above yours."),
+    ).toBeInTheDocument();
+    // The only editable terms box is the ISO's own.
+    expect(screen.queryByLabelText(/Navigatr Referral Portal Terms/)).not.toBeInTheDocument();
+  });
+
   it("shows the kept text after saving blank terms and consent", async () => {
     const user = userEvent.setup();
     rpcMock.mockResolvedValueOnce({ data: [SEEDED], error: null }).mockResolvedValueOnce({ data: [SEEDED], error: null });
