@@ -79,14 +79,43 @@ describe("sessionGuard", () => {
     expect(authHeaderOf(base)).toBe(`Bearer ${ANON}`);
   });
 
-  it("sends the request unchanged when recovery fails (never worse than today)", async () => {
+  // An anon table request can only come back 42501, so a failed recovery
+  // refuses it locally instead (prod 2026-10-29: eight 42501s in one instant
+  // after a laptop woke from three days asleep).
+  it("refuses a table request locally when recovery fails", async () => {
     const { base, guard } = makeFetch();
     signedIn();
     setSessionGuardHooks({
       recover: async () => false,
       getAccessToken: async () => "should-not-be-used",
     });
-    await guard(REST, { headers: { Authorization: `Bearer ${ANON}` } });
+    await expect(guard(REST, { headers: { Authorization: `Bearer ${ANON}` } })).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(base).not.toHaveBeenCalled();
+  });
+
+  it("refuses a table request when the app believes a rep is signed in but recovery fails", async () => {
+    const { base, guard } = makeFetch();
+    // Storage already emptied by the SDK, the app still shows the rep.
+    setSessionGuardHooks({
+      recover: async () => false,
+      getAccessToken: async () => null,
+      believesSignedIn: () => true,
+    });
+    await expect(guard(REST, { headers: { Authorization: `Bearer ${ANON}` } })).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(base).not.toHaveBeenCalled();
+  });
+
+  it("still sends an RPC unchanged when recovery fails (some RPCs are public)", async () => {
+    const { base, guard } = makeFetch();
+    signedIn();
+    setSessionGuardHooks({ recover: async () => false, getAccessToken: async () => null });
+    await guard("https://x.supabase.co/rest/v1/rpc/get_invite_preview", {
+      headers: { Authorization: `Bearer ${ANON}` },
+    });
     expect(base).toHaveBeenCalledTimes(1);
     expect(authHeaderOf(base)).toBe(`Bearer ${ANON}`);
   });
@@ -100,17 +129,19 @@ describe("sessionGuard", () => {
 
   // The 2026-09-10 outage was an over-eager retry. This guard must never add
   // request volume: exactly one outbound request in EVERY branch above.
-  it("issues exactly one outbound request per call, in every branch", async () => {
+  it("never issues more than one outbound request per call, in every branch", async () => {
     signedIn();
     for (const hooks of [
       null,
       { recover: async () => true, getAccessToken: async () => "fresh-jwt" },
       { recover: async () => false, getAccessToken: async () => null },
     ]) {
-      const { base, guard } = makeFetch();
-      setSessionGuardHooks(hooks);
-      await guard(REST, { headers: { Authorization: `Bearer ${ANON}` } });
-      expect(base).toHaveBeenCalledTimes(1);
+      for (const url of [REST, "https://x.supabase.co/rest/v1/rpc/some_rpc"]) {
+        const { base, guard } = makeFetch();
+        setSessionGuardHooks(hooks);
+        await guard(url, { headers: { Authorization: `Bearer ${ANON}` } }).catch(() => undefined);
+        expect(base.mock.calls.length).toBeLessThanOrEqual(1);
+      }
     }
   });
 
@@ -169,8 +200,12 @@ describe("sessionGuard", () => {
       recover: async () => true,
       getAccessToken: async () => ANON, // SDK handed back the fallback again
     });
-    await guard(REST, { headers: { Authorization: `Bearer ${ANON}` } });
-    expect(authHeaderOf(base)).toBe(`Bearer ${ANON}`);
+    // Never sent with the anon key dressed up as a user token: a table
+    // request with no user token is refused locally instead.
+    await expect(guard(REST, { headers: { Authorization: `Bearer ${ANON}` } })).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(base).not.toHaveBeenCalled();
   });
 });
 
