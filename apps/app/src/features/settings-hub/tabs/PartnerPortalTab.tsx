@@ -126,9 +126,11 @@ function PartnerPortalForm({ initial }: { initial: PortalSettings }) {
         <FormField label="Partner terms" htmlFor="portal-terms" helper={termsHelper}>
           <Textarea id="portal-terms" rows={6} value={termsText} onChange={(e) => setTermsText(e.target.value)} />
         </FormField>
-        <p className="-mt-3 text-caption text-text-subtle">
-          Have your legal team review these terms before you invite partners.
-        </p>
+        <div className="-mt-3 flex flex-col gap-1 text-caption text-text-subtle">
+          <p>Have your legal team review these terms before you invite partners.</p>
+          {/* navigatr's own platform terms: shown to every partner, not editable here. */}
+          <p>Partners also accept the Navigatr Referral Portal Terms, shown above yours.</p>
+        </div>
 
         <FormField
           label="Consent line"

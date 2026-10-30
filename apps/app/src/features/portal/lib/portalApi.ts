@@ -85,6 +85,9 @@ export interface PortalInvite {
   orgName: string;
   termsText: string;
   termsVersion: number;
+  /** navigatr's own Referral Portal Terms, accepted with the ISO's by the same checkbox. */
+  navigatrTermsText: string;
+  navigatrTermsVersion: string;
 }
 
 export interface PortalSession {
@@ -100,11 +103,14 @@ export interface PortalMe {
   termsCurrent: boolean;
 }
 
-/** The terms a signed-in partner is asked to accept (FR-PORT-18). */
+/** The terms a signed-in partner is asked to accept (FR-PORT-18): the ISO's and navigatr's. */
 export interface PortalTerms {
   termsText: string;
   termsVersion: number;
+  /** True only when both the ISO's and navigatr's current terms are accepted. */
   termsCurrent: boolean;
+  navigatrTermsText: string;
+  navigatrTermsVersion: string;
 }
 
 export type PortalSubmitInput = {
@@ -267,8 +273,8 @@ export const portalApi = {
     return portalRequest<{ invite: PortalInvite }>("peek_invite", { slug, token }).then((r) => r.invite, nullOn(404));
   },
 
-  acceptInvite(slug: string, token: string, termsVersion: number): Promise<PortalSession> {
-    return portalRequest<PortalSession>("accept_invite", { slug, token, termsVersion });
+  acceptInvite(slug: string, token: string, termsVersion: number, navigatrTermsVersion: string): Promise<PortalSession> {
+    return portalRequest<PortalSession>("accept_invite", { slug, token, termsVersion, navigatrTermsVersion });
   },
 
   me(slug: string, sessionToken: string): Promise<PortalMe | null> {
@@ -281,8 +287,8 @@ export const portalApi = {
   },
 
   /** Throws PortalApiError: 409 terms_changed (read them again), 401 unauthorized. */
-  async acceptTerms(slug: string, sessionToken: string, termsVersion: number): Promise<void> {
-    await portalRequest<{ ok: boolean }>("accept_terms", { slug, termsVersion }, sessionToken);
+  async acceptTerms(slug: string, sessionToken: string, termsVersion: number, navigatrTermsVersion: string): Promise<void> {
+    await portalRequest<{ ok: boolean }>("accept_terms", { slug, termsVersion, navigatrTermsVersion }, sessionToken);
   },
 
   async signOut(sessionToken: string): Promise<void> {

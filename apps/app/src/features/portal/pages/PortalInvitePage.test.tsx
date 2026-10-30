@@ -32,9 +32,22 @@ vi.mock("../lib/portalApi", async (importOriginal) => {
 import { PortalRoot } from "./PortalRoot";
 import { PortalApiError } from "../lib/portalApi";
 import { clearPortalSession, readPortalSession } from "../lib/portalSession";
+import {
+  NAVIGATR_PORTAL_TERMS_TEXT,
+  NAVIGATR_PORTAL_TERMS_VERSION,
+} from "../../../../../../supabase/functions/_shared/portalNavigatrTerms";
 
 const BRAND = { orgName: "Acme ISO", productName: "navigatr", primaryColor: null, logoUrl: null, darkLogoUrl: null };
-const INVITE = { partnerName: "Jane", orgName: "Acme ISO", termsText: "Be fair.", termsVersion: 2 };
+const NV = NAVIGATR_PORTAL_TERMS_VERSION;
+const INVITE = {
+  partnerName: "Jane",
+  orgName: "Acme ISO",
+  termsText: "Be fair.",
+  termsVersion: 2,
+  navigatrTermsText: NAVIGATR_PORTAL_TERMS_TEXT,
+  navigatrTermsVersion: NV,
+};
+const AGREE = "I agree to the Navigatr Referral Portal Terms and Acme ISO's partner terms";
 
 let currentLocation = "";
 function LocationProbe() {
@@ -115,14 +128,17 @@ describe("PortalInvitePage", () => {
     expect(await screen.findByRole("heading", { name: "Welcome, Jane" })).toBeInTheDocument();
     expect(api.peekInvite).toHaveBeenCalledWith("acme", "tok");
     expect(screen.getByText("Be fair.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Navigatr Referral Portal Terms" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Partner terms" })).toBeInTheDocument();
+    expect(screen.getByText(/Information obtained through the portal must be used only for authorized referral-related/)).toBeInTheDocument();
 
     const accept = screen.getByRole("button", { name: "Accept and continue" });
     expect(accept).toBeDisabled();
-    await user.click(screen.getByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(screen.getByRole("checkbox", { name: AGREE }));
     expect(accept).toBeEnabled();
     await user.click(accept);
 
-    expect(api.acceptInvite).toHaveBeenCalledWith("acme", "tok", 2);
+    expect(api.acceptInvite).toHaveBeenCalledWith("acme", "tok", 2, NV);
     expect(await screen.findByText("Signed in as Jane at Acme ISO")).toBeInTheDocument();
     expect(readPortalSession("acme")).toBe("s".repeat(64));
   });
@@ -135,14 +151,28 @@ describe("PortalInvitePage", () => {
     api.acceptInvite.mockRejectedValueOnce(new PortalApiError(409, "terms_changed"));
 
     renderAt("/p/acme/invite?token=tok");
-    await user.click(await screen.findByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(await screen.findByRole("checkbox", { name: AGREE }));
     await user.click(screen.getByRole("button", { name: "Accept and continue" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("The terms were just updated. Please read them again.");
     expect(await screen.findByText("New terms.")).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "I agree to these terms" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: AGREE })).not.toBeChecked();
     expect(screen.getByRole("button", { name: "Accept and continue" })).toBeDisabled();
     expect(readPortalSession("acme")).toBeNull();
+  });
+
+  it("asks for only the navigatr terms when the ISO has no partner terms", async () => {
+    const user = userEvent.setup();
+    api.peekInvite.mockResolvedValue({ ...INVITE, termsText: "", termsVersion: 0 });
+    api.acceptInvite.mockResolvedValue({ sessionToken: "s".repeat(64), expiresAt: "2026-11-08T00:00:00Z" });
+    api.me.mockResolvedValue({ partnerName: "Jane", email: "jane@example.com", orgName: "Acme ISO" });
+
+    renderAt("/p/acme/invite?token=tok");
+    expect(await screen.findByRole("heading", { name: "Navigatr Referral Portal Terms" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Partner terms" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "I agree to the Navigatr Referral Portal Terms" }));
+    await user.click(screen.getByRole("button", { name: "Accept and continue" }));
+    expect(api.acceptInvite).toHaveBeenCalledWith("acme", "tok", 0, NV);
   });
 
   it("explains an expired or used invite", async () => {
@@ -174,9 +204,9 @@ describe("PortalInvitePage", () => {
     expect(api.peekInvite).toHaveBeenCalledWith("acme", "secret-tok");
     expect(api.peekInvite).not.toHaveBeenCalledWith("acme", "");
 
-    await user.click(screen.getByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(screen.getByRole("checkbox", { name: AGREE }));
     await user.click(screen.getByRole("button", { name: "Accept and continue" }));
-    expect(api.acceptInvite).toHaveBeenCalledWith("acme", "secret-tok", 2);
+    expect(api.acceptInvite).toHaveBeenCalledWith("acme", "secret-tok", 2, NV);
   });
 
   it("offers a retry, not 'expired', when the invite can't be checked", async () => {
@@ -200,7 +230,7 @@ describe("PortalInvitePage", () => {
     api.me.mockResolvedValue({ partnerName: "Jane", email: "jane@example.com", orgName: "Acme ISO" });
 
     renderAt("/p/acme/invite?token=tok");
-    await user.click(await screen.findByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(await screen.findByRole("checkbox", { name: AGREE }));
     await user.click(screen.getByRole("button", { name: "Accept and continue" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "We couldn't reach Acme ISO. Check your connection and try again.",
@@ -216,7 +246,7 @@ describe("PortalInvitePage", () => {
     api.peekInvite.mockResolvedValue(INVITE);
     api.acceptInvite.mockRejectedValue(new PortalApiError(404, "invalid_invite"));
     renderAt("/p/acme/invite?token=tok");
-    await user.click(await screen.findByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(await screen.findByRole("checkbox", { name: AGREE }));
     await user.click(screen.getByRole("button", { name: "Accept and continue" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("This invite can't be used anymore.");
   });
@@ -239,7 +269,7 @@ describe("PortalInvitePage", () => {
     api.acceptInvite.mockResolvedValue({ sessionToken: "s".repeat(64), expiresAt: "2026-11-08T00:00:00Z" });
     api.me.mockResolvedValue({ partnerName: "Jane", email: "jane@example.com", orgName: "Acme ISO" });
     renderAt("/p/acme/invite?token=tok");
-    await user.click(await screen.findByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(await screen.findByRole("checkbox", { name: AGREE }));
     await user.click(screen.getByRole("button", { name: "Accept and continue" }));
     expect(await screen.findByText("Signed in as Jane at Acme ISO")).toBeInTheDocument();
     expect(window.sessionStorage.getItem("navigatr-portal-invite:acme")).toBeNull();

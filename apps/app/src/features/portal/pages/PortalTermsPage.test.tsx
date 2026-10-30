@@ -15,9 +15,21 @@ vi.mock("../lib/portalApi", async (importOriginal) => {
 
 import { PortalTermsPage } from "./PortalTermsPage";
 import { PortalApiError, portalDataKey } from "../lib/portalApi";
+import {
+  NAVIGATR_PORTAL_TERMS_TEXT,
+  NAVIGATR_PORTAL_TERMS_VERSION,
+} from "../../../../../../supabase/functions/_shared/portalNavigatrTerms";
 
 const BRAND = { orgName: "Acme ISO", productName: "navigatr", primaryColor: null, logoUrl: null, darkLogoUrl: null };
-const TERMS = { termsText: "Terms two.", termsVersion: 2, termsCurrent: false };
+const NV = NAVIGATR_PORTAL_TERMS_VERSION;
+const TERMS = {
+  termsText: "Terms two.",
+  termsVersion: 2,
+  termsCurrent: false,
+  navigatrTermsText: NAVIGATR_PORTAL_TERMS_TEXT,
+  navigatrTermsVersion: NV,
+};
+const AGREE = "I agree to the Navigatr Referral Portal Terms and Acme ISO's partner terms";
 
 function renderPage(prime?: (client: QueryClient) => void) {
   const onAccepted = vi.fn();
@@ -37,23 +49,27 @@ beforeEach(() => {
 });
 
 describe("PortalTermsPage", () => {
-  it("shows the ISO's new terms and accepts only once the partner agrees", async () => {
+  it("shows the navigatr terms first, then the ISO's new terms, and accepts both only once the partner agrees", async () => {
     const user = userEvent.setup();
     api.getTerms.mockResolvedValue(TERMS);
     api.acceptTerms.mockResolvedValue(undefined);
     const { onAccepted } = renderPage();
 
-    expect(await screen.findByRole("heading", { name: "Acme ISO updated its partner terms" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "The portal terms were updated" })).toBeInTheDocument();
     expect(api.getTerms).toHaveBeenCalledWith("acme", "sess");
     expect(screen.getByText("Terms two.")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Partner terms" })).toBeInTheDocument();
+    const navigatrHeading = screen.getByRole("heading", { name: "Navigatr Referral Portal Terms" });
+    const isoHeading = screen.getByRole("heading", { name: "Partner terms" });
+    // navigatr's terms come first.
+    expect(navigatrHeading.compareDocumentPosition(isoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText(/does not guarantee referral acceptance, conversion, or resulting business opportunities/)).toBeInTheDocument();
 
     const accept = screen.getByRole("button", { name: "Accept and continue" });
     expect(accept).toBeDisabled();
-    await user.click(screen.getByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(screen.getByRole("checkbox", { name: AGREE }));
     await user.click(accept);
 
-    expect(api.acceptTerms).toHaveBeenCalledWith("acme", "sess", 2);
+    expect(api.acceptTerms).toHaveBeenCalledWith("acme", "sess", 2, NV);
     expect(onAccepted).toHaveBeenCalledTimes(1);
   });
 
@@ -63,7 +79,7 @@ describe("PortalTermsPage", () => {
     api.acceptTerms.mockResolvedValue(undefined);
     const { onAccepted } = renderPage();
 
-    await user.click(await screen.findByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(await screen.findByRole("checkbox", { name: AGREE }));
     await user.click(screen.getByRole("button", { name: "Accept and continue" }));
     expect(onAccepted).toHaveBeenCalledTimes(1);
     await vi.waitFor(() => expect(screen.getByRole("button", { name: "Accept and continue" })).toBeEnabled());
@@ -85,18 +101,32 @@ describe("PortalTermsPage", () => {
     api.acceptTerms.mockRejectedValueOnce(new PortalApiError(409, "terms_changed"));
     const { onAccepted } = renderPage();
 
-    await user.click(await screen.findByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(await screen.findByRole("checkbox", { name: AGREE }));
     await user.click(screen.getByRole("button", { name: "Accept and continue" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("The terms were just updated. Please read them again.");
     expect(await screen.findByText("Terms three.")).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "I agree to these terms" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: AGREE })).not.toBeChecked();
     expect(onAccepted).not.toHaveBeenCalled();
 
     api.acceptTerms.mockResolvedValueOnce(undefined);
-    await user.click(screen.getByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(screen.getByRole("checkbox", { name: AGREE }));
     await user.click(screen.getByRole("button", { name: "Accept and continue" }));
-    expect(api.acceptTerms).toHaveBeenLastCalledWith("acme", "sess", 3);
+    expect(api.acceptTerms).toHaveBeenLastCalledWith("acme", "sess", 3, NV);
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for only the navigatr terms when the ISO has no partner terms", async () => {
+    const user = userEvent.setup();
+    api.getTerms.mockResolvedValue({ ...TERMS, termsText: "", termsVersion: 0 });
+    api.acceptTerms.mockResolvedValue(undefined);
+    const { onAccepted } = renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Navigatr Referral Portal Terms" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Partner terms" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "I agree to the Navigatr Referral Portal Terms" }));
+    await user.click(screen.getByRole("button", { name: "Accept and continue" }));
+    expect(api.acceptTerms).toHaveBeenCalledWith("acme", "sess", 0, NV);
     expect(onAccepted).toHaveBeenCalledTimes(1);
   });
 
@@ -106,7 +136,7 @@ describe("PortalTermsPage", () => {
     api.acceptTerms.mockRejectedValueOnce(new PortalApiError(0, "network_error")).mockResolvedValueOnce(undefined);
     const { onAccepted } = renderPage();
 
-    await user.click(await screen.findByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(await screen.findByRole("checkbox", { name: AGREE }));
     await user.click(screen.getByRole("button", { name: "Accept and continue" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/Acme ISO/);
     await user.click(screen.getByRole("button", { name: "Try again" }));
@@ -124,7 +154,7 @@ describe("PortalTermsPage", () => {
     api.getTerms.mockResolvedValue(TERMS);
     api.acceptTerms.mockRejectedValueOnce(new PortalApiError(401, "unauthorized"));
     const { onExpired, onAccepted } = renderPage();
-    await user.click(await screen.findByRole("checkbox", { name: "I agree to these terms" }));
+    await user.click(await screen.findByRole("checkbox", { name: AGREE }));
     await user.click(screen.getByRole("button", { name: "Accept and continue" }));
     await vi.waitFor(() => expect(onExpired).toHaveBeenCalled());
     expect(onAccepted).not.toHaveBeenCalled();

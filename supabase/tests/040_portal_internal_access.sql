@@ -205,7 +205,7 @@ do $$ declare v_inv text; v_ver int; v_new text; n int; begin
   perform set_config('role', 'postgres', true);
   select invite_token into v_inv from public.portal_create_invite('fa1a0000-0000-0000-0000-000000000001', 'fa100000-0000-0000-0000-000000000002');
   select partner_terms_version into v_ver from organizations where id = '00000000-0000-0000-0000-000000000fa1';
-  select session_token into v_new from public.portal_accept_invite('portal-ia', v_inv, v_ver, null, null);
+  select session_token into v_new from public.portal_accept_invite('portal-ia', v_inv, v_ver, '2026-10-30', null, null);
   select count(*) into n from public.portal_session_lookup('portal-ia', v_new);
   if n <> 1 then raise exception 'the new session from accept should resolve'; end if;
   foreach v_inv in array array['ia-sess-1', 'ia-sess-2', 'ia-sess-race'] loop
