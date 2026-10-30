@@ -111,6 +111,12 @@ describe("PortalSentReferralPage", () => {
     expect(within(notes).getByText("Rita Rep gets an email when you add one.")).toBeInTheDocument();
   });
 
+  it("goes back to the Sent to you tab", async () => {
+    renderAt();
+    await screen.findByRole("heading", { name: "Gold Gym" });
+    expect(screen.getByRole("link", { name: /Back to sent to you/ })).toHaveAttribute("href", "/p/acme/home?tab=sent");
+  });
+
   it("adds a note, clears the box and reloads the referral", async () => {
     const user = userEvent.setup();
     api.postNote.mockResolvedValue({ id: "n-2", body: "Signed today.", createdAt: "2026-10-22T12:00:00Z" });

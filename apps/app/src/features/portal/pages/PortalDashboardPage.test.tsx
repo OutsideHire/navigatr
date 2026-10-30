@@ -314,37 +314,80 @@ describe("PortalDashboardPage", () => {
     expect(await screen.findByRole("heading", { name: "Sign in to Acme ISO" })).toBeInTheDocument();
   });
 
-  it("shows what the ISO sent to the partner, linking to each one", async () => {
+  it("splits the page into You sent and Sent to you tabs, with counts", async () => {
     api.listSentReferrals.mockResolvedValue(SENT);
     renderHome();
-    const section = await screen.findByRole("region", { name: "Sent to you" });
-    expect(within(section).getByText("Businesses Acme ISO referred to you.")).toBeInTheDocument();
-    const row = within(section).getByRole("link", { name: /Gold Gym/ });
+    const tabs = await screen.findByRole("tablist", { name: "Referrals" });
+    const mine = within(tabs).getByRole("tab", { name: /You sent/ });
+    const theirs = within(tabs).getByRole("tab", { name: /Sent to you/ });
+    await waitFor(() => expect(mine).toHaveTextContent(`You sent (${ROWS.length})`));
+    await waitFor(() => expect(theirs).toHaveTextContent("Sent to you (1)"));
+    expect(mine).toHaveAttribute("aria-selected", "true");
+    // The partner's own referrals and the tiles show first; the sent list does not.
+    expect(await screen.findByRole("link", { name: /Fresh Bakery/ })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Summary" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Gold Gym/ })).toBeNull();
+  });
+
+  it("shows what the ISO sent to the partner on its own tab, linking to each one", async () => {
+    const user = userEvent.setup();
+    api.listSentReferrals.mockResolvedValue(SENT);
+    renderHome();
+    await user.click(await screen.findByRole("tab", { name: /Sent to you/ }));
+    const panel = screen.getByRole("tabpanel", { name: /Sent to you/ });
+    expect(within(panel).getByText("Businesses Acme ISO referred to you.")).toBeInTheDocument();
+    const row = within(panel).getByRole("link", { name: /Gold Gym/ });
     expect(row).toHaveAttribute("href", "/p/acme/s/s-1");
     expect(within(row).getByText("Accepted")).toBeInTheDocument();
     expect(within(row).getByText("REF-BBBB0001 · Sent Oct 3, 2026")).toBeInTheDocument();
+    // The partner's own list, tiles and CSV belong to the other tab.
+    expect(screen.queryByRole("link", { name: /Fresh Bakery/ })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Summary" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Download CSV" })).toBeNull();
     expect(api.listSentReferrals).toHaveBeenCalledWith("acme", "live", "all");
   });
 
-  it("hides the section when nothing was sent", async () => {
+  it("says when nothing has been sent to the partner yet", async () => {
+    const user = userEvent.setup();
     renderHome();
-    await screen.findByRole("link", { name: /Fresh Bakery/ });
-    expect(screen.queryByRole("region", { name: "Sent to you" })).toBeNull();
+    const theirs = await screen.findByRole("tab", { name: /Sent to you/ });
+    await waitFor(() => expect(theirs).toHaveTextContent("Sent to you (0)"));
+    await user.click(theirs);
+    expect(screen.getByText("Nothing sent to you yet. When Acme ISO refers a business to you, it shows up here.")).toBeInTheDocument();
   });
 
-  it("hides the section when it cannot load, and keeps the main list", async () => {
+  it("offers a retry on the Sent to you tab when it cannot load, and keeps the main list", async () => {
+    const user = userEvent.setup();
     api.listSentReferrals.mockRejectedValue(new PortalApiError(0, "network_error"));
     renderHome();
-    await screen.findByRole("link", { name: /Fresh Bakery/ });
+    expect(await screen.findByRole("link", { name: /Fresh Bakery/ })).toBeInTheDocument();
     await waitFor(() => expect(api.listSentReferrals).toHaveBeenCalled());
-    expect(screen.queryByRole("region", { name: "Sent to you" })).toBeNull();
+    await user.click(screen.getByRole("tab", { name: /Sent to you/ }));
+    api.listSentReferrals.mockResolvedValue(SENT);
+    await user.click(await screen.findByRole("button", { name: /try again/i }));
+    expect(await screen.findByRole("link", { name: /Gold Gym/ })).toBeInTheDocument();
   });
 
-  it("uses the chosen period and polls every 30 seconds", async () => {
+  it("opens straight on Sent to you when the address asks for it (back from a sent referral)", async () => {
+    api.listSentReferrals.mockResolvedValue(SENT);
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={["/p/acme/home?tab=sent"]}>
+          <Routes>
+            <Route path="/p/:slug/*" element={<PortalRoot />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByRole("tab", { name: /Sent to you/ })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("link", { name: /Gold Gym/ })).toBeInTheDocument();
+  });
+
+  it("uses the chosen period on both tabs and polls the sent list every 30 seconds", async () => {
     const user = userEvent.setup();
     api.listSentReferrals.mockResolvedValue(SENT);
     const client = renderHome();
-    await screen.findByRole("region", { name: "Sent to you" });
+    await screen.findByRole("tab", { name: /Sent to you/ });
     await user.click(screen.getByRole("button", { name: "30 days" }));
     expect(api.listSentReferrals).toHaveBeenLastCalledWith("acme", "live", "30d");
     const query = client.getQueryCache().find({ queryKey: ["portal", "data", "acme", "live", "sent", "30d"], exact: true });
