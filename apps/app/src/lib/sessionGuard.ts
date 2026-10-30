@@ -220,11 +220,25 @@ export function createSessionGuardFetch(config: {
       return base(input, init);
     }
 
+    // Recovery failed, or left no user token. A table request still carrying
+    // the publishable key can only come back 42501, so refuse it here instead
+    // of on the wire, the same way as the sign-out drain above (prod
+    // 2026-10-29: a laptop woke after three days, the refresh was refused and
+    // eight queries went out as anon in the same instant). RPCs still go:
+    // some are callable without a session on purpose. A failed recovery with
+    // a stored token is reported by the auth store itself.
+    const unrepaired = (): Promise<Response> => {
+      if (isTableRequest(url)) {
+        return Promise.reject(new DOMException("Session not recovered; request not sent", "AbortError"));
+      }
+      return base(input, init);
+    };
+
     const recovered = await hooks.recover();
-    if (!recovered) return base(input, init);
+    if (!recovered) return unrepaired();
 
     const token = await hooks.getAccessToken();
-    if (!token || token === config.anonKey) return base(input, init);
+    if (!token || token === config.anonKey) return unrepaired();
 
     headers.set("Authorization", `Bearer ${token}`);
     return input instanceof Request
