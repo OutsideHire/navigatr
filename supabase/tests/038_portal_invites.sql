@@ -145,15 +145,15 @@ end $$;
 
 -- Accept refusals leave the invite usable.
 do $$ declare v_tok text := (select v from _t where k = 'tok2'); n int; begin
-  perform _t_raises(format('select * from public.portal_accept_invite(%L, %L, 2, ''2026-10-30'', %L, %L)', 'portal-inv', v_tok, '203.0.113.9', 'ua'), 'terms_changed');
-  perform _t_raises(format('select * from public.portal_accept_invite(%L, %L, 1, ''2026-10-30'', null, null)', 'portal-inv-b', v_tok), 'invalid_invite');
+  perform _t_raises(format('select * from public.portal_accept_invite(%L, %L, 2, %L, %L)', 'portal-inv', v_tok, '203.0.113.9', 'ua'), 'terms_changed');
+  perform _t_raises(format('select * from public.portal_accept_invite(%L, %L, 1, null, null)', 'portal-inv-b', v_tok), 'invalid_invite');
   select count(*) into n from public.portal_peek_invite('portal-inv', v_tok);
   if n <> 1 then raise exception 'a refused accept must not consume the invite'; end if;
 end $$;
 
 -- Accept: active, terms recorded, session issued, invite consumed.
 do $$ declare v_tok text := (select v from _t where k = 'tok2'); r record; u portal_users; n int; begin
-  select * into r from public.portal_accept_invite('portal-inv', v_tok, 3, '2026-10-30', '203.0.113.9', 'Mozilla/5.0');
+  select * into r from public.portal_accept_invite('portal-inv', v_tok, 3, '203.0.113.9', 'Mozilla/5.0');
   if r.session_token is null or r.session_token !~ '^[0-9a-f]{64}$' then raise exception 'accept should return a 64 hex session token'; end if;
   if r.session_expires_at < now() + interval '29 days' then raise exception 'session should last 30 days'; end if;
 
@@ -176,7 +176,7 @@ do $$ declare v_tok text := (select v from _t where k = 'tok2'); r record; u por
 
   select count(*) into n from public.portal_peek_invite('portal-inv', v_tok);
   if n <> 0 then raise exception 'an accepted invite must be consumed'; end if;
-  perform _t_raises(format('select * from public.portal_accept_invite(%L, %L, 3, ''2026-10-30'', null, null)', 'portal-inv', v_tok), 'invalid_invite');
+  perform _t_raises(format('select * from public.portal_accept_invite(%L, %L, 3, null, null)', 'portal-inv', v_tok), 'invalid_invite');
   perform _t_raises('select * from public.portal_create_invite(''f81a0000-0000-0000-0000-000000000001'', ''f8100000-0000-0000-0000-000000000002'')', 'portal_already_active');
 end $$;
 
@@ -187,7 +187,7 @@ do $$ declare r record; n int; begin
    where token_hash = encode(extensions.digest(r.invite_token, 'sha256'), 'hex');
   select count(*) into n from public.portal_peek_invite('portal-inv', r.invite_token);
   if n <> 0 then raise exception 'an expired invite must not resolve'; end if;
-  perform _t_raises(format('select * from public.portal_accept_invite(%L, %L, 3, ''2026-10-30'', null, null)', 'portal-inv', r.invite_token), 'invalid_invite');
+  perform _t_raises(format('select * from public.portal_accept_invite(%L, %L, 3, null, null)', 'portal-inv', r.invite_token), 'invalid_invite');
 
   update portal_users set status = 'revoked' where partner_id = 'f81a0000-0000-0000-0000-000000000002';
   select * into r from public.portal_create_invite('f81a0000-0000-0000-0000-000000000002', 'f8100000-0000-0000-0000-000000000003');

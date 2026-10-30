@@ -47,7 +47,7 @@ const INVITE = {
   navigatrTermsText: NAVIGATR_PORTAL_TERMS_TEXT,
   navigatrTermsVersion: NV,
 };
-const AGREE = "I agree to the Navigatr Referral Portal Terms and Acme ISO's partner terms";
+const AGREE = "I agree to the Navigatr Referral Portal Terms and the partner terms from Acme ISO";
 
 let currentLocation = "";
 function LocationProbe() {

@@ -97,7 +97,7 @@ end $$;
 -- A version race: accepting the version the partner read (1) after it changed fails.
 do $$ declare v text := (select v from _t where k = 'jane'); begin
   begin
-    perform public.portal_accept_terms('portal-terms', v, 1, '2026-10-30', '2.2.2.2');
+    perform public.portal_accept_terms('portal-terms', v, 1, '2.2.2.2');
     raise exception 'expected terms_changed';
   exception when others then
     if sqlerrm <> 'terms_changed' then raise exception 'stale version should raise terms_changed, got %', sqlerrm; end if;
@@ -110,13 +110,13 @@ end $$;
 -- A dead or foreign session cannot accept.
 do $$ declare v text := (select v from _t where k = 'jane'); begin
   begin
-    perform public.portal_accept_terms('portal-noterms', v, 2, '2026-10-30', '2.2.2.2');
+    perform public.portal_accept_terms('portal-noterms', v, 2, '2.2.2.2');
     raise exception 'expected invalid_session';
   exception when others then
     if sqlerrm <> 'invalid_session' then raise exception 'a foreign tenant should raise invalid_session, got %', sqlerrm; end if;
   end;
   begin
-    perform public.portal_accept_terms('portal-terms', 'not-a-session', 2, '2026-10-30', '2.2.2.2');
+    perform public.portal_accept_terms('portal-terms', 'not-a-session', 2, '2.2.2.2');
     raise exception 'expected invalid_session';
   exception when others then
     if sqlerrm <> 'invalid_session' then raise exception 'a dead session should raise invalid_session, got %', sqlerrm; end if;
@@ -125,7 +125,7 @@ end $$;
 
 -- Accepting the current version records it, audits it, and restores access.
 do $$ declare v text := (select v from _t where k = 'jane'); r record; u portal_users; begin
-  perform public.portal_accept_terms('portal-terms', v, 2, '2026-10-30', '  3.3.3.3 ');
+  perform public.portal_accept_terms('portal-terms', v, 2, '  3.3.3.3 ');
   select * into u from portal_users where id = '731b0000-0000-0000-0000-000000000001';
   if u.terms_version is distinct from 2 or u.terms_ip is distinct from '3.3.3.3'
      or u.terms_accepted_at < now() - interval '1 minute' then
@@ -147,7 +147,7 @@ end $$;
 do $$ declare v text := (select v from _t where k = 'old'); begin
   update portal_users set status = 'suspended' where id = '731b0000-0000-0000-0000-000000000002';
   begin
-    perform public.portal_accept_terms('portal-terms', v, 2, '2026-10-30', null);
+    perform public.portal_accept_terms('portal-terms', v, 2, null);
     raise exception 'expected invalid_session';
   exception when others then
     if sqlerrm <> 'invalid_session' then raise exception 'a suspended partner should raise invalid_session, got %', sqlerrm; end if;

@@ -79,7 +79,7 @@ end $$;
 
 -- accept_terms stores the navigatr version alongside the ISO version.
 do $$ declare v text := (select v from _t where k = 'jane'); r record; u portal_users; begin
-  perform public.portal_accept_terms('portal-nterms', v, 1, '2026-10-30', '2.2.2.2');
+  perform public.portal_accept_terms('portal-nterms', v, 1, '2.2.2.2', '2026-10-30');
   select * into u from portal_users where id = '791b0000-0000-0000-0000-000000000001';
   if u.navigatr_terms_version is distinct from '2026-10-30' or u.terms_version is distinct from 1 then
     raise exception 'accept_terms stored % / %', u.navigatr_terms_version, u.terms_version;
@@ -91,7 +91,7 @@ end $$;
 -- A stale ISO version is still refused, and the navigatr version is left alone.
 do $$ declare v text := (select v from _t where k = 'jane'); begin
   begin
-    perform public.portal_accept_terms('portal-nterms', v, 0, '2099-01-01', null);
+    perform public.portal_accept_terms('portal-nterms', v, 0, null, '2099-01-01');
     raise exception 'expected terms_changed';
   exception when others then
     if sqlerrm <> 'terms_changed' then raise exception 'stale ISO version should raise terms_changed, got %', sqlerrm; end if;
@@ -101,17 +101,45 @@ do $$ declare v text := (select v from _t where k = 'jane'); begin
   end if;
 end $$;
 
+-- Deploy skew: portal_api code from before this migration calls with the OLD
+-- named arguments (no navigatr version). The call still resolves and succeeds,
+-- and stores null, so that partner stays gated until they accept the new terms.
+do $$ declare v text := (select v from _t where k = 'jane'); begin
+  perform public.portal_accept_terms(p_slug => 'portal-nterms', p_token => v, p_terms_version => 1, p_ip => '4.4.4.4');
+  if (select navigatr_terms_version from portal_users where id = '791b0000-0000-0000-0000-000000000001') is not null then
+    raise exception 'an old-style accept_terms call must store a null navigatr version';
+  end if;
+  if (select terms_ip from portal_users where id = '791b0000-0000-0000-0000-000000000001') is distinct from '4.4.4.4' then
+    raise exception 'an old-style accept_terms call must still record the acceptance';
+  end if;
+end $$;
+
 -- A blank navigatr version is stored as null (never counts as accepted).
 do $$ declare v text := (select v from _t where k = 'jane'); begin
-  perform public.portal_accept_terms('portal-nterms', v, 1, '   ', null);
+  perform public.portal_accept_terms('portal-nterms', v, 1, null, '   ');
   if (select navigatr_terms_version from portal_users where id = '791b0000-0000-0000-0000-000000000001') is not null then
     raise exception 'a blank navigatr version must be stored as null';
   end if;
 end $$;
 
+-- An old-style accept_invite call (named, no navigatr version) still activates
+-- the partner, with a null navigatr version.
+do $$ declare r record; u portal_users; v_tok text; begin
+  insert into partners (id, org_id, created_by, owner_id, name, company, type, email) values
+    ('791a0000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000791', '79100000-0000-0000-0000-000000000001', '79100000-0000-0000-0000-000000000001', 'Old Client CPA', 'O & Co', 'cpa', 'oldclient@nt.example');
+  select invite_token into v_tok from public.portal_create_invite('791a0000-0000-0000-0000-000000000003', '79100000-0000-0000-0000-000000000001');
+  select * into r from public.portal_accept_invite(
+    p_slug => 'portal-nterms', p_token => v_tok, p_terms_version => 1, p_ip => '5.5.5.5', p_user_agent => 'ua');
+  if r.session_token is null then raise exception 'an old-style accept_invite call should still open a session'; end if;
+  select * into u from portal_users where partner_id = '791a0000-0000-0000-0000-000000000003';
+  if u.status::text is distinct from 'active' or u.navigatr_terms_version is not null then
+    raise exception 'old-style accept_invite stored % %', u.status, u.navigatr_terms_version;
+  end if;
+end $$;
+
 -- accept_invite stores the navigatr version at acceptance.
 do $$ declare r record; u portal_users; begin
-  select * into r from public.portal_accept_invite('portal-nterms', (select v from _t where k = 'ned_invite'), 1, '2026-10-30', '3.3.3.3', 'ua');
+  select * into r from public.portal_accept_invite('portal-nterms', (select v from _t where k = 'ned_invite'), 1, '3.3.3.3', 'ua', '2026-10-30');
   if r.session_token is null then raise exception 'accept_invite should open a session'; end if;
   select * into u from portal_users where partner_id = '791a0000-0000-0000-0000-000000000002';
   if u.status::text is distinct from 'active' or u.terms_version is distinct from 1

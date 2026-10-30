@@ -335,7 +335,7 @@ describe("PortalRoot", () => {
       expect(api.dashboard).not.toHaveBeenCalled();
       expect(api.listReferrals).not.toHaveBeenCalled();
 
-      await user.click(screen.getByRole("checkbox", { name: "I agree to the Navigatr Referral Portal Terms and Acme ISO's partner terms" }));
+      await user.click(screen.getByRole("checkbox", { name: "I agree to the Navigatr Referral Portal Terms and the partner terms from Acme ISO" }));
       await user.click(screen.getByRole("button", { name: "Accept and continue" }));
       expect(api.acceptTerms).toHaveBeenCalledWith("acme", "live", 2, "2026-10-30");
 

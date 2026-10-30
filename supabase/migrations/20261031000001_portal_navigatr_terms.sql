@@ -22,6 +22,11 @@
 --                          acceptance. Body copied from
 --                          20261009000002_portal_invites.sql (its only
 --                          definition).
+--
+-- Deploy skew: the new parameter is LAST and defaults to null, so the portal_api
+-- still running between `db push` and the functions deploy (which calls with the
+-- old named arguments) keeps working. It stores null, which portal_api treats as
+-- not accepted, so that partner is asked again once the new code is live.
 
 -- 1. The accepted navigatr version --------------------------------------------------
 -- portal_users is already revoked from anon and authenticated
@@ -80,7 +85,8 @@ $$;
 drop function if exists public.portal_accept_terms(text, text, integer, text);
 
 create function public.portal_accept_terms(
-  p_slug text, p_token text, p_terms_version integer, p_navigatr_terms_version text, p_ip text
+  p_slug text, p_token text, p_terms_version integer, p_ip text,
+  p_navigatr_terms_version text default null
 )
 returns void
 language plpgsql security definer set search_path = public, extensions as $$
@@ -122,8 +128,8 @@ end $$;
 drop function if exists public.portal_accept_invite(text, text, integer, text, text);
 
 create function public.portal_accept_invite(
-  p_slug text, p_token text, p_terms_version integer, p_navigatr_terms_version text,
-  p_ip text, p_user_agent text
+  p_slug text, p_token text, p_terms_version integer, p_ip text, p_user_agent text,
+  p_navigatr_terms_version text default null
 )
 returns table (session_token text, session_expires_at timestamptz)
 language plpgsql security definer set search_path = public, extensions as $$
