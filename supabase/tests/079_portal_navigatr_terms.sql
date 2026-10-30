@@ -48,7 +48,8 @@ do $$ declare f text; begin
     if has_function_privilege('anon', f, 'EXECUTE') then raise exception 'anon must not execute %', f; end if;
     if not has_function_privilege('service_role', f, 'EXECUTE') then raise exception 'service_role should execute %', f; end if;
   end loop;
-  -- The old signatures are gone, so nothing can accept without a navigatr version.
+  -- No separate old-signature functions remain. Old-style named calls resolve to
+  -- the new ones and store a null navigatr version (tested below).
   if to_regprocedure('public.portal_accept_terms(text, text, integer, text)') is not null then
     raise exception 'the old portal_accept_terms signature must be dropped';
   end if;
