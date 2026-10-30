@@ -18,6 +18,7 @@
 import { timingSafeEquals } from "./cronAuth.ts";
 import { shouldSend } from "./emailGuard.ts";
 import { renderEmail } from "./emailTemplate.ts";
+import { NAVIGATR_PORTAL_TERMS_VERSION } from "./portalNavigatrTerms.ts";
 import { noReplyAddress, portalEmailBrand, portalFromAddress, portalPublicConfirmationEmail } from "./portalEmail.ts";
 import type { ActionResult } from "./portalReferralApi.ts";
 import { PORTAL_FIELD_LIMITS, matchEmployeeCount, type EmployeeCount } from "./portalSubmission.ts";
@@ -462,6 +463,9 @@ async function publicSubmit(
     p_ip: ip,
     p_captcha_passed: captchaPassed,
     p_employee_count: s.employeeCount,
+    // The navigatr terms version this page shows, from the server's own constant.
+    // Never a client value: the form only says sending agrees to the current terms.
+    p_navigatr_terms_version: NAVIGATR_PORTAL_TERMS_VERSION,
   });
   if (error) {
     const message = error.message;

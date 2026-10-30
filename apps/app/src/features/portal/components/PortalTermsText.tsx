@@ -8,7 +8,8 @@
  */
 import { NAVIGATR_PORTAL_TERMS_TITLE } from "../../../../../../supabase/functions/_shared/portalNavigatrTerms";
 
-const BOX =
+/** The scrollable terms box, shared with the public form so every terms box looks the same. */
+export const TERMS_BOX_CLASS =
   "max-h-48 overflow-y-auto overscroll-contain whitespace-pre-wrap rounded-radius-md border border-border-default bg-surface-sunken p-3 text-body-md text-text-default";
 
 export function PortalTermsText({ navigatrText, isoText }: { navigatrText: string; isoText: string }) {
@@ -19,7 +20,7 @@ export function PortalTermsText({ navigatrText, isoText }: { navigatrText: strin
           {NAVIGATR_PORTAL_TERMS_TITLE}
         </h2>
         {/* A focusable scroll box is a named region, so a screen reader says which terms it holds. */}
-        <div role="region" aria-labelledby="portal-navigatr-terms-heading" tabIndex={0} className={BOX}>
+        <div role="region" aria-labelledby="portal-navigatr-terms-heading" tabIndex={0} className={TERMS_BOX_CLASS}>
           {navigatrText}
         </div>
       </div>
@@ -28,7 +29,7 @@ export function PortalTermsText({ navigatrText, isoText }: { navigatrText: strin
           <h2 id="portal-terms-heading" className="text-body-strong text-text-default">
             Partner terms
           </h2>
-          <div role="region" aria-labelledby="portal-terms-heading" tabIndex={0} className={BOX}>
+          <div role="region" aria-labelledby="portal-terms-heading" tabIndex={0} className={TERMS_BOX_CLASS}>
             {isoText}
           </div>
         </div>

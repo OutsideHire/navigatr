@@ -442,8 +442,9 @@ function renderAt(path: string) {
 
 /**
  * navigatr is the platform's name, so the only places a partner may see it are
- * navigatr's own Referral Portal Terms (title and text) and the one checkbox that
- * accepts them; pass allowNavigatrTerms on the screens that show them.
+ * navigatr's own Referral Portal Terms (title and text), the one checkbox that
+ * accepts them, and the public form's "By sending, you agree to" line; pass
+ * allowNavigatrTerms on the screens that show them.
  */
 function expectCleanScreen({ allowNavigatrTerms = false }: { allowNavigatrTerms?: boolean } = {}) {
   const text = document.body.textContent ?? "";
@@ -828,7 +829,7 @@ describe("rendered portal pages: UI copy audit", () => {
     api.publicSubmit.mockResolvedValue({ ref: "REF-1A2B3C4D" });
     renderAt("/p/acme/refer/tok123");
     await screen.findByRole("heading", { name: "Refer a business to Acme ISO" });
-    expectCleanScreen();
+    expectCleanScreen({ allowNavigatrTerms: true });
 
     await user.type(screen.getByLabelText(/^Business name/), "Fresh Bakery");
     await user.type(screen.getByLabelText(/^Contact name/), "Ann");
@@ -956,7 +957,7 @@ describe("rendered portal pages: UI copy audit", () => {
       const user = await open();
       await user.click(screen.getByRole("button", { name: "Send referral" }));
       await screen.findByText("Add the business name.");
-      expectCleanScreen();
+      expectCleanScreen({ allowNavigatrTerms: true });
     });
 
     it("the server naming a field", async () => {
@@ -964,7 +965,7 @@ describe("rendered portal pages: UI copy audit", () => {
       const user = await open();
       await fillAll(user);
       await screen.findByText("Add a valid email address.");
-      expectCleanScreen();
+      expectCleanScreen({ allowNavigatrTerms: true });
     });
 
     it("the check prompt, then the failed check notice", async () => {
@@ -976,7 +977,7 @@ describe("rendered portal pages: UI copy audit", () => {
       const user = await open();
       await fillAll(user);
       await screen.findByText("That check didn't go through. Try it again.");
-      expectCleanScreen();
+      expectCleanScreen({ allowNavigatrTerms: true });
     });
 
     it("the check prompt while the check is shown", async () => {
@@ -985,7 +986,7 @@ describe("rendered portal pages: UI copy audit", () => {
       const user = await open();
       await fillAll(user);
       await screen.findByText("One more step. Complete the check below and we'll send it.");
-      expectCleanScreen();
+      expectCleanScreen({ allowNavigatrTerms: true });
     });
 
     it("the check could not load", async () => {
@@ -996,7 +997,7 @@ describe("rendered portal pages: UI copy audit", () => {
       const user = await open();
       await fillAll(user);
       await screen.findByText("The check couldn't load. Try again later.");
-      expectCleanScreen();
+      expectCleanScreen({ allowNavigatrTerms: true });
     });
 
     it("the rate limit notice", async () => {
@@ -1004,7 +1005,7 @@ describe("rendered portal pages: UI copy audit", () => {
       const user = await open();
       await fillAll(user);
       await screen.findByText("Too many referrals from this connection right now. Try again later.");
-      expectCleanScreen();
+      expectCleanScreen({ allowNavigatrTerms: true });
     });
 
     it("the page expired and the wording changed notices", async () => {
@@ -1012,7 +1013,7 @@ describe("rendered portal pages: UI copy audit", () => {
       const user = await open();
       await fillAll(user);
       await screen.findByText("This page was open for a while. Check your details and send it again.");
-      expectCleanScreen();
+      expectCleanScreen({ allowNavigatrTerms: true });
     });
 
     it("a load error with the retry button", async () => {
@@ -1028,7 +1029,7 @@ describe("rendered portal pages: UI copy audit", () => {
       const user = await open();
       await fillAll(user);
       await screen.findByText("We couldn't send that. Try again.");
-      expectCleanScreen();
+      expectCleanScreen({ allowNavigatrTerms: true });
     });
 
     it("thanks, with a referrer email, promises a confirmation", async () => {
