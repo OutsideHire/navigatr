@@ -54,6 +54,11 @@ export const ACTIVITIES_QUERY_KEY = (userId: string | undefined, dealId: string)
 export const ACTIVITIES_ORG_QUERY_KEY = (userId: string | undefined) =>
   ["activities", "list", userId ?? "anon"] as const;
 
+/** The viewer's own History feed. Shares ACTIVITIES_ORG_QUERY_KEY's prefix, so
+ *  every mutation that invalidates the org list refreshes this one too. */
+export const MY_ACTIVITY_HISTORY_QUERY_KEY = (userId: string | undefined) =>
+  [...ACTIVITIES_ORG_QUERY_KEY(userId), "mine"] as const;
+
 export function useActivities(dealId: string | undefined) {
   const userId = useAuth((s) => s.user?.id);
   return useQuery({
@@ -93,6 +98,34 @@ export function useActivitiesForOrg() {
           "id, deal_id, type, disposition, duration_minutes, " +
             "outcome_notes, occurred_at, follow_up_date, logged_by, voice_note_url",
         )
+        .order("occurred_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map((r) => toActivity(r as unknown as ActivityRow));
+    },
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * The Activities History tab: only activities the viewer logged (PRD 6.12.C
+ * FR-ACT-26). The filter is part of the request, so other people's rows never
+ * leave the server. RLS alone would return everything on the viewer's deals,
+ * which is right for the deal record (its full history, whoever logged it) but
+ * not for History. activities_logged_by_occurred_idx serves this query.
+ */
+export function useMyActivityHistory() {
+  const userId = useAuth((s) => s.user?.id);
+  return useQuery({
+    queryKey: MY_ACTIVITY_HISTORY_QUERY_KEY(userId),
+    enabled: Boolean(userId),
+    queryFn: async (): Promise<Activity[]> => {
+      const { data, error } = await supabase
+        .from("activities")
+        .select(
+          "id, deal_id, type, disposition, duration_minutes, " +
+            "outcome_notes, occurred_at, follow_up_date, logged_by, voice_note_url",
+        )
+        .eq("logged_by", userId!)
         .order("occurred_at", { ascending: false });
       if (error) throw error;
       return (data ?? []).map((r) => toActivity(r as unknown as ActivityRow));

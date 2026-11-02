@@ -7,11 +7,11 @@
  *                for a deal, computed by the smart follow-up scheduler
  *                when the previous activity was logged.
  *   Upcoming   — next 7 days grouped by day (Mon, Tue, …)
- *   History    — every logged activity, newest first, filterable by
- *                type (call / email / drop_in / appointment)
+ *   History    — every activity the viewer logged, newest first,
+ *                filterable by type (call / email / drop_in / appointment)
  *
- * Data: useActivitiesForOrg() + useDeals() (both RLS-scoped to the
- * user's org_id server-side). useLogActivity invalidates both caches
+ * Data: useMyActivityHistory() (the viewer's own activities, filtered
+ * server-side) + useDeals() (RLS-scoped). useLogActivity invalidates both caches
  * on success — there is no client-side mutation here.
  *
  * Mobile-first single column. Desktop centers at max-w-5xl. Each task
@@ -53,10 +53,8 @@ import { UnloggedCallsSection } from "../components/UnloggedCallsSection";
 import { EmailSuggestionsSection } from "../components/EmailSuggestionsSection";
 import { AppointmentsAwaitingOutcome } from "@/features/appointments/components/AppointmentsAwaitingOutcome";
 import { useMyAppointments } from "@/features/appointments/useAppointments";
-import { useActivitiesForOrg } from "../hooks/useActivities";
+import { useMyActivityHistory } from "../hooks/useActivities";
 import { useDeals } from "@/features/pipeline/hooks/useDeals";
-import { useOrgMemberNames } from "@/features/dashboard/hooks/useOrgMemberNames";
-import { useAuth } from "@/stores/auth";
 import { useTasks } from "../hooks/useTasks";
 import { taskPrimaryAction } from "../lib/taskPrimaryAction";
 import { useTaskMutations } from "../hooks/useTaskMutations";
@@ -330,15 +328,11 @@ function HistoryRow({
   deal,
   now,
   onEdit,
-  loggedByName,
 }: {
   activity: Activity;
   deal: Deal | undefined;
   now: Date;
   onEdit: (a: Activity) => void;
-  /** Who logged it, when that was NOT the viewer. Null for the viewer's own
-   *  rows and while the name lookup is still loading. */
-  loggedByName: string | null;
 }) {
   const Icon = TYPE_ICON[activity.type];
   const accent = TYPE_ACCENT[activity.type];
@@ -365,23 +359,7 @@ function HistoryRow({
         <p className="truncate text-body-strong text-text-default">
           {TYPE_LABEL[activity.type]} · {deal?.companyName ?? "Unknown deal"}
         </p>
-        {/* Attribution. Activities are visible by DEAL ownership, not by who
-            logged them, so a rep legitimately sees a manager's coaching call or
-            a colleague's cover visit on their own account. Robert's spec would
-            have hidden those entirely, which would have made the 2026-09-21
-            incident worse: the rep would never have learned that anyone visited
-            her four merchants at all. The problem was never that she could see
-            the row, it was that the row did not say who. Shown only when it was
-            someone else: a byline on every row would be noise. */}
-        <p className="truncate text-caption text-text-muted">
-          {subtitle}
-          {loggedByName && (
-            <>
-              {subtitle ? " · " : null}
-              <span className="text-text-default">by {loggedByName}</span>
-            </>
-          )}
-        </p>
+        <p className="truncate text-caption text-text-muted">{subtitle}</p>
         {activity.outcomeNotes && (
           <p className="line-clamp-2 text-caption text-text-default">{activity.outcomeNotes}</p>
         )}
@@ -663,18 +641,9 @@ export function ActivitiesPage() {
   // relevant caches on success, so rows surface without a refreshKey hack.
   const { tasks: openTasks } = useTasks("open");
   const { tasks: completedTasks } = useTasks("completed");
-  const { data: activities = [] } = useActivitiesForOrg();
-  // Names for the History byline. Fetched only once the rep opens History, and
-  // shared (5-minute cache) with the dashboard's per-rep breakdown.
-  const myId = useAuth((st) => st.user?.id);
-  const memberNames = useOrgMemberNames(tab === "history");
-  // Null for the viewer's own rows, and null until the lookup resolves, so a
-  // name appears rather than flickering through a placeholder.
-  const loggedByName = React.useCallback(
-    (a: Activity): string | null =>
-      !a.loggedBy || a.loggedBy === myId ? null : (memberNames.get(a.loggedBy) ?? null),
-    [memberNames, myId],
-  );
+  // History is the viewer's own work only (PRD 6.12.C FR-ACT-26). Other
+  // people's activity on the viewer's deals stays on the deal record.
+  const { data: activities = [] } = useMyActivityHistory();
   const { data: deals = [] } = useDeals();
   // The rep's booked appointments (scheduled_appointments). Surfaced in the
   // Today view so a deal-booked appointment shows up alongside tasks (QA fix:
@@ -1025,7 +994,6 @@ export function ActivitiesPage() {
                         deal={dealById.get(item.activity.dealId)}
                         now={now}
                         onEdit={setEditingActivity}
-                        loggedByName={loggedByName(item.activity)}
                       />
                     ) : (
                       <TodoHistoryRow key={`t-${item.task.id}`} task={item.task} now={now} />

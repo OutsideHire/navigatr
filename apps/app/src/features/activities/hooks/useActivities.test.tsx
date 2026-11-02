@@ -9,7 +9,13 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
-import { useActivities, ACTIVITIES_QUERY_KEY } from "./useActivities";
+import {
+  useActivities,
+  useMyActivityHistory,
+  ACTIVITIES_QUERY_KEY,
+  ACTIVITIES_ORG_QUERY_KEY,
+  MY_ACTIVITY_HISTORY_QUERY_KEY,
+} from "./useActivities";
 
 const orderMock = vi.fn();
 const eqMock = vi.fn(() => ({ order: orderMock }));
@@ -121,5 +127,60 @@ describe("useActivities", () => {
   it("cache key shape is ['activities', 'byDeal', userId, dealId]", () => {
     expect(ACTIVITIES_QUERY_KEY("u-1", "d-1")).toEqual(["activities", "byDeal", "u-1", "d-1"]);
     expect(ACTIVITIES_QUERY_KEY(undefined, "d-1")).toEqual(["activities", "byDeal", "anon", "d-1"]);
+  });
+});
+
+/**
+ * The Activities History tab shows only what the viewer logged (PRD 6.12.C
+ * FR-ACT-26). The filter has to be IN the request: RLS returns every activity on
+ * the viewer's deals (right for the deal record), so dropping this .eq would put
+ * colleagues' visits back in a rep's History without any test on the page
+ * noticing, because the page only renders what the hook hands it.
+ */
+describe("useMyActivityHistory", () => {
+  it("asks the server for the viewer's own activities only, newest first", async () => {
+    orderMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: "a-1",
+          deal_id: "deal-1",
+          type: "call",
+          disposition: "no_answer",
+          duration_minutes: null,
+          outcome_notes: "",
+          occurred_at: "2026-11-01T15:00:00Z",
+          follow_up_date: null,
+          logged_by: "user-1",
+          voice_note_url: null,
+        },
+      ],
+      error: null,
+    });
+    const { result } = renderHook(() => useMyActivityHistory(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(eqMock).toHaveBeenCalledWith("logged_by", "user-1");
+    expect(orderMock).toHaveBeenCalledWith("occurred_at", { ascending: false });
+    expect(result.current.data?.[0]).toMatchObject({ id: "a-1", loggedBy: "user-1" });
+  });
+
+  it("does not query when signed out (no id to filter on)", () => {
+    authUserId = undefined;
+    const { result } = renderHook(() => useMyActivityHistory(), { wrapper });
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(eqMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces Supabase errors via isError", async () => {
+    orderMock.mockResolvedValueOnce({ data: null, error: { message: "boom" } });
+    const { result } = renderHook(() => useMyActivityHistory(), { wrapper });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  // Every mutation invalidates ACTIVITIES_ORG_QUERY_KEY. React Query matches by
+  // prefix, so History refreshes after a log, edit or delete only while its key
+  // starts with that one.
+  it("cache key extends the org list key, so the existing invalidations refresh it", () => {
+    expect(MY_ACTIVITY_HISTORY_QUERY_KEY("u-1").slice(0, 3)).toEqual([...ACTIVITIES_ORG_QUERY_KEY("u-1")]);
+    expect(MY_ACTIVITY_HISTORY_QUERY_KEY("u-1")).toEqual(["activities", "list", "u-1", "mine"]);
   });
 });
