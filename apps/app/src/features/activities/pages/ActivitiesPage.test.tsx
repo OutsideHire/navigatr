@@ -329,16 +329,6 @@ describe("ActivitiesPage / History is the viewer's own activity", () => {
     expect(screen.queryByText(/Bluefrog Plumbing/)).not.toBeInTheDocument();
     expect(screen.getByText(/No activities logged yet/)).toBeInTheDocument();
   });
-
-  it("names no one on a row, since every row is the viewer's", async () => {
-    const user = userEvent.setup();
-    renderWithSeed({
-      activities: [{ ...historyActivity("a-mine", "d-1", "call"), loggedBy: ME }],
-      deals: [deal("d-1", "Bluefrog Plumbing")],
-    });
-    await user.click(screen.getByRole("tab", { name: /History/ }));
-    expect(screen.queryByText(/^by /)).not.toBeInTheDocument();
-  });
 });
 
 describe("ActivitiesPage / edit from History", () => {

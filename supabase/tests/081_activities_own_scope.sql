@@ -198,12 +198,14 @@ end $$;
 
 -- 6. Who logged it cannot be changed by an app user, on an activity or a touch,
 --    not even by the author or a manager.
-do $$ declare blocked boolean; begin
+do $$ declare blocked boolean; n int; begin
   blocked := false;
   perform pg_temp.act('81100000-0000-0000-0000-00000000000c');
   begin
     update activities set logged_by = '81100000-0000-0000-0000-00000000000d' where id = '811a0000-0000-0000-0000-000000000001';
-  exception when insufficient_privilege then blocked := true;
+  exception when insufficient_privilege then
+    if sqlerrm <> 'logged_by_immutable' then raise; end if;
+    blocked := true;
   end;
   perform pg_temp.back();
   if not blocked then raise exception 'Rita handed her activity to Raj'; end if;
@@ -212,7 +214,9 @@ do $$ declare blocked boolean; begin
   perform pg_temp.act('81100000-0000-0000-0000-00000000000b');
   begin
     update activities set logged_by = '81100000-0000-0000-0000-00000000000b' where id = '811a0000-0000-0000-0000-000000000002';
-  exception when insufficient_privilege then blocked := true;
+  exception when insufficient_privilege then
+    if sqlerrm <> 'logged_by_immutable' then raise; end if;
+    blocked := true;
   end;
   perform pg_temp.back();
   if not blocked then raise exception 'Sam took Raj''s activity'; end if;
@@ -221,28 +225,57 @@ do $$ declare blocked boolean; begin
   perform pg_temp.act('81100000-0000-0000-0000-00000000000c');
   begin
     update partner_activities set logged_by = '81100000-0000-0000-0000-00000000000d' where id = '811c0000-0000-0000-0000-000000000003';
-  exception when insufficient_privilege then blocked := true;
+  exception when insufficient_privilege then
+    if sqlerrm <> 'logged_by_immutable' then raise; end if;
+    blocked := true;
   end;
   perform pg_temp.back();
   if not blocked then raise exception 'Rita handed her partner touch to Raj'; end if;
 
-  -- Editing anything else on her own activity still works.
+  -- Editing anything else on her own activity still works, including the
+  -- app's pattern of sending the unchanged author back with the row.
   perform pg_temp.act('81100000-0000-0000-0000-00000000000c');
-  update activities set outcome_notes = 'rita on rita deal' where id = '811a0000-0000-0000-0000-000000000001';
+  update activities set outcome_notes = 'rita on rita deal', logged_by = logged_by
+   where id = '811a0000-0000-0000-0000-000000000001';
+  get diagnostics n = row_count;
   perform pg_temp.back();
+  if n <> 1 then raise exception 'Rita could not edit her own activity (% rows)', n; end if;
 
   if (select logged_by from activities where id = '811a0000-0000-0000-0000-000000000001') <> '81100000-0000-0000-0000-00000000000c' then
     raise exception 'logged_by changed';
   end if;
 end $$;
 
--- 7. Server-side code (security definer, e.g. the demo reset) can still re-home
---    an activity. Here: the migration owner, outside any API role.
+-- 7. Server-side code (security definer, like the demo reset) can still re-home
+--    an activity, even when an app user is the one calling it.
+create function public._t081_rehome(p_id uuid, p_to uuid) returns void
+language sql security definer set search_path = public as $$
+  update activities set logged_by = p_to where id = p_id
+$$;
+grant execute on function public._t081_rehome(uuid, uuid) to authenticated;
+
 do $$ begin
-  update activities set logged_by = '81100000-0000-0000-0000-00000000000c' where id = '811a0000-0000-0000-0000-000000000004';
+  perform pg_temp.act('81100000-0000-0000-0000-00000000000d');  -- Raj, an app user
+  perform public._t081_rehome('811a0000-0000-0000-0000-000000000004', '81100000-0000-0000-0000-00000000000c');
+  perform pg_temp.back();
   if (select logged_by from activities where id = '811a0000-0000-0000-0000-000000000004') <> '81100000-0000-0000-0000-00000000000c' then
-    raise exception 'server-side code should still be able to change logged_by';
+    raise exception 'security definer code should still be able to change logged_by';
   end if;
+end $$;
+
+-- 7b. A partner touch can be deleted by its author, or by a manager over it.
+do $$ declare n int; begin
+  perform pg_temp.act('81100000-0000-0000-0000-00000000000c');  -- Rita, author
+  delete from partner_activities where id = '811c0000-0000-0000-0000-000000000003';
+  get diagnostics n = row_count;
+  perform pg_temp.back();
+  if n <> 1 then raise exception 'Rita could not delete her own touch'; end if;
+
+  perform pg_temp.act('81100000-0000-0000-0000-00000000000b');  -- Sam, manager
+  delete from partner_activities where id = '811c0000-0000-0000-0000-000000000002';
+  get diagnostics n = row_count;
+  perform pg_temp.back();
+  if n <> 1 then raise exception 'Sam could not delete a touch under his line'; end if;
 end $$;
 
 -- 8. The trigger function is not callable through the API.
