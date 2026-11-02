@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ActivitiesPage } from "./ActivitiesPage";
-import { ACTIVITIES_ORG_QUERY_KEY } from "../hooks/useActivities";
+import { ACTIVITIES_ORG_QUERY_KEY, MY_ACTIVITY_HISTORY_QUERY_KEY } from "../hooks/useActivities";
 import { TASKS_QUERY_KEY } from "../hooks/useTasks";
 import { DEALS_QUERY_KEY } from "@/features/pipeline/hooks/useDeals";
 import { myAppointmentsKey } from "@/features/appointments/useAppointments";
@@ -153,6 +153,7 @@ function renderWithSeed(args: {
   tasks?: Task[];
   completedTasks?: Task[];
   activities?: Activity[];
+  orgActivities?: Activity[];
   deals: Deal[];
   appointments?: ScheduledAppointment[];
 }) {
@@ -161,15 +162,13 @@ function renderWithSeed(args: {
   // reads this seeded cache instead of hitting Supabase.
   client.setQueryData(TASKS_QUERY_KEY(ME, "open"), args.tasks ?? []);
   client.setQueryData(TASKS_QUERY_KEY(ME, "completed"), args.completedTasks ?? []);
-  client.setQueryData(ACTIVITIES_ORG_QUERY_KEY(ME), args.activities ?? []);
+  client.setQueryData(MY_ACTIVITY_HISTORY_QUERY_KEY(ME), args.activities ?? []);
+  // The org-wide feed the dashboards use. History must NOT read it; seeded so a
+  // regression back to it would render these rows.
+  client.setQueryData(ACTIVITIES_ORG_QUERY_KEY(ME), args.orgActivities ?? []);
   client.setQueryData(DEALS_QUERY_KEY(ME), args.deals);
   // useMyAppointments is likewise disabled without a userId; seed its cache.
   client.setQueryData(myAppointmentsKey(ME), args.appointments ?? []);
-  // Names for the History byline. Seeded so the lookup resolves without a fetch.
-  client.setQueryData(["orgMemberNames", ME], [
-    { id: ME, full_name: "Me Myself", email: "me@navigatr.test" },
-    { id: PEER, full_name: "Ryan Minnix", email: "ryan.minnix@example.com" },
-  ]);
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/activities"]}>
@@ -302,55 +301,33 @@ describe("ActivitiesPage / shared type filter (above tabs)", () => {
 });
 
 /**
- * History attribution. Activities are visible by DEAL ownership, not by who
- * logged them, so a rep legitimately sees a manager's coaching call or a
- * colleague's cover visit on their own account. On 2026-09-21 an administrator
- * logged four drop-ins on a rep's deals and the rows carried no name, so she
- * had no way to learn it had happened. Hiding those rows instead would have
- * made it worse. The fix is the byline, not the filter.
+ * History is the viewer's own work only (PRD 6.12.C FR-ACT-26, Robert
+ * 2026-11-02). It replaces the 2026-09-29 byline, which showed colleagues' rows
+ * on the rep's deals with a name: those rows now live on the deal record, which
+ * keeps its full history. The server does the filtering (useMyActivityHistory);
+ * this pins that the page reads that feed and not the org-wide one.
  */
-describe("ActivitiesPage / History says who logged it", () => {
-  const byPeer = (id: string, dealId: string): Activity => ({
-    ...historyActivity(id, dealId, "drop_in"),
-    loggedBy: PEER,
-  });
-
-  it("names the colleague on a row the viewer did not log", async () => {
-    const user = userEvent.setup();
-    renderWithSeed({ activities: [byPeer("a-1", "d-1")], deals: [deal("d-1", "Bluefrog Plumbing")] });
-    await user.click(screen.getByRole("tab", { name: /History/ }));
-    expect(screen.getByText(/by Ryan Minnix/)).toBeInTheDocument();
-  });
-
-  it("stays silent on the viewer's OWN rows, so the byline means something", async () => {
+describe("ActivitiesPage / History is the viewer's own activity", () => {
+  it("lists the viewer's own activity", async () => {
     const user = userEvent.setup();
     renderWithSeed({
       activities: [{ ...historyActivity("a-mine", "d-1", "drop_in"), loggedBy: ME }],
       deals: [deal("d-1", "Bluefrog Plumbing")],
     });
     await user.click(screen.getByRole("tab", { name: /History/ }));
-    expect(screen.queryByText(/^by /)).not.toBeInTheDocument();
     expect(screen.getByText(/Bluefrog Plumbing/)).toBeInTheDocument();
   });
 
-  it("shows the colleague's row rather than hiding it", async () => {
-    // The explicit rejection of "only activities I logged": the rep must still
-    // see that someone visited her merchant, and what they found.
-    const user = userEvent.setup();
-    renderWithSeed({ activities: [byPeer("a-1", "d-1")], deals: [deal("d-1", "Bluefrog Plumbing")] });
-    await user.click(screen.getByRole("tab", { name: /History/ }));
-    expect(screen.getByText(/Bluefrog Plumbing/)).toBeInTheDocument();
-    expect(screen.getByText("notes")).toBeInTheDocument();
-  });
-
-  it("omits the byline when the activity records no author at all", async () => {
+  it("does not read the org-wide feed, so a colleague's visit on the viewer's deal stays out", async () => {
     const user = userEvent.setup();
     renderWithSeed({
-      activities: [historyActivity("a-anon", "d-1", "drop_in")],
+      activities: [],
+      orgActivities: [{ ...historyActivity("a-peer", "d-1", "drop_in"), loggedBy: PEER }],
       deals: [deal("d-1", "Bluefrog Plumbing")],
     });
     await user.click(screen.getByRole("tab", { name: /History/ }));
-    expect(screen.queryByText(/^by /)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Bluefrog Plumbing/)).not.toBeInTheDocument();
+    expect(screen.getByText(/No activities logged yet/)).toBeInTheDocument();
   });
 });
 

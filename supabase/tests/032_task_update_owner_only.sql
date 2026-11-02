@@ -147,7 +147,10 @@ begin
   select public.cancel_contact_tasks_for_deal('f2d00000-0000-0000-0000-000000000001', 'call') into n;
   if n <> 1 then raise exception 'RPC should have cancelled rep1 open call task, cancelled %', n; end if;
 
-  -- And ONLY the call channel: rep1's drop-in is untouched.
+  -- And ONLY the call channel: rep1's drop-in is untouched. Checked as the
+  -- test owner: task reads are owner-only (20261102000001), so the admin can no
+  -- longer see rep1's task to count it.
+  perform set_config('role', 'postgres', true);
   select count(*) into remaining from task
    where id = 'f2700000-0000-0000-0000-000000000002' and status = 'open';
   if remaining <> 1 then raise exception 'RPC cancelled a drop_in task it should not have'; end if;

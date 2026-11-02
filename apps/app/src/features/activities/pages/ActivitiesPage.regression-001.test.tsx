@@ -18,7 +18,7 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ActivitiesPage } from "./ActivitiesPage";
-import { ACTIVITIES_ORG_QUERY_KEY } from "../hooks/useActivities";
+import { MY_ACTIVITY_HISTORY_QUERY_KEY } from "../hooks/useActivities";
 import { DEALS_QUERY_KEY } from "@/features/pipeline/hooks/useDeals";
 import type { Activity } from "../mockData";
 import type { Deal } from "@/features/pipeline/mockData";
@@ -68,7 +68,7 @@ function renderWithSeed(args: { activities: Activity[]; deals: Deal[] }) {
     defaultOptions: { queries: { retry: false } },
   });
   // Page uses userId = undefined when there's no auth → falls back to "anon"
-  client.setQueryData(ACTIVITIES_ORG_QUERY_KEY(undefined), args.activities);
+  client.setQueryData(MY_ACTIVITY_HISTORY_QUERY_KEY(undefined), args.activities);
   client.setQueryData(DEALS_QUERY_KEY(undefined), args.deals);
   return {
     client,
@@ -115,7 +115,7 @@ describe("ActivitiesPage / History tab reflects current data", () => {
     // org-wide cache key. The page's useActivitiesForOrg subscriber
     // should re-render with the new array.
     cleanup();
-    client.setQueryData(ACTIVITIES_ORG_QUERY_KEY(undefined), [
+    client.setQueryData(MY_ACTIVITY_HISTORY_QUERY_KEY(undefined), [
       activity("a-1", "d-1", "first"),
       activity("a-2", "d-1", "newly-logged-marker"),
     ]);
