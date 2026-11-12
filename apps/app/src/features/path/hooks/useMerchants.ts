@@ -319,8 +319,9 @@ export function useMerchants(
       let effectiveRadiusM = radiusM;
       let prevCount = -1;
       // One id for this whole search, shared by every widening step, so the
-      // discovery service logs it once.
-      const searchId = crypto.randomUUID();
+      // discovery service logs it once. Guarded: an older iPhone without
+      // randomUUID still searches, it just logs one row per step.
+      const searchId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : undefined;
 
       for (let i = 0; i < ladder.length; i++) {
         // Do not start another (expensive) rung for a rep who already left.
