@@ -17,6 +17,7 @@ export const REP_OUTCOME_LABELS: Partial<Record<Disposition, RepLabel>> = {
   closed_locked: { label: "Not now", subtitle: "Locked in a contract or not ready" },
   do_not_contact: { label: "Do not contact", subtitle: "Told me not to come back" },
   out_of_business: { label: "Out of business", subtitle: "Gone for good" },
+  home_based: { label: "Home-based", subtitle: "A house, no storefront" },
 };
 
 /** Rep label for a disposition; formal DISPOSITIONS label for anything unmapped. */

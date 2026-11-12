@@ -52,6 +52,12 @@ import {
   searchableTypes,
   type IndustryKey,
 } from "../_shared/industryTaxonomy.ts";
+import {
+  normalizeBusinessStatus,
+  normalizeSearchType,
+  qualityFilterOn,
+  searchLogRow,
+} from "../_shared/pathQuality.ts";
 import { mockSearchNearby, type PlacesNewPlace, type PlacesNewResponse } from "./fixtures.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -59,6 +65,10 @@ const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const GOOGLE_PLACES_API_KEY = Deno.env.get("GOOGLE_PLACES_API_KEY") ?? "";
 const PLACES_MOCK = Deno.env.get("PLACES_MOCK") === "1";
+// Path Data Quality Fix v1.2 global switch: hides closed and team-flagged
+// businesses. ON unless set to "off" (see qualityFilterOn). Read per request so
+// flipping it in the Supabase dashboard takes effect without a deploy.
+const qualityFilterSetting = () => Deno.env.get("PATH_QUALITY_FILTER");
 
 // How long a (cell, bucket) stays "warm" before we re-pull Places. 30 days is a
 // sane Phase 1 default; the Approach-C scheduled refresh (Phase 5) supersedes it.
@@ -158,6 +168,8 @@ interface RequestBody {
   /** Number of nearest prospects to return (results count). Default 25, clamped
    *  server-side to [1, MAX_LIMIT]. */
   limit?: number;
+  /** Which Path surface asked, for the R7 search log only. */
+  search_type?: string;
 }
 
 /** One bucket's Places pull, kept paired with its bucket for per-bucket cache
@@ -241,6 +253,9 @@ async function searchNearbyOneRequest(
         "places.pureServiceAreaBusiness",
         "places.containingPlaces",
         "places.accessibilityOptions",
+        // Open, closed temporarily or closed permanently. Pro-tier, so it does
+        // not move this Enterprise-billed request (checked 2026-11-12).
+        "places.businessStatus",
       ].join(","),
     },
     body: JSON.stringify({
@@ -337,6 +352,8 @@ Deno.serve(async (req) => {
   // Results count: how many nearest prospects to return. Default 25, clamped to
   // [1, MAX_LIMIT] so a rep can widen the pool up to 50 without a 500-row pull.
   const readLimit = Math.min(MAX_LIMIT, Math.max(1, Math.floor(Number(body?.limit)) || DEFAULT_LIMIT));
+  const searchType = normalizeSearchType(body?.search_type);
+  const qualityOn = qualityFilterOn(qualityFilterSetting());
 
   // Industries to cold-fill. Validate against the known fetchable set; unknown
   // values are dropped. "All industries" (or an empty/absent list) → every
@@ -555,6 +572,7 @@ Deno.serve(async (req) => {
         // Premises signals. Undefined stays NULL ("unknown"), never false: the
         // read path must not hide a business just because Google was quiet.
         pure_service_area: p.pureServiceAreaBusiness ?? null,
+        business_status: normalizeBusinessStatus(p.businessStatus),
         containing_places_count: p.containingPlaces ? p.containingPlaces.length : null,
         has_accessibility: p.accessibilityOptions
           ? Object.values(p.accessibilityOptions).some((v) => v === true)
@@ -630,6 +648,7 @@ Deno.serve(async (req) => {
     p_limit: readLimit,
     p_include_chains: includeChains,
     p_categories: readCategories,
+    p_quality_filter: qualityOn,
   });
   if (rpcErr) {
     return json({ error: "nearby_query_failed", detail: rpcErr.message }, 500);
@@ -647,6 +666,7 @@ Deno.serve(async (req) => {
     p_include_chains: includeChains,
     p_categories: readCategories,
     p_include_home_based: includeHomeBased,
+    p_quality_filter: qualityOn,
   });
   // Non-fatal, but NOT silent. Zeros here are indistinguishable from "nothing
   // was filtered", so a broken count reads to the rep as a working filter with
@@ -654,6 +674,25 @@ Deno.serve(async (req) => {
   // it so the function logs say which of the two actually happened.
   if (hiddenErr) console.error("hidden_counts_failed", hiddenErr.message);
   const hiddenRow = Array.isArray(hiddenRows) ? hiddenRows[0] : null;
+
+  // R7: one measurement row per search. Logging only, so a failure is reported
+  // and the rep still gets their businesses.
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("org_id")
+    .eq("id", userData.user.id)
+    .maybeSingle();
+  const { error: logErr } = await admin.from("path_search_log").insert(
+    searchLogRow({
+      orgId: (profile?.org_id as string | undefined) ?? null,
+      userId: userData.user.id,
+      searchType,
+      qualityFilterOn: qualityOn,
+      counts: hiddenRow,
+      finalStops: (nearby ?? []).length,
+    }),
+  );
+  if (logErr) console.error("path_search_log_failed", logErr.message);
 
   return json({
     cell: originCell,

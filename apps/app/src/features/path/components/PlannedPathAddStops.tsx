@@ -61,6 +61,7 @@ export function PlannedPathAddStops({ pathId, center, stops, onAdded, onBack }: 
     includeChains: false,
     includeHomeBased: showFiltered,
     fillToLimit: true,
+    searchType: "add_stops",
   });
 
   const onPath = React.useMemo(() => new Set(stops.map((s) => s.prospectId)), [stops]);

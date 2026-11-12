@@ -60,6 +60,12 @@ vi.mock("./DayStopsMap", () => ({
   ),
 }));
 
+// Path Data Quality R4 notes, keyed by deal id. Per-test via qualityNotes.current.
+const qualityNotes = vi.hoisted(() => ({ current: new Map<string, string>() }));
+vi.mock("../hooks/useStopQualityNotes", () => ({
+  useStopQualityNotes: () => qualityNotes.current,
+}));
+
 // RunningPath invalidates the owed / due-today path keys after an owed log. No
 // QueryClientProvider in these tests, so stub useQueryClient.
 const invalidateQueries = vi.fn();
@@ -157,6 +163,31 @@ beforeEach(() => {
   pendingCount = () => stops.filter((s) => s.status === "pending").length;
   seqState.current = { cards: [], isLoading: false };
   seqNowCalls.length = 0;
+  qualityNotes.current = new Map();
+});
+
+describe("RunningPath — Path Data Quality notes (R4)", () => {
+  it("shows the note on the current card and on an upcoming row, and keeps both stops", () => {
+    qualityNotes.current = new Map([
+      ["deal-a", "Google lists this business as closed"],
+      ["deal-c", "Flagged by your team as out of business or home-based"],
+    ]);
+    seqState.current = {
+      cards: [
+        drivingCard({ id: "c1", kind: "owed", name: "Alpha", merchantId: "m1", dealId: "deal-a" }),
+        drivingCard({ id: "c2", name: "Bravo", merchantId: "m2" }),
+        drivingCard({ id: "c3", kind: "owed", name: "Charlie", merchantId: "m3", dealId: "deal-c" }),
+      ],
+      isLoading: false,
+    };
+    render(<RunningPath origin={ORIGIN} onViewPipeline={vi.fn()} onExit={vi.fn()} onFindNearby={vi.fn()} />);
+    expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
+    expect(screen.getByText("Google lists this business as closed")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /2 stops remaining/i }));
+    expect(screen.getByText("Charlie")).toBeInTheDocument();
+    expect(screen.getByText("Flagged by your team as out of business or home-based")).toBeInTheDocument();
+  });
 });
 
 describe("RunningPath — driving carousel", () => {

@@ -38,6 +38,8 @@ describe("dispositionSets", () => {
       "closed_locked",
       "do_not_contact",
       "out_of_business",
+      // Path Data Quality Fix v1.2 R5: also hides the place from the team's Path.
+      "home_based",
     ]);
     expect(DISPOSITIONS_BY_TYPE.drop_in.all).not.toContain("other");
     // Shown all at once: top == all, so the logger renders every outcome with no

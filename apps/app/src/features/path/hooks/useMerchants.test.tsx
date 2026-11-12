@@ -200,7 +200,7 @@ describe("useMerchants", () => {
     expect(invokeMock).toHaveBeenCalledWith(
       "discover_prospects",
       expect.objectContaining({
-        body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: false, include_chains: false, include_home_based: false, limit: 25 },
+        body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: false, include_chains: false, include_home_based: false, limit: 25, search_type: "unspecified" },
       }),
     );
     // The fix for the FunctionsFetchError noise: react-query's AbortSignal must
@@ -266,7 +266,7 @@ describe("useMerchants", () => {
     expect(invokeMock).toHaveBeenCalledWith(
       "discover_prospects",
       expect.objectContaining({
-        body: { lat: 30.2672, lng: -97.7431, radius_m: 1500, profession: "merchant_services", industries: [], all_industries: false, include_chains: false, include_home_based: false, limit: 25 },
+        body: { lat: 30.2672, lng: -97.7431, radius_m: 1500, profession: "merchant_services", industries: [], all_industries: false, include_chains: false, include_home_based: false, limit: 25, search_type: "unspecified" },
       }),
     );
   });
@@ -278,9 +278,16 @@ describe("useMerchants", () => {
     expect(invokeMock).toHaveBeenCalledWith(
       "discover_prospects",
       expect.objectContaining({
-        body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: true, include_chains: false, include_home_based: false, limit: 25 },
+        body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: true, include_chains: false, include_home_based: false, limit: 25, search_type: "unspecified" },
       }),
     );
+  });
+
+  it("tells the discovery service which surface is searching (for its search log)", async () => {
+    invokeMock.mockResolvedValue({ data: { prospects: [] }, error: null });
+    renderHook(() => useMerchants({ lat: 30.2672, lng: -97.7431 }, { searchType: "plan_area" }), { wrapper });
+    await waitFor(() => expect(invokeMock).toHaveBeenCalled());
+    expect(invokeMock.mock.calls[0]![1].body).toMatchObject({ search_type: "plan_area" });
   });
 
   it("defaults the results limit to 25 in the invoke body", async () => {

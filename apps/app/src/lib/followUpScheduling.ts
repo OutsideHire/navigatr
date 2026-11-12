@@ -37,6 +37,7 @@ export type Disposition =
   | "closed_locked"
   | "do_not_contact"
   | "out_of_business"
+  | "home_based"
   | "other"
   // Call set (SP2). no_answer/voicemail close the "85% of dials" gap.
   | "no_answer"
@@ -332,6 +333,13 @@ export const DISPOSITIONS: Record<Disposition, DispositionSpec> = {
     key: "out_of_business",
     label: "Out of business",
     rationale: "Permanently closed · no follow-up",
+    tier: "negative",
+    businessDays: null,
+  },
+  home_based: {
+    key: "home_based",
+    label: "Home-based",
+    rationale: "Run from a home, no storefront · no follow-up",
     tier: "negative",
     businessDays: null,
   },

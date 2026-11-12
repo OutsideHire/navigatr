@@ -38,6 +38,7 @@ import {
   hasFilled,
   isDiminishing,
 } from "../../../../../../supabase/functions/_shared/discoveryFill";
+import type { SearchType } from "../../../../../../supabase/functions/_shared/pathQuality";
 
 /** INGEST radius (meters) used when the caller doesn't pass one. The Path radius
  *  chip (5/10/15mi) passes an explicit radiusM, so the selected radius drives the
@@ -223,6 +224,9 @@ export interface UseMerchantsOptions {
    *  Used by path-building (Create + Plan); the map browse leaves this off so
    *  its pins stay inside the rep's chosen radius. Default false. */
   fillToLimit?: boolean;
+  /** Which Path surface is searching. Recorded by the discovery service's
+   *  per-search measurement log only; never changes the results. */
+  searchType?: SearchType;
 }
 
 /** Default + max for the rep-configurable results count. Mirrors the Edge
@@ -262,6 +266,7 @@ export function useMerchants(
   const includeChains = opts.includeChains ?? false;
   const includeHomeBased = opts.includeHomeBased ?? false;
   const fillToLimit = opts.fillToLimit === true;
+  const searchType = opts.searchType ?? "unspecified";
   // Results count: default 25, clamped to [1, 50] before it hits the query key
   // + invoke body (the Edge clamps again as a backstop).
   const limit = Math.min(
@@ -316,7 +321,7 @@ export function useMerchants(
         const r = ladder[i];
         const { data, error } = await supabase.functions.invoke<DiscoverResponse>(
           "discover_prospects",
-          { body: { lat: origin!.lat, lng: origin!.lng, radius_m: r, profession, industries, all_industries: allIndustries, include_chains: includeChains, include_home_based: includeHomeBased, limit }, signal },
+          { body: { lat: origin!.lat, lng: origin!.lng, radius_m: r, profession, industries, all_industries: allIndustries, include_chains: includeChains, include_home_based: includeHomeBased, limit, search_type: searchType }, signal },
         );
         // The first rung failing is a real error; a later (widen) rung failing
         // keeps whatever the previous rung already returned.

@@ -493,6 +493,9 @@ verify_jwt = true
 [functions.portal_invite]
 verify_jwt = true
 
+[functions.path_quality_flags]
+verify_jwt = true
+
 [functions.read_calendar_events]
 verify_jwt = true
 

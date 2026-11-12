@@ -36,6 +36,7 @@ import { buildBlockedSentence, capacitySentence, fullDaySentence } from "../lib/
 import { fillToCapacity } from "../lib/fillToCapacity";
 import type { FillStopReason } from "../lib/fillToCapacity";
 import { DayStopsMap } from "./DayStopsMap";
+import { useStopQualityNotes } from "../hooks/useStopQualityNotes";
 
 /** Below this many open minutes, no further stop can fit (a stop needs at least
  *  a minimum dwell). At/above it, capacity is stated; below it, the day is full. */
@@ -197,6 +198,9 @@ export function TodaysPathView({
     () => workingProposal.filter((s) => !(s.kind === "flexible" && removed.has(s.id))),
     [workingProposal, removed],
   );
+  // Path Data Quality R4: a commitment whose business looks closed or was
+  // flagged by the team stays on the day, with a line saying so.
+  const qualityNotes = useStopQualityNotes(workingProposal.map((s) => s.dealId));
   // The map can only pin stops that carry coordinates. Same set + order as the
   // list, minus any coordinate-less stops (they live in the "No location yet"
   // group, which is list-only).
@@ -473,6 +477,7 @@ export function TodaysPathView({
                 stop={stop}
                 index={i}
                 isFill={fillMarkerIds.has(stop.id)}
+                qualityNote={stop.dealId ? qualityNotes.get(stop.dealId) : undefined}
                 onRemove={stop.kind === "flexible" ? () => handleRemove(stop.id) : undefined}
                 onOpenDeal={onOpenDeal}
               />
@@ -686,6 +691,7 @@ function ProposalRow({
   stop,
   index,
   isFill = false,
+  qualityNote,
   onRemove,
   onOpenDeal,
 }: {
@@ -696,6 +702,9 @@ function ProposalRow({
    *  dashed-accent left treatment so the rep can see what the notice reverses.
    *  Cleared the moment the stop is dropped or the batch is undone. */
   isFill?: boolean;
+  /** Why this business looks closed or was flagged by the team (Path Data
+   *  Quality R4). The stop is kept; this only explains it. */
+  qualityNote?: string;
   onRemove?: () => void;
   /** Open the appointment's deal from the landing. */
   onOpenDeal?: (dealId: string) => void;
@@ -776,6 +785,7 @@ function ProposalRow({
             {reason}
           </p>
         )}
+        {qualityNote && <p className="mt-0.5 text-caption text-status-warning">{qualityNote}</p>}
       </div>
 
       {onRemove && (

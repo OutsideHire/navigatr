@@ -166,7 +166,7 @@ export function PathPage() {
     isLoading: merchantsLoading,
     isError: merchantsError,
     refetch: refetchMerchants,
-  } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, allIndustries: ingestAllIndustries, includeChains: false, includeHomeBased: showFiltered, limit: discoverLimit });
+  } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, allIndustries: ingestAllIndustries, includeChains: false, includeHomeBased: showFiltered, limit: discoverLimit, searchType: "add_stops" });
   // Chains are excluded from ALL Path discovery (this browse fetch, Create
   // below, and Plan), org-wide, with no toggle: chain locations can't make local
   // buying decisions, so they are never surfaced. Create keeps its own fetch so
@@ -179,7 +179,7 @@ export function PathPage() {
     effectiveRadiusM: createEffectiveRadiusM,
     requestedRadiusM: createRequestedRadiusM,
     requestedLimit: createRequestedLimit,
-  } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, allIndustries: ingestAllIndustries, includeChains: false, limit: discoverLimit, fillToLimit: createOpen });
+  } = useMerchants(origin, { radiusM: displayRadiusM, industries: ingestIndustries, allIndustries: ingestAllIndustries, includeChains: false, limit: discoverLimit, fillToLimit: createOpen, searchType: "create_path" });
   const [categoryFilter, setCategoryFilter] = React.useState<CategoryFilter>("all");
   const [sortMode, setSortMode] = React.useState<PathSortMode>(DEFAULT_SORT_MODE);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);

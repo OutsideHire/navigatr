@@ -22,6 +22,7 @@ import { useLogStopDwell, type StopDwellType } from "../hooks/useLogStopDwell";
 import type { DrivingCard, DrivingCardKind } from "../lib/drivingSequence";
 import type { OrderedStop, StopKind, StopTier } from "../lib/todaysPath";
 import { todayISO } from "../lib/today";
+import { useStopQualityNotes } from "../hooks/useStopQualityNotes";
 import { type Disposition } from "@/lib/followUpScheduling";
 import type { Merchant, MerchantCategory } from "../mockData";
 
@@ -229,6 +230,9 @@ export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: Ru
     () => cards.filter((c) => !resolved.has(c.id)),
     [cards, resolved],
   );
+  // Keyed on every card, not just the unresolved ones, so resolving a stop does
+  // not refetch the notes.
+  const qualityNotes = useStopQualityNotes(cards.map((c) => c.dealId));
 
   // Persisted-native counts, used ONLY by the end-of-route PathSummary snapshot
   // (which reports the persisted path_stops). NOT the run status row — see the
@@ -342,6 +346,7 @@ export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: Ru
 
   const clampedIndex = Math.min(index, visibleCards.length - 1);
   const card = visibleCards[clampedIndex]!;
+  const cardQualityNote = card.dealId ? qualityNotes.get(card.dealId) : undefined;
   // 1-based position of the current stop within the WHOLE day (resolved +
   // remaining): resolved stops always precede the current window, so it is the
   // completed count plus the offset into what remains. Reads 1 of 4, 2 of 4, …
@@ -401,6 +406,7 @@ export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: Ru
     reason: c.reason,
     detail: c.address ?? undefined,
     timeLabel: c.kind === "appointment" || c.kind === "external" ? c.arriveLabel : undefined,
+    qualityNote: c.dealId ? qualityNotes.get(c.dealId) : undefined,
   }));
   const remainingStops: OrderedStop[] = remainingCards.map((c) => ({
     id: c.id,
@@ -472,6 +478,7 @@ export function RunningPath({ origin, onViewPipeline, onExit, onFindNearby }: Ru
               the arrival card above already carries the appointment time. */}
           <span className="text-caption font-medium text-text-muted">{card.label}</span>
           {card.reason && <p className="text-body-md text-text-default">{card.reason}</p>}
+          {cardQualityNote && <p className="text-caption text-status-warning">{cardQualityNote}</p>}
           {card.lastVisit && <p className="text-caption text-text-muted">{card.lastVisit}</p>}
         </div>
 

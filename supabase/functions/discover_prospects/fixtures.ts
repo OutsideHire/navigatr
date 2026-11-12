@@ -29,6 +29,9 @@ export interface PlacesNewPlace {
   containingPlaces?: Array<{ id?: string; name?: string }>;
   /** Wheelchair entrance/parking/restroom flags; any true implies a real entrance. */
   accessibilityOptions?: Record<string, boolean>;
+  /** OPERATIONAL, CLOSED_TEMPORARILY or CLOSED_PERMANENTLY; absent when Google
+   *  does not know. */
+  businessStatus?: string;
 }
 
 export interface PlacesNewResponse {
