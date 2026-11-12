@@ -3,8 +3,21 @@ import {
   qualityFilterOn,
   normalizeBusinessStatus,
   normalizeSearchType,
+  normalizeSearchId,
   searchLogRow,
 } from "./pathQuality";
+
+describe("normalizeSearchId", () => {
+  it("keeps a UUID, lower-cased", () => {
+    expect(normalizeSearchId("0F8FAD5B-D9CB-469F-A165-70867728950E")).toBe("0f8fad5b-d9cb-469f-a165-70867728950e");
+  });
+
+  it("drops anything that is not a UUID", () => {
+    expect(normalizeSearchId(undefined)).toBeNull();
+    expect(normalizeSearchId("abc")).toBeNull();
+    expect(normalizeSearchId(42)).toBeNull();
+  });
+});
 
 describe("qualityFilterOn (the global switch)", () => {
   it("is on when the setting is missing or empty", () => {
@@ -57,6 +70,7 @@ describe("searchLogRow", () => {
   it("maps the counts onto the R7 columns", () => {
     expect(
       searchLogRow({
+        searchId: "0f8fad5b-d9cb-469f-a165-70867728950e",
         orgId: "org-1",
         userId: "user-1",
         searchType: "add_stops",
@@ -65,6 +79,7 @@ describe("searchLogRow", () => {
         finalStops: 25,
       }),
     ).toEqual({
+      search_id: "0f8fad5b-d9cb-469f-a165-70867728950e",
       org_id: "org-1",
       user_id: "user-1",
       search_type: "add_stops",
@@ -79,6 +94,7 @@ describe("searchLogRow", () => {
 
   it("logs zeros when the counts query failed, so the search still leaves a row", () => {
     const row = searchLogRow({
+      searchId: null,
       orgId: null,
       userId: "user-1",
       searchType: "unspecified",

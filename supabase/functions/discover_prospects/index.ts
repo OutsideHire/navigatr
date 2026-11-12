@@ -54,6 +54,7 @@ import {
 } from "../_shared/industryTaxonomy.ts";
 import {
   normalizeBusinessStatus,
+  normalizeSearchId,
   normalizeSearchType,
   qualityFilterOn,
   searchLogRow,
@@ -170,6 +171,8 @@ interface RequestBody {
   limit?: number;
   /** Which Path surface asked, for the R7 search log only. */
   search_type?: string;
+  /** One id per search (shared by every radius step of it), for the R7 log. */
+  search_id?: string;
 }
 
 /** One bucket's Places pull, kept paired with its bucket for per-bucket cache
@@ -353,6 +356,7 @@ Deno.serve(async (req) => {
   // [1, MAX_LIMIT] so a rep can widen the pool up to 50 without a 500-row pull.
   const readLimit = Math.min(MAX_LIMIT, Math.max(1, Math.floor(Number(body?.limit)) || DEFAULT_LIMIT));
   const searchType = normalizeSearchType(body?.search_type);
+  const searchId = normalizeSearchId(body?.search_id);
   const qualityOn = qualityFilterOn(qualityFilterSetting());
 
   // Industries to cold-fill. Validate against the known fetchable set; unknown
@@ -682,16 +686,20 @@ Deno.serve(async (req) => {
     .select("org_id")
     .eq("id", userData.user.id)
     .maybeSingle();
-  const { error: logErr } = await admin.from("path_search_log").insert(
-    searchLogRow({
-      orgId: (profile?.org_id as string | undefined) ?? null,
-      userId: userData.user.id,
-      searchType,
-      qualityFilterOn: qualityOn,
-      counts: hiddenRow,
-      finalStops: (nearby ?? []).length,
-    }),
-  );
+  // With a search id, each radius step of one search overwrites the same row,
+  // so the row describes the step whose result the rep kept (the last one).
+  const logRow = searchLogRow({
+    searchId,
+    orgId: (profile?.org_id as string | undefined) ?? null,
+    userId: userData.user.id,
+    searchType,
+    qualityFilterOn: qualityOn,
+    counts: hiddenRow,
+    finalStops: (nearby ?? []).length,
+  });
+  const { error: logErr } = searchId
+    ? await admin.from("path_search_log").upsert(logRow, { onConflict: "search_id" })
+    : await admin.from("path_search_log").insert(logRow);
   if (logErr) console.error("path_search_log_failed", logErr.message);
 
   return json({

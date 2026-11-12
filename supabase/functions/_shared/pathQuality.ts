@@ -49,7 +49,17 @@ export interface HiddenCountsRow {
   candidates?: number | null;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The app's id for one search, or null if absent or malformed. A search that
+ *  widens its radius calls discovery once per step with the same id, so the log
+ *  keeps one row per search rather than one per step. */
+export function normalizeSearchId(raw: unknown): string | null {
+  return typeof raw === "string" && UUID_RE.test(raw) ? raw.toLowerCase() : null;
+}
+
 export interface SearchLogRow {
+  search_id: string | null;
   org_id: string | null;
   user_id: string;
   search_type: SearchType;
@@ -64,6 +74,7 @@ export interface SearchLogRow {
 /** One R7 row. Missing counts (the counts query failed) log as 0 rather than
  *  dropping the row, so every search still leaves a trace. */
 export function searchLogRow(input: {
+  searchId: string | null;
   orgId: string | null;
   userId: string;
   searchType: SearchType;
@@ -73,6 +84,7 @@ export function searchLogRow(input: {
 }): SearchLogRow {
   const n = (v: number | null | undefined) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
   return {
+    search_id: input.searchId,
     org_id: input.orgId,
     user_id: input.userId,
     search_type: input.searchType,

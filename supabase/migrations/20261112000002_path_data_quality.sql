@@ -44,9 +44,11 @@ create table if not exists place_suppressions (
   outcome            text not null check (outcome in ('out_of_business', 'home_based')),
   reported_by        uuid references auth.users(id) on delete set null,
   reported_at        timestamptz not null,
-  -- The activity that caused it. Not a foreign key: deleting that activity must
-  -- not silently lift the suppression (it is permanent by design).
-  source_activity_id uuid,
+  -- What caused it: an activity (a stop on a deal) or a path stop (a discovery
+  -- stop, which has no deal). Not foreign keys: deleting either must not
+  -- silently lift the suppression (it is permanent by design).
+  source_activity_id  uuid,
+  source_path_stop_id uuid,
   -- 'outcome' = written when a rep closed out a stop; 'backfill' = created from
   -- a past outcome when this shipped. Lets the backfill report be re-run.
   source             text not null default 'outcome' check (source in ('outcome', 'backfill')),
@@ -63,7 +65,7 @@ alter table place_suppressions enable row level security;
 
 -- Members may read their own organization's suppressions (the Path day uses
 -- them to explain a commitment). There are no client write policies: rows are
--- written by the trigger below, which runs as the table owner.
+-- written by the triggers below, which run as the table owner.
 drop policy if exists place_suppressions_select on place_suppressions;
 create policy place_suppressions_select on place_suppressions for select
   using (org_id = public.user_org_id());
@@ -71,6 +73,14 @@ create policy place_suppressions_select on place_suppressions for select
 revoke all on place_suppressions from anon;
 revoke insert, update, delete on place_suppressions from authenticated;
 grant select on place_suppressions to authenticated;
+
+-- A rep closes out a stop in one of two places, and both must suppress:
+--   * a stop on a deal (owed / due visit, appointment): an activities row;
+--   * a discovery stop (no deal yet): the outcome is written only to
+--     path_stops.disposition. Negative outcomes never create a deal there.
+-- The organization always comes from the server side (the deal, or the path
+-- owner's profile), never from anything the client sent, so a suppression can
+-- only ever land in the reporter's own organization.
 
 create or replace function public.record_place_suppression()
 returns trigger
@@ -93,49 +103,108 @@ begin
   return new;
 end $$;
 
-revoke all on function public.record_place_suppression() from public;
-revoke all on function public.record_place_suppression() from anon;
-revoke all on function public.record_place_suppression() from authenticated;
+create or replace function public.record_path_stop_suppression()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.disposition in ('out_of_business', 'home_based') then
+    insert into place_suppressions
+      (org_id, place_id, outcome, reported_by, reported_at, source_path_stop_id, source)
+    select pr.org_id,
+           coalesce(new.place_id, (select x.place_id from prospects x where x.id = new.prospect_id)),
+           new.disposition, p.user_id, now(), new.id, 'outcome'
+      from paths p
+      join profiles pr on pr.id = p.user_id
+     where p.id = new.path_id
+       and pr.org_id is not null
+       and coalesce(new.place_id, (select x.place_id from prospects x where x.id = new.prospect_id)) is not null
+    on conflict (org_id, place_id) do nothing;
+  end if;
+  return new;
+end $$;
+
+revoke all on function public.record_place_suppression() from public, anon, authenticated;
+revoke all on function public.record_path_stop_suppression() from public, anon, authenticated;
 
 drop trigger if exists activities_record_place_suppression on activities;
 create trigger activities_record_place_suppression
   after insert or update of disposition on activities
   for each row execute function public.record_place_suppression();
 
+drop trigger if exists path_stops_record_place_suppression on path_stops;
+create trigger path_stops_record_place_suppression
+  after insert or update of disposition on path_stops
+  for each row execute function public.record_path_stop_suppression();
+
 -- One-time backfill from every past "Out of business" outcome that has a Google
--- place ID, keeping the earliest report per organization and place.
+-- place ID, from both places an outcome is recorded, keeping the earliest
+-- report per organization and place. A path stop records no outcome time, so
+-- its path's date stands in. Returns, per organization, how many suppressions
+-- were created and how many past outcomes were skipped for having no place ID.
+-- A function (not inline) so the database test exercises this exact statement.
+create or replace function public.backfill_place_suppressions()
+returns table (org_id uuid, created integer, skipped_no_place integer)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return query
+  with past as (
+    select d.org_id, d.place_id, a.logged_by as reported_by, a.occurred_at as reported_at,
+           a.id as activity_id, null::uuid as path_stop_id
+      from activities a
+      join deals d on d.id = a.deal_id
+     where a.disposition::text = 'out_of_business'
+    union all
+    select pr.org_id,
+           coalesce(s.place_id, x.place_id),
+           p.user_id, p.path_date::timestamptz, null::uuid, s.id
+      from path_stops s
+      join paths p on p.id = s.path_id
+      join profiles pr on pr.id = p.user_id
+      left join prospects x on x.id = s.prospect_id
+     where s.disposition = 'out_of_business'
+       and pr.org_id is not null
+  ),
+  inserted as (
+    insert into place_suppressions
+      (org_id, place_id, outcome, reported_by, reported_at,
+       source_activity_id, source_path_stop_id, source)
+    select distinct on (past.org_id, past.place_id)
+           past.org_id, past.place_id, 'out_of_business', past.reported_by, past.reported_at,
+           past.activity_id, past.path_stop_id, 'backfill'
+      from past
+     where past.place_id is not null
+     order by past.org_id, past.place_id, past.reported_at asc
+    on conflict on constraint place_suppressions_pkey do nothing
+    returning place_suppressions.org_id
+  ),
+  made as (
+    select i.org_id, count(*)::int as n from inserted i group by i.org_id
+  ),
+  skipped as (
+    select past.org_id, count(*)::int as n from past where past.place_id is null group by past.org_id
+  )
+  select coalesce(m.org_id, k.org_id), coalesce(m.n, 0), coalesce(k.n, 0)
+    from made m
+    full join skipped k on k.org_id = m.org_id
+   order by 1;
+end $$;
+
+revoke all on function public.backfill_place_suppressions() from public, anon, authenticated;
+
 do $$
 declare
   r record;
-  v_skipped integer;
 begin
-  insert into place_suppressions
-    (org_id, place_id, outcome, reported_by, reported_at, source_activity_id, source)
-  select distinct on (d.org_id, d.place_id)
-         d.org_id, d.place_id, 'out_of_business', a.logged_by, a.occurred_at, a.id, 'backfill'
-    from activities a
-    join deals d on d.id = a.deal_id
-   where a.disposition::text = 'out_of_business'
-     and d.place_id is not null
-   order by d.org_id, d.place_id, a.occurred_at asc
-  on conflict (org_id, place_id) do nothing;
-
-  for r in
-    select org_id, count(*) as n
-      from place_suppressions
-     where source = 'backfill'
-     group by org_id
-     order by org_id
-  loop
-    raise notice 'place_suppressions backfill: org % created %', r.org_id, r.n;
+  for r in select * from public.backfill_place_suppressions() loop
+    raise notice 'place_suppressions backfill: org % created % skipped (no place ID) %',
+      r.org_id, r.created, r.skipped_no_place;
   end loop;
-
-  select count(*) into v_skipped
-    from activities a
-    join deals d on d.id = a.deal_id
-   where a.disposition::text = 'out_of_business'
-     and d.place_id is null;
-  raise notice 'place_suppressions backfill: % past Out of business outcomes skipped (no place ID)', v_skipped;
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -144,6 +213,10 @@ end $$;
 -- ---------------------------------------------------------------------------
 create table if not exists path_search_log (
   id                    bigint generated always as identity primary key,
+  -- One id per search, sent by the app. A search that widens its radius calls
+  -- discovery once per step; each step overwrites this row, so the row ends up
+  -- describing the result the rep actually got.
+  search_id             uuid unique,
   org_id                uuid references organizations(id) on delete cascade,
   user_id               uuid references auth.users(id) on delete set null,
   search_type           text not null,

@@ -276,9 +276,60 @@ do $$ begin
   end if;
 end $$;
 
--- 12. Backfill: replay the migration's backfill statement over a past Out of
---     business outcome that predates the trigger, and over one with no place ID.
+-- 6/7 via a discovery stop. A stop Path added on its own has no deal: the
+-- outcome is written only to path_stops.disposition, and that must suppress
+-- too. Ana's stop at A carries no place_id of its own (older stops), so the
+-- place comes from the prospect it was added from.
+insert into paths (id, user_id, path_date, status) values
+  ('821e0000-0000-0000-0000-000000000001', '82100000-0000-0000-0000-00000000000a', current_date, 'planned'),
+  ('821e0000-0000-0000-0000-000000000002', '82200000-0000-0000-0000-00000000000a', current_date, 'planned');
+insert into path_stops (id, path_id, prospect_id, name, category, lat, lng, position, status, place_id) values
+  ('821f0000-0000-0000-0000-000000000001', '821e0000-0000-0000-0000-000000000001',
+   (select id from prospects where place_id = 'q_open_1'), 'A Open', 'retail', 40.0005, -100.0, 0, 'pending', null);
+update path_stops set status = 'visited', disposition = 'home_based'
+ where id = '821f0000-0000-0000-0000-000000000001';
+
+do $$ declare v text; begin
+  select outcome || ':' || reported_by::text || ':' || coalesce(source_path_stop_id::text, '-')
+    into v from place_suppressions
+   where org_id = '00000000-0000-0000-0000-000000000821' and place_id = 'q_open_1';
+  if v is distinct from 'home_based:82100000-0000-0000-0000-00000000000a:821f0000-0000-0000-0000-000000000001' then
+    raise exception '[6] a discovery-stop Home-based outcome did not suppress, got %', v;
+  end if;
+  perform pg_temp.act('82100000-0000-0000-0000-00000000000b');  -- Ben
+  if pg_temp.found(true) like '%A Open%' then
+    raise exception '[6] Ben still sees the business Ana marked Home-based on a discovery stop';
+  end if;
+  perform pg_temp.back();
+end $$;
+
+-- A rep's own path stop suppresses in the rep's own organization only, whatever
+-- place it names: Yan (org Y) flagging the same place leaves org X untouched and
+-- lands in org Y.
+insert into path_stops (id, path_id, prospect_id, name, category, lat, lng, position, status, disposition, place_id) values
+  ('821f0000-0000-0000-0000-000000000002', '821e0000-0000-0000-0000-000000000002',
+   (select id from prospects where place_id = 'q_open_2'), 'C Open', 'retail', 40.0020, -100.0, 0, 'visited', 'out_of_business', 'q_open_2');
+do $$ declare n int; begin
+  select count(*) into n from place_suppressions
+   where place_id = 'q_open_2' and org_id = '00000000-0000-0000-0000-000000000822'
+     and source_path_stop_id = '821f0000-0000-0000-0000-000000000002';
+  if n <> 1 then raise exception 'org Y path stop should suppress in org Y'; end if;
+end $$;
+
+-- "Closed right now" on a discovery stop never suppresses.
+insert into path_stops (path_id, prospect_id, name, category, lat, lng, position, status, disposition, place_id) values
+  ('821e0000-0000-0000-0000-000000000001', (select id from prospects where place_id = 'q_notnow'), 'I Closed Now', 'retail', 40.0008, -100.0, 1, 'visited', 'not_in_office', 'q_notnow');
+do $$ begin
+  if exists (select 1 from place_suppressions where place_id = 'q_notnow') then
+    raise exception '[8] Closed right now on a discovery stop suppressed';
+  end if;
+end $$;
+
+-- 12. Backfill: run the migration's own function over past Out of business
+--     outcomes recorded before the triggers existed, from both places they are
+--     recorded, plus one with no place ID to be skipped.
 alter table activities disable trigger activities_record_place_suppression;
+alter table path_stops disable trigger path_stops_record_place_suppression;
 insert into deals (id, org_id, owner_id, company_name, contact_name, contact_email, contact_phone, value_cents, place_id, stage) values
   ('821d0000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000000822', '82200000-0000-0000-0000-00000000000a', 'A Open', 'C', 'c@qy.example', '+15550008207', 100, 'q_open_1', 'new'),
   ('821d0000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000000822', '82200000-0000-0000-0000-00000000000a', 'No Place', 'C', 'c@qy.example', '+15550008208', 100, null, 'new');
@@ -286,30 +337,40 @@ insert into activities (org_id, deal_id, logged_by, type, disposition, occurred_
   ('00000000-0000-0000-0000-000000000822', '821d0000-0000-0000-0000-000000000007', '82200000-0000-0000-0000-00000000000a', 'drop_in', 'out_of_business', '2026-09-01 12:00+00'),
   ('00000000-0000-0000-0000-000000000822', '821d0000-0000-0000-0000-000000000007', '82200000-0000-0000-0000-00000000000a', 'drop_in', 'out_of_business', '2026-10-01 12:00+00'),
   ('00000000-0000-0000-0000-000000000822', '821d0000-0000-0000-0000-000000000008', '82200000-0000-0000-0000-00000000000a', 'drop_in', 'out_of_business', '2026-10-01 12:00+00');
+insert into paths (id, user_id, path_date, status) values
+  ('821e0000-0000-0000-0000-000000000003', '82200000-0000-0000-0000-00000000000a', '2026-08-15', 'completed');
+insert into path_stops (path_id, prospect_id, name, category, lat, lng, position, status, disposition, place_id) values
+  ('821e0000-0000-0000-0000-000000000003', (select id from prospects where place_id = 'q_flag'), 'G Flagged Home', 'retail', 40.0006, -100.0, 0, 'visited', 'out_of_business', 'q_flag');
 alter table activities enable trigger activities_record_place_suppression;
+alter table path_stops enable trigger path_stops_record_place_suppression;
 
-insert into place_suppressions
-  (org_id, place_id, outcome, reported_by, reported_at, source_activity_id, source)
-select distinct on (d.org_id, d.place_id)
-       d.org_id, d.place_id, 'out_of_business', a.logged_by, a.occurred_at, a.id, 'backfill'
-  from activities a
-  join deals d on d.id = a.deal_id
- where a.disposition::text = 'out_of_business'
-   and d.place_id is not null
- order by d.org_id, d.place_id, a.occurred_at asc
-on conflict (org_id, place_id) do nothing;
-
-do $$ declare v text; begin
-  select string_agg(place_id || ':' || reported_at::date::text, ' / ') into v
+do $$ declare r record; v text; begin
+  select * into r from public.backfill_place_suppressions()
+   where org_id = '00000000-0000-0000-0000-000000000822';
+  if r.created <> 2 or r.skipped_no_place <> 1 then
+    raise exception '[12] backfill report for org Y wrong: created % skipped %', r.created, r.skipped_no_place;
+  end if;
+  select string_agg(place_id || ':' || reported_at::date::text, ' / ' order by place_id) into v
     from place_suppressions
    where org_id = '00000000-0000-0000-0000-000000000822' and source = 'backfill';
-  if v is distinct from 'q_open_1:2026-09-01' then
+  if v is distinct from 'q_flag:2026-08-15 / q_open_1:2026-09-01' then
     raise exception '[12] backfill should keep the earliest report per place, got %', v;
   end if;
-  -- Existing outcome-sourced rows in org X were not duplicated or replaced.
+  -- Org X already had live suppressions for these places: none replaced.
   if (select count(*) from place_suppressions
        where org_id = '00000000-0000-0000-0000-000000000821' and source = 'backfill') <> 0 then
     raise exception '[12] backfill replaced a live suppression';
+  end if;
+  -- Re-running creates nothing new.
+  if exists (select 1 from public.backfill_place_suppressions() where created <> 0) then
+    raise exception '[12] backfill is not idempotent';
+  end if;
+end $$;
+
+do $$ begin
+  if has_function_privilege('authenticated', 'public.backfill_place_suppressions()', 'execute')
+     or has_function_privilege('authenticated', 'public.record_path_stop_suppression()', 'execute') then
+    raise exception 'a rep can execute a suppression function directly';
   end if;
 end $$;
 
