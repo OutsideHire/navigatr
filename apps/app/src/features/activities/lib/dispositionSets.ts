@@ -72,7 +72,8 @@ const DROPIN: Disposition[] = [
   "not_in_office",      // Closed right now
   "closed_locked",      // Not now
   "do_not_contact",     // Do not contact
-  "out_of_business",    // Out of business
+  "out_of_business",    // Out of business (also hides it from the team's Path)
+  "home_based",         // Home-based (also hides it from the team's Path)
 ];
 
 const APPOINTMENT_TOP: Disposition[] = [
@@ -132,6 +133,7 @@ export const DISPOSITION_VALUES = [
   "closed_locked",
   "do_not_contact",
   "out_of_business",
+  "home_based",
   "other",
   "no_answer",
   "voicemail",

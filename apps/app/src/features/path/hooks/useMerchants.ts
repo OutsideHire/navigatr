@@ -38,6 +38,7 @@ import {
   hasFilled,
   isDiminishing,
 } from "../../../../../../supabase/functions/_shared/discoveryFill";
+import type { SearchType } from "../../../../../../supabase/functions/_shared/pathQuality";
 
 /** INGEST radius (meters) used when the caller doesn't pass one. The Path radius
  *  chip (5/10/15mi) passes an explicit radiusM, so the selected radius drives the
@@ -223,6 +224,9 @@ export interface UseMerchantsOptions {
    *  Used by path-building (Create + Plan); the map browse leaves this off so
    *  its pins stay inside the rep's chosen radius. Default false. */
   fillToLimit?: boolean;
+  /** Which Path surface is searching. Recorded by the discovery service's
+   *  per-search measurement log only; never changes the results. */
+  searchType?: SearchType;
 }
 
 /** Default + max for the rep-configurable results count. Mirrors the Edge
@@ -262,6 +266,7 @@ export function useMerchants(
   const includeChains = opts.includeChains ?? false;
   const includeHomeBased = opts.includeHomeBased ?? false;
   const fillToLimit = opts.fillToLimit === true;
+  const searchType = opts.searchType ?? "unspecified";
   // Results count: default 25, clamped to [1, 50] before it hits the query key
   // + invoke body (the Edge clamps again as a backstop).
   const limit = Math.min(
@@ -284,6 +289,10 @@ export function useMerchants(
     // retry manually (with a cooldown) if they want.
     retry: 0,
     staleTime: 5 * 60_000, // 5 min — the server-side cache is the real TTL
+    // Coming back to the app is not a new search: no re-run (and no extra row
+    // in the discovery service's per-search log) just because the tab regained
+    // focus. Moving or changing a filter changes the key and searches again.
+    refetchOnWindowFocus: false,
     // `signal` comes from react-query. Passing it to invoke means a discovery
     // the rep walked away from (tapping Path -> Pipeline mid-fan-out) is
     // CANCELLED instead of running on unobserved and then failing: react-query
@@ -309,6 +318,10 @@ export function useMerchants(
       let hidden: HiddenCounts = { chains: 0, inPipeline: 0, homeBased: 0 };
       let effectiveRadiusM = radiusM;
       let prevCount = -1;
+      // One id for this whole search, shared by every widening step, so the
+      // discovery service logs it once. Guarded: an older iPhone without
+      // randomUUID still searches, it just logs one row per step.
+      const searchId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : undefined;
 
       for (let i = 0; i < ladder.length; i++) {
         // Do not start another (expensive) rung for a rep who already left.
@@ -316,7 +329,7 @@ export function useMerchants(
         const r = ladder[i];
         const { data, error } = await supabase.functions.invoke<DiscoverResponse>(
           "discover_prospects",
-          { body: { lat: origin!.lat, lng: origin!.lng, radius_m: r, profession, industries, all_industries: allIndustries, include_chains: includeChains, include_home_based: includeHomeBased, limit }, signal },
+          { body: { lat: origin!.lat, lng: origin!.lng, radius_m: r, profession, industries, all_industries: allIndustries, include_chains: includeChains, include_home_based: includeHomeBased, limit, search_type: searchType, search_id: searchId }, signal },
         );
         // The first rung failing is a real error; a later (widen) rung failing
         // keeps whatever the previous rung already returned.

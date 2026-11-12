@@ -1,9 +1,15 @@
 import type { ComponentProps } from "react";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { TodaysPathView } from "./TodaysPathView";
 import type { OrderedStop, FlexibleStop } from "../lib/todaysPath";
 import type { OwedVisitNoCoords } from "../lib/owedVisits";
+
+// Path Data Quality R4 notes, keyed by deal id. Per-test via qualityNotes.current.
+const qualityNotes = vi.hoisted(() => ({ current: new Map<string, string>() }));
+vi.mock("../hooks/useStopQualityNotes", () => ({
+  useStopQualityNotes: () => qualityNotes.current,
+}));
 
 // DayStopsMap owns MapLibre (a real WebGL context jsdom lacks), so stub it with
 // a lightweight component that records the props the toggle wires (stop count +
@@ -88,6 +94,25 @@ function renderView(props?: Partial<ComponentProps<typeof TodaysPathView>>) {
 }
 
 describe("TodaysPathView", () => {
+  beforeEach(() => {
+    qualityNotes.current = new Map();
+  });
+
+  it("keeps an owed drop-in at a flagged or closed business on the day, with a line saying why (Path Data Quality R4)", () => {
+    qualityNotes.current = new Map([
+      ["d1", "Google lists this business as closed"],
+      ["d3", "Flagged by your team as out of business or home-based"],
+    ]);
+    renderView();
+    const owed = screen.getByText("Owed Co").closest("li")!;
+    expect(within(owed).getByText("Google lists this business as closed")).toBeInTheDocument();
+    const due = screen.getByText("DueToday Co").closest("li")!;
+    expect(within(due).getByText("Flagged by your team as out of business or home-based")).toBeInTheDocument();
+    // A business with nothing to say gets no line.
+    const appt = screen.getByText("Renewal review").closest("li")!;
+    expect(within(appt).queryByText(/Google lists|Flagged by your team/)).not.toBeInTheDocument();
+  });
+
   it("renders the proposal tiers in run order, with an appointment time and a past-due age", () => {
     renderView();
 

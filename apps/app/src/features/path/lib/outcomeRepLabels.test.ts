@@ -10,6 +10,7 @@ describe("outcomeRepLabels", () => {
     expect(repOutcomeLabel("not_in_office")).toBe("Closed right now");
     expect(repOutcomeLabel("closed_locked")).toBe("Not now");
     expect(repOutcomeLabel("out_of_business")).toBe("Out of business");
+    expect(repOutcomeLabel("home_based")).toBe("Home-based");
     expect(repOutcomeSubtitle("statement_secured")).toBe("Walked out with a statement");
   });
   it("falls back to the formal DISPOSITIONS label for non-drop-in dispositions", () => {

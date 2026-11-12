@@ -191,6 +191,7 @@ describe("LogActivitySheet: drop-in outcome set (the field-visit screen reps use
     "Not now",
     "Do not contact",
     "Out of business",
+    "Home-based",
   ];
 
   it("shows the full Desired Outcome set in order, with no 'Other' and no 'show more'", () => {

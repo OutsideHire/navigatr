@@ -48,6 +48,9 @@ export interface TieredStopRow {
    *  band (neutral before target / warm past target / hot past latest). Color is
    *  the only aging signal. Defaults to neutral (muted) when omitted. */
   agingState?: AgingState;
+  /** Why this business looks closed or was flagged by the team (Path Data
+   *  Quality R4). The stop is kept; this only explains it. */
+  qualityNote?: string | null;
   /** Dim the whole row (past / resolved). */
   dimmed?: boolean;
   /** Strike the name (past / resolved). */
@@ -128,6 +131,10 @@ function Row({ row }: { row: TieredStopRow }) {
             >
               {row.reason}
             </p>
+          )}
+
+          {row.qualityNote && (
+            <p className="mt-0.5 text-caption text-status-warning">{row.qualityNote}</p>
           )}
         </div>
       </div>

@@ -33,6 +33,7 @@
     "src",
     "../../supabase/functions/_shared/industryTaxonomy.ts",
     "../../supabase/functions/_shared/discoveryFill.ts",
+    "../../supabase/functions/_shared/pathQuality.ts",
     "../../supabase/functions/_shared/calendarQualify.ts",
     "../../supabase/functions/_shared/calendarLocation.ts",
     "../../supabase/functions/_shared/mergeCalendarEvents.ts",

@@ -140,13 +140,15 @@ describe("DropInSheet", () => {
     profileData = { org_id: "org-1" };
   });
 
-  it("renders the 9 tiles with casual rep labels (no formal labels), a Log Stop button, and no Save/contact-name field", () => {
+  it("renders the 10 tiles with casual rep labels (no formal labels), a Log Stop button, and no Save/contact-name field", () => {
     renderSheet();
     // Casual rep-facing labels replace the formal DISPOSITIONS labels here.
     expect(screen.getByText("Got their statement")).toBeInTheDocument();
     expect(screen.getByText("Walked out with a statement")).toBeInTheDocument();
     expect(screen.getByText("Met with decision maker")).toBeInTheDocument();
     expect(screen.getByText("Out of business")).toBeInTheDocument();
+    expect(screen.getByText("Home-based")).toBeInTheDocument();
+    expect(screen.getByText("A house, no storefront")).toBeInTheDocument();
     // The formal manager-facing labels must NOT show on the rep logging grid.
     expect(screen.queryByText("Statement Secured")).not.toBeInTheDocument();
     expect(screen.queryByText("Not in office")).not.toBeInTheDocument();

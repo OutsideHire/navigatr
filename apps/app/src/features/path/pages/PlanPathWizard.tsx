@@ -168,7 +168,7 @@ export function PlanPathWizard({ open, onOpenChange, onSaved }: PlanPathWizardPr
     // requested count with non-chain businesses.
     // Only auto-widen on the results step, so the extra edge calls fire when the
     // rep is actually looking at results, not while they tune filters.
-  } = useMerchants(origin, { radiusM, industries, allIndustries, includeChains: false, includeHomeBased: showFiltered, limit: resultsCount, fillToLimit: stepKey === "results" });
+  } = useMerchants(origin, { radiusM, industries, allIndustries, includeChains: false, includeHomeBased: showFiltered, limit: resultsCount, fillToLimit: stepKey === "results", searchType: "plan_area" });
 
   // Distance-annotate + sort nearest-first for the results list.
   const resultMerchants: MerchantWithDistance[] = React.useMemo(() => {

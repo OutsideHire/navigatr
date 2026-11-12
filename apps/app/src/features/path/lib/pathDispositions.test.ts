@@ -8,6 +8,7 @@ describe("path dispositions", () => {
       "statement_secured", "met_dm", "scheduled_callback",
       "gatekeeper", "left_collateral", "not_in_office",
       "closed_locked", "do_not_contact", "out_of_business",
+      "home_based",
     ]);
   });
 

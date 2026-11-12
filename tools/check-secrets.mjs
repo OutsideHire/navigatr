@@ -76,6 +76,9 @@ function audit() {
   for (const env of Object.values(manifest.environments)) {
     for (const k of env.required ?? []) declared.add(k);
     for (const k of env.forbidden ?? []) declared.add(k);
+    // Settings the code reads with a safe default when absent (a switch that is
+    // on unless set). Declared, but neither required nor forbidden.
+    for (const k of env.optional ?? []) declared.add(k);
   }
 
   const undeclared = [...secretsReferencedInCode()].filter((k) => !declared.has(k)).sort();

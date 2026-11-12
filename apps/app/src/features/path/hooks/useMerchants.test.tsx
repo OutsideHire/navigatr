@@ -200,7 +200,7 @@ describe("useMerchants", () => {
     expect(invokeMock).toHaveBeenCalledWith(
       "discover_prospects",
       expect.objectContaining({
-        body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: false, include_chains: false, include_home_based: false, limit: 25 },
+        body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: false, include_chains: false, include_home_based: false, limit: 25, search_type: "unspecified", search_id: expect.any(String) },
       }),
     );
     // The fix for the FunctionsFetchError noise: react-query's AbortSignal must
@@ -266,7 +266,7 @@ describe("useMerchants", () => {
     expect(invokeMock).toHaveBeenCalledWith(
       "discover_prospects",
       expect.objectContaining({
-        body: { lat: 30.2672, lng: -97.7431, radius_m: 1500, profession: "merchant_services", industries: [], all_industries: false, include_chains: false, include_home_based: false, limit: 25 },
+        body: { lat: 30.2672, lng: -97.7431, radius_m: 1500, profession: "merchant_services", industries: [], all_industries: false, include_chains: false, include_home_based: false, limit: 25, search_type: "unspecified", search_id: expect.any(String) },
       }),
     );
   });
@@ -278,9 +278,16 @@ describe("useMerchants", () => {
     expect(invokeMock).toHaveBeenCalledWith(
       "discover_prospects",
       expect.objectContaining({
-        body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: true, include_chains: false, include_home_based: false, limit: 25 },
+        body: { lat: 30.2672, lng: -97.7431, radius_m: 8047, profession: "merchant_services", industries: [], all_industries: true, include_chains: false, include_home_based: false, limit: 25, search_type: "unspecified", search_id: expect.any(String) },
       }),
     );
+  });
+
+  it("tells the discovery service which surface is searching (for its search log)", async () => {
+    invokeMock.mockResolvedValue({ data: { prospects: [] }, error: null });
+    renderHook(() => useMerchants({ lat: 30.2672, lng: -97.7431 }, { searchType: "plan_area" }), { wrapper });
+    await waitFor(() => expect(invokeMock).toHaveBeenCalled());
+    expect(invokeMock.mock.calls[0]![1].body).toMatchObject({ search_type: "plan_area" });
   });
 
   it("defaults the results limit to 25 in the invoke body", async () => {
@@ -345,6 +352,21 @@ describe("useMerchants auto-widen (fillToLimit)", () => {
     const r1 = invokeMock.mock.calls[1]![1].body.radius_m as number;
     expect(r1).toBeGreaterThan(r0);
     expect(result.current.effectiveRadiusM).toBe(r1);
+  });
+
+  it("sends one search id for every widening step, so the search is logged once", async () => {
+    invokeMock
+      .mockResolvedValueOnce({ data: { prospects: rows(20) }, error: null })
+      .mockResolvedValueOnce({ data: { prospects: rows(25) }, error: null });
+    const { result } = renderHook(
+      () => useMerchants(origin, { limit: 25, fillToLimit: true }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.merchants).toHaveLength(25));
+    const id0 = invokeMock.mock.calls[0]![1].body.search_id as string;
+    const id1 = invokeMock.mock.calls[1]![1].body.search_id as string;
+    expect(id0).toMatch(/^[0-9a-f-]{36}$/);
+    expect(id1).toBe(id0);
   });
 
   it("stops widening when a wider radius adds no new results", async () => {

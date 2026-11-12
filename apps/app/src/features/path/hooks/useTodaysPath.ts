@@ -180,7 +180,7 @@ export function useTodaysPath(
     () => (pathPrefs ? selectedCategories(pathPrefs) : []),
     [pathPrefs],
   );
-  const nearby = useMerchants(origin, { industries: dayIndustries });
+  const nearby = useMerchants(origin, { industries: dayIndustries, searchType: "todays_path" });
 
   // Per-rep end-of-day (minutes from midnight), or the global default when the
   // rep has no override. Feeds the assembler's window end so `remainingMin` /
